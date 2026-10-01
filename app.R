@@ -187,6 +187,13 @@ server <- function(input, output, session) {
   w02_decisions <- reactiveVal(list())
   w02_status <- reactiveVal("")
 
+  w04_cases_rv <- reactiveVal(NULL)
+  w04_queue_sha_rv <- reactiveVal("")
+  w04_batch_id_rv <- reactiveVal("")
+  w04_idx <- reactiveVal(1L)
+  w04_decisions <- reactiveVal(list())
+  w04_status <- reactiveVal("")
+
   decision_ids <- function(ds = decisions()) {
     if (!length(ds)) return(character())
     unique(vapply(ds, function(x) as.character(x$review_case_id %||% ""), character(1)))
@@ -228,6 +235,29 @@ server <- function(input, output, session) {
   load_w02_batch <- function() {
     if (!identical(storage_backend(), "google_sheets")) return(NULL)
     read_sheet_w02_queue()
+  }
+
+  w04_filter_batch_decisions <- function(ds, sha) {
+    if (!length(ds)) return(list())
+    keep <- vapply(ds, function(x) identical(as.character(x$queue_sha256 %||% ""), sha), logical(1))
+    ds[keep]
+  }
+
+  w04_decision_ids <- function(ds = w04_decisions()) {
+    if (!length(ds)) return(character())
+    unique(vapply(ds,function(x)as.character(x$review_case_id %||% ""),character(1)))
+  }
+
+  w04_unresolved_indices <- function() {
+    cs <- w04_cases_rv()
+    if (is.null(cs)) return(integer())
+    ids <- vapply(cs,function(x)as.character(x$review_case_id),character(1))
+    which(!ids %in% w04_decision_ids())
+  }
+
+  load_w04_batch <- function() {
+    if (!identical(storage_backend(), "google_sheets")) return(NULL)
+    read_sheet_w04_queue()
   }
 
   load_batch <- function() {
@@ -304,7 +334,7 @@ server <- function(input, output, session) {
           w02_remaining <- length(w02_unresolved_indices())
           w02_completed <- max(0L, w02_total - w02_remaining)
           card(
-            class = "task-card",
+            class = "task-card mb-3",
             card_header(
               div(
                 class = "d-flex justify-content-between align-items-center",
@@ -327,6 +357,39 @@ server <- function(input, output, session) {
               actionButton(
                 "open_w02",
                 if (w02_remaining > 0L) "Continue Workflow 02" else "Review Workflow 02",
+                class = "btn-primary"
+              )
+            )
+          )
+        },
+        if (!is.null(w04_cases_rv())) {
+          w04_total <- length(w04_cases_rv())
+          w04_remaining <- length(w04_unresolved_indices())
+          w04_completed <- max(0L, w04_total - w04_remaining)
+          card(
+            class = "task-card",
+            card_header(
+              div(
+                class = "d-flex justify-content-between align-items-center",
+                tags$strong("Workflow 04 · validation screening"),
+                tags$span(class = "task-badge", w04_batch_id_rv())
+              )
+            ),
+            div(
+              class = "p-3",
+              tags$p(
+                class = "mb-2",
+                "Blindly screen a randomised sample of titles and abstracts to create independent human validation data for Workflow 04."
+              ),
+              div(
+                class = "task-kpis",
+                div(class = "task-kpi", tags$span(class = "text-secondary small", "Total"), tags$strong(w04_total)),
+                div(class = "task-kpi", tags$span(class = "text-secondary small", "Completed"), tags$strong(w04_completed)),
+                div(class = "task-kpi", tags$span(class = "text-secondary small", "Remaining"), tags$strong(w04_remaining))
+              ),
+              actionButton(
+                "open_w04",
+                if (w04_remaining > 0L) "Continue Workflow 04 validation" else "Review Workflow 04 validation",
                 class = "btn-primary"
               )
             )
@@ -356,6 +419,50 @@ server <- function(input, output, session) {
         uiOutput("w02_progress_bar"),
         uiOutput("w02_decision_panel"),
         uiOutput("w02_case_view")
+      ))
+    }
+
+    if (identical(app_view(), "w04")) {
+      return(div(
+        class = "app-shell",
+        div(
+          class = "d-flex justify-content-between align-items-center mb-3",
+          div(
+            tags$h2("LivingEvidenceMap validation screening", class="mb-0"),
+            tags$div(
+              sprintf("Workflow 04 · blind human validation · %s", w04_batch_id_rv()),
+              class="text-secondary"
+            )
+          ),
+          div(
+            class = "d-flex align-items-center gap-3",
+            actionButton("back_to_tasks_w04", "Back to tasks", class = "btn-outline-secondary btn-sm"),
+            uiOutput("w04_progress_text")
+          )
+        ),
+        uiOutput("w04_progress_bar"),
+        card(
+          class = "decision-panel",
+          div(
+            class = "d-flex flex-wrap justify-content-between align-items-center gap-2",
+            tags$div(class="saved-note", textOutput("w04_save_status")),
+            div(
+              class = "d-flex flex-wrap gap-2",
+              div(
+                class = "decision-row d-flex flex-wrap gap-2",
+                actionButton("w04_retain", "Include", class = "btn-success"),
+                actionButton("w04_exclude", "Exclude", class = "btn-outline-danger"),
+                actionButton("w04_uncertain", "Unsure", class = "btn-outline-secondary")
+              ),
+              div(
+                class = "nav-row d-flex gap-2",
+                actionButton("w04_previous", "← Previous"),
+                actionButton("w04_next", "Next →")
+              )
+            )
+          )
+        ),
+        uiOutput("w04_case_view")
       ))
     }
 
@@ -439,6 +546,17 @@ server <- function(input, output, session) {
           w02_decisions(w02_filter_batch_decisions(w02_all_decisions, w02_batch$queue_sha256))
           w02_unresolved <- w02_unresolved_indices()
           w02_idx(if (length(w02_unresolved)) w02_unresolved[[1L]] else max(1L, length(w02_batch$cases)))
+        }
+
+        w04_batch <- load_w04_batch()
+        if (!is.null(w04_batch)) {
+          w04_all_decisions <- active_sheet_w04_decisions()
+          w04_cases_rv(w04_batch$cases)
+          w04_queue_sha_rv(w04_batch$queue_sha256)
+          w04_batch_id_rv(w04_batch$batch_id)
+          w04_decisions(w04_filter_batch_decisions(w04_all_decisions, w04_batch$queue_sha256))
+          w04_unresolved <- w04_unresolved_indices()
+          w04_idx(if (length(w04_unresolved)) w04_unresolved[[1L]] else max(1L,length(w04_batch$cases)))
         }
 
         cases_rv(batch$cases)
@@ -778,6 +896,109 @@ server <- function(input, output, session) {
     invisible(TRUE)
   }
 
+  w04_current_case <- reactive({
+    req(authenticated(), w04_cases_rv())
+    w04_cases_rv()[[w04_idx()]]
+  })
+
+  output$w04_progress_text <- renderUI({
+    req(authenticated(),w04_cases_rv())
+    total <- length(w04_cases_rv())
+    remaining <- length(w04_unresolved_indices())
+    tags$span(sprintf("Record %d of %d · %d remaining",w04_idx(),total,remaining))
+  })
+
+  output$w04_progress_bar <- renderUI({
+    req(authenticated(),w04_cases_rv())
+    total <- length(w04_cases_rv())
+    remaining <- length(w04_unresolved_indices())
+    pct <- if(total) round(100*(total-remaining)/total) else 0
+    div(class="progress mb-3",
+        div(class="progress-bar",role="progressbar",
+            style=sprintf("width:%s%%",pct),
+            sprintf("%s%%",pct)))
+  })
+
+  output$w04_case_view <- renderUI({
+    z <- w04_current_case()
+    b <- z$bibliographic %||% list()
+
+    card(
+      class="record-card",
+      card_header(
+        div(
+          class="d-flex justify-content-between align-items-center",
+          tags$strong("Title and abstract screening"),
+          tags$span(class="task-badge",sprintf("Random order %s",z$random_order %||% w04_idx()))
+        )
+      ),
+      div(
+        class="compact-record-body",
+        div(class="record-title",b$title %||% ""),
+        tags$dl(
+          class="record-meta",
+          tags$dt("Authors"),tags$dd(b$authors %||% ""),
+          tags$dt("Year"),tags$dd(b$year %||% ""),
+          tags$dt("Journal"),tags$dd(b$journal %||% ""),
+          tags$dt("Volume"),tags$dd(b$volume %||% ""),
+          tags$dt("Pages"),tags$dd(b$pages %||% ""),
+          tags$dt("DOI"),tags$dd(b$doi %||% ""),
+          tags$dt("Keywords"),tags$dd(b$keywords %||% "")
+        ),
+        tags$hr(class="record-divider"),
+        tags$h6(class="abstract-heading","Abstract"),
+        div(class="abstract-text",normalise_display_text(b$abstract %||% ""))
+      )
+    )
+  })
+
+  output$w04_save_status <- renderText(w04_status())
+
+  save_w04_choice <- function(choice) {
+    z <- w04_current_case()
+    current <- w04_decisions()
+    prior <- NULL
+    if(length(current)) {
+      hits <- Filter(function(x)identical(as.character(x$review_case_id %||% ""),as.character(z$review_case_id)),current)
+      if(length(hits)) prior <- hits[[1L]]
+    }
+
+    decision <- list(
+      review_case_id=as.character(z$review_case_id),
+      record_id=as.character(z$record_id),
+      decision=choice,
+      rationale="Manual validation screening in Shiny",
+      reviewer=reviewer,
+      resolved_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
+      queue_sha256=w04_queue_sha_rv()
+    )
+
+    saved <- tryCatch(
+      append_sheet_w04_decision(decision,prior_decision=prior),
+      error=function(e){w04_status(paste("Save failed:",conditionMessage(e)));NULL}
+    )
+    if(is.null(saved)) return(FALSE)
+
+    remaining <- Filter(
+      function(x)!identical(as.character(x$review_case_id %||% ""),as.character(z$review_case_id)),
+      current
+    )
+    w04_decisions(c(remaining,list(saved)))
+    w04_status(sprintf("Saved %s at %s",choice,format(Sys.time(),"%H:%M:%S")))
+    TRUE
+  }
+
+  advance_w04 <- function() {
+    unresolved <- w04_unresolved_indices()
+    if(!length(unresolved)) {
+      app_view("tasks")
+      return(invisible(TRUE))
+    }
+    later <- unresolved[unresolved>w04_idx()]
+    w04_idx(if(length(later)) later[[1L]] else unresolved[[1L]])
+    invisible(TRUE)
+  }
+
   save_choice <- function(choice) {
     req(authenticated())
     z <- current_case()
@@ -841,6 +1062,25 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$back_to_tasks_w02, app_view("tasks"))
+
+  observeEvent(input$open_w04, {
+    unresolved <- w04_unresolved_indices()
+    if(length(unresolved)) w04_idx(unresolved[[1L]])
+    app_view("w04")
+  })
+
+  observeEvent(input$back_to_tasks_w04, app_view("tasks"))
+  observeEvent(input$w04_retain, {
+    if(save_w04_choice("retain")) advance_w04()
+  })
+  observeEvent(input$w04_exclude, {
+    if(save_w04_choice("exclude")) advance_w04()
+  })
+  observeEvent(input$w04_uncertain, {
+    if(save_w04_choice("uncertain")) advance_w04()
+  })
+  observeEvent(input$w04_previous, if(w04_idx()>1L) w04_idx(w04_idx()-1L))
+  observeEvent(input$w04_next, if(w04_idx()<length(w04_cases_rv())) w04_idx(w04_idx()+1L))
 
   observeEvent(input$w02_accept_field, {
     if (save_w02_choice("accept_provider_field")) advance_w02()
