@@ -68,8 +68,6 @@ ui <- page_fillable(
     .decision-panel { margin-bottom:.85rem; }
     .decision-panel .card-body { padding:.75rem 1rem; }
     .decision-row .btn { min-width:125px; }
-    .decision-panel .form-group { margin-bottom:0; }
-    .decision-panel textarea { min-height:38px !important; height:38px !important; resize:vertical; }
     .saved-note { font-weight:600; color:#1f5d50; min-height:1.2rem; }
     .nav-row .btn { min-width:95px; }
   "))),
@@ -108,25 +106,19 @@ server <- function(input, output, session) {
       uiOutput("progress_bar"),
       card(
         class = "decision-panel",
-        layout_columns(
-          col_widths = c(5, 7),
+        div(
+          class = "d-flex flex-wrap justify-content-between align-items-center gap-2",
+          tags$div(class="saved-note", textOutput("save_status")),
           div(
-            textAreaInput(
-              "rationale", "Rationale", rows = 1,
-              placeholder = "Brief reason for the decision"
-            ),
-            tags$div(class="saved-note", textOutput("save_status"))
-          ),
-          div(
-            class = "d-flex flex-column justify-content-end h-100 gap-2",
+            class = "d-flex flex-wrap gap-2",
             div(
-              class = "decision-row d-flex flex-wrap justify-content-end gap-2",
+              class = "decision-row d-flex flex-wrap gap-2",
               actionButton("duplicate", "Same record", class = "btn-success"),
               actionButton("not_duplicate", "Different records", class = "btn-outline-danger"),
               actionButton("uncertain", "Unsure", class = "btn-outline-secondary")
             ),
             div(
-              class = "nav-row d-flex justify-content-end gap-2",
+              class = "nav-row d-flex gap-2",
               actionButton("previous", "← Previous"),
               actionButton("next", "Next →")
             )
@@ -211,15 +203,10 @@ server <- function(input, output, session) {
   save_choice <- function(choice) {
     req(authenticated())
     z <- current_case()
-    rationale <- trimws(input$rationale %||% "")
-    if (!nzchar(rationale)) {
-      status("Add a short rationale before saving.")
-      return(invisible(FALSE))
-    }
     decision <- list(
       review_case_id = z$review_case_id,
       decision = choice,
-      rationale = rationale,
+      rationale = "Adjudicated in Shiny",
       reviewer = reviewer,
       resolved_at_utc = format(Sys.time(), tz="UTC", format="%Y-%m-%dT%H:%M:%SZ"),
       queue_sha256 = queue_sha
@@ -227,7 +214,6 @@ server <- function(input, output, session) {
     save_active_decision(decision, decision_path)
     decisions(read_active_decisions(decision_path))
     status(sprintf("Saved %s at %s", choice, format(Sys.time(), "%H:%M:%S")))
-    updateTextAreaInput(session, "rationale", value="")
     TRUE
   }
 
