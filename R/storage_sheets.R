@@ -33,6 +33,86 @@ sheet_id_from_env <- function() {
   id
 }
 
+
+batch_status_tab <- function() {
+  Sys.getenv("LEM_BATCH_STATUS_TAB", unset = "workflow_batch_status")
+}
+
+read_batch_status_log <- function() {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- batch_status_tab()
+  tabs <- googlesheets4::sheet_names(ss)
+  if(!tab %in% tabs) return(data.frame())
+  x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+  if(!nrow(x)) return(data.frame())
+  required <- c("event_id","stage","batch_id","queue_sha256","status","event_at_utc","workflow_run_id","source_run_id","output_sha256","message")
+  missing <- setdiff(required,names(x))
+  if(length(missing)) stop("Batch-status tab missing field(s): ",paste(missing,collapse=", "),call.=FALSE)
+  x[,required,drop=FALSE]
+}
+
+latest_batch_status <- function(stage,batch_id,queue_sha256) {
+  x <- read_batch_status_log()
+  if(!nrow(x)) return("")
+  hit <- x[
+    as.character(x$stage)==as.character(stage) &
+    as.character(x$batch_id)==as.character(batch_id) &
+    tolower(as.character(x$queue_sha256))==tolower(as.character(queue_sha256)),
+    ,drop=FALSE
+  ]
+  if(!nrow(hit)) return("")
+  as.character(hit$status[[nrow(hit)]])
+}
+
+append_batch_status <- function(stage,batch_id,queue_sha256,status,workflow_run_id="",source_run_id="",output_sha256="",message="") {
+  if(!stage %in% c("01","02","04","08")) stop("Invalid batch-status stage",call.=FALSE)
+  if(!status %in% c("published","review_complete","consumed")) stop("Invalid batch status",call.=FALSE)
+  if(!nzchar(as.character(batch_id))) stop("Batch ID is required",call.=FALSE)
+  if(!grepl("^[0-9a-fA-F]{64}$",as.character(queue_sha256))) stop("queue_sha256 must be SHA-256",call.=FALSE)
+
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- batch_status_tab()
+  tabs <- googlesheets4::sheet_names(ss)
+  cols <- c("event_id","stage","batch_id","queue_sha256","status","event_at_utc","workflow_run_id","source_run_id","output_sha256","message")
+  if(!tab %in% tabs){
+    googlesheets4::sheet_add(ss,sheet=tab)
+    empty <- as.data.frame(setNames(replicate(length(cols),character(),simplify=FALSE),cols),stringsAsFactors=FALSE)
+    googlesheets4::sheet_write(empty,ss=ss,sheet=tab)
+  }
+
+  current <- latest_batch_status(stage,batch_id,queue_sha256)
+  if(status=="review_complete" && nzchar(current) && !current %in% c("published","review_complete")) {
+    stop("Cannot mark review_complete from status ",current,call.=FALSE)
+  }
+  if(status=="consumed" && !current %in% c("review_complete","consumed")) {
+    stop("Cannot mark consumed before review_complete",call.=FALSE)
+  }
+  if(identical(current,status)) return(invisible(current))
+
+  now <- format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ")
+  event_id <- paste0("batch-status-",substr(digest::digest(
+    paste(stage,batch_id,queue_sha256,status,now,sep="|"),
+    algo="sha256",serialize=FALSE
+  ),1,24))
+  row <- data.frame(
+    event_id=event_id,stage=stage,batch_id=as.character(batch_id),
+    queue_sha256=tolower(as.character(queue_sha256)),status=status,event_at_utc=now,
+    workflow_run_id=as.character(workflow_run_id),source_run_id=as.character(source_run_id),
+    output_sha256=tolower(as.character(output_sha256)),message=as.character(message),
+    stringsAsFactors=FALSE
+  )
+  googlesheets4::sheet_append(ss,data=row,sheet=tab)
+  verify <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+  if(sum(as.character(verify$event_id)==event_id)!=1L) stop("Batch-status write verification failed",call.=FALSE)
+  invisible(status)
+}
+
+batch_is_consumed <- function(stage,batch_id,queue_sha256) {
+  identical(latest_batch_status(stage,batch_id,queue_sha256),"consumed")
+}
+
 ensure_w01_decision_tab <- function() {
   ss <- sheet_id_from_env()
   tab <- sheet_decision_tab()
