@@ -29,13 +29,14 @@ jobs:
 
       - name: Install dependencies
         shell: Rscript {0}
-        run: install.packages(c("rsconnect","shiny","bslib","jsonlite","digest","googlesheets4"))
+        run: install.packages(c("rsconnect","shiny","bslib","jsonlite","digest","googlesheets4","httr2"))
 
       - name: Parse application files
         shell: Rscript {0}
         run: |
           parse(file="app.R")
           parse(file="R/auth.R")
+          parse(file="R/github_dispatch.R")
           parse(file="R/storage_backend.R")
           parse(file="R/storage_local.R")
           parse(file="R/storage_sheets.R")
