@@ -79,6 +79,7 @@ server <- function(input, output, session) {
   failed_attempts <- reactiveVal(0L)
   lock_until <- reactiveVal(as.POSIXct(NA))
   idx <- reactiveVal(1L)
+  complete <- reactiveVal(FALSE)
   status <- reactiveVal("")
   decisions <- reactiveVal(list())
 
@@ -92,6 +93,19 @@ server <- function(input, output, session) {
           passwordInput("access_key", "Access key"),
           actionButton("login", "Continue", class = "btn-primary"),
           tags$div(class = "mt-2 text-danger", textOutput("login_status"))
+        )
+      ))
+    }
+
+    if (complete()) {
+      return(div(
+        class = "login-shell",
+        card(
+          card_header(tags$strong("Adjudication complete")),
+          tags$h3("Finished"),
+          tags$p(sprintf("All %d cases in this batch have been adjudicated.", length(cases))),
+          tags$p("Your decisions have been saved."),
+          actionButton("review_last", "Review last case", class = "btn-outline-secondary")
         )
       ))
     }
@@ -217,17 +231,29 @@ server <- function(input, output, session) {
     TRUE
   }
 
+  advance_after_save <- function() {
+    if (idx() < length(cases)) {
+      idx(idx() + 1L)
+    } else {
+      complete(TRUE)
+    }
+  }
+
   observeEvent(input$duplicate, {
-    if (save_choice("duplicate") && idx() < length(cases)) idx(idx()+1L)
+    if (save_choice("duplicate")) advance_after_save()
   })
   observeEvent(input$not_duplicate, {
-    if (save_choice("not_duplicate") && idx() < length(cases)) idx(idx()+1L)
+    if (save_choice("not_duplicate")) advance_after_save()
   })
   observeEvent(input$uncertain, {
-    if (save_choice("uncertain") && idx() < length(cases)) idx(idx()+1L)
+    if (save_choice("uncertain")) advance_after_save()
   })
   observeEvent(input$previous, if (idx()>1L) idx(idx()-1L))
   observeEvent(input[["next"]], if (idx()<length(cases)) idx(idx()+1L))
+  observeEvent(input$review_last, {
+    complete(FALSE)
+    idx(length(cases))
+  })
 
   output$save_status <- renderText(status())
 }
