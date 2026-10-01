@@ -712,3 +712,31 @@ append_sheet_w08_decision <- function(decision, prior_decision=NULL) {
   if(nrow(hit)!=1L) stop("W08 decision write verification failed",call.=FALSE)
   as.list(hit[1,,drop=FALSE])
 }
+
+
+pipeline_status_tab <- function() {
+  Sys.getenv("LEM_PIPELINE_STATUS_TAB", unset = "pipeline_run_status")
+}
+
+read_latest_pipeline_status <- function() {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- pipeline_status_tab()
+  tabs <- googlesheets4::sheet_names(ss)
+  if(!tab %in% tabs) return(NULL)
+  x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+  if(!nrow(x)) return(NULL)
+
+  required <- c(
+    "event_id","update_id","event_at_utc","stage","workflow_run_id",
+    "last_search_date","canonical_existing","search_results_total",
+    "deduplicated_records","enriched_records","retracted_records",
+    "screened_include","screened_exclude","geography_coded","topic_coded",
+    "completed_through","active_workflow","status_label"
+  )
+  miss <- setdiff(required,names(x))
+  if(length(miss)) stop("pipeline_run_status missing field(s): ",paste(miss,collapse=", "),call.=FALSE)
+
+  x <- x[,required,drop=FALSE]
+  x[nrow(x),,drop=FALSE] |> as.list()
+}
