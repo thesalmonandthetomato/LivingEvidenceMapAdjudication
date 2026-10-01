@@ -15,8 +15,6 @@ queue_path <- Sys.getenv("LEM_W01_QUEUE", unset = "fixtures/w01_real_sample_2.js
 decision_path <- Sys.getenv("LEM_W01_DECISIONS", unset = "local_state/w01_decisions.jsonl")
 reviewer <- Sys.getenv("LEM_REVIEWER", unset = "prototype-reviewer")
 
-cases <- read_w01_cases(queue_path)
-queue_sha <- digest(file = queue_path, algo = "sha256", serialize = FALSE)
 dir.create(dirname(decision_path), recursive = TRUE, showWarnings = FALSE)
 
 theme <- bs_theme(
@@ -81,7 +79,40 @@ server <- function(input, output, session) {
   idx <- reactiveVal(1L)
   complete <- reactiveVal(FALSE)
   status <- reactiveVal("")
+  cases_rv <- reactiveVal(NULL)
+  queue_sha_rv <- reactiveVal("")
+  batch_id_rv <- reactiveVal("")
   decisions <- reactiveVal(list())
+
+  decision_ids <- function(ds = decisions()) {
+    if (!length(ds)) return(character())
+    unique(vapply(ds, function(x) as.character(x$review_case_id %||% ""), character(1)))
+  }
+
+  filter_batch_decisions <- function(ds, sha) {
+    if (!length(ds)) return(list())
+    keep <- vapply(ds, function(x) identical(as.character(x$queue_sha256 %||% ""), sha), logical(1))
+    ds[keep]
+  }
+
+  unresolved_indices <- function() {
+    cs <- cases_rv()
+    if (is.null(cs)) return(integer())
+    ids <- vapply(cs, function(x) as.character(x$review_case_id), character(1))
+    which(!ids %in% decision_ids())
+  }
+
+  load_batch <- function() {
+    if (identical(storage_backend(), "google_sheets")) {
+      return(read_sheet_w01_queue())
+    }
+    cs <- read_w01_cases(queue_path)
+    list(
+      batch_id = basename(queue_path),
+      queue_sha256 = digest(file = queue_path, algo = "sha256", serialize = FALSE),
+      cases = cs
+    )
+  }
 
   output$root_ui <- renderUI({
     if (!authenticated()) {
@@ -103,7 +134,7 @@ server <- function(input, output, session) {
         card(
           card_header(tags$strong("Adjudication complete")),
           tags$h3("Finished"),
-          tags$p(sprintf("All %d cases in this batch have been adjudicated.", length(cases))),
+          tags$p(sprintf("All %d cases in this batch have been adjudicated.", length(cases_rv()))),
           tags$p("Your decisions have been saved."),
           actionButton("review_last", "Review last case", class = "btn-outline-secondary")
         )
@@ -114,7 +145,7 @@ server <- function(input, output, session) {
       class = "app-shell",
       div(class = "d-flex justify-content-between align-items-center mb-3",
           div(tags$h2("LivingEvidenceMap adjudication", class="mb-0"),
-              tags$div("Workflow 01 · duplicate review", class="text-secondary")),
+              tags$div(textOutput("batch_label"), class="text-secondary")),
           div(textOutput("progress_text"))
       ),
       uiOutput("progress_bar"),
@@ -154,10 +185,40 @@ server <- function(input, output, session) {
       return()
     }
     if (access_key_valid(input$access_key)) {
-      authenticated(TRUE)
-      failed_attempts(0L)
-      login_status("")
-      decisions(read_active_decisions(decision_path))
+      loaded <- tryCatch({
+        batch <- load_batch()
+        all_decisions <- read_active_decisions(decision_path)
+        current_decisions <- filter_batch_decisions(all_decisions, batch$queue_sha256)
+
+        cases_rv(batch$cases)
+        queue_sha_rv(batch$queue_sha256)
+        batch_id_rv(batch$batch_id)
+        decisions(current_decisions)
+
+        ids <- vapply(batch$cases, function(x) as.character(x$review_case_id), character(1))
+        done_ids <- if (length(current_decisions)) {
+          unique(vapply(current_decisions, function(x) as.character(x$review_case_id), character(1)))
+        } else character()
+        unresolved <- which(!ids %in% done_ids)
+
+        if (length(unresolved)) {
+          idx(unresolved[[1L]])
+          complete(FALSE)
+        } else {
+          idx(length(batch$cases))
+          complete(TRUE)
+        }
+        TRUE
+      }, error = function(e) {
+        login_status(paste("Batch could not be loaded:", conditionMessage(e)))
+        FALSE
+      })
+
+      if (isTRUE(loaded)) {
+        authenticated(TRUE)
+        failed_attempts(0L)
+        login_status("")
+      }
     } else {
       n <- failed_attempts() + 1L
       failed_attempts(n)
@@ -171,12 +232,24 @@ server <- function(input, output, session) {
     }
   })
 
-  current_case <- reactive({ req(authenticated()); cases[[idx()]] })
+  current_case <- reactive({ req(authenticated(), cases_rv()); cases_rv()[[idx()]] })
 
-  output$progress_text <- renderText({ req(authenticated()); sprintf("Case %d of %d", idx(), length(cases)) })
+  output$batch_label <- renderText({
+    req(authenticated())
+    sprintf("Workflow 01 · duplicate review · %s", batch_id_rv())
+  })
+
+  output$progress_text <- renderText({
+    req(authenticated(), cases_rv())
+    total <- length(cases_rv())
+    remaining <- length(unresolved_indices())
+    sprintf("Case %d of %d · %d remaining", idx(), total, remaining)
+  })
   output$progress_bar <- renderUI({
     req(authenticated())
-    pct <- round(100 * idx() / length(cases))
+    total <- length(cases_rv())
+    remaining <- length(unresolved_indices())
+    pct <- round(100 * (total - remaining) / total)
     div(class="progress mb-3",
         div(class="progress-bar", role="progressbar",
             style=sprintf("width:%s%%",pct),
@@ -223,20 +296,24 @@ server <- function(input, output, session) {
       rationale = "Adjudicated in Shiny",
       reviewer = reviewer,
       resolved_at_utc = format(Sys.time(), tz="UTC", format="%Y-%m-%dT%H:%M:%SZ"),
-      queue_sha256 = queue_sha
+      queue_sha256 = queue_sha_rv()
     )
     save_active_decision(decision, decision_path)
-    decisions(read_active_decisions(decision_path))
+    decisions(filter_batch_decisions(read_active_decisions(decision_path), queue_sha_rv()))
     status(sprintf("Saved %s at %s", choice, format(Sys.time(), "%H:%M:%S")))
     TRUE
   }
 
   advance_after_save <- function() {
-    if (idx() < length(cases)) {
-      idx(idx() + 1L)
-    } else {
+    unresolved <- unresolved_indices()
+    if (!length(unresolved)) {
       complete(TRUE)
+      return(invisible(TRUE))
     }
+
+    later <- unresolved[unresolved > idx()]
+    idx(if (length(later)) later[[1L]] else unresolved[[1L]])
+    invisible(TRUE)
   }
 
   observeEvent(input$duplicate, {
@@ -249,10 +326,10 @@ server <- function(input, output, session) {
     if (save_choice("uncertain")) advance_after_save()
   })
   observeEvent(input$previous, if (idx()>1L) idx(idx()-1L))
-  observeEvent(input[["next"]], if (idx()<length(cases)) idx(idx()+1L))
+  observeEvent(input[["next"]], if (idx()<length(cases_rv())) idx(idx()+1L))
   observeEvent(input$review_last, {
     complete(FALSE)
-    idx(length(cases))
+    idx(length(cases_rv()))
   })
 
   output$save_status <- renderText(status())
