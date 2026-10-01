@@ -149,7 +149,7 @@ read_sheet_w01_queue <- function(
   batches <- unique(x$batch_id)
   if (length(hashes) != 1L || !nzchar(hashes[[1L]])) stop("W01 queue has invalid queue_sha256", call.=FALSE)
   if (length(batches) != 1L || !nzchar(batches[[1L]])) stop("W01 queue has invalid batch_id", call.=FALSE)
-  if (anyDuplicated(x$review_case_id)) stop("W01 queue contains duplicate review_case_id", call.=FALSE)
+  if (anyDuplicated(x_core$review_case_id)) stop("W01 queue contains duplicate review_case_id", call.=FALSE)
 
   reconstructed <- paste0(paste(x$case_json, collapse = "\n"), "\n")
   actual_sha <- digest::digest(reconstructed, algo = "sha256", serialize = FALSE)
@@ -193,7 +193,7 @@ read_sheet_w02_queue <- function(
   batches <- unique(x$batch_id)
   if (length(hashes) != 1L || !nzchar(hashes[[1L]])) stop("W02 queue has invalid queue_sha256", call.=FALSE)
   if (length(batches) != 1L || !nzchar(batches[[1L]])) stop("W02 queue has invalid batch_id", call.=FALSE)
-  if (anyDuplicated(x$review_case_id)) stop("W02 queue contains duplicate review_case_id", call.=FALSE)
+  if (anyDuplicated(x_core$review_case_id)) stop("W02 queue contains duplicate review_case_id", call.=FALSE)
 
   reconstructed <- paste0(paste(x$case_json, collapse = "\n"), "\n")
   actual_sha <- digest::digest(reconstructed, algo = "sha256", serialize = FALSE)
@@ -361,22 +361,37 @@ read_sheet_w04_queue <- function(
   if(length(missing)) stop("W04 queue tab missing field(s): ",paste(missing,collapse=", "),call.=FALSE)
   if(!nrow(x)) return(NULL)
 
-  x <- x[order(as.integer(x$case_index)),required,drop=FALSE]
-  hashes <- unique(x$queue_sha256)
-  batches <- unique(x$batch_id)
+  x <- x[order(as.integer(x$case_index)),,drop=FALSE]
+  include_terms <- character()
+  exclude_terms <- character()
+  if("highlight_include_json" %in% names(x) && nzchar(as.character(x$highlight_include_json[[1L]] %||% ""))) {
+    include_terms <- as.character(jsonlite::fromJSON(x$highlight_include_json[[1L]]))
+  }
+  if("highlight_exclude_json" %in% names(x) && nzchar(as.character(x$highlight_exclude_json[[1L]] %||% ""))) {
+    exclude_terms <- as.character(jsonlite::fromJSON(x$highlight_exclude_json[[1L]]))
+  }
+  x_core <- x[,required,drop=FALSE]
+  hashes <- unique(x_core$queue_sha256)
+  batches <- unique(x_core$batch_id)
   if(length(hashes)!=1L || !nzchar(hashes[[1L]])) stop("W04 queue has invalid queue_sha256",call.=FALSE)
   if(length(batches)!=1L || !nzchar(batches[[1L]])) stop("W04 queue has invalid batch_id",call.=FALSE)
-  if(anyDuplicated(x$review_case_id)) stop("W04 queue contains duplicate review_case_id",call.=FALSE)
+  if(anyDuplicated(x_core$review_case_id)) stop("W04 queue contains duplicate review_case_id",call.=FALSE)
 
-  reconstructed <- paste0(paste(x$case_json,collapse="\n"),"\n")
+  reconstructed <- paste0(paste(x_core$case_json,collapse="\n"),"\n")
   actual_sha <- digest::digest(reconstructed,algo="sha256",serialize=FALSE)
   if(!identical(actual_sha,hashes[[1L]])) stop("W04 queue SHA-256 validation failed",call.=FALSE)
 
-  cases <- lapply(x$case_json,jsonlite::fromJSON,simplifyVector=FALSE)
+  cases <- lapply(x_core$case_json,jsonlite::fromJSON,simplifyVector=FALSE)
   ids <- vapply(cases,function(z)as.character(z$review_case_id %||% ""),character(1))
-  if(!identical(ids,x$review_case_id)) stop("W04 queue case IDs do not match stored metadata",call.=FALSE)
+  if(!identical(ids,x_core$review_case_id)) stop("W04 queue case IDs do not match stored metadata",call.=FALSE)
 
-  list(batch_id=batches[[1L]],queue_sha256=hashes[[1L]],cases=cases)
+  list(
+    batch_id=batches[[1L]],
+    queue_sha256=hashes[[1L]],
+    cases=cases,
+    highlight_include=include_terms,
+    highlight_exclude=exclude_terms
+  )
 }
 
 read_sheet_w04_decision_log <- function() {
