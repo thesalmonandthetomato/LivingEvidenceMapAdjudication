@@ -250,6 +250,20 @@ ui <- page_fillable(
     .task-kpi { background:#f7f8fa; border:1px solid #e1e5e9; border-radius:8px; padding:.55rem .65rem; }
     .task-kpi strong { display:block; font-size:1.15rem; }
     .task-badge { background:#eef3f1; border-radius:999px; padding:.2rem .55rem; font-size:.78rem; }
+    .pipeline-summary { background:#fff; border:1px solid #dde3e8; border-radius:12px; padding:.85rem 1rem; margin-bottom:1rem; box-shadow:0 2px 10px rgba(22,33,43,.04); }
+    .pipeline-summary-top { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:.65rem 1rem; margin-bottom:.65rem; }
+    .pipeline-kpis { display:grid; grid-template-columns:repeat(9,minmax(82px,1fr)); border-top:1px solid #edf0f2; border-bottom:1px solid #edf0f2; }
+    .pipeline-kpi { padding:.55rem .55rem .5rem .55rem; min-width:0; }
+    .pipeline-kpi + .pipeline-kpi { border-left:1px solid #edf0f2; }
+    .pipeline-kpi-label { display:block; color:#6a747d; font-size:.69rem; line-height:1.1; margin-bottom:.15rem; }
+    .pipeline-kpi-value { display:block; font-size:1rem; line-height:1.15; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .pipeline-kpi-sub { display:block; color:#7c858d; font-size:.65rem; line-height:1.1; margin-top:.08rem; }
+    .workflow-line { display:grid; grid-template-columns:repeat(10,1fr); gap:.28rem; margin-top:.65rem; }
+    .workflow-segment { height:7px; border-radius:999px; background:#e5e9ec; }
+    .workflow-segment.done { background:#1f5d50; }
+    .workflow-segment.active { background:#8fb7ac; box-shadow:0 0 0 1px #1f5d50 inset; }
+    .workflow-labels { display:grid; grid-template-columns:repeat(10,1fr); gap:.28rem; margin-top:.2rem; color:#7b858d; font-size:.61rem; text-align:center; }
+    @media (max-width: 1000px) { .pipeline-kpis { grid-template-columns:repeat(3,1fr); } .pipeline-kpi + .pipeline-kpi { border-left:0; } .pipeline-kpi { border-right:1px solid #edf0f2; border-bottom:1px solid #edf0f2; } }
   "))),
   uiOutput("root_ui")
 )
@@ -297,6 +311,7 @@ server <- function(input, output, session) {
   w08_decisions <- reactiveVal(list())
   w08_batch_status_rv <- reactiveVal("")
   w08_status <- reactiveVal("")
+  pipeline_status_rv <- reactiveVal(NULL)
 
   decision_ids <- function(ds = decisions()) {
     if (!length(ds)) return(character())
@@ -417,6 +432,89 @@ server <- function(input, output, session) {
     )
   }
 
+  fmt_pipeline_n <- function(x) {
+    z <- suppressWarnings(as.numeric(as.character(x %||% "")))
+    if(is.na(z)) return("—")
+    format(round(z),big.mark=",",scientific=FALSE,trim=TRUE)
+  }
+
+  fmt_pipeline_date <- function(x) {
+    z <- as.character(x %||% "")
+    if(!nzchar(z)) return("—")
+    d <- suppressWarnings(as.Date(z))
+    if(is.na(d)) return(z)
+    format(d,"%d %b %Y")
+  }
+
+  pipeline_summary_ui <- function() {
+    p <- pipeline_status_rv()
+    if(is.null(p)) {
+      return(div(
+        class="pipeline-summary",
+        div(class="text-secondary small","Current-run metrics are not available yet.")
+      ))
+    }
+
+    completed <- suppressWarnings(as.integer(as.character(p$completed_through %||% "0")))
+    active <- suppressWarnings(as.integer(as.character(p$active_workflow %||% "")))
+    if(is.na(completed)) completed <- 0L
+
+    segs <- lapply(1:10,function(i){
+      cls <- "workflow-segment"
+      if(i <= completed) cls <- paste(cls,"done")
+      else if(!is.na(active) && i==active) cls <- paste(cls,"active")
+      div(class=cls,title=sprintf("Workflow %02d",i))
+    })
+
+    kpi <- function(label,value,sub=NULL) {
+      div(
+        class="pipeline-kpi",
+        tags$span(class="pipeline-kpi-label",label),
+        tags$span(class="pipeline-kpi-value",value),
+        if(!is.null(sub)) tags$span(class="pipeline-kpi-sub",sub)
+      )
+    }
+
+    div(
+      class="pipeline-summary",
+      div(
+        class="pipeline-summary-top",
+        div(
+          tags$strong("Current update"),
+          tags$span(
+            class="text-secondary small ms-2",
+            as.character(p$status_label %||% "")
+          )
+        ),
+        div(
+          class="text-secondary small",
+          paste0("Run ",as.character(p$update_id %||% ""))
+        )
+      ),
+      div(
+        class="pipeline-kpis",
+        kpi("Search results",fmt_pipeline_n(p$search_results_total),"W00"),
+        kpi("After dedup.",fmt_pipeline_n(p$deduplicated_records),"W01"),
+        kpi("Enriched",fmt_pipeline_n(p$enriched_records),"W02"),
+        kpi("Retracted",fmt_pipeline_n(p$retracted_records),"W03"),
+        kpi(
+          "Screened",
+          paste0(fmt_pipeline_n(p$screened_include)," / ",fmt_pipeline_n(p$screened_exclude)),
+          "include / exclude"
+        ),
+        kpi("Geography",fmt_pipeline_n(p$geography_coded),"coded"),
+        kpi("Topics",fmt_pipeline_n(p$topic_coded),"coded"),
+        kpi("Canonical database",fmt_pipeline_n(p$canonical_existing),"pre-update"),
+        kpi("Last search",fmt_pipeline_date(p$last_search_date))
+      ),
+      div(class="workflow-line",segs),
+      div(
+        class="workflow-labels",
+        lapply(1:10,function(i)tags$span(sprintf("W%02d",i)))
+      )
+    )
+  }
+
   output$root_ui <- renderUI({
     if (!authenticated()) {
       return(div(
@@ -490,6 +588,7 @@ server <- function(input, output, session) {
           ),
           tags$span(class = "task-badge", "LivingEvidenceMap")
         ),
+        pipeline_summary_ui(),
         div(
           class = "row g-3",
           div(
@@ -720,6 +819,7 @@ server <- function(input, output, session) {
     }
     if (access_key_valid(input$access_key)) {
       loaded <- tryCatch({
+        pipeline_status_rv(if(identical(storage_backend(),"google_sheets")) read_latest_pipeline_status() else NULL)
         batch <- load_batch()
         current_decisions <- list()
         if (!is.null(batch)) {
