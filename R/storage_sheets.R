@@ -120,3 +120,42 @@ export_active_sheet_w01_decisions <- function(output_path) {
   for (d in ds) writeLines(jsonlite::toJSON(d, auto_unbox=TRUE, null="null", na="null"), con, useBytes=TRUE)
   invisible(output_path)
 }
+
+
+read_sheet_w01_queue <- function(
+  tab = Sys.getenv("LEM_W01_QUEUE_TAB", unset = "queue_w01_legacy_730")
+) {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+
+  x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
+  required <- c("batch_id","queue_sha256","case_index","review_case_id","case_json")
+  missing <- setdiff(required, names(x))
+  if (length(missing)) stop("W01 queue tab missing field(s): ", paste(missing, collapse=", "), call.=FALSE)
+  if (!nrow(x)) stop("W01 queue tab is empty", call.=FALSE)
+
+  ord <- order(as.integer(x$case_index))
+  x <- x[ord, required, drop=FALSE]
+
+  hashes <- unique(x$queue_sha256)
+  batches <- unique(x$batch_id)
+  if (length(hashes) != 1L || !nzchar(hashes[[1L]])) stop("W01 queue has invalid queue_sha256", call.=FALSE)
+  if (length(batches) != 1L || !nzchar(batches[[1L]])) stop("W01 queue has invalid batch_id", call.=FALSE)
+  if (anyDuplicated(x$review_case_id)) stop("W01 queue contains duplicate review_case_id", call.=FALSE)
+
+  reconstructed <- paste0(paste(x$case_json, collapse = "\n"), "\n")
+  actual_sha <- digest::digest(reconstructed, algo = "sha256", serialize = FALSE)
+  if (!identical(actual_sha, hashes[[1L]])) {
+    stop("W01 queue SHA-256 validation failed", call.=FALSE)
+  }
+
+  cases <- lapply(x$case_json, jsonlite::fromJSON, simplifyVector = FALSE)
+  ids <- vapply(cases, function(z) as.character(z$review_case_id %||% ""), character(1))
+  if (!identical(ids, x$review_case_id)) stop("W01 queue case IDs do not match stored metadata", call.=FALSE)
+
+  list(
+    batch_id = batches[[1L]],
+    queue_sha256 = hashes[[1L]],
+    cases = cases
+  )
+}
