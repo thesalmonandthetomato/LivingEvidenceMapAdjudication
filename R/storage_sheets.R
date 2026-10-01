@@ -284,3 +284,60 @@ append_sheet_w02_decision <- function(decision, prior_decision = NULL) {
   if (nrow(hits) != 1L) stop("W02 Google Sheets write could not be verified", call.=FALSE)
   as.list(hits[1, , drop=FALSE])
 }
+
+
+w02_resume_request_tab <- function() {
+  Sys.getenv("LEM_W02_RESUME_REQUEST_TAB", unset = "w02_resume_requests")
+}
+
+w02_resume_request_exists <- function(queue_sha256, source_run_id) {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w02_resume_request_tab()
+  tabs <- googlesheets4::sheet_names(ss)
+  if (!tab %in% tabs) return(FALSE)
+
+  x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
+  if (!nrow(x)) return(FALSE)
+  required <- c("queue_sha256","source_run_id","status")
+  if (!all(required %in% names(x))) stop("W02 resume-request tab is malformed", call.=FALSE)
+
+  any(
+    as.character(x$queue_sha256) == as.character(queue_sha256) &
+    as.character(x$source_run_id) == as.character(source_run_id) &
+    as.character(x$status) %in% c("dispatching","dispatched")
+  )
+}
+
+append_w02_resume_request <- function(queue_sha256, source_run_id, status, message = "") {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w02_resume_request_tab()
+  tabs <- googlesheets4::sheet_names(ss)
+
+  required_cols <- c(
+    "request_id","queue_sha256","source_run_id","status",
+    "requested_at_utc","message"
+  )
+
+  if (!tab %in% tabs) {
+    googlesheets4::sheet_add(ss, sheet = tab)
+    empty <- as.data.frame(setNames(replicate(length(required_cols), character(), simplify=FALSE), required_cols))
+    googlesheets4::sheet_write(empty, ss = ss, sheet = tab)
+  }
+
+  row <- data.frame(
+    request_id = paste0("w02-resume-", digest::digest(
+      paste(queue_sha256, source_run_id, status, format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%OS6Z"), sep="|"),
+      algo="sha256", serialize=FALSE
+    )),
+    queue_sha256 = as.character(queue_sha256),
+    source_run_id = as.character(source_run_id),
+    status = as.character(status),
+    requested_at_utc = format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
+    message = as.character(message),
+    stringsAsFactors = FALSE
+  )
+  googlesheets4::sheet_append(ss, data = row, sheet = tab)
+  invisible(row)
+}
