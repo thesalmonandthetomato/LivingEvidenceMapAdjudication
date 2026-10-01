@@ -34,6 +34,63 @@ normalise_display_text <- function(x) {
   trimws(x)
 }
 
+highlight_screening_text <- function(text, include_terms = character(), exclude_terms = character()) {
+  text <- normalise_display_text(text)
+  if (!nzchar(text)) return("")
+  terms <- c(
+    setNames(as.character(include_terms), rep("screen-include", length(include_terms))),
+    setNames(as.character(exclude_terms), rep("screen-exclude", length(exclude_terms)))
+  )
+  terms <- terms[nzchar(trimws(terms))]
+  if (!length(terms)) return(text)
+
+  hay <- tolower(text)
+  candidates <- list()
+  k <- 0L
+  for (i in seq_along(terms)) {
+    term <- trimws(terms[[i]])
+    needle <- tolower(term)
+    if (!nzchar(needle)) next
+    start_at <- 1L
+    repeat {
+      tail <- substr(hay, start_at, nchar(hay))
+      pos <- regexpr(needle, tail, fixed = TRUE)[[1L]]
+      if (pos < 0L) break
+      s <- start_at + pos - 1L
+      e <- s + nchar(term) - 1L
+      k <- k + 1L
+      candidates[[k]] <- list(start=s,end=e,class=names(terms)[[i]],length=nchar(term))
+      start_at <- s + 1L
+      if (start_at > nchar(hay)) break
+    }
+  }
+  if (!length(candidates)) return(text)
+
+  ord <- order(
+    vapply(candidates, function(x) x$start, integer(1)),
+    -vapply(candidates, function(x) x$length, integer(1))
+  )
+  candidates <- candidates[ord]
+  chosen <- list()
+  last_end <- 0L
+  for (x in candidates) {
+    if (x$start > last_end) {
+      chosen[[length(chosen)+1L]] <- x
+      last_end <- x$end
+    }
+  }
+
+  out <- list()
+  cursor <- 1L
+  for (x in chosen) {
+    if (x$start > cursor) out[[length(out)+1L]] <- substr(text,cursor,x$start-1L)
+    out[[length(out)+1L]] <- tags$span(class=x$class,substr(text,x$start,x$end))
+    cursor <- x$end + 1L
+  }
+  if (cursor <= nchar(text)) out[[length(out)+1L]] <- substr(text,cursor,nchar(text))
+  do.call(tagList,out)
+}
+
 token_lcs_matches <- function(a, b, char_level = FALSE) {
   a <- as.character(a %||% "")
   b <- as.character(b %||% "")
@@ -145,6 +202,15 @@ ui <- page_fillable(
     .record-divider { margin:.55rem 0 .45rem 0; }
     .abstract-heading { margin:0 0 .35rem 0; }
     .abstract-text { line-height:1.32; white-space:normal; }
+    .w04-text { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; font-variant-ligatures:none; font-feature-settings:"liga" 0; letter-spacing:normal; word-spacing:normal; }
+    .w04-citation-grid { display:grid; grid-template-columns:minmax(260px,2.4fr) minmax(70px,.45fr) minmax(180px,1.4fr) minmax(70px,.45fr) minmax(90px,.6fr); gap:.4rem .8rem; margin:.2rem 0 .35rem 0; align-items:start; }
+    .w04-citation-item { min-width:0; }
+    .w04-citation-label { display:block; color:#66727d; font-size:.78rem; font-weight:600; margin-bottom:.05rem; }
+    .w04-citation-value { display:block; overflow-wrap:anywhere; }
+    .w04-doi { font-size:.9rem; margin:.15rem 0 .45rem 0; color:#4c5965; overflow-wrap:anywhere; }
+    .w04-keywords { margin-top:.55rem; padding-top:.45rem; border-top:1px solid #e6eaed; font-size:.9rem; }
+    .screen-include { background:#d9f2df; color:#145c2e; border-radius:3px; padding:0 .05rem; }
+    .screen-exclude { background:#fde0e0; color:#8b1e1e; border-radius:3px; padding:0 .05rem; }
     .source-badge { border-radius:999px; padding:.2rem .55rem; font-size:.78rem; }
     .diff-same { background:#d9f2df; color:#145c2e; border-radius:3px; padding:0 .08rem; }
     .diff-different { background:#fde0e0; color:#8b1e1e; border-radius:3px; padding:0 .08rem; }
@@ -193,6 +259,8 @@ server <- function(input, output, session) {
   w04_idx <- reactiveVal(1L)
   w04_decisions <- reactiveVal(list())
   w04_status <- reactiveVal("")
+  w04_include_terms <- reactiveVal(character())
+  w04_exclude_terms <- reactiveVal(character())
 
   decision_ids <- function(ds = decisions()) {
     if (!length(ds)) return(character())
@@ -554,6 +622,8 @@ server <- function(input, output, session) {
           w04_cases_rv(w04_batch$cases)
           w04_queue_sha_rv(w04_batch$queue_sha256)
           w04_batch_id_rv(w04_batch$batch_id)
+          w04_include_terms(w04_batch$highlight_include %||% character())
+          w04_exclude_terms(w04_batch$highlight_exclude %||% character())
           w04_decisions(w04_filter_batch_decisions(w04_all_decisions, w04_batch$queue_sha256))
           w04_unresolved <- w04_unresolved_indices()
           w04_idx(if (length(w04_unresolved)) w04_unresolved[[1L]] else max(1L,length(w04_batch$cases)))
@@ -933,21 +1003,30 @@ server <- function(input, output, session) {
         )
       ),
       div(
-        class="compact-record-body",
-        div(class="record-title",b$title %||% ""),
-        tags$dl(
-          class="record-meta",
-          tags$dt("Authors"),tags$dd(b$authors %||% ""),
-          tags$dt("Year"),tags$dd(b$year %||% ""),
-          tags$dt("Journal"),tags$dd(b$journal %||% ""),
-          tags$dt("Volume"),tags$dd(b$volume %||% ""),
-          tags$dt("Pages"),tags$dd(b$pages %||% ""),
-          tags$dt("DOI"),tags$dd(b$doi %||% ""),
-          tags$dt("Keywords"),tags$dd(b$keywords %||% "")
+        class="compact-record-body w04-text",
+        div(
+          class="record-title",
+          highlight_screening_text(b$title %||% "",w04_include_terms(),w04_exclude_terms())
         ),
-        tags$hr(class="record-divider"),
+        div(
+          class="w04-citation-grid",
+          div(class="w04-citation-item",span(class="w04-citation-label","Authors"),span(class="w04-citation-value",b$authors %||% "")),
+          div(class="w04-citation-item",span(class="w04-citation-label","Year"),span(class="w04-citation-value",b$year %||% "")),
+          div(class="w04-citation-item",span(class="w04-citation-label","Journal"),span(class="w04-citation-value",b$journal %||% "")),
+          div(class="w04-citation-item",span(class="w04-citation-label","Volume"),span(class="w04-citation-value",b$volume %||% "")),
+          div(class="w04-citation-item",span(class="w04-citation-label","Pages"),span(class="w04-citation-value",b$pages %||% ""))
+        ),
+        div(class="w04-doi",tags$strong("DOI: "),b$doi %||% ""),
         tags$h6(class="abstract-heading","Abstract"),
-        div(class="abstract-text",normalise_display_text(b$abstract %||% ""))
+        div(
+          class="abstract-text",
+          highlight_screening_text(b$abstract %||% "",w04_include_terms(),w04_exclude_terms())
+        ),
+        div(
+          class="w04-keywords",
+          tags$strong("Keywords: "),
+          highlight_screening_text(b$keywords %||% "",w04_include_terms(),w04_exclude_terms())
+        )
       )
     )
   })
