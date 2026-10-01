@@ -1670,7 +1670,7 @@
       "checksum": "4cd35861ac9978879c644bcf5e84c918"
     },
     "app.R": {
-      "checksum": "7812147317eb9030454cce4b9ebb199e"
+      "checksum": "b17011426f8eb58a64c8816b1b1327d4"
     },
     "fixtures/w01_real_sample_2.jsonl": {
       "checksum": "b95ff9acc42004e0c32e0bbeec3d93a9"
@@ -1688,7 +1688,7 @@
       "checksum": "04242516ce13f82c81a551f4c1784928"
     },
     "R/storage_sheets.R": {
-      "checksum": "53ea8cd5a1918e64b16651650f18675a"
+      "checksum": "91c75a4d4d20381ed5b356c4e0ade9aa"
     },
     "R/w01_contract.R": {
       "checksum": "08a1be968420750f0593f092c2b7caab"
