@@ -262,6 +262,16 @@ server <- function(input, output, session) {
   w04_include_terms <- reactiveVal(character())
   w04_exclude_terms <- reactiveVal(character())
 
+  w08_cases_rv <- reactiveVal(NULL)
+  w08_queue_sha_rv <- reactiveVal("")
+  w08_batch_id_rv <- reactiveVal("")
+  w08_case_sha_rv <- reactiveVal(character())
+  w08_species_options <- reactiveVal(character())
+  w08_topic_options <- reactiveVal(list())
+  w08_idx <- reactiveVal(1L)
+  w08_decisions <- reactiveVal(list())
+  w08_status <- reactiveVal("")
+
   decision_ids <- function(ds = decisions()) {
     if (!length(ds)) return(character())
     unique(vapply(ds, function(x) as.character(x$review_case_id %||% ""), character(1)))
@@ -328,6 +338,29 @@ server <- function(input, output, session) {
     read_sheet_w04_queue()
   }
 
+  w08_filter_batch_decisions <- function(ds, sha) {
+    if (!length(ds)) return(list())
+    keep <- vapply(ds,function(x)identical(as.character(x$queue_sha256 %||% ""),sha),logical(1))
+    ds[keep]
+  }
+
+  w08_decision_ids <- function(ds = w08_decisions()) {
+    if(!length(ds)) return(character())
+    unique(vapply(ds,function(x)as.character(x$record_id %||% ""),character(1)))
+  }
+
+  w08_unresolved_indices <- function() {
+    cs <- w08_cases_rv()
+    if(is.null(cs)) return(integer())
+    ids <- vapply(cs,function(x)as.character(x$record_id %||% ""),character(1))
+    which(!ids %in% w08_decision_ids())
+  }
+
+  load_w08_batch <- function() {
+    if(!identical(storage_backend(),"google_sheets")) return(NULL)
+    read_sheet_w08_queue()
+  }
+
   load_batch <- function() {
     if (identical(storage_backend(), "google_sheets")) {
       return(read_sheet_w01_queue())
@@ -367,9 +400,9 @@ server <- function(input, output, session) {
       w04_remaining <- if (w04_total) length(w04_unresolved_indices()) else 0L
       w04_completed <- max(0L, w04_total - w04_remaining)
 
-      annotation_total <- 0L
-      annotation_remaining <- 0L
-      annotation_completed <- 0L
+      annotation_total <- length(w08_cases_rv() %||% list())
+      annotation_remaining <- if (annotation_total) length(w08_unresolved_indices()) else 0L
+      annotation_completed <- max(0L, annotation_total - annotation_remaining)
 
       stage_card <- function(title, workflow, description, total, completed, remaining, button_id = NULL, button_label = NULL, batch = "") {
         card(
@@ -454,7 +487,10 @@ server <- function(input, output, session) {
               "Annotation",
               "Workflow 08",
               "Records requiring species, geography or topic verification.",
-              annotation_total, annotation_completed, annotation_remaining
+              annotation_total, annotation_completed, annotation_remaining,
+              if (annotation_remaining > 0L) "open_w08" else NULL,
+              "Continue annotation",
+              w08_batch_id_rv()
             )
           )
         )
@@ -598,8 +634,11 @@ server <- function(input, output, session) {
     if (access_key_valid(input$access_key)) {
       loaded <- tryCatch({
         batch <- load_batch()
-        all_decisions <- read_active_decisions(decision_path)
-        current_decisions <- filter_batch_decisions(all_decisions, batch$queue_sha256)
+        current_decisions <- list()
+        if (!is.null(batch)) {
+          all_decisions <- read_active_decisions(decision_path)
+          current_decisions <- filter_batch_decisions(all_decisions, batch$queue_sha256)
+        }
         w02_batch <- load_w02_batch()
         if (!is.null(w02_batch)) {
           w02_all_decisions <- active_sheet_w02_decisions()
@@ -624,7 +663,22 @@ server <- function(input, output, session) {
           w04_idx(if (length(w04_unresolved)) w04_unresolved[[1L]] else max(1L,length(w04_batch$cases)))
         }
 
-        cases_rv(batch$cases)
+        w08_batch <- load_w08_batch()
+        if (!is.null(w08_batch)) {
+          w08_all_decisions <- active_sheet_w08_decisions()
+          w08_cases_rv(w08_batch$cases)
+          w08_queue_sha_rv(w08_batch$queue_sha256)
+          w08_batch_id_rv(w08_batch$batch_id)
+          w08_case_sha_rv(w08_batch$case_sha256 %||% character())
+          w08_species_options(w08_batch$species_options %||% character())
+          w08_topic_options(w08_batch$topic_options %||% list())
+          w08_decisions(w08_filter_batch_decisions(w08_all_decisions,w08_batch$queue_sha256))
+          w08_unresolved <- w08_unresolved_indices()
+          w08_idx(if(length(w08_unresolved)) w08_unresolved[[1L]] else max(1L,length(w08_batch$cases)))
+        }
+
+        if (!is.null(batch)) {
+          cases_rv(batch$cases)
         queue_sha_rv(batch$queue_sha256)
         batch_id_rv(batch$batch_id)
         decisions(current_decisions)
@@ -635,12 +689,20 @@ server <- function(input, output, session) {
         } else character()
         unresolved <- which(!ids %in% done_ids)
 
-        if (length(unresolved)) {
-          idx(unresolved[[1L]])
-          complete(FALSE)
+          if (length(unresolved)) {
+            idx(unresolved[[1L]])
+            complete(FALSE)
+          } else {
+            idx(max(1L,length(batch$cases)))
+            complete(TRUE)
+          }
         } else {
-          idx(length(batch$cases))
-          complete(TRUE)
+          cases_rv(NULL)
+          queue_sha_rv("")
+          batch_id_rv("")
+          decisions(list())
+          idx(1L)
+          complete(FALSE)
         }
         TRUE
       }, error = function(e) {
