@@ -56,16 +56,22 @@ ui <- page_fillable(
     .app-shell { max-width:1500px; margin:0 auto; padding:20px; width:100%; }
     .login-shell { max-width:520px; margin:8vh auto 0 auto; padding:20px; width:100%; }
     .record-card { border:1px solid #dde3e8; box-shadow:0 2px 10px rgba(22,33,43,.05); }
-    .record-title { font-size:1.15rem; font-weight:700; line-height:1.35; margin-bottom:1rem; }
-    .record-meta { display:grid; grid-template-columns:90px 1fr; gap:.25rem .75rem; margin:0; }
+    .record-card .card-body { padding:.9rem 1rem; }
+    .record-title { font-size:1.08rem; font-weight:700; line-height:1.3; margin-bottom:.65rem; }
+    .record-meta { display:grid; grid-template-columns:80px 1fr; gap:.15rem .65rem; margin:0; }
     .record-meta dt { color:#66727d; font-weight:600; }
     .record-meta dd { margin:0; overflow-wrap:anywhere; }
-    .abstract-text { line-height:1.55; white-space:pre-wrap; }
+    .abstract-text { line-height:1.42; white-space:pre-wrap; }
     .source-badge { background:#eef3f1; border-radius:999px; padding:.2rem .55rem; font-size:.78rem; }
     .evidence-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:.6rem; }
     .evidence-item { background:#fff; border:1px solid #e1e5e9; border-radius:8px; padding:.65rem .75rem; }
-    .decision-row .btn { min-width:150px; }
-    .saved-note { font-weight:600; color:#1f5d50; }
+    .decision-panel { margin-bottom:.85rem; }
+    .decision-panel .card-body { padding:.75rem 1rem; }
+    .decision-row .btn { min-width:125px; }
+    .decision-panel .form-group { margin-bottom:0; }
+    .decision-panel textarea { min-height:38px !important; height:38px !important; resize:vertical; }
+    .saved-note { font-weight:600; color:#1f5d50; min-height:1.2rem; }
+    .nav-row .btn { min-width:95px; }
   "))),
   uiOutput("root_ui")
 )
@@ -100,25 +106,34 @@ server <- function(input, output, session) {
           div(textOutput("progress_text"))
       ),
       uiOutput("progress_bar"),
-      uiOutput("case_view"),
       card(
-        class = "mt-3",
-        card_header("Decision"),
-        textAreaInput("rationale", "Rationale", rows = 2,
-                      placeholder = "Brief reason for the decision"),
-        div(
-          class = "decision-row d-flex flex-wrap gap-2",
-          actionButton("duplicate", "Same record", class = "btn-success"),
-          actionButton("not_duplicate", "Different records", class = "btn-outline-danger"),
-          actionButton("uncertain", "Unsure", class = "btn-outline-secondary")
-        ),
-        tags$div(class="mt-2 saved-note", textOutput("save_status"))
+        class = "decision-panel",
+        layout_columns(
+          col_widths = c(5, 7),
+          div(
+            textAreaInput(
+              "rationale", "Rationale", rows = 1,
+              placeholder = "Brief reason for the decision"
+            ),
+            tags$div(class="saved-note", textOutput("save_status"))
+          ),
+          div(
+            class = "d-flex flex-column justify-content-end h-100 gap-2",
+            div(
+              class = "decision-row d-flex flex-wrap justify-content-end gap-2",
+              actionButton("duplicate", "Same record", class = "btn-success"),
+              actionButton("not_duplicate", "Different records", class = "btn-outline-danger"),
+              actionButton("uncertain", "Unsure", class = "btn-outline-secondary")
+            ),
+            div(
+              class = "nav-row d-flex justify-content-end gap-2",
+              actionButton("previous", "← Previous"),
+              actionButton("next", "Next →")
+            )
+          )
+        )
       ),
-      div(
-        class = "d-flex justify-content-between mt-3",
-        actionButton("previous", "← Previous"),
-        actionButton("next", "Next →")
-      )
+      uiOutput("case_view")
     )
   })
 
