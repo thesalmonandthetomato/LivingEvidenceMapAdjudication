@@ -731,7 +731,8 @@ read_latest_pipeline_status <- function() {
     "event_id","update_id","event_at_utc","stage","workflow_run_id",
     "last_search_date","canonical_existing","search_results_total",
     "deduplicated_records","enriched_records","retracted_records",
-    "screened_include","screened_exclude","geography_coded","topic_coded",
+    "screened_include","screened_exclude",
+    "geography_with","geography_without","topic_with","topic_without",
     "completed_through","active_workflow","status_label"
   )
   miss <- setdiff(required,names(x))
