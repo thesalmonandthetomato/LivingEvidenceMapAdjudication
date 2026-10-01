@@ -6,7 +6,22 @@ suppressPackageStartupMessages({
 gs4_auth_from_env <- function() {
   sa_json <- Sys.getenv("LEM_GOOGLE_SERVICE_ACCOUNT_JSON", unset = "")
   if (!nzchar(sa_json)) stop("LEM_GOOGLE_SERVICE_ACCOUNT_JSON is not set", call.=FALSE)
-  googlesheets4::gs4_auth(path = sa_json, cache = FALSE)
+
+  credential_path <- sa_json
+  cleanup <- FALSE
+  if (!file.exists(credential_path)) {
+    parsed <- tryCatch(jsonlite::fromJSON(sa_json, simplifyVector = FALSE), error = function(e) NULL)
+    if (is.null(parsed) || is.null(parsed$type) || !identical(parsed$type, "service_account")) {
+      stop("LEM_GOOGLE_SERVICE_ACCOUNT_JSON is neither a readable file path nor valid service-account JSON", call.=FALSE)
+    }
+    credential_path <- tempfile(pattern = "lem-google-service-account-", fileext = ".json")
+    writeLines(sa_json, credential_path, useBytes = TRUE)
+    Sys.chmod(credential_path, mode = "0600")
+    cleanup <- TRUE
+  }
+
+  on.exit(if (cleanup && file.exists(credential_path)) unlink(credential_path), add = TRUE)
+  googlesheets4::gs4_auth(path = credential_path, cache = FALSE)
   invisible(TRUE)
 }
 
