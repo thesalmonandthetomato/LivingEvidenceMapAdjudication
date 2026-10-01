@@ -565,6 +565,42 @@ server <- function(input, output, session) {
       ))
     }
 
+    if (identical(app_view(), "w08")) {
+      return(div(
+        class = "app-shell",
+        div(
+          class = "d-flex justify-content-between align-items-center mb-3",
+          div(
+            tags$h2("LivingEvidenceMap annotation", class="mb-0"),
+            tags$div(
+              sprintf("Workflow 08 · combined annotation verification · %s",w08_batch_id_rv()),
+              class="text-secondary"
+            )
+          ),
+          div(
+            class="d-flex align-items-center gap-3",
+            actionButton("back_to_tasks_w08","Back to tasks",class="btn-outline-secondary btn-sm"),
+            uiOutput("w08_progress_text")
+          )
+        ),
+        uiOutput("w08_progress_bar"),
+        card(
+          class="decision-panel",
+          div(
+            class="d-flex flex-wrap justify-content-between align-items-center gap-2",
+            tags$div(class="saved-note",textOutput("w08_save_status")),
+            div(
+              class="d-flex gap-2",
+              actionButton("w08_save","Save record",class="btn-primary"),
+              actionButton("w08_previous","← Previous"),
+              actionButton("w08_next","Next →")
+            )
+          )
+        ),
+        uiOutput("w08_case_view")
+      ))
+    }
+
     if (complete()) {
       return(div(
         class = "login-shell",
@@ -1135,6 +1171,267 @@ server <- function(input, output, session) {
     invisible(TRUE)
   }
 
+
+  w08_current_case <- reactive({
+    req(authenticated(),w08_cases_rv())
+    w08_cases_rv()[[w08_idx()]]
+  })
+
+  output$w08_progress_text <- renderUI({
+    req(authenticated(),w08_cases_rv())
+    total <- length(w08_cases_rv())
+    remaining <- length(w08_unresolved_indices())
+    tags$span(sprintf("Record %d of %d · %d remaining",w08_idx(),total,remaining))
+  })
+
+  output$w08_progress_bar <- renderUI({
+    req(authenticated(),w08_cases_rv())
+    total <- length(w08_cases_rv())
+    remaining <- length(w08_unresolved_indices())
+    pct <- if(total) round(100*(total-remaining)/total) else 0
+    div(class="progress mb-3",
+        div(class="progress-bar",role="progressbar",
+            style=sprintf("width:%s%%",pct),
+            sprintf("%s%%",pct)))
+  })
+
+  w08_issue_panel <- function(issue,j) {
+    typ <- as.character(issue$issue_type %||% "")
+    av <- issue$automated_value %||% list()
+    decision_id <- paste0("w08_decision_",j)
+
+    label_map <- c(
+      species_none="Species verification",
+      geography_unresolved="Geography verification",
+      geography_evidence_unvalidated="Geography evidence verification",
+      topic_extreme_disagreement="Topic verification",
+      zero_topic_eligibility_uncertain="Topic eligibility verification"
+    )
+    allowed <- as.character(issue$allowed_human_outcomes %||% character())
+    labels <- c(
+      assign_named_species="Assign named species",
+      assign_unspecified_species="Assign unspecified species",
+      exclude_record="Exclude record",
+      assign_country_set="Assign country set",
+      assign_none="Assign no country",
+      accept_model="Accept model geography",
+      override_country_set="Override country set",
+      accept_retained_topics="Accept retained topics",
+      replace_topic_set="Replace topic set",
+      no_code="Retain with no topic code",
+      include_uncoded="Retain uncoded"
+    )
+    choices <- setNames(allowed,unname(labels[allowed]))
+
+    detail <- switch(
+      typ,
+      geography_unresolved = tagList(
+        tags$p(class="mb-1",tags$strong("Model countries: "),as.character(av$luna_country_names %||% "")),
+        tags$p(class="mb-1",tags$strong("Evidence: "),as.character(av$luna_evidence %||% "")),
+        tags$p(class="mb-2",tags$strong("Reason: "),as.character(av$geography_reason %||% ""))
+      ),
+      geography_evidence_unvalidated = tagList(
+        tags$p(class="mb-1",tags$strong("Model countries: "),as.character(av$luna_country_names %||% "")),
+        tags$p(class="mb-1",tags$strong("Evidence: "),as.character(av$luna_evidence %||% "")),
+        tags$p(class="mb-2",tags$strong("Reason: "),as.character(av$geography_reason %||% ""))
+      ),
+      topic_extreme_disagreement = {
+        ps <- av$pathways %||% list()
+        items <- lapply(ps,function(p)tags$li(
+          paste0(as.character(p$hierarchy_path %||% p$path_id %||% ""),
+                 if(nzchar(as.character(p$stars %||% ""))) paste0(" · ",p$stars) else "")
+        ))
+        tagList(
+          tags$p(class="mb-1",sprintf("Mean pairwise Jaccard: %s",as.character(av$mean_pairwise_jaccard %||% ""))),
+          tags$ul(class="mb-2",items)
+        )
+      },
+      zero_topic_eligibility_uncertain = tags$p(class="mb-2","No retained topic was assigned; verify whether the record should remain included."),
+      tags$p(class="mb-2","Workflow 05 returned no eligible species assignment.")
+    )
+
+    extras <- switch(
+      typ,
+      species_none = tagList(
+        selectizeInput(paste0("w08_species_",j),"Named species",choices=w08_species_options(),multiple=TRUE)
+      ),
+      geography_unresolved = tagList(
+        textInput(paste0("w08_iso3_",j),"ISO3 codes (semicolon separated)",""),
+        textInput(paste0("w08_country_",j),"Country names (semicolon separated)","")
+      ),
+      geography_evidence_unvalidated = tagList(
+        textInput(paste0("w08_iso3_",j),"Override ISO3 codes (semicolon separated)",""),
+        textInput(paste0("w08_country_",j),"Override country names (semicolon separated)","")
+      ),
+      topic_extreme_disagreement = {
+        opts <- w08_topic_options()
+        topic_choices <- if(length(opts)) {
+          setNames(
+            vapply(opts,function(x)as.character(x$path_id %||% ""),character(1)),
+            vapply(opts,function(x)as.character(x$hierarchy_path %||% x$path_id %||% ""),character(1))
+          )
+        } else character()
+        tagList(selectizeInput(paste0("w08_topics_",j),"Replacement topic set",choices=topic_choices,multiple=TRUE))
+      },
+      NULL
+    )
+
+    card(
+      class="mb-3",
+      card_header(tags$strong(unname(label_map[[typ]] %||% typ))),
+      div(
+        class="p-3",
+        detail,
+        selectInput(decision_id,"Decision",choices=c("Choose…"="",choices)),
+        extras
+      )
+    )
+  }
+
+  output$w08_case_view <- renderUI({
+    z <- w08_current_case()
+    issues <- z$issues %||% list()
+    card(
+      class="record-card",
+      card_header(
+        div(
+          class="d-flex justify-content-between align-items-center",
+          tags$strong(sprintf("Annotation review · %d issue%s",length(issues),if(length(issues)==1L)"" else "s")),
+          tags$span(class="task-badge",as.character(z$record_id %||% ""))
+        )
+      ),
+      div(
+        class="compact-record-body w04-text",
+        div(class="record-title",as.character(z$title %||% "")),
+        tags$h6(class="abstract-heading","Abstract"),
+        div(class="abstract-text",normalise_display_text(z$abstract %||% "")),
+        tags$hr(class="record-divider"),
+        tagList(lapply(seq_along(issues),function(j)w08_issue_panel(issues[[j]],j)))
+      )
+    )
+  })
+
+  output$w08_save_status <- renderText(w08_status())
+
+  split_semicolon <- function(x) {
+    z <- trimws(strsplit(as.character(x %||% ""),";",fixed=TRUE)[[1L]])
+    z[nzchar(z)]
+  }
+
+  save_w08_record <- function() {
+    z <- w08_current_case()
+    rid <- as.character(z$record_id)
+    issues <- z$issues %||% list()
+    now <- format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ")
+    issue_decisions <- vector("list",length(issues))
+
+    for(j in seq_along(issues)) {
+      issue <- issues[[j]]
+      typ <- as.character(issue$issue_type %||% "")
+      choice <- as.character(input[[paste0("w08_decision_",j)]] %||% "")
+      allowed <- as.character(issue$allowed_human_outcomes %||% character())
+      if(!nzchar(choice) || !choice %in% allowed) {
+        w08_status(sprintf("Choose a decision for %s.",typ))
+        return(FALSE)
+      }
+
+      final_value <- NULL
+      if(typ=="species_none") {
+        if(choice=="assign_named_species") {
+          vals <- as.character(input[[paste0("w08_species_",j)]] %||% character())
+          vals <- vals[nzchar(vals)]
+          if(!length(vals)) {w08_status("Select at least one named species.");return(FALSE)}
+          final_value <- list(included=TRUE,farmed_species=vals)
+        } else if(choice=="assign_unspecified_species") {
+          final_value <- list(included=TRUE,farmed_species=c("Unspecified species"))
+        } else if(choice=="exclude_record") {
+          final_value <- list(included=FALSE)
+        }
+      } else if(typ %in% c("geography_unresolved","geography_evidence_unvalidated")) {
+        if(choice %in% c("assign_country_set","override_country_set")) {
+          iso <- toupper(split_semicolon(input[[paste0("w08_iso3_",j)]]))
+          country <- split_semicolon(input[[paste0("w08_country_",j)]])
+          if(!length(iso)||length(iso)!=length(country)||any(nchar(iso)!=3L)) {
+            w08_status("Enter matching ISO3 codes and country names for the geography decision.")
+            return(FALSE)
+          }
+          final_value <- list(geography_status="RESOLVED",iso3c=iso,country_names=country)
+        } else if(choice=="assign_none") {
+          final_value <- list(geography_status="NONE",iso3c=character(),country_names=character())
+        } else if(choice=="accept_model") {
+          # Dynamic W08 finalisation preserves the existing W06 value for accept_model.
+          final_value <- NULL
+        }
+      } else if(typ=="topic_extreme_disagreement") {
+        retained <- av <- issue$automated_value$pathways %||% list()
+        retained_ids <- vapply(Filter(function(p)isTRUE(p$retained_for_analysis),retained),function(p)as.character(p$path_id),character(1))
+        if(choice=="accept_retained_topics") {
+          final_value <- list(included=TRUE,path_ids=retained_ids)
+        } else if(choice=="replace_topic_set") {
+          vals <- as.character(input[[paste0("w08_topics_",j)]] %||% character())
+          vals <- vals[nzchar(vals)]
+          if(!length(vals)) {w08_status("Select at least one replacement topic.");return(FALSE)}
+          final_value <- list(included=TRUE,path_ids=vals)
+        } else if(choice=="exclude_record") {
+          final_value <- list(included=FALSE)
+        } else if(choice=="no_code") {
+          final_value <- list(included=TRUE,path_ids=character())
+        }
+      } else if(typ=="zero_topic_eligibility_uncertain") {
+        if(choice=="include_uncoded") final_value <- list(included=TRUE,path_ids=character())
+        if(choice=="exclude_record") final_value <- list(included=FALSE)
+      }
+
+      item <- list(
+        review_key=paste(rid,typ,sep="::"),
+        record_id=rid,
+        issue_type=typ,
+        issue_state_sha256=as.character(issue$issue_state_sha256 %||% ""),
+        decision=choice,
+        final_value=final_value,
+        rationale="Adjudicated in combined Workflow 08 Shiny review",
+        reviewer=reviewer,
+        resolved_at_utc=now,
+        queue_sha256=w08_queue_sha_rv()
+      )
+      issue_decisions[[j]] <- item
+    }
+
+    current <- w08_decisions()
+    prior <- NULL
+    if(length(current)) {
+      hits <- Filter(function(x)identical(as.character(x$record_id %||% ""),rid),current)
+      if(length(hits)) prior <- hits[[1L]]
+    }
+    case_sha <- as.character(w08_case_sha_rv()[[rid]] %||% "")
+    decision <- list(
+      record_id=rid,
+      queue_sha256=w08_queue_sha_rv(),
+      record_case_sha256=case_sha,
+      issue_decisions_json=jsonlite::toJSON(issue_decisions,auto_unbox=TRUE,null="null",na="null",digits=NA),
+      reviewer=reviewer,
+      resolved_at_utc=now
+    )
+    saved <- tryCatch(
+      append_sheet_w08_decision(decision,prior_decision=prior),
+      error=function(e){w08_status(paste("Save failed:",conditionMessage(e)));NULL}
+    )
+    if(is.null(saved)) return(FALSE)
+
+    remaining <- Filter(function(x)!identical(as.character(x$record_id %||% ""),rid),current)
+    w08_decisions(c(remaining,list(saved)))
+    w08_status(sprintf("Saved record at %s",format(Sys.time(),"%H:%M:%S")))
+    TRUE
+  }
+
+  advance_w08 <- function() {
+    unresolved <- w08_unresolved_indices()
+    if(!length(unresolved)) {app_view("tasks");return(invisible(TRUE))}
+    later <- unresolved[unresolved>w08_idx()]
+    w08_idx(if(length(later)) later[[1L]] else unresolved[[1L]])
+    invisible(TRUE)
+  }
+
   save_choice <- function(choice) {
     req(authenticated())
     z <- current_case()
@@ -1206,6 +1503,17 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$back_to_tasks_w04, app_view("tasks"))
+  observeEvent(input$open_w08, {
+    unresolved <- w08_unresolved_indices()
+    if(length(unresolved)) w08_idx(unresolved[[1L]])
+    app_view("w08")
+  })
+  observeEvent(input$back_to_tasks_w08, app_view("tasks"))
+  observeEvent(input$w08_save, {
+    if(save_w08_record()) advance_w08()
+  })
+  observeEvent(input$w08_previous, if(w08_idx()>1L) w08_idx(w08_idx()-1L))
+  observeEvent(input$w08_next, if(w08_idx()<length(w08_cases_rv())) w08_idx(w08_idx()+1L))
   observeEvent(input$w04_retain, {
     if(save_w04_choice("retain")) advance_w04()
   })
