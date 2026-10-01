@@ -126,10 +126,15 @@ export_active_sheet_w01_decisions <- function(output_path) {
 
 
 read_sheet_w01_queue <- function(
-  tab = Sys.getenv("LEM_W01_QUEUE_TAB", unset = "queue_w01_legacy_730")
+  tab = Sys.getenv("LEM_W01_QUEUE_TAB", unset = "")
 ) {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
+
+  if (!nzchar(tab)) {
+    tabs <- googlesheets4::sheet_names(ss)
+    tab <- if ("queue_w01_active" %in% tabs) "queue_w01_active" else "queue_w01_legacy_730"
+  }
 
   x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
   required <- c("batch_id","queue_sha256","case_index","review_case_id","case_json")
