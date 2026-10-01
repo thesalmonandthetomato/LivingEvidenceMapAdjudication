@@ -1,0 +1,68 @@
+name: Validate and build Connect Cloud manifest
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app.R'
+      - 'R/**'
+      - 'fixtures/**'
+      - 'tests/**'
+      - 'scripts/make_manifest.R'
+      - '.github/workflows/validate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.6.0'
+          use-public-rspm: true
+
+      - name: Install dependencies
+        shell: Rscript {0}
+        run: install.packages(c("rsconnect","shiny","bslib","jsonlite","digest","googlesheets4"))
+
+      - name: Parse application files
+        shell: Rscript {0}
+        run: |
+          parse(file="app.R")
+          parse(file="R/auth.R")
+          parse(file="R/storage_backend.R")
+          parse(file="R/storage_local.R")
+          parse(file="R/storage_sheets.R")
+          parse(file="R/w01_contract.R")
+          cat("PASS: R files parse\n")
+
+      - name: Test W01 contract
+        shell: Rscript {0}
+        run: source("tests/test_w01_contract.R")
+
+      - name: Generate Connect Cloud manifest
+        shell: Rscript {0}
+        run: |
+          rsconnect::writeManifest(appDir=".")
+          stopifnot(file.exists("manifest.json"))
+          cat("PASS: manifest.json generated\n")
+
+      - name: Commit manifest if changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          if git diff --cached --quiet; then
+            echo "PASS: manifest.json already current"
+            exit 0
+          fi
+          git commit -m "build: update Connect Cloud manifest"
+          git push origin HEAD:main
