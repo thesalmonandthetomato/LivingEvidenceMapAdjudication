@@ -156,12 +156,19 @@ ui <- page_fillable(
     .decision-row .btn { min-width:125px; }
     .saved-note { font-weight:600; color:#1f5d50; min-height:1.2rem; }
     .nav-row .btn { min-width:95px; }
+    .task-shell { max-width:1050px; margin:4vh auto 0 auto; padding:20px; width:100%; }
+    .task-card { border:1px solid #dde3e8; box-shadow:0 2px 10px rgba(22,33,43,.05); }
+    .task-kpis { display:grid; grid-template-columns:repeat(3,minmax(90px,1fr)); gap:.65rem; margin:.8rem 0; }
+    .task-kpi { background:#f7f8fa; border:1px solid #e1e5e9; border-radius:8px; padding:.55rem .65rem; }
+    .task-kpi strong { display:block; font-size:1.15rem; }
+    .task-badge { background:#eef3f1; border-radius:999px; padding:.2rem .55rem; font-size:.78rem; }
   "))),
   uiOutput("root_ui")
 )
 
 server <- function(input, output, session) {
   authenticated <- reactiveVal(FALSE)
+  app_view <- reactiveVal("tasks")
   failed_attempts <- reactiveVal(0L)
   lock_until <- reactiveVal(as.POSIXct(NA))
   idx <- reactiveVal(1L)
@@ -216,6 +223,52 @@ server <- function(input, output, session) {
       ))
     }
 
+    if (identical(app_view(), "tasks")) {
+      total <- length(cases_rv() %||% list())
+      remaining <- length(unresolved_indices())
+      completed_n <- max(0L, total - remaining)
+
+      return(div(
+        class = "task-shell",
+        div(
+          class = "d-flex justify-content-between align-items-end mb-3",
+          div(
+            tags$h2("Outstanding adjudication tasks", class = "mb-1"),
+            tags$div("Choose a workflow to continue.", class = "text-secondary")
+          ),
+          tags$span(class = "task-badge", "LivingEvidenceMap")
+        ),
+        card(
+          class = "task-card",
+          card_header(
+            div(
+              class = "d-flex justify-content-between align-items-center",
+              tags$strong("Workflow 01 · duplicate review"),
+              tags$span(class = "task-badge", batch_id_rv())
+            )
+          ),
+          div(
+            class = "p-3",
+            tags$p(
+              class = "mb-2",
+              "Review potential duplicate bibliographic records and decide whether each pair represents the same record."
+            ),
+            div(
+              class = "task-kpis",
+              div(class = "task-kpi", tags$span(class = "text-secondary small", "Total"), tags$strong(total)),
+              div(class = "task-kpi", tags$span(class = "text-secondary small", "Completed"), tags$strong(completed_n)),
+              div(class = "task-kpi", tags$span(class = "text-secondary small", "Remaining"), tags$strong(remaining))
+            ),
+            actionButton(
+              "open_w01",
+              if (remaining > 0L) "Continue Workflow 01" else "Review Workflow 01",
+              class = "btn-primary"
+            )
+          )
+        )
+      ))
+    }
+
     if (complete()) {
       return(div(
         class = "login-shell",
@@ -224,7 +277,11 @@ server <- function(input, output, session) {
           tags$h3("Finished"),
           tags$p(sprintf("All %d cases in this batch have been adjudicated.", length(cases_rv()))),
           tags$p("Your decisions have been saved."),
-          actionButton("review_last", "Review last case", class = "btn-outline-secondary")
+          div(
+            class = "d-flex gap-2",
+            actionButton("back_to_tasks_complete", "Back to tasks", class = "btn-primary"),
+            actionButton("review_last", "Review last case", class = "btn-outline-secondary")
+          )
         )
       ))
     }
@@ -232,9 +289,15 @@ server <- function(input, output, session) {
     div(
       class = "app-shell",
       div(class = "d-flex justify-content-between align-items-center mb-3",
-          div(tags$h2("LivingEvidenceMap adjudication", class="mb-0"),
-              tags$div(textOutput("batch_label"), class="text-secondary")),
-          div(textOutput("progress_text"))
+          div(
+            tags$h2("LivingEvidenceMap adjudication", class="mb-0"),
+            tags$div(textOutput("batch_label"), class="text-secondary")
+          ),
+          div(
+            class = "d-flex align-items-center gap-3",
+            actionButton("back_to_tasks", "Back to tasks", class = "btn-outline-secondary btn-sm"),
+            div(textOutput("progress_text"))
+          )
       ),
       uiOutput("progress_bar"),
       card(
@@ -304,6 +367,7 @@ server <- function(input, output, session) {
 
       if (isTRUE(loaded)) {
         authenticated(TRUE)
+        app_view("tasks")
         failed_attempts(0L)
         login_status("")
       }
@@ -439,6 +503,23 @@ server <- function(input, output, session) {
     idx(if (length(later)) later[[1L]] else unresolved[[1L]])
     invisible(TRUE)
   }
+
+  observeEvent(input$open_w01, {
+    complete(FALSE)
+    unresolved <- unresolved_indices()
+    if (length(unresolved)) idx(unresolved[[1L]])
+    app_view("w01")
+  })
+
+  observeEvent(input$back_to_tasks, {
+    complete(FALSE)
+    app_view("tasks")
+  })
+
+  observeEvent(input$back_to_tasks_complete, {
+    complete(FALSE)
+    app_view("tasks")
+  })
 
   observeEvent(input$duplicate, {
     if (save_choice("duplicate")) advance_after_save()
