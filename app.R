@@ -265,6 +265,7 @@ server <- function(input, output, session) {
   cases_rv <- reactiveVal(NULL)
   queue_sha_rv <- reactiveVal("")
   batch_id_rv <- reactiveVal("")
+  batch_status_rv <- reactiveVal("")
   decisions <- reactiveVal(list())
 
   w02_cases_rv <- reactiveVal(NULL)
@@ -272,6 +273,7 @@ server <- function(input, output, session) {
   w02_batch_id_rv <- reactiveVal("")
   w02_idx <- reactiveVal(1L)
   w02_decisions <- reactiveVal(list())
+  w02_batch_status_rv <- reactiveVal("")
   w02_status <- reactiveVal("")
 
   w04_cases_rv <- reactiveVal(NULL)
@@ -279,6 +281,7 @@ server <- function(input, output, session) {
   w04_batch_id_rv <- reactiveVal("")
   w04_idx <- reactiveVal(1L)
   w04_decisions <- reactiveVal(list())
+  w04_batch_status_rv <- reactiveVal("")
   w04_status <- reactiveVal("")
   w04_include_terms <- reactiveVal(character())
   w04_exclude_terms <- reactiveVal(character())
@@ -291,6 +294,7 @@ server <- function(input, output, session) {
   w08_topic_options <- reactiveVal(list())
   w08_idx <- reactiveVal(1L)
   w08_decisions <- reactiveVal(list())
+  w08_batch_status_rv <- reactiveVal("")
   w08_status <- reactiveVal("")
 
   decision_ids <- function(ds = decisions()) {
@@ -382,6 +386,22 @@ server <- function(input, output, session) {
     read_sheet_w08_queue()
   }
 
+  mark_review_complete <- function(stage,batch_id,queue_sha,status_rv) {
+    current <- tryCatch(
+      append_batch_status(
+        stage=stage,
+        batch_id=batch_id,
+        queue_sha256=queue_sha,
+        status="review_complete",
+        message="All active Shiny decisions are complete and persistently saved."
+      ),
+      error=function(e)e
+    )
+    if(inherits(current,"error")) stop(conditionMessage(current),call.=FALSE)
+    status_rv("review_complete")
+    invisible(TRUE)
+  }
+
   load_batch <- function() {
     if (identical(storage_backend(), "google_sheets")) {
       return(read_sheet_w01_queue())
@@ -425,7 +445,7 @@ server <- function(input, output, session) {
       annotation_remaining <- if (annotation_total) length(w08_unresolved_indices()) else 0L
       annotation_completed <- max(0L, annotation_total - annotation_remaining)
 
-      stage_card <- function(title, workflow, description, total, completed, remaining, button_id = NULL, button_label = NULL, batch = "") {
+      stage_card <- function(title, workflow, description, total, completed, remaining, button_id = NULL, button_label = NULL, batch = "", lifecycle_status = "") {
         card(
           class = "task-card h-100",
           card_header(
@@ -444,7 +464,10 @@ server <- function(input, output, session) {
               div(class = "task-kpi", tags$span(class = "text-secondary small", "Completed"), tags$strong(completed)),
               div(class = "task-kpi", tags$span(class = "text-secondary small", "Remaining"), tags$strong(remaining))
             ),
-            if (nzchar(batch)) tags$div(class = "text-secondary small mb-2", batch),
+            if (nzchar(batch)) tags$div(class = "text-secondary small mb-1", batch),
+            if (identical(lifecycle_status,"review_complete")) {
+              tags$div(class="small mb-2",tags$span(class="task-badge","Awaiting workflow completion"))
+            },
             if (!is.null(button_id) && remaining > 0L) {
               actionButton(button_id, button_label, class = "btn-primary mt-auto")
             } else {
@@ -475,7 +498,8 @@ server <- function(input, output, session) {
               w01_total, w01_completed, w01_remaining,
               if (w01_remaining > 0L) "open_w01" else NULL,
               "Continue deduplication",
-              batch_id_rv()
+              batch_id_rv(),
+              batch_status_rv()
             )
           ),
           div(
@@ -487,7 +511,8 @@ server <- function(input, output, session) {
               w02_total, w02_completed, w02_remaining,
               if (w02_remaining > 0L) "open_w02" else NULL,
               "Continue enrichment",
-              w02_batch_id_rv()
+              w02_batch_id_rv(),
+              w02_batch_status_rv()
             )
           ),
           div(
@@ -499,7 +524,8 @@ server <- function(input, output, session) {
               w04_total, w04_completed, w04_remaining,
               if (w04_remaining > 0L) "open_w04" else NULL,
               "Continue screening",
-              w04_batch_id_rv()
+              w04_batch_id_rv(),
+              w04_batch_status_rv()
             )
           ),
           div(
@@ -511,7 +537,8 @@ server <- function(input, output, session) {
               annotation_total, annotation_completed, annotation_remaining,
               if (annotation_remaining > 0L) "open_w08" else NULL,
               "Continue annotation",
-              w08_batch_id_rv()
+              w08_batch_id_rv(),
+              w08_batch_status_rv()
             )
           )
         )
@@ -702,6 +729,7 @@ server <- function(input, output, session) {
           w02_cases_rv(w02_batch$cases)
           w02_queue_sha_rv(w02_batch$queue_sha256)
           w02_batch_id_rv(w02_batch$batch_id)
+          w02_batch_status_rv(w02_batch$batch_status %||% "")
           w02_decisions(w02_filter_batch_decisions(w02_all_decisions, w02_batch$queue_sha256))
           w02_unresolved <- w02_unresolved_indices()
           w02_idx(if (length(w02_unresolved)) w02_unresolved[[1L]] else max(1L, length(w02_batch$cases)))
@@ -713,6 +741,7 @@ server <- function(input, output, session) {
           w04_cases_rv(w04_batch$cases)
           w04_queue_sha_rv(w04_batch$queue_sha256)
           w04_batch_id_rv(w04_batch$batch_id)
+          w04_batch_status_rv(w04_batch$batch_status %||% "")
           w04_include_terms(w04_batch$highlight_include %||% character())
           w04_exclude_terms(w04_batch$highlight_exclude %||% character())
           w04_decisions(w04_filter_batch_decisions(w04_all_decisions, w04_batch$queue_sha256))
@@ -726,6 +755,7 @@ server <- function(input, output, session) {
           w08_cases_rv(w08_batch$cases)
           w08_queue_sha_rv(w08_batch$queue_sha256)
           w08_batch_id_rv(w08_batch$batch_id)
+          w08_batch_status_rv(w08_batch$batch_status %||% "")
           w08_case_sha_rv(w08_batch$case_sha256 %||% character())
           w08_species_options(w08_batch$species_options %||% character())
           w08_topic_options(w08_batch$topic_options %||% list())
@@ -757,6 +787,7 @@ server <- function(input, output, session) {
           cases_rv(NULL)
           queue_sha_rv("")
           batch_id_rv("")
+          batch_status_rv("")
           decisions(list())
           idx(1L)
           complete(FALSE)
@@ -1071,6 +1102,7 @@ server <- function(input, output, session) {
   advance_w02 <- function() {
     unresolved <- w02_unresolved_indices()
     if (!length(unresolved)) {
+      mark_review_complete("02",w02_batch_id_rv(),w02_queue_sha_rv(),w02_batch_status_rv)
       dispatch_completed_w02()
       app_view("tasks")
       return(invisible(TRUE))
@@ -1184,6 +1216,7 @@ server <- function(input, output, session) {
   advance_w04 <- function() {
     unresolved <- w04_unresolved_indices()
     if(!length(unresolved)) {
+      mark_review_complete("04",w04_batch_id_rv(),w04_queue_sha_rv(),w04_batch_status_rv)
       app_view("tasks")
       return(invisible(TRUE))
     }
@@ -1447,7 +1480,11 @@ server <- function(input, output, session) {
 
   advance_w08 <- function() {
     unresolved <- w08_unresolved_indices()
-    if(!length(unresolved)) {app_view("tasks");return(invisible(TRUE))}
+    if(!length(unresolved)) {
+      mark_review_complete("08",w08_batch_id_rv(),w08_queue_sha_rv(),w08_batch_status_rv)
+      app_view("tasks")
+      return(invisible(TRUE))
+    }
     later <- unresolved[unresolved>w08_idx()]
     w08_idx(if(length(later)) later[[1L]] else unresolved[[1L]])
     invisible(TRUE)
@@ -1493,6 +1530,7 @@ server <- function(input, output, session) {
   advance_after_save <- function() {
     unresolved <- unresolved_indices()
     if (!length(unresolved)) {
+      mark_review_complete("01",batch_id_rv(),queue_sha_rv(),batch_status_rv)
       complete(TRUE)
       return(invisible(TRUE))
     }
