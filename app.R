@@ -289,6 +289,7 @@ server <- function(input, output, session) {
   w08_cases_rv <- reactiveVal(NULL)
   w08_queue_sha_rv <- reactiveVal("")
   w08_batch_id_rv <- reactiveVal("")
+  w08_source_run_id_rv <- reactiveVal("")
   w08_case_sha_rv <- reactiveVal(character())
   w08_species_options <- reactiveVal(character())
   w08_topic_options <- reactiveVal(list())
@@ -761,6 +762,7 @@ server <- function(input, output, session) {
           w08_cases_rv(w08_batch$cases)
           w08_queue_sha_rv(w08_batch$queue_sha256)
           w08_batch_id_rv(w08_batch$batch_id)
+          w08_source_run_id_rv(w08_batch$source_run_id %||% "")
           w08_batch_status_rv(w08_batch$batch_status %||% "")
           w08_case_sha_rv(w08_batch$case_sha256 %||% character())
           w08_species_options(w08_batch$species_options %||% character())
@@ -1502,6 +1504,14 @@ server <- function(input, output, session) {
     unresolved <- w08_unresolved_indices()
     if(!length(unresolved)) {
       mark_review_complete("08",w08_batch_id_rv(),w08_queue_sha_rv(),w08_batch_status_rv)
+      dispatched <- tryCatch({
+        dispatch_w08_resume(w08_source_run_id_rv(),w08_batch_id_rv(),w08_queue_sha_rv())
+        TRUE
+      }, error=function(e){
+        w08_status(paste("Review complete, but W08 resume dispatch failed:",conditionMessage(e)))
+        FALSE
+      })
+      if(dispatched) w08_status("Review complete. Workflow 08 resume dispatched.")
       app_view("tasks")
       return(invisible(TRUE))
     }
