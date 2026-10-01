@@ -1667,10 +1667,10 @@
   },
   "files": {
     ".github/workflows/validate.yml": {
-      "checksum": "4cd35861ac9978879c644bcf5e84c918"
+      "checksum": "00428ae81b51911bba2303e290040491"
     },
     "app.R": {
-      "checksum": "1e5fa82bf5cc18e3baefce28261fd973"
+      "checksum": "058cf41fa18e67a1424de2c45d8e607e"
     },
     "docs/workflow02_adjudication_contract.md": {
       "checksum": "70e8056f8d6149f52ed939221645e1f9"
@@ -1684,6 +1684,9 @@
     "R/auth.R": {
       "checksum": "386d3f17d2856f50d104d87761906e16"
     },
+    "R/github_dispatch.R": {
+      "checksum": "7505090785f581dc91990c07a29e104a"
+    },
     "R/storage_backend.R": {
       "checksum": "fdc863ed451e450d5416662148f4f63a"
     },
@@ -1691,7 +1694,7 @@
       "checksum": "04242516ce13f82c81a551f4c1784928"
     },
     "R/storage_sheets.R": {
-      "checksum": "a85c87bbd173ac566f81a90620e45735"
+      "checksum": "15a8265545ca145628d4940f7c848e1c"
     },
     "R/w01_contract.R": {
       "checksum": "08a1be968420750f0593f092c2b7caab"
