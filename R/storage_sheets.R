@@ -133,8 +133,17 @@ read_sheet_w01_queue <- function(
 
   if (!nzchar(tab)) {
     tabs <- googlesheets4::sheet_names(ss)
-    tab <- if ("queue_w01_active" %in% tabs) "queue_w01_active" else "queue_w01_legacy_730"
+    if ("queue_w01_active" %in% tabs) {
+      tab <- "queue_w01_active"
+    } else if ("queue_w01_legacy_730" %in% tabs) {
+      tab <- "queue_w01_legacy_730"
+    } else {
+      return(NULL)
+    }
   }
+
+  tabs <- googlesheets4::sheet_names(ss)
+  if (!tab %in% tabs) return(NULL)
 
   x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
   required <- c("batch_id","queue_sha256","case_index","review_case_id","case_json")
@@ -149,7 +158,7 @@ read_sheet_w01_queue <- function(
   batches <- unique(x$batch_id)
   if (length(hashes) != 1L || !nzchar(hashes[[1L]])) stop("W01 queue has invalid queue_sha256", call.=FALSE)
   if (length(batches) != 1L || !nzchar(batches[[1L]])) stop("W01 queue has invalid batch_id", call.=FALSE)
-  if (anyDuplicated(x_core$review_case_id)) stop("W01 queue contains duplicate review_case_id", call.=FALSE)
+  if (anyDuplicated(x$review_case_id)) stop("W01 queue contains duplicate review_case_id", call.=FALSE)
 
   reconstructed <- paste0(paste(x$case_json, collapse = "\n"), "\n")
   actual_sha <- digest::digest(reconstructed, algo = "sha256", serialize = FALSE)
