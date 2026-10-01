@@ -69,18 +69,16 @@ active_sheet_decisions <- function() {
   })
 }
 
-append_sheet_decision <- function(decision) {
+append_sheet_decision <- function(decision, prior_decision = NULL) {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tab <- sheet_decision_tab()
 
-  current <- active_sheet_decisions()
-  prior <- current[[as.character(decision$review_case_id)]]
   decision_id <- paste0("dec-", digest::digest(
     paste(decision$review_case_id, decision$resolved_at_utc, decision$decision, sep="|"),
     algo="sha256", serialize=FALSE
   ))
-  supersedes <- if (is.null(prior)) "" else as.character(prior$decision_id)
+  supersedes <- if (is.null(prior_decision)) "" else as.character(prior_decision$decision_id %||% "")
 
   row <- data.frame(
     decision_id = decision_id,
@@ -96,10 +94,15 @@ append_sheet_decision <- function(decision) {
 
   googlesheets4::sheet_append(ss, data = row, sheet = tab)
 
-  verify <- active_sheet_decisions()[[as.character(decision$review_case_id)]]
-  if (is.null(verify) || !identical(as.character(verify$decision_id), decision_id)) {
+  # Verify persistence with one post-write read. Avoid repeated authentication
+  # and full-log reads inside a single adjudication action.
+  x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
+  hits <- x[as.character(x$decision_id) == decision_id, , drop = FALSE]
+  if (nrow(hits) != 1L) {
     stop("Google Sheets write could not be verified; case remains unsaved", call.=FALSE)
   }
+
+  verify <- normalise_sheet_rows(hits)[[1L]]
   invisible(verify)
 }
 
