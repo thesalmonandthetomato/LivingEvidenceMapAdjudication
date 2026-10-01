@@ -719,6 +719,39 @@ pipeline_status_tab <- function() {
 }
 
 read_latest_pipeline_status <- function() {
+  repo_url <- Sys.getenv(
+    "LEM_CURRENT_RUN_STATUS_URL",
+    unset = "https://raw.githubusercontent.com/thesalmonandthetomato/LivingEvidenceMap/workflow01-final-architecture/docs/current_run/current_run_status.json"
+  )
+  current <- tryCatch(
+    jsonlite::fromJSON(repo_url, simplifyVector = FALSE),
+    error = function(e) NULL
+  )
+  if (!is.null(current) && identical(as.character(current$schema), "living-evidence-map-current-run-status-v1")) {
+    val <- function(x) if (is.null(x) || !length(x)) "" else as.character(x[[1L]])
+    return(list(
+      update_id = val(current$update_id),
+      event_at_utc = val(current$last_updated_at_utc),
+      stage = val(current$progress$current_stage),
+      workflow_run_id = val(current$workflow_runs[[val(current$progress$current_stage)]]),
+      last_search_date = val(current$search$search_date),
+      canonical_existing = val(current$baseline$canonical_records),
+      search_results_total = val(current$counts$search_results),
+      deduplicated_records = val(current$counts$deduplicated_records),
+      enriched_records = val(current$counts$enriched_records),
+      retracted_records = val(current$counts$retraction_exclusions),
+      screened_include = val(current$counts$screened_include),
+      screened_exclude = val(current$counts$screened_exclude),
+      geography_with = val(current$counts$geography$with),
+      geography_without = val(current$counts$geography$without),
+      topic_with = val(current$counts$topics$with),
+      topic_without = val(current$counts$topics$without),
+      completed_through = val(current$progress$completed_through),
+      active_workflow = val(current$progress$active_position),
+      status_label = val(current$progress$status_label)
+    ))
+  }
+
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tab <- pipeline_status_tab()
@@ -727,17 +760,29 @@ read_latest_pipeline_status <- function() {
   x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
   if(!nrow(x)) return(NULL)
 
-  required <- c(
+  base <- c(
     "event_id","update_id","event_at_utc","stage","workflow_run_id",
     "last_search_date","canonical_existing","search_results_total",
     "deduplicated_records","enriched_records","retracted_records",
     "screened_include","screened_exclude",
-    "geography_with","geography_without","topic_with","topic_without",
     "completed_through","active_workflow","status_label"
   )
-  miss <- setdiff(required,names(x))
+  miss <- setdiff(base,names(x))
   if(length(miss)) stop("pipeline_run_status missing field(s): ",paste(miss,collapse=", "),call.=FALSE)
 
-  x <- x[,required,drop=FALSE]
-  x[nrow(x),,drop=FALSE] |> as.list()
+  if(all(c("geography_with","geography_without","topic_with","topic_without") %in% names(x))) {
+    cols <- c(base[1:13],"geography_with","geography_without","topic_with","topic_without",base[14:16])
+    return(x[nrow(x),cols,drop=FALSE] |> as.list())
+  }
+
+  if(all(c("geography_coded","topic_coded") %in% names(x))) {
+    z <- x[nrow(x),base,drop=FALSE] |> as.list()
+    z$geography_with <- as.character(x$geography_coded[[nrow(x)]])
+    z$geography_without <- ""
+    z$topic_with <- as.character(x$topic_coded[[nrow(x)]])
+    z$topic_without <- ""
+    return(z)
+  }
+
+  NULL
 }
