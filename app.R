@@ -524,8 +524,7 @@ server <- function(input, output, session) {
               if(is.null(m)) "—" else fmt_pipeline_n(m$manually_screened)
             } else {
               paste0(fmt_pipeline_n(m$manually_screened)," · κ ",sprintf("%.3f",m$kappa))
-            },
-            "model vs manual"
+            }
           )
         },
         kpi(
