@@ -202,7 +202,7 @@ ui <- page_fillable(
     .record-divider { margin:.55rem 0 .45rem 0; }
     .abstract-heading { margin:0 0 .35rem 0; }
     .abstract-text { line-height:1.32; white-space:normal; }
-    .w04-text { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; font-variant-ligatures:none; font-feature-settings:"liga" 0; letter-spacing:normal; word-spacing:normal; }
+    .w04-text { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; font-variant-ligatures:none; font-feature-settings:'liga' 0; letter-spacing:normal; word-spacing:normal; }
     .w04-citation-grid { display:grid; grid-template-columns:minmax(260px,2.4fr) minmax(70px,.45fr) minmax(180px,1.4fr) minmax(70px,.45fr) minmax(90px,.6fr); gap:.4rem .8rem; margin:.2rem 0 .35rem 0; align-items:start; }
     .w04-citation-item { min-width:0; }
     .w04-citation-label { display:block; color:#66727d; font-size:.78rem; font-weight:600; margin-bottom:.05rem; }
