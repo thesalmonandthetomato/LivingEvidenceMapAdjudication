@@ -300,7 +300,9 @@ server <- function(input, output, session) {
 
   decision_ids <- function(ds = decisions()) {
     if (!length(ds)) return(character())
-    unique(vapply(ds, function(x) as.character(x$review_case_id %||% ""), character(1)))
+    keep <- vapply(ds,function(x)as.character(x$decision %||% "") %in% c("duplicate","not_duplicate"),logical(1))
+    if(!any(keep)) return(character())
+    unique(vapply(ds[keep], function(x) as.character(x$review_case_id %||% ""), character(1)))
   }
 
   filter_batch_decisions <- function(ds, sha) {
