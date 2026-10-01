@@ -600,6 +600,7 @@ read_sheet_w08_queue <- function(
 
   x <- x[order(as.integer(x$case_index)),,drop=FALSE]
   core <- x[,required,drop=FALSE]
+  source_run_id <- if("source_run_id" %in% names(x)) as.character(x$source_run_id[[1L]] %||% "") else ""
   hashes <- unique(core$queue_sha256)
   batches <- unique(core$batch_id)
   if(length(hashes)!=1L || !nzchar(hashes[[1L]])) stop("W08 queue has invalid queue_sha256",call.=FALSE)
@@ -637,6 +638,7 @@ read_sheet_w08_queue <- function(
     case_sha256=case_sha,
     species_options=species_options,
     topic_options=topic_options,
+    source_run_id=source_run_id,
     batch_status=status
   )
 }
