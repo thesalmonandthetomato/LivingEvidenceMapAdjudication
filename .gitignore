@@ -1,0 +1,6 @@
+local_state/
+.Rhistory
+.RData
+.Rproj.user/
+*.Rproj
+secrets/
