@@ -290,6 +290,13 @@ server <- function(input, output, session) {
   save_choice <- function(choice) {
     req(authenticated())
     z <- current_case()
+    current <- decisions()
+    prior <- NULL
+    if (length(current)) {
+      hits <- Filter(function(x) identical(as.character(x$review_case_id %||% ""), as.character(z$review_case_id)), current)
+      if (length(hits)) prior <- hits[[1L]]
+    }
+
     decision <- list(
       review_case_id = z$review_case_id,
       decision = choice,
@@ -298,8 +305,21 @@ server <- function(input, output, session) {
       resolved_at_utc = format(Sys.time(), tz="UTC", format="%Y-%m-%dT%H:%M:%SZ"),
       queue_sha256 = queue_sha_rv()
     )
-    save_active_decision(decision, decision_path)
-    decisions(filter_batch_decisions(read_active_decisions(decision_path), queue_sha_rv()))
+
+    saved <- tryCatch(
+      save_active_decision(decision, decision_path, prior_decision = prior),
+      error = function(e) {
+        status(paste("Save failed:", conditionMessage(e)))
+        NULL
+      }
+    )
+    if (is.null(saved)) return(FALSE)
+
+    remaining <- Filter(
+      function(x) !identical(as.character(x$review_case_id %||% ""), as.character(z$review_case_id)),
+      current
+    )
+    decisions(c(remaining, list(saved)))
     status(sprintf("Saved %s at %s", choice, format(Sys.time(), "%H:%M:%S")))
     TRUE
   }
