@@ -516,8 +516,12 @@ server <- function(input, output, session) {
           m <- manual_screening_rv()
           kpi(
             "Manually screened",
-            if(is.null(m)) "—" else fmt_pipeline_n(m$manually_screened),
-            if(is.null(m) || is.na(m$kappa)) "κ —" else sprintf("κ %.3f · model vs manual",m$kappa)
+            if(is.null(m) || is.na(m$kappa)) {
+              if(is.null(m)) "—" else fmt_pipeline_n(m$manually_screened)
+            } else {
+              paste0(fmt_pipeline_n(m$manually_screened)," · κ ",sprintf("%.3f",m$kappa))
+            },
+            "model vs manual"
           )
         },
         kpi(
