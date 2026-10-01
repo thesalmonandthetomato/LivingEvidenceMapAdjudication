@@ -252,7 +252,7 @@ ui <- page_fillable(
     .task-badge { background:#eef3f1; border-radius:999px; padding:.2rem .55rem; font-size:.78rem; }
     .pipeline-summary { background:#fff; border:1px solid #dde3e8; border-radius:12px; padding:.85rem 1rem; margin-bottom:1rem; box-shadow:0 2px 10px rgba(22,33,43,.04); }
     .pipeline-summary-top { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:.65rem 1rem; margin-bottom:.65rem; }
-    .pipeline-kpis { display:grid; grid-template-columns:repeat(10,minmax(82px,1fr)); border-top:1px solid #edf0f2; border-bottom:1px solid #edf0f2; }
+    .pipeline-kpis { display:grid; grid-template-columns:repeat(9,minmax(82px,1fr)); border-top:1px solid #edf0f2; border-bottom:1px solid #edf0f2; }
     .pipeline-kpi { padding:.55rem .55rem .5rem .55rem; min-width:0; }
     .pipeline-kpi + .pipeline-kpi { border-left:1px solid #edf0f2; }
     .pipeline-kpi-label { display:block; color:#6a747d; font-size:.69rem; line-height:1.1; margin-bottom:.15rem; }
@@ -507,6 +507,10 @@ server <- function(input, output, session) {
         )
       ),
       div(
+        class="text-secondary small mb-2",
+        paste0("Last search: ",fmt_pipeline_date(p$last_search_date))
+      ),
+      div(
         class="pipeline-kpis",
         kpi("Search results",fmt_pipeline_n(p$search_results_total),"W00"),
         kpi("After dedup.",fmt_pipeline_n(p$deduplicated_records),"W01"),
@@ -531,16 +535,15 @@ server <- function(input, output, session) {
         ),
         kpi(
           "Geography",
-          paste0("With: ",fmt_pipeline_n(p$geography_with)," / Without: ",fmt_pipeline_n(p$geography_without)),
-          "current-run records"
+          paste0(fmt_pipeline_n(p$geography_with)," / ",fmt_pipeline_n(p$geography_without)),
+          "with geography / without"
         ),
         kpi(
           "Topics",
-          paste0("With: ",fmt_pipeline_n(p$topic_with)," / Without: ",fmt_pipeline_n(p$topic_without)),
-          "current-run records"
+          paste0(fmt_pipeline_n(p$topic_with)," / ",fmt_pipeline_n(p$topic_without)),
+          "with topics / without"
         ),
-        kpi("Canonical database",fmt_pipeline_n(p$canonical_existing),"pre-update"),
-        kpi("Last search",fmt_pipeline_date(p$last_search_date))
+        kpi("Canonical database",fmt_pipeline_n(p$canonical_existing),"pre-update")
       ),
       div(class="workflow-line",segs),
       div(
