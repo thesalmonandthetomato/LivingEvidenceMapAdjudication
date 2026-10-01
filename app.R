@@ -26,6 +26,13 @@ theme <- bs_theme(
   heading_font = font_google("Source Sans 3")
 )
 
+normalise_display_text <- function(x) {
+  x <- as.character(x %||% "")
+  x <- gsub("[\\r\\n\\t]+", " ", x)
+  x <- gsub("\\s+", " ", x)
+  trimws(x)
+}
+
 token_lcs_matches <- function(a, b, char_level = FALSE) {
   a <- as.character(a %||% "")
   b <- as.character(b %||% "")
@@ -352,7 +359,10 @@ server <- function(input, output, session) {
       journal = field_pair(z$record_i$journal, z$record_j$journal),
       doi = field_pair(z$record_i$doi, z$record_j$doi, char_level = TRUE),
       source_record_id = field_pair(z$record_i$source_record_id, z$record_j$source_record_id, char_level = TRUE),
-      abstract = field_pair(z$record_i$abstract, z$record_j$abstract)
+      abstract = field_pair(
+        normalise_display_text(z$record_i$abstract),
+        normalise_display_text(z$record_j$abstract)
+      )
     )
     fields$source$a <- tags$span(class = "source-badge", fields$source$a)
     fields$source$b <- tags$span(class = "source-badge", fields$source$b)
