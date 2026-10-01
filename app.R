@@ -134,10 +134,31 @@ token_lcs_matches <- function(a, b, char_level = FALSE) {
 
   render <- function(tokens, matched) {
     if (!length(tokens)) return(tags$span(class = "diff-missing", ""))
+
+    if (char_level) {
+      runs <- list()
+      start <- 1L
+      for (k in seq_along(tokens)) {
+        is_last <- k == length(tokens)
+        changes <- !is_last && !identical(matched[[k]], matched[[k + 1L]])
+        if (is_last || changes) {
+          cls <- if (matched[[start]]) "diff-same" else "diff-different"
+          runs[[length(runs) + 1L]] <- tags$span(
+            class = paste(cls, "diff-char-run"),
+            paste0(tokens[start:k], collapse = "")
+          )
+          start <- k + 1L
+        }
+      }
+      return(do.call(tagList, runs))
+    }
+
     parts <- lapply(seq_along(tokens), function(k) {
       cls <- if (matched[[k]]) "diff-same" else "diff-different"
-      tagList(tags$span(class = cls, tokens[[k]]),
-              if (!char_level && k < length(tokens)) " " else NULL)
+      tagList(
+        tags$span(class = cls, tokens[[k]]),
+        if (k < length(tokens)) " " else NULL
+      )
     })
     do.call(tagList, parts)
   }
@@ -213,6 +234,7 @@ ui <- page_fillable(
     .source-badge { border-radius:999px; padding:.2rem .55rem; font-size:.78rem; }
     .diff-same { background:#d9f2df; color:#145c2e; border-radius:3px; padding:0 .08rem; }
     .diff-different { background:#fde0e0; color:#8b1e1e; border-radius:3px; padding:0 .08rem; }
+    .diff-char-run { padding:0; border-radius:2px; }
     .source-badge.diff-same { background:#d9f2df; color:#145c2e; }
     .source-badge.diff-different { background:#fde0e0; color:#8b1e1e; }
     .evidence-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:.6rem; }
