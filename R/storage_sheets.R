@@ -466,3 +466,132 @@ append_sheet_w04_decision <- function(decision, prior_decision=NULL) {
   if(nrow(hits)!=1L) stop("W04 Google Sheets write could not be verified",call.=FALSE)
   as.list(hits[1,,drop=FALSE])
 }
+
+
+w08_decision_tab <- function() {
+  Sys.getenv("LEM_W08_DECISION_TAB", unset = "decisions_w08")
+}
+
+read_sheet_w08_queue <- function(
+  tab = Sys.getenv("LEM_W08_QUEUE_TAB", unset = "queue_w08_active")
+) {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tabs <- googlesheets4::sheet_names(ss)
+  if (!tab %in% tabs) return(NULL)
+
+  x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
+  required <- c("batch_id","queue_sha256","case_index","record_id","case_json")
+  missing <- setdiff(required,names(x))
+  if(length(missing)) stop("W08 queue tab missing field(s): ",paste(missing,collapse=", "),call.=FALSE)
+  if(!nrow(x)) return(NULL)
+
+  x <- x[order(as.integer(x$case_index)),,drop=FALSE]
+  core <- x[,required,drop=FALSE]
+  hashes <- unique(core$queue_sha256)
+  batches <- unique(core$batch_id)
+  if(length(hashes)!=1L || !nzchar(hashes[[1L]])) stop("W08 queue has invalid queue_sha256",call.=FALSE)
+  if(length(batches)!=1L || !nzchar(batches[[1L]])) stop("W08 queue has invalid batch_id",call.=FALSE)
+  if(anyDuplicated(core$record_id)) stop("W08 queue contains duplicate record_id",call.=FALSE)
+
+  reconstructed <- paste0(paste(core$case_json,collapse="\n"),"\n")
+  actual_sha <- digest::digest(reconstructed,algo="sha256",serialize=FALSE)
+  if(!identical(actual_sha,hashes[[1L]])) stop("W08 queue SHA-256 validation failed",call.=FALSE)
+
+  cases <- lapply(core$case_json,jsonlite::fromJSON,simplifyVector=FALSE)
+  ids <- vapply(cases,function(z)as.character(z$record_id %||% ""),character(1))
+  if(!identical(ids,core$record_id)) stop("W08 queue record IDs do not match stored metadata",call.=FALSE)
+
+  case_sha <- setNames(
+    vapply(core$case_json,function(z)digest::digest(z,algo="sha256",serialize=FALSE),character(1)),
+    core$record_id
+  )
+
+  species_options <- character()
+  topic_options <- list()
+  if("species_options_json" %in% names(x) && nzchar(as.character(x$species_options_json[[1L]] %||% ""))) {
+    species_options <- as.character(jsonlite::fromJSON(x$species_options_json[[1L]]))
+  }
+  if("topic_options_json" %in% names(x) && nzchar(as.character(x$topic_options_json[[1L]] %||% ""))) {
+    topic_options <- jsonlite::fromJSON(x$topic_options_json[[1L]],simplifyVector=FALSE)
+  }
+
+  list(
+    batch_id=batches[[1L]],
+    queue_sha256=hashes[[1L]],
+    cases=cases,
+    case_sha256=case_sha,
+    species_options=species_options,
+    topic_options=topic_options
+  )
+}
+
+read_sheet_w08_decision_log <- function() {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w08_decision_tab()
+  tabs <- googlesheets4::sheet_names(ss)
+  if(!tab %in% tabs) return(list())
+  x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+  if(!nrow(x)) return(list())
+  lapply(seq_len(nrow(x)),function(i)as.list(x[i,,drop=FALSE]))
+}
+
+active_sheet_w08_decisions <- function() {
+  rows <- read_sheet_w08_decision_log()
+  if(!length(rows)) return(list())
+  ord <- order(vapply(rows,function(x)as.character(x$resolved_at_utc %||% ""),character(1)),decreasing=TRUE)
+  rows <- rows[ord]
+  ids <- vapply(rows,function(x)as.character(x$record_id %||% ""),character(1))
+  rows[!duplicated(ids)]
+}
+
+append_sheet_w08_decision <- function(decision, prior_decision=NULL) {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w08_decision_tab()
+  tabs <- googlesheets4::sheet_names(ss)
+  cols <- c(
+    "decision_id","record_id","queue_sha256","record_case_sha256",
+    "issue_decisions_json","reviewer","resolved_at_utc","supersedes_decision_id"
+  )
+
+  if(!tab %in% tabs) {
+    googlesheets4::sheet_add(ss,sheet=tab)
+    empty <- as.data.frame(setNames(replicate(length(cols),character(),simplify=FALSE),cols),stringsAsFactors=FALSE)
+    googlesheets4::sheet_write(empty,ss=ss,sheet=tab)
+  }
+
+  prior_id <- as.character(prior_decision$decision_id %||% "")
+  decision_id <- paste0(
+    "w08-rec-dec-",
+    substr(digest::digest(
+      paste(
+        decision$record_id,
+        decision$queue_sha256,
+        decision$resolved_at_utc,
+        decision$issue_decisions_json,
+        sep="|"
+      ),
+      algo="sha256",serialize=FALSE
+    ),1,24)
+  )
+
+  row <- data.frame(
+    decision_id=decision_id,
+    record_id=as.character(decision$record_id),
+    queue_sha256=as.character(decision$queue_sha256),
+    record_case_sha256=as.character(decision$record_case_sha256),
+    issue_decisions_json=as.character(decision$issue_decisions_json),
+    reviewer=as.character(decision$reviewer %||% ""),
+    resolved_at_utc=as.character(decision$resolved_at_utc),
+    supersedes_decision_id=prior_id,
+    stringsAsFactors=FALSE
+  )
+  googlesheets4::sheet_append(ss,data=row,sheet=tab)
+
+  verify <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+  hit <- verify[verify$decision_id==decision_id,,drop=FALSE]
+  if(nrow(hit)!=1L) stop("W08 decision write verification failed",call.=FALSE)
+  as.list(hit[1,,drop=FALSE])
+}
