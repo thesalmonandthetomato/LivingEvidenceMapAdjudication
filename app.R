@@ -459,11 +459,12 @@ server <- function(input, output, session) {
     active <- suppressWarnings(as.integer(as.character(p$active_workflow %||% "")))
     if(is.na(completed)) completed <- 0L
 
-    segs <- lapply(1:10,function(i){
+    workflow_labels <- c("W00","W01","W02","W03","W04","W05","W06","W07","W08","W10")
+    segs <- lapply(seq_along(workflow_labels),function(i){
       cls <- "workflow-segment"
       if(i <= completed) cls <- paste(cls,"done")
       else if(!is.na(active) && i==active) cls <- paste(cls,"active")
-      div(class=cls,title=sprintf("Workflow %02d",i))
+      div(class=cls,title=workflow_labels[[i]])
     })
 
     kpi <- function(label,value,sub=NULL) {
@@ -502,15 +503,23 @@ server <- function(input, output, session) {
           paste0(fmt_pipeline_n(p$screened_include)," / ",fmt_pipeline_n(p$screened_exclude)),
           "include / exclude"
         ),
-        kpi("Geography",fmt_pipeline_n(p$geography_coded),"coded"),
-        kpi("Topics",fmt_pipeline_n(p$topic_coded),"coded"),
+        kpi(
+          "Geography",
+          paste0("With: ",fmt_pipeline_n(p$geography_with)," / Without: ",fmt_pipeline_n(p$geography_without)),
+          "current-run records"
+        ),
+        kpi(
+          "Topics",
+          paste0("With: ",fmt_pipeline_n(p$topic_with)," / Without: ",fmt_pipeline_n(p$topic_without)),
+          "current-run records"
+        ),
         kpi("Canonical database",fmt_pipeline_n(p$canonical_existing),"pre-update"),
         kpi("Last search",fmt_pipeline_date(p$last_search_date))
       ),
       div(class="workflow-line",segs),
       div(
         class="workflow-labels",
-        lapply(1:10,function(i)tags$span(sprintf("W%02d",i)))
+        lapply(workflow_labels,tags$span)
       )
     )
   }
