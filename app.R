@@ -9,7 +9,7 @@ source("R/w01_contract.R", local = TRUE)
 source("R/storage_local.R", local = TRUE)
 source("R/storage_sheets.R", local = TRUE)
 source("R/storage_backend.R", local = TRUE)
-source("R/auth.R", local = TRUE)
+source("R/auth.R", local = TRUE)\nsource("R/github_dispatch.R", local = TRUE)
 
 queue_path <- Sys.getenv("LEM_W01_QUEUE", unset = "fixtures/w01_real_sample_2.jsonl")
 decision_path <- Sys.getenv("LEM_W01_DECISIONS", unset = "local_state/w01_decisions.jsonl")
@@ -718,9 +718,57 @@ server <- function(input, output, session) {
     TRUE
   }
 
+  dispatch_completed_w02 <- function() {
+    unresolved <- w02_unresolved_indices()
+    if (length(unresolved)) return(FALSE)
+
+    active <- w02_decisions()
+    if (!length(active)) return(FALSE)
+    if (any(vapply(active, function(x) identical(as.character(x$decision %||% ""), "uncertain"), logical(1)))) {
+      return(FALSE)
+    }
+
+    batch_id <- as.character(w02_batch_id_rv())
+    source_run_id <- sub("^w02-run-", "", batch_id)
+    if (!grepl("^[0-9]+$", source_run_id)) {
+      w02_status("Resume failed: active W02 batch does not contain a valid source run ID.")
+      return(FALSE)
+    }
+
+    queue_sha <- as.character(w02_queue_sha_rv())
+    already <- tryCatch(
+      w02_resume_request_exists(queue_sha, source_run_id),
+      error = function(e) {
+        w02_status(paste("Resume status check failed:", conditionMessage(e)))
+        NA
+      }
+    )
+    if (is.na(already)) return(FALSE)
+    if (isTRUE(already)) {
+      w02_status("Workflow 02 resume has already been requested for this batch.")
+      return(TRUE)
+    }
+
+    tryCatch({
+      append_w02_resume_request(queue_sha, source_run_id, "dispatching")
+      dispatch_w02_resume(source_run_id, publish = TRUE)
+      append_w02_resume_request(queue_sha, source_run_id, "dispatched")
+      w02_status("All cases complete. Workflow 02 resumed automatically.")
+      TRUE
+    }, error = function(e) {
+      try(
+        append_w02_resume_request(queue_sha, source_run_id, "failed", conditionMessage(e)),
+        silent = TRUE
+      )
+      w02_status(paste("All cases are complete, but automatic resume failed:", conditionMessage(e)))
+      FALSE
+    })
+  }
+
   advance_w02 <- function() {
     unresolved <- w02_unresolved_indices()
     if (!length(unresolved)) {
+      dispatch_completed_w02()
       app_view("tasks")
       return(invisible(TRUE))
     }
