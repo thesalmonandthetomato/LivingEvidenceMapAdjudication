@@ -262,6 +262,8 @@ read_sheet_w01_queue <- function(
   if (length(hashes) != 1L || !nzchar(hashes[[1L]])) stop("W01 queue has invalid queue_sha256", call.=FALSE)
   if (length(batches) != 1L || !nzchar(batches[[1L]])) stop("W01 queue has invalid batch_id", call.=FALSE)
   if (anyDuplicated(x$review_case_id)) stop("W01 queue contains duplicate review_case_id", call.=FALSE)
+  status <- latest_batch_status("01",batches[[1L]],hashes[[1L]])
+  if(identical(status,"consumed")) return(NULL)
 
   reconstructed <- paste0(paste(x$case_json, collapse = "\n"), "\n")
   actual_sha <- digest::digest(reconstructed, algo = "sha256", serialize = FALSE)
@@ -276,7 +278,8 @@ read_sheet_w01_queue <- function(
   list(
     batch_id = batches[[1L]],
     queue_sha256 = hashes[[1L]],
-    cases = cases
+    cases = cases,
+    batch_status = status
   )
 }
 
@@ -305,7 +308,9 @@ read_sheet_w02_queue <- function(
   batches <- unique(x$batch_id)
   if (length(hashes) != 1L || !nzchar(hashes[[1L]])) stop("W02 queue has invalid queue_sha256", call.=FALSE)
   if (length(batches) != 1L || !nzchar(batches[[1L]])) stop("W02 queue has invalid batch_id", call.=FALSE)
-  if (anyDuplicated(x_core$review_case_id)) stop("W02 queue contains duplicate review_case_id", call.=FALSE)
+  if (anyDuplicated(x$review_case_id)) stop("W02 queue contains duplicate review_case_id", call.=FALSE)
+  status <- latest_batch_status("02",batches[[1L]],hashes[[1L]])
+  if(identical(status,"consumed")) return(NULL)
 
   reconstructed <- paste0(paste(x$case_json, collapse = "\n"), "\n")
   actual_sha <- digest::digest(reconstructed, algo = "sha256", serialize = FALSE)
@@ -318,7 +323,8 @@ read_sheet_w02_queue <- function(
   list(
     batch_id = batches[[1L]],
     queue_sha256 = hashes[[1L]],
-    cases = cases
+    cases = cases,
+    batch_status = status
   )
 }
 
@@ -488,6 +494,8 @@ read_sheet_w04_queue <- function(
   if(length(hashes)!=1L || !nzchar(hashes[[1L]])) stop("W04 queue has invalid queue_sha256",call.=FALSE)
   if(length(batches)!=1L || !nzchar(batches[[1L]])) stop("W04 queue has invalid batch_id",call.=FALSE)
   if(anyDuplicated(x_core$review_case_id)) stop("W04 queue contains duplicate review_case_id",call.=FALSE)
+  status <- latest_batch_status("04",batches[[1L]],hashes[[1L]])
+  if(identical(status,"consumed")) return(NULL)
 
   reconstructed <- paste0(paste(x_core$case_json,collapse="\n"),"\n")
   actual_sha <- digest::digest(reconstructed,algo="sha256",serialize=FALSE)
@@ -502,7 +510,8 @@ read_sheet_w04_queue <- function(
     queue_sha256=hashes[[1L]],
     cases=cases,
     highlight_include=include_terms,
-    highlight_exclude=exclude_terms
+    highlight_exclude=exclude_terms,
+    batch_status=status
   )
 }
 
@@ -596,6 +605,8 @@ read_sheet_w08_queue <- function(
   if(length(hashes)!=1L || !nzchar(hashes[[1L]])) stop("W08 queue has invalid queue_sha256",call.=FALSE)
   if(length(batches)!=1L || !nzchar(batches[[1L]])) stop("W08 queue has invalid batch_id",call.=FALSE)
   if(anyDuplicated(core$record_id)) stop("W08 queue contains duplicate record_id",call.=FALSE)
+  status <- latest_batch_status("08",batches[[1L]],hashes[[1L]])
+  if(identical(status,"consumed")) return(NULL)
 
   reconstructed <- paste0(paste(core$case_json,collapse="\n"),"\n")
   actual_sha <- digest::digest(reconstructed,algo="sha256",serialize=FALSE)
@@ -625,7 +636,8 @@ read_sheet_w08_queue <- function(
     cases=cases,
     case_sha256=case_sha,
     species_options=species_options,
-    topic_options=topic_options
+    topic_options=topic_options,
+    batch_status=status
   )
 }
 
