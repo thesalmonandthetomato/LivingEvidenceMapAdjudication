@@ -33,6 +33,27 @@ sheet_id_from_env <- function() {
   id
 }
 
+ensure_w01_decision_tab <- function() {
+  ss <- sheet_id_from_env()
+  tab <- sheet_decision_tab()
+  required_cols <- c(
+    "decision_id","review_case_id","decision","rationale","reviewer",
+    "resolved_at_utc","queue_sha256","supersedes_decision_id"
+  )
+
+  tabs <- googlesheets4::sheet_names(ss)
+  if (!tab %in% tabs) {
+    googlesheets4::sheet_add(ss, sheet = tab)
+    empty <- as.data.frame(
+      setNames(replicate(length(required_cols), character(), simplify = FALSE), required_cols),
+      stringsAsFactors = FALSE
+    )
+    googlesheets4::sheet_write(empty, ss = ss, sheet = tab)
+  }
+
+  invisible(TRUE)
+}
+
 normalise_sheet_rows <- function(df) {
   if (!nrow(df)) return(list())
   required <- c("decision_id","review_case_id","decision","rationale","reviewer","resolved_at_utc","queue_sha256","supersedes_decision_id")
@@ -47,6 +68,7 @@ normalise_sheet_rows <- function(df) {
 
 read_sheet_decision_log <- function() {
   gs4_auth_from_env()
+  ensure_w01_decision_tab()
   ss <- sheet_id_from_env()
   tab <- sheet_decision_tab()
   x <- tryCatch(
@@ -71,6 +93,7 @@ active_sheet_decisions <- function() {
 
 append_sheet_decision <- function(decision, prior_decision = NULL) {
   gs4_auth_from_env()
+  ensure_w01_decision_tab()
   ss <- sheet_id_from_env()
   tab <- sheet_decision_tab()
 
