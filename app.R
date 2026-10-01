@@ -535,13 +535,11 @@ server <- function(input, output, session) {
         ),
         kpi(
           "Geography",
-          paste0(fmt_pipeline_n(p$geography_with)," / ",fmt_pipeline_n(p$geography_without)),
-          "with geography / without"
+          paste0(fmt_pipeline_n(p$geography_with)," / ",fmt_pipeline_n(p$geography_without))
         ),
         kpi(
           "Topics",
-          paste0(fmt_pipeline_n(p$topic_with)," / ",fmt_pipeline_n(p$topic_without)),
-          "with topics / without"
+          paste0(fmt_pipeline_n(p$topic_with)," / ",fmt_pipeline_n(p$topic_without))
         ),
         kpi("Canonical database",fmt_pipeline_n(p$canonical_existing),"pre-update")
       ),
