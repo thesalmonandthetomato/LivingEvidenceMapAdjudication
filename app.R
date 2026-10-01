@@ -733,6 +733,9 @@ server <- function(input, output, session) {
           w02_decisions(w02_filter_batch_decisions(w02_all_decisions, w02_batch$queue_sha256))
           w02_unresolved <- w02_unresolved_indices()
           w02_idx(if (length(w02_unresolved)) w02_unresolved[[1L]] else max(1L, length(w02_batch$cases)))
+          if(!length(w02_unresolved) && !identical(w02_batch_status_rv(),"review_complete")) {
+            mark_review_complete("02",w02_batch_id_rv(),w02_queue_sha_rv(),w02_batch_status_rv)
+          }
         }
 
         w04_batch <- load_w04_batch()
@@ -747,6 +750,9 @@ server <- function(input, output, session) {
           w04_decisions(w04_filter_batch_decisions(w04_all_decisions, w04_batch$queue_sha256))
           w04_unresolved <- w04_unresolved_indices()
           w04_idx(if (length(w04_unresolved)) w04_unresolved[[1L]] else max(1L,length(w04_batch$cases)))
+          if(!length(w04_unresolved) && !identical(w04_batch_status_rv(),"review_complete")) {
+            mark_review_complete("04",w04_batch_id_rv(),w04_queue_sha_rv(),w04_batch_status_rv)
+          }
         }
 
         w08_batch <- load_w08_batch()
@@ -762,6 +768,9 @@ server <- function(input, output, session) {
           w08_decisions(w08_filter_batch_decisions(w08_all_decisions,w08_batch$queue_sha256))
           w08_unresolved <- w08_unresolved_indices()
           w08_idx(if(length(w08_unresolved)) w08_unresolved[[1L]] else max(1L,length(w08_batch$cases)))
+          if(!length(w08_unresolved) && !identical(w08_batch_status_rv(),"review_complete")) {
+            mark_review_complete("08",w08_batch_id_rv(),w08_queue_sha_rv(),w08_batch_status_rv)
+          }
         }
 
         if (!is.null(batch)) {
@@ -782,6 +791,9 @@ server <- function(input, output, session) {
           } else {
             idx(max(1L,length(batch$cases)))
             complete(TRUE)
+            if(!identical(batch_status_rv(),"review_complete")) {
+              mark_review_complete("01",batch_id_rv(),queue_sha_rv(),batch_status_rv)
+            }
           }
         } else {
           cases_rv(NULL)
@@ -1217,6 +1229,14 @@ server <- function(input, output, session) {
     unresolved <- w04_unresolved_indices()
     if(!length(unresolved)) {
       mark_review_complete("04",w04_batch_id_rv(),w04_queue_sha_rv(),w04_batch_status_rv)
+      dispatched <- tryCatch({
+        dispatch_w04_validation_finalize(w04_batch_id_rv(),w04_queue_sha_rv())
+        TRUE
+      }, error=function(e){
+        w04_status(paste("Review complete, but W04 finalisation dispatch failed:",conditionMessage(e)))
+        FALSE
+      })
+      if(dispatched) w04_status("Review complete. Workflow 04 finalisation dispatched.")
       app_view("tasks")
       return(invisible(TRUE))
     }
