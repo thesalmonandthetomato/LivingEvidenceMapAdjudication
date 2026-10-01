@@ -26,24 +26,95 @@ theme <- bs_theme(
   heading_font = font_google("Source Sans 3")
 )
 
-record_card <- function(rec, label) {
+token_lcs_matches <- function(a, b, char_level = FALSE) {
+  a <- as.character(a %||% "")
+  b <- as.character(b %||% "")
+
+  if (char_level) {
+    ta <- strsplit(a, "", fixed = TRUE)[[1L]]
+    tb <- strsplit(b, "", fixed = TRUE)[[1L]]
+    sep <- ""
+  } else {
+    ta <- if (nzchar(a)) strsplit(a, "\\s+")[[1L]] else character()
+    tb <- if (nzchar(b)) strsplit(b, "\\s+")[[1L]] else character()
+    sep <- " "
+  }
+
+  na <- length(ta); nb <- length(tb)
+  ma <- rep(FALSE, na); mb <- rep(FALSE, nb)
+
+  if (na && nb) {
+    dp <- matrix(0L, nrow = na + 1L, ncol = nb + 1L)
+    for (i in seq_len(na)) {
+      for (j in seq_len(nb)) {
+        if (identical(tolower(ta[[i]]), tolower(tb[[j]]))) {
+          dp[i + 1L, j + 1L] <- dp[i, j] + 1L
+        } else {
+          dp[i + 1L, j + 1L] <- max(dp[i, j + 1L], dp[i + 1L, j])
+        }
+      }
+    }
+
+    i <- na; j <- nb
+    while (i > 0L && j > 0L) {
+      if (identical(tolower(ta[[i]]), tolower(tb[[j]]))) {
+        ma[[i]] <- TRUE; mb[[j]] <- TRUE
+        i <- i - 1L; j <- j - 1L
+      } else if (dp[i, j + 1L] >= dp[i + 1L, j]) {
+        i <- i - 1L
+      } else {
+        j <- j - 1L
+      }
+    }
+  }
+
+  render <- function(tokens, matched) {
+    if (!length(tokens)) return(tags$span(class = "diff-missing", ""))
+    parts <- lapply(seq_along(tokens), function(k) {
+      cls <- if (matched[[k]]) "diff-same" else "diff-different"
+      tagList(tags$span(class = cls, tokens[[k]]),
+              if (!char_level && k < length(tokens)) " " else NULL)
+    })
+    do.call(tagList, parts)
+  }
+
+  list(a = render(ta, ma), b = render(tb, mb))
+}
+
+field_pair <- function(a, b, char_level = FALSE) {
+  a <- as.character(a %||% "")
+  b <- as.character(b %||% "")
+  if (!nzchar(a) && !nzchar(b)) {
+    return(list(a = "", b = ""))
+  }
+  if (identical(tolower(a), tolower(b))) {
+    return(list(
+      a = tags$span(class = "diff-same", a),
+      b = tags$span(class = "diff-same", b)
+    ))
+  }
+  token_lcs_matches(a, b, char_level = char_level)
+}
+
+record_card <- function(rec, label, fields, side = c("a","b")) {
+  side <- match.arg(side)
   card(
     class = "h-100 record-card",
     card_header(div(class = "d-flex justify-content-between align-items-center",
                     tags$strong(label),
-                    tags$span(class = "source-badge", rec$source %||% ""))),
-    div(class = "record-title", rec$title %||% ""),
+                    fields$source[[side]])),
+    div(class = "record-title", fields$title[[side]]),
     tags$dl(
       class = "record-meta",
-      tags$dt("Authors"), tags$dd(rec$authors %||% ""),
-      tags$dt("Year"), tags$dd(rec$year %||% ""),
-      tags$dt("Journal"), tags$dd(rec$journal %||% ""),
-      tags$dt("DOI"), tags$dd(rec$doi %||% ""),
-      tags$dt("Source ID"), tags$dd(rec$source_record_id %||% "")
+      tags$dt("Authors"), tags$dd(fields$authors[[side]]),
+      tags$dt("Year"), tags$dd(fields$year[[side]]),
+      tags$dt("Journal"), tags$dd(fields$journal[[side]]),
+      tags$dt("DOI"), tags$dd(fields$doi[[side]]),
+      tags$dt("Source ID"), tags$dd(fields$source_record_id[[side]])
     ),
     tags$hr(),
     tags$h6("Abstract"),
-    div(class = "abstract-text", rec$abstract %||% "No abstract available.")
+    div(class = "abstract-text", fields$abstract[[side]])
   )
 }
 
@@ -60,7 +131,11 @@ ui <- page_fillable(
     .record-meta dt { color:#66727d; font-weight:600; }
     .record-meta dd { margin:0; overflow-wrap:anywhere; }
     .abstract-text { line-height:1.42; white-space:pre-wrap; }
-    .source-badge { background:#eef3f1; border-radius:999px; padding:.2rem .55rem; font-size:.78rem; }
+    .source-badge { border-radius:999px; padding:.2rem .55rem; font-size:.78rem; }
+    .diff-same { background:#d9f2df; color:#145c2e; border-radius:3px; padding:0 .08rem; }
+    .diff-different { background:#fde0e0; color:#8b1e1e; border-radius:3px; padding:0 .08rem; }
+    .source-badge.diff-same { background:#d9f2df; color:#145c2e; }
+    .source-badge.diff-different { background:#fde0e0; color:#8b1e1e; }
     .evidence-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:.6rem; }
     .evidence-item { background:#fff; border:1px solid #e1e5e9; border-radius:8px; padding:.65rem .75rem; }
     .decision-panel { margin-bottom:.85rem; }
@@ -269,11 +344,24 @@ server <- function(input, output, session) {
         list(label="Classifier", value=ev$classifier_decision %||% ""),
         list(label="Classifier rule", value=ev$classifier_rule %||% "")
       ))
+    fields <- list(
+      source = field_pair(z$record_i$source, z$record_j$source),
+      title = field_pair(z$record_i$title, z$record_j$title),
+      authors = field_pair(z$record_i$authors, z$record_j$authors),
+      year = field_pair(z$record_i$year, z$record_j$year),
+      journal = field_pair(z$record_i$journal, z$record_j$journal),
+      doi = field_pair(z$record_i$doi, z$record_j$doi, char_level = TRUE),
+      source_record_id = field_pair(z$record_i$source_record_id, z$record_j$source_record_id, char_level = TRUE),
+      abstract = field_pair(z$record_i$abstract, z$record_j$abstract)
+    )
+    fields$source$a <- tags$span(class = "source-badge", fields$source$a)
+    fields$source$b <- tags$span(class = "source-badge", fields$source$b)
+
     tagList(
       layout_columns(
         col_widths = c(6,6),
-        record_card(z$record_i, "Record A"),
-        record_card(z$record_j, "Record B")
+        record_card(z$record_i, "Record A", fields, "a"),
+        record_card(z$record_j, "Record B", fields, "b")
       ),
       card(
         class="mt-3",
