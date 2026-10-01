@@ -110,18 +110,21 @@ record_card <- function(rec, label, fields, side = c("a","b")) {
     card_header(div(class = "d-flex justify-content-between align-items-center",
                     tags$strong(label),
                     fields$source[[side]])),
-    div(class = "record-title", fields$title[[side]]),
-    tags$dl(
-      class = "record-meta",
-      tags$dt("Authors"), tags$dd(fields$authors[[side]]),
-      tags$dt("Year"), tags$dd(fields$year[[side]]),
-      tags$dt("Journal"), tags$dd(fields$journal[[side]]),
-      tags$dt("DOI"), tags$dd(fields$doi[[side]]),
-      tags$dt("Source ID"), tags$dd(fields$source_record_id[[side]])
-    ),
-    tags$hr(),
-    tags$h6("Abstract"),
-    div(class = "abstract-text", fields$abstract[[side]])
+    div(
+      class = "compact-record-body",
+      div(class = "record-title", fields$title[[side]]),
+      tags$dl(
+        class = "record-meta",
+        tags$dt("Authors"), tags$dd(fields$authors[[side]]),
+        tags$dt("Year"), tags$dd(fields$year[[side]]),
+        tags$dt("Journal"), tags$dd(fields$journal[[side]]),
+        tags$dt("DOI"), tags$dd(fields$doi[[side]]),
+        tags$dt("Source ID"), tags$dd(fields$source_record_id[[side]])
+      ),
+      tags$hr(class = "record-divider"),
+      tags$h6(class = "abstract-heading", "Abstract"),
+      div(class = "abstract-text", fields$abstract[[side]])
+    )
   )
 }
 
@@ -132,12 +135,15 @@ ui <- page_fillable(
     .app-shell { max-width:1500px; margin:0 auto; padding:20px; width:100%; }
     .login-shell { max-width:520px; margin:8vh auto 0 auto; padding:20px; width:100%; }
     .record-card { border:1px solid #dde3e8; box-shadow:0 2px 10px rgba(22,33,43,.05); }
-    .record-card .card-body { padding:.9rem 1rem; }
-    .record-title { font-size:1.08rem; font-weight:700; line-height:1.3; margin-bottom:.65rem; }
-    .record-meta { display:grid; grid-template-columns:80px 1fr; gap:.15rem .65rem; margin:0; }
+    .record-card .card-body { padding:0; }
+    .compact-record-body { padding:.65rem .9rem .8rem .9rem; }
+    .record-title { font-size:1.05rem; font-weight:700; line-height:1.25; margin-bottom:.45rem; }
+    .record-meta { display:grid; grid-template-columns:78px 1fr; gap:.08rem .55rem; margin:0; line-height:1.28; }
     .record-meta dt { color:#66727d; font-weight:600; }
     .record-meta dd { margin:0; overflow-wrap:anywhere; }
-    .abstract-text { line-height:1.42; white-space:pre-wrap; }
+    .record-divider { margin:.55rem 0 .45rem 0; }
+    .abstract-heading { margin:0 0 .35rem 0; }
+    .abstract-text { line-height:1.32; white-space:normal; }
     .source-badge { border-radius:999px; padding:.2rem .55rem; font-size:.78rem; }
     .diff-same { background:#d9f2df; color:#145c2e; border-radius:3px; padding:0 .08rem; }
     .diff-different { background:#fde0e0; color:#8b1e1e; border-radius:3px; padding:0 .08rem; }
