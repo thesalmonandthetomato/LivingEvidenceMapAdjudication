@@ -255,14 +255,14 @@ ui <- page_fillable(
     .pipeline-kpis { display:grid; grid-template-columns:repeat(9,minmax(82px,1fr)); border-top:1px solid #edf0f2; border-bottom:1px solid #edf0f2; }
     .pipeline-kpi { padding:.55rem .55rem .5rem .55rem; min-width:0; }
     .pipeline-kpi + .pipeline-kpi { border-left:1px solid #edf0f2; }
-    .pipeline-kpi-label { display:block; color:#6a747d; font-size:.69rem; line-height:1.1; margin-bottom:.15rem; }
-    .pipeline-kpi-value { display:block; font-size:1rem; line-height:1.15; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .pipeline-kpi-sub { display:block; color:#7c858d; font-size:.65rem; line-height:1.1; margin-top:.08rem; }
+    .pipeline-kpi-label { display:block; color:#6a747d; font-size:.78rem; line-height:1.15; margin-bottom:.18rem; }
+    .pipeline-kpi-value { display:block; font-size:1.12rem; line-height:1.18; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .pipeline-kpi-sub { display:block; color:#7c858d; font-size:.74rem; line-height:1.15; margin-top:.1rem; }
     .workflow-line { display:grid; grid-template-columns:repeat(10,1fr); gap:.28rem; margin-top:.65rem; }
     .workflow-segment { height:7px; border-radius:999px; background:#e5e9ec; }
     .workflow-segment.done { background:#1f5d50; }
     .workflow-segment.active { background:#8fb7ac; box-shadow:0 0 0 1px #1f5d50 inset; }
-    .workflow-labels { display:grid; grid-template-columns:repeat(10,1fr); gap:.28rem; margin-top:.2rem; color:#7b858d; font-size:.61rem; text-align:center; }
+    .workflow-labels { display:grid; grid-template-columns:repeat(10,1fr); gap:.28rem; margin-top:.22rem; color:#7b858d; font-size:.69rem; text-align:center; }
     @media (max-width: 1000px) { .pipeline-kpis { grid-template-columns:repeat(3,1fr); } .pipeline-kpi + .pipeline-kpi { border-left:0; } .pipeline-kpi { border-right:1px solid #edf0f2; border-bottom:1px solid #edf0f2; } }
   "))),
   uiOutput("root_ui")
