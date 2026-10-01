@@ -179,6 +179,13 @@ server <- function(input, output, session) {
   batch_id_rv <- reactiveVal("")
   decisions <- reactiveVal(list())
 
+  w02_cases_rv <- reactiveVal(NULL)
+  w02_queue_sha_rv <- reactiveVal("")
+  w02_batch_id_rv <- reactiveVal("")
+  w02_idx <- reactiveVal(1L)
+  w02_decisions <- reactiveVal(list())
+  w02_status <- reactiveVal("")
+
   decision_ids <- function(ds = decisions()) {
     if (!length(ds)) return(character())
     unique(vapply(ds, function(x) as.character(x$review_case_id %||% ""), character(1)))
@@ -195,6 +202,31 @@ server <- function(input, output, session) {
     if (is.null(cs)) return(integer())
     ids <- vapply(cs, function(x) as.character(x$review_case_id), character(1))
     which(!ids %in% decision_ids())
+  }
+
+  w02_filter_batch_decisions <- function(ds, sha) {
+    if (!length(ds)) return(list())
+    keep <- vapply(ds, function(x) identical(as.character(x$queue_sha256 %||% ""), sha), logical(1))
+    ds[keep]
+  }
+
+  w02_resolved_ids <- function(ds = w02_decisions()) {
+    if (!length(ds)) return(character())
+    keep <- vapply(ds, function(x) !identical(as.character(x$decision %||% ""), "uncertain"), logical(1))
+    if (!any(keep)) return(character())
+    unique(vapply(ds[keep], function(x) as.character(x$review_case_id %||% ""), character(1)))
+  }
+
+  w02_unresolved_indices <- function() {
+    cs <- w02_cases_rv()
+    if (is.null(cs)) return(integer())
+    ids <- vapply(cs, function(x) as.character(x$review_case_id), character(1))
+    which(!ids %in% w02_resolved_ids())
+  }
+
+  load_w02_batch <- function() {
+    if (!identical(storage_backend(), "google_sheets")) return(NULL)
+    read_sheet_w02_queue()
   }
 
   load_batch <- function() {
@@ -239,7 +271,7 @@ server <- function(input, output, session) {
           tags$span(class = "task-badge", "LivingEvidenceMap")
         ),
         card(
-          class = "task-card",
+          class = "task-card mb-3",
           card_header(
             div(
               class = "d-flex justify-content-between align-items-center",
@@ -265,7 +297,64 @@ server <- function(input, output, session) {
               class = "btn-primary"
             )
           )
-        )
+        ),
+        if (!is.null(w02_cases_rv())) {
+          w02_total <- length(w02_cases_rv())
+          w02_remaining <- length(w02_unresolved_indices())
+          w02_completed <- max(0L, w02_total - w02_remaining)
+          card(
+            class = "task-card",
+            card_header(
+              div(
+                class = "d-flex justify-content-between align-items-center",
+                tags$strong("Workflow 02 · metadata conflict review"),
+                tags$span(class = "task-badge", w02_batch_id_rv())
+              )
+            ),
+            div(
+              class = "p-3",
+              tags$p(
+                class = "mb-2",
+                "Review quarantined bibliographic enrichment conflicts before provider metadata can be accepted or rejected."
+              ),
+              div(
+                class = "task-kpis",
+                div(class = "task-kpi", tags$span(class = "text-secondary small", "Total"), tags$strong(w02_total)),
+                div(class = "task-kpi", tags$span(class = "text-secondary small", "Completed"), tags$strong(w02_completed)),
+                div(class = "task-kpi", tags$span(class = "text-secondary small", "Remaining"), tags$strong(w02_remaining))
+              ),
+              actionButton(
+                "open_w02",
+                if (w02_remaining > 0L) "Continue Workflow 02" else "Review Workflow 02",
+                class = "btn-primary"
+              )
+            )
+          )
+        }
+      ))
+    }
+
+    if (identical(app_view(), "w02")) {
+      return(div(
+        class = "app-shell",
+        div(
+          class = "d-flex justify-content-between align-items-center mb-3",
+          div(
+            tags$h2("LivingEvidenceMap adjudication", class="mb-0"),
+            tags$div(
+              sprintf("Workflow 02 · metadata conflict review · %s", w02_batch_id_rv()),
+              class="text-secondary"
+            )
+          ),
+          div(
+            class = "d-flex align-items-center gap-3",
+            actionButton("back_to_tasks_w02", "Back to tasks", class = "btn-outline-secondary btn-sm"),
+            uiOutput("w02_progress_text")
+          )
+        ),
+        uiOutput("w02_progress_bar"),
+        uiOutput("w02_decision_panel"),
+        uiOutput("w02_case_view")
       ))
     }
 
@@ -340,6 +429,16 @@ server <- function(input, output, session) {
         batch <- load_batch()
         all_decisions <- read_active_decisions(decision_path)
         current_decisions <- filter_batch_decisions(all_decisions, batch$queue_sha256)
+        w02_batch <- load_w02_batch()
+        if (!is.null(w02_batch)) {
+          w02_all_decisions <- active_sheet_w02_decisions()
+          w02_cases_rv(w02_batch$cases)
+          w02_queue_sha_rv(w02_batch$queue_sha256)
+          w02_batch_id_rv(w02_batch$batch_id)
+          w02_decisions(w02_filter_batch_decisions(w02_all_decisions, w02_batch$queue_sha256))
+          w02_unresolved <- w02_unresolved_indices()
+          w02_idx(if (length(w02_unresolved)) w02_unresolved[[1L]] else max(1L, length(w02_batch$cases)))
+        }
 
         cases_rv(batch$cases)
         queue_sha_rv(batch$queue_sha256)
@@ -455,6 +554,181 @@ server <- function(input, output, session) {
     )
   })
 
+  w02_current_case <- reactive({
+    req(authenticated(), w02_cases_rv())
+    w02_cases_rv()[[w02_idx()]]
+  })
+
+  output$w02_progress_text <- renderUI({
+    req(authenticated(), w02_cases_rv())
+    total <- length(w02_cases_rv())
+    remaining <- length(w02_unresolved_indices())
+    tags$span(sprintf("Case %d of %d · %d remaining", w02_idx(), total, remaining))
+  })
+
+  output$w02_progress_bar <- renderUI({
+    req(authenticated(), w02_cases_rv())
+    total <- length(w02_cases_rv())
+    remaining <- length(w02_unresolved_indices())
+    pct <- if (total) round(100 * (total - remaining) / total) else 0
+    div(class="progress mb-3",
+        div(class="progress-bar", role="progressbar",
+            style=sprintf("width:%s%%",pct),
+            sprintf("%s%%",pct)))
+  })
+
+  output$w02_decision_panel <- renderUI({
+    z <- w02_current_case()
+    reason <- as.character(z$reason %||% z$conflict$reason %||% "")
+    buttons <- if (identical(reason, "returned_doi_mismatch")) {
+      tagList(
+        actionButton("w02_reject_match", "Reject provider match", class="btn-outline-danger"),
+        actionButton("w02_uncertain", "Unsure", class="btn-outline-secondary")
+      )
+    } else {
+      tagList(
+        actionButton("w02_accept_field", "Accept provider field", class="btn-success"),
+        actionButton("w02_reject_field", "Reject provider field", class="btn-outline-danger"),
+        actionButton("w02_uncertain", "Unsure", class="btn-outline-secondary")
+      )
+    }
+
+    card(
+      class = "decision-panel",
+      div(
+        class = "d-flex flex-wrap justify-content-between align-items-center gap-2",
+        tags$div(class="saved-note", textOutput("w02_save_status")),
+        div(
+          class="d-flex flex-wrap gap-2",
+          div(class="decision-row d-flex flex-wrap gap-2", buttons),
+          div(
+            class="nav-row d-flex gap-2",
+            actionButton("w02_previous", "← Previous"),
+            actionButton("w02_next", "Next →")
+          )
+        )
+      )
+    )
+  })
+
+  output$w02_case_view <- renderUI({
+    z <- w02_current_case()
+    can <- z$canonical %||% list()
+    pr <- z$provider_response %||% list()
+    provider <- as.character(z$provider %||% z$conflict$provider %||% "")
+    field <- as.character(z$field %||% z$conflict$field %||% "")
+    reason <- as.character(z$reason %||% z$conflict$reason %||% "")
+    returned_doi <- as.character(z$returned_doi %||% z$conflict$returned_doi %||% pr$returned_doi %||% "")
+    provider_title <- as.character(pr$title %||% "")
+    provider_abstract <- normalise_display_text(pr$abstract %||% "")
+    can_title <- as.character(can$title %||% "")
+    can_abstract <- normalise_display_text(can$abstract %||% "")
+    can_doi <- as.character(can$doi %||% z$doi %||% "")
+
+    title_pair <- field_pair(can_title, provider_title)
+    doi_pair <- field_pair(can_doi, returned_doi, char_level=TRUE)
+    abstract_pair <- field_pair(can_abstract, provider_abstract)
+
+    provider_keywords <- pr$author_keywords %||% character()
+    if (is.list(provider_keywords)) provider_keywords <- unlist(provider_keywords, use.names=FALSE)
+    provider_keywords <- paste(as.character(provider_keywords), collapse="; ")
+
+    tagList(
+      card(
+        class="mb-3",
+        div(
+          class="p-2 d-flex flex-wrap gap-4",
+          div(tags$span(class="text-secondary small","Provider"), tags$strong(class="d-block",provider)),
+          div(tags$span(class="text-secondary small","Field"), tags$strong(class="d-block",field)),
+          div(tags$span(class="text-secondary small","Reason"), tags$strong(class="d-block",reason)),
+          div(tags$span(class="text-secondary small","Record ID"), tags$strong(class="d-block",z$record_id %||% ""))
+        )
+      ),
+      layout_columns(
+        col_widths=c(6,6),
+        card(
+          class="record-card",
+          card_header(tags$strong("Canonical record")),
+          div(
+            class="compact-record-body",
+            div(class="record-title",title_pair$a),
+            tags$dl(
+              class="record-meta",
+              tags$dt("DOI"),tags$dd(doi_pair$a)
+            ),
+            tags$hr(class="record-divider"),
+            tags$h6(class="abstract-heading","Abstract"),
+            div(class="abstract-text",abstract_pair$a)
+          )
+        ),
+        card(
+          class="record-card",
+          card_header(tags$strong(paste("Provider candidate ·",provider))),
+          div(
+            class="compact-record-body",
+            div(class="record-title",title_pair$b),
+            tags$dl(
+              class="record-meta",
+              tags$dt("Returned DOI"),tags$dd(doi_pair$b),
+              tags$dt("EID"),tags$dd(pr$eid %||% z$conflict$eid %||% ""),
+              tags$dt("Keywords"),tags$dd(provider_keywords)
+            ),
+            tags$hr(class="record-divider"),
+            tags$h6(class="abstract-heading","Abstract"),
+            div(class="abstract-text",abstract_pair$b)
+          )
+        )
+      )
+    )
+  })
+
+  output$w02_save_status <- renderText(w02_status())
+
+  save_w02_choice <- function(choice) {
+    z <- w02_current_case()
+    current <- w02_decisions()
+    prior <- NULL
+    if (length(current)) {
+      hits <- Filter(function(x) identical(as.character(x$review_case_id %||% ""), as.character(z$review_case_id)), current)
+      if (length(hits)) prior <- hits[[1L]]
+    }
+    decision <- list(
+      review_case_id=as.character(z$review_case_id),
+      record_id=as.character(z$record_id %||% ""),
+      provider=as.character(z$provider %||% z$conflict$provider %||% ""),
+      field=as.character(z$field %||% z$conflict$field %||% ""),
+      reason=as.character(z$reason %||% z$conflict$reason %||% ""),
+      decision=choice,
+      note="",
+      reviewer=reviewer,
+      resolved_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
+      queue_sha256=w02_queue_sha_rv()
+    )
+    saved <- tryCatch(
+      append_sheet_w02_decision(decision, prior_decision=prior),
+      error=function(e){w02_status(paste("Save failed:",conditionMessage(e)));NULL}
+    )
+    if (is.null(saved)) return(FALSE)
+    remaining <- Filter(
+      function(x) !identical(as.character(x$review_case_id %||% ""), as.character(z$review_case_id)),
+      current
+    )
+    w02_decisions(c(remaining,list(saved)))
+    w02_status(sprintf("Saved %s at %s",choice,format(Sys.time(),"%H:%M:%S")))
+    TRUE
+  }
+
+  advance_w02 <- function() {
+    unresolved <- w02_unresolved_indices()
+    if (!length(unresolved)) {
+      app_view("tasks")
+      return(invisible(TRUE))
+    }
+    later <- unresolved[unresolved > w02_idx()]
+    w02_idx(if (length(later)) later[[1L]] else unresolved[[1L]])
+    invisible(TRUE)
+  }
+
   save_choice <- function(choice) {
     req(authenticated())
     z <- current_case()
@@ -510,6 +784,29 @@ server <- function(input, output, session) {
     if (length(unresolved)) idx(unresolved[[1L]])
     app_view("w01")
   })
+
+  observeEvent(input$open_w02, {
+    unresolved <- w02_unresolved_indices()
+    if (length(unresolved)) w02_idx(unresolved[[1L]])
+    app_view("w02")
+  })
+
+  observeEvent(input$back_to_tasks_w02, app_view("tasks"))
+
+  observeEvent(input$w02_accept_field, {
+    if (save_w02_choice("accept_provider_field")) advance_w02()
+  })
+  observeEvent(input$w02_reject_field, {
+    if (save_w02_choice("reject_provider_field")) advance_w02()
+  })
+  observeEvent(input$w02_reject_match, {
+    if (save_w02_choice("reject_provider_match")) advance_w02()
+  })
+  observeEvent(input$w02_uncertain, {
+    if (save_w02_choice("uncertain")) advance_w02()
+  })
+  observeEvent(input$w02_previous, if (w02_idx()>1L) w02_idx(w02_idx()-1L))
+  observeEvent(input$w02_next, if (w02_idx()<length(w02_cases_rv())) w02_idx(w02_idx()+1L))
 
   observeEvent(input$back_to_tasks, {
     complete(FALSE)
