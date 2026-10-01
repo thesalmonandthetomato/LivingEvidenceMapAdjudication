@@ -355,114 +355,109 @@ server <- function(input, output, session) {
     }
 
     if (identical(app_view(), "tasks")) {
-      total <- length(cases_rv() %||% list())
-      remaining <- length(unresolved_indices())
-      completed_n <- max(0L, total - remaining)
+      w01_total <- length(cases_rv() %||% list())
+      w01_remaining <- if (w01_total) length(unresolved_indices()) else 0L
+      w01_completed <- max(0L, w01_total - w01_remaining)
+
+      w02_total <- length(w02_cases_rv() %||% list())
+      w02_remaining <- if (w02_total) length(w02_unresolved_indices()) else 0L
+      w02_completed <- max(0L, w02_total - w02_remaining)
+
+      w04_total <- length(w04_cases_rv() %||% list())
+      w04_remaining <- if (w04_total) length(w04_unresolved_indices()) else 0L
+      w04_completed <- max(0L, w04_total - w04_remaining)
+
+      annotation_total <- 0L
+      annotation_remaining <- 0L
+      annotation_completed <- 0L
+
+      stage_card <- function(title, workflow, description, total, completed, remaining, button_id = NULL, button_label = NULL, batch = "") {
+        card(
+          class = "task-card h-100",
+          card_header(
+            div(
+              class = "d-flex justify-content-between align-items-center",
+              tags$strong(title),
+              tags$span(class = "task-badge", workflow)
+            )
+          ),
+          div(
+            class = "p-3 d-flex flex-column h-100",
+            tags$p(class = "mb-2", description),
+            div(
+              class = "task-kpis",
+              div(class = "task-kpi", tags$span(class = "text-secondary small", "Total"), tags$strong(total)),
+              div(class = "task-kpi", tags$span(class = "text-secondary small", "Completed"), tags$strong(completed)),
+              div(class = "task-kpi", tags$span(class = "text-secondary small", "Remaining"), tags$strong(remaining))
+            ),
+            if (nzchar(batch)) tags$div(class = "text-secondary small mb-2", batch),
+            if (!is.null(button_id) && remaining > 0L) {
+              actionButton(button_id, button_label, class = "btn-primary mt-auto")
+            } else {
+              tags$div(class = "text-secondary small mt-auto", "No records awaiting review")
+            }
+          )
+        )
+      }
 
       return(div(
         class = "task-shell",
         div(
           class = "d-flex justify-content-between align-items-end mb-3",
           div(
-            tags$h2("Outstanding adjudication tasks", class = "mb-1"),
-            tags$div("Choose a workflow to continue.", class = "text-secondary")
+            tags$h2("Human verification", class = "mb-1"),
+            tags$div("Records remaining at each verification stage.", class = "text-secondary")
           ),
           tags$span(class = "task-badge", "LivingEvidenceMap")
         ),
-        card(
-          class = "task-card mb-3",
-          card_header(
-            div(
-              class = "d-flex justify-content-between align-items-center",
-              tags$strong("Workflow 01 · duplicate review"),
-              tags$span(class = "task-badge", batch_id_rv())
+        div(
+          class = "row g-3",
+          div(
+            class = "col-12 col-lg-6",
+            stage_card(
+              "Deduplication",
+              "Workflow 01",
+              "Potential duplicate bibliographic records.",
+              w01_total, w01_completed, w01_remaining,
+              if (w01_remaining > 0L) "open_w01" else NULL,
+              "Continue deduplication",
+              batch_id_rv()
             )
           ),
           div(
-            class = "p-3",
-            tags$p(
-              class = "mb-2",
-              "Review potential duplicate bibliographic records and decide whether each pair represents the same record."
-            ),
-            div(
-              class = "task-kpis",
-              div(class = "task-kpi", tags$span(class = "text-secondary small", "Total"), tags$strong(total)),
-              div(class = "task-kpi", tags$span(class = "text-secondary small", "Completed"), tags$strong(completed_n)),
-              div(class = "task-kpi", tags$span(class = "text-secondary small", "Remaining"), tags$strong(remaining))
-            ),
-            actionButton(
-              "open_w01",
-              if (remaining > 0L) "Continue Workflow 01" else "Review Workflow 01",
-              class = "btn-primary"
+            class = "col-12 col-lg-6",
+            stage_card(
+              "Enrichment",
+              "Workflow 02",
+              "Bibliographic enrichment conflicts requiring human resolution.",
+              w02_total, w02_completed, w02_remaining,
+              if (w02_remaining > 0L) "open_w02" else NULL,
+              "Continue enrichment",
+              w02_batch_id_rv()
+            )
+          ),
+          div(
+            class = "col-12 col-lg-6",
+            stage_card(
+              "Screening",
+              "Workflow 04",
+              "Human screening or validation records awaiting review.",
+              w04_total, w04_completed, w04_remaining,
+              if (w04_remaining > 0L) "open_w04" else NULL,
+              "Continue screening",
+              w04_batch_id_rv()
+            )
+          ),
+          div(
+            class = "col-12 col-lg-6",
+            stage_card(
+              "Annotation",
+              "Workflow 08",
+              "Records requiring species, geography or topic verification.",
+              annotation_total, annotation_completed, annotation_remaining
             )
           )
-        ),
-        if (!is.null(w02_cases_rv())) {
-          w02_total <- length(w02_cases_rv())
-          w02_remaining <- length(w02_unresolved_indices())
-          w02_completed <- max(0L, w02_total - w02_remaining)
-          card(
-            class = "task-card mb-3",
-            card_header(
-              div(
-                class = "d-flex justify-content-between align-items-center",
-                tags$strong("Workflow 02 · metadata conflict review"),
-                tags$span(class = "task-badge", w02_batch_id_rv())
-              )
-            ),
-            div(
-              class = "p-3",
-              tags$p(
-                class = "mb-2",
-                "Review quarantined bibliographic enrichment conflicts before provider metadata can be accepted or rejected."
-              ),
-              div(
-                class = "task-kpis",
-                div(class = "task-kpi", tags$span(class = "text-secondary small", "Total"), tags$strong(w02_total)),
-                div(class = "task-kpi", tags$span(class = "text-secondary small", "Completed"), tags$strong(w02_completed)),
-                div(class = "task-kpi", tags$span(class = "text-secondary small", "Remaining"), tags$strong(w02_remaining))
-              ),
-              actionButton(
-                "open_w02",
-                if (w02_remaining > 0L) "Continue Workflow 02" else "Review Workflow 02",
-                class = "btn-primary"
-              )
-            )
-          )
-        },
-        if (!is.null(w04_cases_rv())) {
-          w04_total <- length(w04_cases_rv())
-          w04_remaining <- length(w04_unresolved_indices())
-          w04_completed <- max(0L, w04_total - w04_remaining)
-          card(
-            class = "task-card",
-            card_header(
-              div(
-                class = "d-flex justify-content-between align-items-center",
-                tags$strong("Workflow 04 · validation screening"),
-                tags$span(class = "task-badge", w04_batch_id_rv())
-              )
-            ),
-            div(
-              class = "p-3",
-              tags$p(
-                class = "mb-2",
-                "Blindly screen a randomised sample of titles and abstracts to create independent human validation data for Workflow 04."
-              ),
-              div(
-                class = "task-kpis",
-                div(class = "task-kpi", tags$span(class = "text-secondary small", "Total"), tags$strong(w04_total)),
-                div(class = "task-kpi", tags$span(class = "text-secondary small", "Completed"), tags$strong(w04_completed)),
-                div(class = "task-kpi", tags$span(class = "text-secondary small", "Remaining"), tags$strong(w04_remaining))
-              ),
-              actionButton(
-                "open_w04",
-                if (w04_remaining > 0L) "Continue Workflow 04 validation" else "Review Workflow 04 validation",
-                class = "btn-primary"
-              )
-            )
-          )
-        }
+        )
       ))
     }
 
