@@ -252,7 +252,7 @@ ui <- page_fillable(
     .task-badge { background:#eef3f1; border-radius:999px; padding:.2rem .55rem; font-size:.78rem; }
     .pipeline-summary { background:#fff; border:1px solid #dde3e8; border-radius:12px; padding:.85rem 1rem; margin-bottom:1rem; box-shadow:0 2px 10px rgba(22,33,43,.04); }
     .pipeline-summary-top { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:.65rem 1rem; margin-bottom:.65rem; }
-    .pipeline-kpis { display:grid; grid-template-columns:repeat(9,minmax(82px,1fr)); border-top:1px solid #edf0f2; border-bottom:1px solid #edf0f2; }
+    .pipeline-kpis { display:grid; grid-template-columns:repeat(10,minmax(82px,1fr)); border-top:1px solid #edf0f2; border-bottom:1px solid #edf0f2; }
     .pipeline-kpi { padding:.55rem .55rem .5rem .55rem; min-width:0; }
     .pipeline-kpi + .pipeline-kpi { border-left:1px solid #edf0f2; }
     .pipeline-kpi-label { display:block; color:#6a747d; font-size:.69rem; line-height:1.1; margin-bottom:.15rem; }
@@ -312,6 +312,7 @@ server <- function(input, output, session) {
   w08_batch_status_rv <- reactiveVal("")
   w08_status <- reactiveVal("")
   pipeline_status_rv <- reactiveVal(NULL)
+  manual_screening_rv <- reactiveVal(NULL)
 
   decision_ids <- function(ds = decisions()) {
     if (!length(ds)) return(character())
@@ -446,6 +447,19 @@ server <- function(input, output, session) {
     format(d,"%d %b %Y")
   }
 
+  read_manual_screening_metrics <- function() {
+    url <- Sys.getenv(
+      "LEM_W04_AGREEMENT_URL",
+      unset = "https://raw.githubusercontent.com/thesalmonandthetomato/LivingEvidenceMap/workflow01-final-architecture/docs/workflow04/workflow04_agreement_summary.json"
+    )
+    x <- jsonlite::fromJSON(url, simplifyVector = FALSE)
+    list(
+      manually_screened = as.integer(x$historical_comparator_records),
+      kappa = as.numeric(x$consensus_vs_historical$substantive_binary$cohen_kappa),
+      kappa_n = as.integer(x$consensus_vs_historical$substantive_binary$n)
+    )
+  }
+
   pipeline_summary_ui <- function() {
     p <- pipeline_status_rv()
     if(is.null(p)) {
@@ -498,6 +512,14 @@ server <- function(input, output, session) {
         kpi("After dedup.",fmt_pipeline_n(p$deduplicated_records),"W01"),
         kpi("Enriched",fmt_pipeline_n(p$enriched_records),"W02"),
         kpi("Retracted",fmt_pipeline_n(p$retracted_records),"W03"),
+        {
+          m <- manual_screening_rv()
+          kpi(
+            "Manually screened",
+            if(is.null(m)) "—" else fmt_pipeline_n(m$manually_screened),
+            if(is.null(m) || is.na(m$kappa)) "κ —" else sprintf("κ %.3f · model vs manual",m$kappa)
+          )
+        },
         kpi(
           "Screened",
           paste0(fmt_pipeline_n(p$screened_include)," / ",fmt_pipeline_n(p$screened_exclude)),
@@ -829,6 +851,7 @@ server <- function(input, output, session) {
     if (access_key_valid(input$access_key)) {
       loaded <- tryCatch({
         pipeline_status_rv(if(identical(storage_backend(),"google_sheets")) read_latest_pipeline_status() else NULL)
+        manual_screening_rv(tryCatch(read_manual_screening_metrics(),error=function(e)NULL))
         batch <- load_batch()
         current_decisions <- list()
         if (!is.null(batch)) {
