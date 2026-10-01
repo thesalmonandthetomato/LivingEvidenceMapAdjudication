@@ -29,8 +29,7 @@ theme <- bs_theme(
 
 normalise_display_text <- function(x) {
   x <- as.character(x %||% "")
-  x <- gsub("[\\r\\n\\t]+", " ", x)
-  x <- gsub("\\s+", " ", x)
+  x <- gsub("[[:space:]]+", " ", x)
   trimws(x)
 }
 
