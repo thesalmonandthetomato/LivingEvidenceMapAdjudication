@@ -37,7 +37,7 @@ write_local_users <- function(path, users) {
   dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
   tmp <- tempfile(pattern = "users-", tmpdir = dirname(path), fileext = ".jsonl")
   con <- file(tmp, "wt", encoding = "UTF-8")
-  on.exit(if (isOpen(con)) close(con), add = TRUE)
+  on.exit(try(close(con), silent = TRUE), add = TRUE)
   for (u in users) {
     writeLines(
       jsonlite::toJSON(normalise_user_row(u), auto_unbox = TRUE, null = "null", na = "null"),
