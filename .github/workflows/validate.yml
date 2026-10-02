@@ -42,6 +42,7 @@ jobs:
           parse(file="app.R")
           parse(file="R/auth.R")
           parse(file="R/adjudication_schema.R")
+          parse(file="R/users.R")
           parse(file="R/github_dispatch.R")
           parse(file="R/storage_backend.R")
           parse(file="R/storage_local.R")
@@ -56,6 +57,10 @@ jobs:
       - name: Test lean adjudication schema
         shell: Rscript {0}
         run: source("tests/test_adjudication_schema.R")
+
+      - name: Test user registry and permissions
+        shell: Rscript {0}
+        run: source("tests/test_users.R")
 
       - name: Generate Connect Cloud manifest
         shell: Rscript {0}
