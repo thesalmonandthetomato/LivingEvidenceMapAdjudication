@@ -1,6 +1,8 @@
 source("R/w01_contract.R")
 source("R/adjudication_schema.R")
+suppressPackageStartupMessages(library(jsonlite))
 source("R/users.R")
+source("R/storage_local.R")
 
 users <- list(
   list(
@@ -76,3 +78,15 @@ must_fail(validate_user_registry(c(
 must_fail(require_user_permission(reviewer, "manage_users"))
 
 cat("PASS: user registry and permissions\n")
+
+
+tmp_users <- tempfile(fileext = ".jsonl")
+write_local_users(tmp_users, users)
+roundtrip <- read_local_users(tmp_users)
+stopifnot(length(roundtrip) == 3L)
+stopifnot(identical(roundtrip[[1]]$user_id, "usr-admin"))
+stopifnot(isTRUE(roundtrip[[1]]$active))
+stopifnot(isFALSE(roundtrip[[3]]$active))
+unlink(tmp_users)
+
+cat("PASS: local user registry round-trip\n")
