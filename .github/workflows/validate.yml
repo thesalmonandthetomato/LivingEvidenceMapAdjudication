@@ -62,6 +62,10 @@ jobs:
         shell: Rscript {0}
         run: source("tests/test_users.R")
 
+      - name: Test individual authentication
+        shell: Rscript {0}
+        run: source("tests/test_auth.R")
+
       - name: Generate Connect Cloud manifest
         shell: Rscript {0}
         run: |
