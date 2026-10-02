@@ -9,11 +9,16 @@ Sheets tabs, local decision storage or workflow dispatch behaviour.
 The app is designed for a small consultancy team. Each project should use its
 own fork/copy and deployment rather than multi-project tenancy in one app.
 
-The operational roles are:
+There are two operational roles only:
 
-- `administrator`
-- `resolver`
-- `reviewer`
+- `administrator` — can perform all app functions, including adjudication,
+  conflict resolution, assignment management, workflow control, export/return
+  to GitHub and user management.
+- `reviewer` — can only adjudicate cases assigned to them. Reviewers have no
+  workflow-control, user-management or administrative permissions.
+
+No separate resolver role is used. Conflict resolution is an administrator
+function.
 
 The lean batch states are:
 
