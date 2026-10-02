@@ -6,6 +6,8 @@ suppressPackageStartupMessages({
 })
 
 source("R/w01_contract.R", local = TRUE)
+source("R/adjudication_schema.R", local = TRUE)
+source("R/users.R", local = TRUE)
 source("R/storage_local.R", local = TRUE)
 source("R/storage_sheets.R", local = TRUE)
 source("R/storage_backend.R", local = TRUE)
@@ -270,6 +272,7 @@ ui <- page_fillable(
 
 server <- function(input, output, session) {
   authenticated <- reactiveVal(FALSE)
+  current_user <- reactiveVal(NULL)
   app_view <- reactiveVal("tasks")
   failed_attempts <- reactiveVal(0L)
   lock_until <- reactiveVal(as.POSIXct(NA))
@@ -563,8 +566,18 @@ server <- function(input, output, session) {
         class = "login-shell",
         card(
           card_header(tags$strong("LivingEvidenceMap adjudication")),
-          tags$p("Enter the adjudication access key to continue."),
-          passwordInput("access_key", "Access key"),
+          if (individual_auth_configured()) {
+            tagList(
+              tags$p("Sign in with your adjudication account."),
+              textInput("login_email", "Email"),
+              passwordInput("access_key", "Access key")
+            )
+          } else {
+            tagList(
+              tags$p("Enter the adjudication access key to continue."),
+              passwordInput("access_key", "Access key")
+            )
+          },
           actionButton("login", "Continue", class = "btn-primary"),
           tags$div(class = "mt-2 text-danger", textOutput("login_status"))
         )
@@ -852,6 +865,12 @@ server <- function(input, output, session) {
   login_status <- reactiveVal("")
   output$login_status <- renderText(login_status())
 
+  session_reviewer_id <- function() {
+    u <- current_user()
+    if (is.null(u)) return(reviewer)
+    as.character(u$user_id)
+  }
+
   observeEvent(input$login, {
     now <- Sys.time()
     until <- lock_until()
@@ -859,7 +878,21 @@ server <- function(input, output, session) {
       login_status("Too many failed attempts. Try again shortly.")
       return()
     }
-    if (access_key_valid(input$access_key)) {
+    login_user <- tryCatch({
+      if (individual_auth_configured()) {
+        registry <- read_user_registry()
+        authenticate_registered_user(registry, input$login_email, input$access_key)
+      } else if (access_key_valid(input$access_key)) {
+        legacy_session_user()
+      } else {
+        NULL
+      }
+    }, error = function(e) {
+      login_status(paste("Login configuration error:", conditionMessage(e)))
+      NULL
+    })
+
+    if (!is.null(login_user)) {
       loaded <- tryCatch({
         pipeline_status_rv(if(identical(storage_backend(),"google_sheets")) read_latest_pipeline_status() else NULL)
         manual_screening_rv(tryCatch(read_manual_screening_metrics(),error=function(e)NULL))
@@ -958,6 +991,7 @@ server <- function(input, output, session) {
       })
 
       if (isTRUE(loaded)) {
+        current_user(login_user)
         authenticated(TRUE)
         app_view("tasks")
         failed_attempts(0L)
@@ -971,7 +1005,7 @@ server <- function(input, output, session) {
         failed_attempts(0L)
         login_status("Too many failed attempts. Try again in one minute.")
       } else {
-        login_status("Invalid access key.")
+        login_status(if (individual_auth_configured()) "Invalid email or access key." else "Invalid access key.")
       }
     }
   })
@@ -1193,7 +1227,7 @@ server <- function(input, output, session) {
       reason=as.character(z$reason %||% z$conflict$reason %||% ""),
       decision=choice,
       note="",
-      reviewer=reviewer,
+      reviewer=session_reviewer_id(),
       resolved_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
       queue_sha256=w02_queue_sha_rv()
     )
@@ -1352,7 +1386,7 @@ server <- function(input, output, session) {
       record_id=as.character(z$record_id),
       decision=choice,
       rationale="Manual validation screening in Shiny",
-      reviewer=reviewer,
+      reviewer=session_reviewer_id(),
       resolved_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
       queue_sha256=w04_queue_sha_rv()
     )
@@ -1611,7 +1645,7 @@ server <- function(input, output, session) {
         decision=choice,
         final_value=final_value,
         rationale="Adjudicated in combined Workflow 08 Shiny review",
-        reviewer=reviewer,
+        reviewer=session_reviewer_id(),
         resolved_at_utc=now,
         queue_sha256=w08_queue_sha_rv()
       )
@@ -1630,7 +1664,7 @@ server <- function(input, output, session) {
       queue_sha256=w08_queue_sha_rv(),
       record_case_sha256=case_sha,
       issue_decisions_json=jsonlite::toJSON(issue_decisions,auto_unbox=TRUE,null="null",na="null",digits=NA),
-      reviewer=reviewer,
+      reviewer=session_reviewer_id(),
       resolved_at_utc=now
     )
     saved <- tryCatch(
@@ -1679,7 +1713,7 @@ server <- function(input, output, session) {
       review_case_id = z$review_case_id,
       decision = choice,
       rationale = "Adjudicated in Shiny",
-      reviewer = reviewer,
+      reviewer=session_reviewer_id(),
       resolved_at_utc = format(Sys.time(), tz="UTC", format="%Y-%m-%dT%H:%M:%SZ"),
       queue_sha256 = queue_sha_rv()
     )
