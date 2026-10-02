@@ -1667,13 +1667,16 @@
   },
   "files": {
     ".github/workflows/validate.yml": {
-      "checksum": "102064e321f67e7d6dfd86c4034f85fa"
+      "checksum": "bb3fc156c444f575ccbf5e68b4f05660"
     },
     "app.R": {
-      "checksum": "87bd9ce6ac6906bfba19077a3464dc53"
+      "checksum": "c8f8600f71e6a64a622ac950e8aa5306"
     },
     "docs/adjudication_data_contract.md": {
       "checksum": "3919321855a4cb2298dc7f9cbaa3602b"
+    },
+    "docs/individual_authentication.md": {
+      "checksum": "8c7a57fda27783c9d43731d71d7143dc"
     },
     "docs/workflow02_adjudication_contract.md": {
       "checksum": "70e8056f8d6149f52ed939221645e1f9"
@@ -1688,13 +1691,13 @@
       "checksum": "2ff06f7ff1af518a1026070f6963beb3"
     },
     "R/auth.R": {
-      "checksum": "386d3f17d2856f50d104d87761906e16"
+      "checksum": "cadec0238e5356811bd8495088892a66"
     },
     "R/github_dispatch.R": {
       "checksum": "509988ef82ca8d697586286d0fde79bd"
     },
     "R/storage_backend.R": {
-      "checksum": "eb9dc845122b7e980cc887fb46c751b8"
+      "checksum": "6260fc9b86ef54c9db5af9ef604c6a0b"
     },
     "R/storage_local.R": {
       "checksum": "5004b00ddb543e2da8d176905dd2b3c4"
@@ -1716,6 +1719,9 @@
     },
     "tests/test_adjudication_schema.R": {
       "checksum": "9214af273f5e27d1f23cd603fafb564e"
+    },
+    "tests/test_auth.R": {
+      "checksum": "71a83aecde7c9af7e37a90d8dfc13b63"
     },
     "tests/test_users.R": {
       "checksum": "3478785333151da4bc9976089d9d66b9"
