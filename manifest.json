@@ -1702,6 +1702,9 @@
     "R/storage_sheets.R": {
       "checksum": "bd54d0f7d9fd514bbcb0e7326b691b3a"
     },
+    "R/users.R": {
+      "checksum": "c3b752ebbf6aaa289691b6d06c23e9a1"
+    },
     "R/w01_contract.R": {
       "checksum": "08a1be968420750f0593f092c2b7caab"
     },
