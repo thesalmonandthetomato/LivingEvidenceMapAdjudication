@@ -7,6 +7,26 @@
 
 ADJUDICATION_ROLES <- c("administrator", "reviewer")
 
+ADJUDICATION_PERMISSIONS <- list(
+  administrator = c(
+    "adjudicate_assigned",
+    "resolve_conflicts",
+    "manage_assignments",
+    "control_workflows",
+    "export_to_github",
+    "manage_users"
+  ),
+  reviewer = c(
+    "adjudicate_assigned",
+    "resolve_conflicts"
+  )
+)
+
+role_can <- function(role, permission) {
+  role %in% names(ADJUDICATION_PERMISSIONS) &&
+    permission %in% ADJUDICATION_PERMISSIONS[[role]]
+}
+
 ADJUDICATION_BATCH_STATES <- c(
   "ready",
   "running",
