@@ -85,3 +85,19 @@ require_user_permission <- function(user, permission) {
   }
   invisible(TRUE)
 }
+
+
+initial_users_from_env <- function() {
+  raw <- Sys.getenv("LEM_INITIAL_USERS_JSON", unset = "")
+  if (!nzchar(raw)) return(list())
+
+  parsed <- tryCatch(
+    jsonlite::fromJSON(raw, simplifyVector = FALSE),
+    error = function(e) stop("LEM_INITIAL_USERS_JSON is not valid JSON", call. = FALSE)
+  )
+  if (!is.list(parsed)) stop("LEM_INITIAL_USERS_JSON must contain a JSON array", call. = FALSE)
+
+  out <- lapply(parsed, normalise_user_row)
+  validate_user_registry(out)
+  out
+}
