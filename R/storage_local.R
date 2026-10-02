@@ -20,3 +20,32 @@ write_local_decision <- function(path, decision) {
   if (!file.rename(tmp, path)) stop("Could not atomically replace local decision store", call.=FALSE)
   invisible(TRUE)
 }
+
+
+read_local_users <- function(path) {
+  if (is.null(path) || !nzchar(as.character(path)) || !file.exists(path)) return(list())
+  lines <- readLines(path, warn = FALSE, encoding = "UTF-8")
+  lines <- lines[nzchar(trimws(lines))]
+  if (!length(lines)) return(list())
+  users <- lapply(lines, jsonlite::fromJSON, simplifyVector = FALSE)
+  validate_user_registry(users)
+  lapply(users, normalise_user_row)
+}
+
+write_local_users <- function(path, users) {
+  validate_user_registry(users)
+  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+  tmp <- tempfile(pattern = "users-", tmpdir = dirname(path), fileext = ".jsonl")
+  con <- file(tmp, "wt", encoding = "UTF-8")
+  on.exit(if (isOpen(con)) close(con), add = TRUE)
+  for (u in users) {
+    writeLines(
+      jsonlite::toJSON(normalise_user_row(u), auto_unbox = TRUE, null = "null", na = "null"),
+      con,
+      useBytes = TRUE
+    )
+  }
+  close(con)
+  if (!file.rename(tmp, path)) stop("Could not atomically replace local user registry", call. = FALSE)
+  invisible(TRUE)
+}
