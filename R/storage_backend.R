@@ -15,3 +15,11 @@ save_active_decision <- function(decision, local_path = NULL, prior_decision = N
   if (!identical(b, "local")) stop("Unsupported LEM_STORAGE_BACKEND: ", b, call.=FALSE)
   write_local_decision(local_path, decision)
 }
+
+
+read_user_registry <- function(local_path = NULL) {
+  b <- storage_backend()
+  if (identical(b, "google_sheets")) return(read_sheet_users())
+  if (!identical(b, "local")) stop("Unsupported LEM_STORAGE_BACKEND: ", b, call. = FALSE)
+  read_local_users(local_path)
+}
