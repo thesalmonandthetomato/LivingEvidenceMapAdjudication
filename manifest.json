@@ -1673,7 +1673,7 @@
       "checksum": "87bd9ce6ac6906bfba19077a3464dc53"
     },
     "docs/adjudication_data_contract.md": {
-      "checksum": "e0978d7537047b25c3a826222aff519e"
+      "checksum": "1fc21b0e0a589e469700b20b95e79d66"
     },
     "docs/workflow02_adjudication_contract.md": {
       "checksum": "70e8056f8d6149f52ed939221645e1f9"
@@ -1685,7 +1685,7 @@
       "checksum": "480a0d337e4fbf1a18baca82acdbcb23"
     },
     "R/adjudication_schema.R": {
-      "checksum": "eb93c7718fcf630013696e582a10ada1"
+      "checksum": "8009c251b0a0c07f2b450d316b7b793f"
     },
     "R/auth.R": {
       "checksum": "386d3f17d2856f50d104d87761906e16"
@@ -1712,7 +1712,7 @@
       "checksum": "830f4fe98acd7bfe7139617f6a5cbfa8"
     },
     "tests/test_adjudication_schema.R": {
-      "checksum": "ac8420b4b04a86d46a2f1a6f3fa8e9ad"
+      "checksum": "6385945d9174b620e63fde059d6e5610"
     },
     "tests/test_w01_contract.R": {
       "checksum": "351b37375b7e30c5d6058325091b7526"
