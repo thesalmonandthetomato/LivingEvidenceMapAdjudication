@@ -786,3 +786,51 @@ read_latest_pipeline_status <- function() {
 
   NULL
 }
+
+
+user_registry_tab <- function() {
+  Sys.getenv("LEM_GOOGLE_USERS_TAB", unset = "users")
+}
+
+ensure_sheet_user_registry <- function() {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- user_registry_tab()
+  tabs <- googlesheets4::sheet_names(ss)
+  cols <- ADJUDICATION_SCHEMA$users
+
+  if (!tab %in% tabs) {
+    googlesheets4::sheet_add(ss, sheet = tab)
+    empty <- as.data.frame(
+      setNames(replicate(length(cols), character(), simplify = FALSE), cols),
+      stringsAsFactors = FALSE
+    )
+    googlesheets4::sheet_write(empty, ss = ss, sheet = tab)
+  }
+  invisible(TRUE)
+}
+
+read_sheet_users <- function() {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- user_registry_tab()
+  tabs <- googlesheets4::sheet_names(ss)
+
+  # Phase 1A is deliberately non-invasive: absence of the user tab is an
+  # empty registry, not a reason to create or mutate the spreadsheet.
+  if (!tab %in% tabs) return(list())
+
+  x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
+  if (!nrow(x)) return(list())
+
+  missing <- setdiff(ADJUDICATION_SCHEMA$users, names(x))
+  if (length(missing)) {
+    stop("User registry tab missing field(s): ", paste(missing, collapse = ", "), call. = FALSE)
+  }
+
+  users <- lapply(seq_len(nrow(x)), function(i) {
+    normalise_user_row(as.list(x[i, ADJUDICATION_SCHEMA$users, drop = FALSE]))
+  })
+  validate_user_registry(users)
+  users
+}
