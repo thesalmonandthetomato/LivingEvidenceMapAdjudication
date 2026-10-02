@@ -314,6 +314,16 @@ server <- function(input, output, session) {
   pipeline_status_rv <- reactiveVal(NULL)
   manual_screening_rv <- reactiveVal(NULL)
 
+  observe({
+    req(authenticated())
+    invalidateLater(30000, session)
+    refreshed <- tryCatch(
+      if(identical(storage_backend(),"google_sheets")) read_latest_pipeline_status() else NULL,
+      error=function(e) NULL
+    )
+    if(!is.null(refreshed)) pipeline_status_rv(refreshed)
+  })
+
   decision_ids <- function(ds = decisions()) {
     if (!length(ds)) return(character())
     keep <- vapply(ds,function(x)as.character(x$decision %||% "") %in% c("duplicate","not_duplicate"),logical(1))
