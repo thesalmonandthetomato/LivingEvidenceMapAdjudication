@@ -7,6 +7,12 @@ stopifnot(identical(
   c("administrator", "reviewer")
 ))
 stopifnot("locked" %in% ADJUDICATION_BATCH_STATES)
+stopifnot(role_can("administrator", "resolve_conflicts"))
+stopifnot(role_can("administrator", "control_workflows"))
+stopifnot(role_can("reviewer", "adjudicate_assigned"))
+stopifnot(role_can("reviewer", "resolve_conflicts"))
+stopifnot(!role_can("reviewer", "control_workflows"))
+stopifnot(!role_can("reviewer", "manage_users"))
 stopifnot(is_sha256(sha))
 stopifnot(!is_sha256("not-a-sha"))
 
