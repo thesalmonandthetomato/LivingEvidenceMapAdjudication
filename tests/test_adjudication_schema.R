@@ -4,7 +4,7 @@ sha <- paste(rep("a", 64), collapse = "")
 
 stopifnot(identical(
   ADJUDICATION_ROLES,
-  c("administrator", "resolver", "reviewer")
+  c("administrator", "reviewer")
 ))
 stopifnot("locked" %in% ADJUDICATION_BATCH_STATES)
 stopifnot(is_sha256(sha))
@@ -15,6 +15,14 @@ validate_user_contract(list(
   email = "neal@example.org",
   display_name = "Neal",
   role = "administrator",
+  active = TRUE
+))
+
+validate_user_contract(list(
+  user_id = "usr-reviewer",
+  email = "reviewer@example.org",
+  display_name = "Reviewer",
+  role = "reviewer",
   active = TRUE
 ))
 
@@ -84,7 +92,7 @@ must_fail(validate_user_contract(list(
   user_id = "usr-x",
   email = "x@example.org",
   display_name = "X",
-  role = "superuser",
+  role = "resolver",
   active = TRUE
 )))
 
