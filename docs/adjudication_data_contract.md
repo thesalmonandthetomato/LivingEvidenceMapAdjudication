@@ -14,11 +14,12 @@ There are two operational roles only:
 - `administrator` — can perform all app functions, including adjudication,
   conflict resolution, assignment management, workflow control, export/return
   to GitHub and user management.
-- `reviewer` — can only adjudicate cases assigned to them. Reviewers have no
-  workflow-control, user-management or administrative permissions.
+- `reviewer` — can adjudicate cases assigned to them and can resolve
+  conflicts. Reviewers cannot manage assignments, control workflows,
+  export/return work to GitHub or manage users.
 
-No separate resolver role is used. Conflict resolution is an administrator
-function.
+No separate resolver role is used. Conflict resolution is available to both
+administrators and reviewers.
 
 The lean batch states are:
 
