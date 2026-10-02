@@ -5,7 +5,7 @@
 # behaviour. Later migration phases should use these helpers at the storage
 # boundaries.
 
-ADJUDICATION_ROLES <- c("administrator", "resolver", "reviewer")
+ADJUDICATION_ROLES <- c("administrator", "reviewer")
 
 ADJUDICATION_BATCH_STATES <- c(
   "ready",
