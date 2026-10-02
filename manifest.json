@@ -1667,7 +1667,7 @@
   },
   "files": {
     ".github/workflows/validate.yml": {
-      "checksum": "f6dfe17b7d63483dc24aa3ff5303a1f0"
+      "checksum": "102064e321f67e7d6dfd86c4034f85fa"
     },
     "app.R": {
       "checksum": "87bd9ce6ac6906bfba19077a3464dc53"
@@ -1694,16 +1694,16 @@
       "checksum": "509988ef82ca8d697586286d0fde79bd"
     },
     "R/storage_backend.R": {
-      "checksum": "fdc863ed451e450d5416662148f4f63a"
+      "checksum": "eb9dc845122b7e980cc887fb46c751b8"
     },
     "R/storage_local.R": {
-      "checksum": "04242516ce13f82c81a551f4c1784928"
+      "checksum": "5004b00ddb543e2da8d176905dd2b3c4"
     },
     "R/storage_sheets.R": {
-      "checksum": "bd54d0f7d9fd514bbcb0e7326b691b3a"
+      "checksum": "2dcd3e8441caed05929089db658a31c3"
     },
     "R/users.R": {
-      "checksum": "c3b752ebbf6aaa289691b6d06c23e9a1"
+      "checksum": "3a075de05b80b6bcc448c8c8715c3533"
     },
     "R/w01_contract.R": {
       "checksum": "08a1be968420750f0593f092c2b7caab"
@@ -1716,6 +1716,9 @@
     },
     "tests/test_adjudication_schema.R": {
       "checksum": "9214af273f5e27d1f23cd603fafb564e"
+    },
+    "tests/test_users.R": {
+      "checksum": "3478785333151da4bc9976089d9d66b9"
     },
     "tests/test_w01_contract.R": {
       "checksum": "351b37375b7e30c5d6058325091b7526"
