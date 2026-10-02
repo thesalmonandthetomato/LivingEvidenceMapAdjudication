@@ -42,7 +42,7 @@ active_users <- function(users) {
 
 find_user_by_id <- function(users, user_id, require_active = TRUE) {
   validate_user_registry(users)
-  key <- trimws(as.character(user_id %||% ""))
+  key <- if (is.null(user_id) || !length(user_id)) "" else trimws(as.character(user_id[[1L]]))
   if (!nzchar(key)) return(NULL)
 
   hits <- Filter(
@@ -58,7 +58,7 @@ find_user_by_id <- function(users, user_id, require_active = TRUE) {
 
 find_user_by_email <- function(users, email, require_active = TRUE) {
   validate_user_registry(users)
-  key <- tolower(trimws(as.character(email %||% "")))
+  key <- if (is.null(email) || !length(email)) "" else tolower(trimws(as.character(email[[1L]])))
   if (!nzchar(key)) return(NULL)
 
   hits <- Filter(
