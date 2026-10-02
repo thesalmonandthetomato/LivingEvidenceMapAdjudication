@@ -1667,7 +1667,7 @@
   },
   "files": {
     ".github/workflows/validate.yml": {
-      "checksum": "bb3fc156c444f575ccbf5e68b4f05660"
+      "checksum": "fcf0a99919570dda5922777357003c60"
     },
     "app.R": {
       "checksum": "559860232930181ecfa183b1b4d9a9e4"
@@ -1722,6 +1722,9 @@
     },
     "tests/test_auth.R": {
       "checksum": "71a83aecde7c9af7e37a90d8dfc13b63"
+    },
+    "tests/test_phase1c_permissions.R": {
+      "checksum": "b3112ec7649f87b6de2a4a2b8287224b"
     },
     "tests/test_users.R": {
       "checksum": "3478785333151da4bc9976089d9d66b9"
