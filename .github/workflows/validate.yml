@@ -2,12 +2,13 @@ name: Validate and build Connect Cloud manifest
 
 on:
   push:
-    branches: [main]
+    branches: [main, shiny-adjudication-redesign]
     paths:
       - 'app.R'
       - 'R/**'
       - 'fixtures/**'
       - 'tests/**'
+      - 'docs/**'
       - 'scripts/make_manifest.R'
       - '.github/workflows/validate.yml'
   workflow_dispatch:
@@ -16,7 +17,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: shiny-validate-manifest-main
+  group: shiny-validate-manifest-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -40,6 +41,7 @@ jobs:
         run: |
           parse(file="app.R")
           parse(file="R/auth.R")
+          parse(file="R/adjudication_schema.R")
           parse(file="R/github_dispatch.R")
           parse(file="R/storage_backend.R")
           parse(file="R/storage_local.R")
@@ -51,6 +53,10 @@ jobs:
         shell: Rscript {0}
         run: source("tests/test_w01_contract.R")
 
+      - name: Test lean adjudication schema
+        shell: Rscript {0}
+        run: source("tests/test_adjudication_schema.R")
+
       - name: Generate Connect Cloud manifest
         shell: Rscript {0}
         run: |
@@ -59,15 +65,17 @@ jobs:
           cat("PASS: manifest.json generated\n")
 
       - name: Commit manifest if changed
+        if: github.event_name == 'push'
         shell: bash
         run: |
           set -euo pipefail
+          BRANCH="${GITHUB_REF_NAME}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin main
-          if git show origin/main:manifest.json > "$RUNNER_TEMP/remote-manifest.json" 2>/dev/null &&
+          git fetch origin "$BRANCH"
+          if git show "origin/$BRANCH:manifest.json" > "$RUNNER_TEMP/remote-manifest.json" 2>/dev/null &&
              cmp -s manifest.json "$RUNNER_TEMP/remote-manifest.json"; then
-            echo "PASS: manifest.json already current on origin/main"
+            echo "PASS: manifest.json already current on origin/$BRANCH"
             exit 0
           fi
 
@@ -78,5 +86,5 @@ jobs:
           fi
 
           git commit -m "build: update Connect Cloud manifest"
-          git pull --rebase origin main
-          git push origin HEAD:main
+          git pull --rebase origin "$BRANCH"
+          git push origin "HEAD:$BRANCH"
