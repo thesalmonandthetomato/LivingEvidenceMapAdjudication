@@ -66,6 +66,10 @@ jobs:
         shell: Rscript {0}
         run: source("tests/test_auth.R")
 
+      - name: Test Phase 1C permission enforcement
+        shell: Rscript {0}
+        run: source("tests/test_phase1c_permissions.R")
+
       - name: Generate Connect Cloud manifest
         shell: Rscript {0}
         run: |
