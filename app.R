@@ -871,6 +871,10 @@ server <- function(input, output, session) {
     as.character(u$user_id)
   }
 
+  session_can <- function(permission) {
+    user_can(current_user(), permission)
+  }
+
   observeEvent(input$login, {
     now <- Sys.time()
     until <- lock_until()
@@ -912,7 +916,9 @@ server <- function(input, output, session) {
           w02_decisions(w02_filter_batch_decisions(w02_all_decisions, w02_batch$queue_sha256))
           w02_unresolved <- w02_unresolved_indices()
           w02_idx(if (length(w02_unresolved)) w02_unresolved[[1L]] else max(1L, length(w02_batch$cases)))
-          if(!length(w02_unresolved) && !identical(w02_batch_status_rv(),"review_complete")) {
+          if(!length(w02_unresolved) &&
+             !identical(w02_batch_status_rv(),"review_complete") &&
+             user_can(login_user,"control_workflows")) {
             mark_review_complete("02",w02_batch_id_rv(),w02_queue_sha_rv(),w02_batch_status_rv)
           }
         }
@@ -929,7 +935,9 @@ server <- function(input, output, session) {
           w04_decisions(w04_filter_batch_decisions(w04_all_decisions, w04_batch$queue_sha256))
           w04_unresolved <- w04_unresolved_indices()
           w04_idx(if (length(w04_unresolved)) w04_unresolved[[1L]] else max(1L,length(w04_batch$cases)))
-          if(!length(w04_unresolved) && !identical(w04_batch_status_rv(),"review_complete")) {
+          if(!length(w04_unresolved) &&
+             !identical(w04_batch_status_rv(),"review_complete") &&
+             user_can(login_user,"control_workflows")) {
             mark_review_complete("04",w04_batch_id_rv(),w04_queue_sha_rv(),w04_batch_status_rv)
           }
         }
@@ -948,7 +956,9 @@ server <- function(input, output, session) {
           w08_decisions(w08_filter_batch_decisions(w08_all_decisions,w08_batch$queue_sha256))
           w08_unresolved <- w08_unresolved_indices()
           w08_idx(if(length(w08_unresolved)) w08_unresolved[[1L]] else max(1L,length(w08_batch$cases)))
-          if(!length(w08_unresolved) && !identical(w08_batch_status_rv(),"review_complete")) {
+          if(!length(w08_unresolved) &&
+             !identical(w08_batch_status_rv(),"review_complete") &&
+             user_can(login_user,"control_workflows")) {
             mark_review_complete("08",w08_batch_id_rv(),w08_queue_sha_rv(),w08_batch_status_rv)
           }
         }
@@ -971,7 +981,8 @@ server <- function(input, output, session) {
           } else {
             idx(max(1L,length(batch$cases)))
             complete(TRUE)
-            if(!identical(batch_status_rv(),"review_complete")) {
+            if(!identical(batch_status_rv(),"review_complete") &&
+               user_can(login_user,"control_workflows")) {
               mark_review_complete("01",batch_id_rv(),queue_sha_rv(),batch_status_rv)
             }
           }
@@ -1212,6 +1223,10 @@ server <- function(input, output, session) {
   output$w02_save_status <- renderText(w02_status())
 
   save_w02_choice <- function(choice) {
+    if(!session_can("adjudicate_assigned")) {
+      w02_status("You do not have permission to adjudicate records.")
+      return(FALSE)
+    }
     z <- w02_current_case()
     current <- w02_decisions()
     prior <- NULL
@@ -1246,6 +1261,10 @@ server <- function(input, output, session) {
   }
 
   dispatch_completed_w02 <- function() {
+    if(!session_can("control_workflows")) {
+      w02_status("Review complete. Awaiting an administrator to resume Workflow 02.")
+      return(FALSE)
+    }
     unresolved <- w02_unresolved_indices()
     if (length(unresolved)) return(FALSE)
 
@@ -1295,8 +1314,12 @@ server <- function(input, output, session) {
   advance_w02 <- function() {
     unresolved <- w02_unresolved_indices()
     if (!length(unresolved)) {
-      mark_review_complete("02",w02_batch_id_rv(),w02_queue_sha_rv(),w02_batch_status_rv)
-      dispatch_completed_w02()
+      if(session_can("control_workflows")) {
+        mark_review_complete("02",w02_batch_id_rv(),w02_queue_sha_rv(),w02_batch_status_rv)
+        dispatch_completed_w02()
+      } else {
+        w02_status("Review complete. Awaiting an administrator to resume Workflow 02.")
+      }
       app_view("tasks")
       return(invisible(TRUE))
     }
@@ -1373,6 +1396,10 @@ server <- function(input, output, session) {
   output$w04_save_status <- renderText(w04_status())
 
   save_w04_choice <- function(choice) {
+    if(!session_can("adjudicate_assigned")) {
+      w04_status("You do not have permission to adjudicate records.")
+      return(FALSE)
+    }
     z <- w04_current_case()
     current <- w04_decisions()
     prior <- NULL
@@ -1409,15 +1436,19 @@ server <- function(input, output, session) {
   advance_w04 <- function() {
     unresolved <- w04_unresolved_indices()
     if(!length(unresolved)) {
-      mark_review_complete("04",w04_batch_id_rv(),w04_queue_sha_rv(),w04_batch_status_rv)
-      dispatched <- tryCatch({
-        dispatch_w04_validation_finalize(w04_batch_id_rv(),w04_queue_sha_rv())
-        TRUE
-      }, error=function(e){
-        w04_status(paste("Review complete, but W04 finalisation dispatch failed:",conditionMessage(e)))
-        FALSE
-      })
-      if(dispatched) w04_status("Review complete. Workflow 04 finalisation dispatched.")
+      if(session_can("control_workflows")) {
+        mark_review_complete("04",w04_batch_id_rv(),w04_queue_sha_rv(),w04_batch_status_rv)
+        dispatched <- tryCatch({
+          dispatch_w04_validation_finalize(w04_batch_id_rv(),w04_queue_sha_rv())
+          TRUE
+        }, error=function(e){
+          w04_status(paste("Review complete, but W04 finalisation dispatch failed:",conditionMessage(e)))
+          FALSE
+        })
+        if(dispatched) w04_status("Review complete. Workflow 04 finalisation dispatched.")
+      } else {
+        w04_status("Review complete. Awaiting an administrator to finalise Workflow 04.")
+      }
       app_view("tasks")
       return(invisible(TRUE))
     }
@@ -1574,6 +1605,10 @@ server <- function(input, output, session) {
   }
 
   save_w08_record <- function() {
+    if(!session_can("adjudicate_assigned")) {
+      w08_status("You do not have permission to adjudicate records.")
+      return(FALSE)
+    }
     z <- w08_current_case()
     rid <- as.character(z$record_id)
     issues <- z$issues %||% list()
@@ -1682,15 +1717,19 @@ server <- function(input, output, session) {
   advance_w08 <- function() {
     unresolved <- w08_unresolved_indices()
     if(!length(unresolved)) {
-      mark_review_complete("08",w08_batch_id_rv(),w08_queue_sha_rv(),w08_batch_status_rv)
-      dispatched <- tryCatch({
-        dispatch_w08_resume(w08_source_run_id_rv(),w08_batch_id_rv(),w08_queue_sha_rv())
-        TRUE
-      }, error=function(e){
-        w08_status(paste("Review complete, but W08 resume dispatch failed:",conditionMessage(e)))
-        FALSE
-      })
-      if(dispatched) w08_status("Review complete. Workflow 08 resume dispatched.")
+      if(session_can("control_workflows")) {
+        mark_review_complete("08",w08_batch_id_rv(),w08_queue_sha_rv(),w08_batch_status_rv)
+        dispatched <- tryCatch({
+          dispatch_w08_resume(w08_source_run_id_rv(),w08_batch_id_rv(),w08_queue_sha_rv())
+          TRUE
+        }, error=function(e){
+          w08_status(paste("Review complete, but W08 resume dispatch failed:",conditionMessage(e)))
+          FALSE
+        })
+        if(dispatched) w08_status("Review complete. Workflow 08 resume dispatched.")
+      } else {
+        w08_status("Review complete. Awaiting an administrator to resume Workflow 08.")
+      }
       app_view("tasks")
       return(invisible(TRUE))
     }
@@ -1701,6 +1740,10 @@ server <- function(input, output, session) {
 
   save_choice <- function(choice) {
     req(authenticated())
+    if(!session_can("adjudicate_assigned")) {
+      status("You do not have permission to adjudicate records.")
+      return(FALSE)
+    }
     z <- current_case()
     current <- decisions()
     prior <- NULL
@@ -1739,7 +1782,11 @@ server <- function(input, output, session) {
   advance_after_save <- function() {
     unresolved <- unresolved_indices()
     if (!length(unresolved)) {
-      mark_review_complete("01",batch_id_rv(),queue_sha_rv(),batch_status_rv)
+      if(session_can("control_workflows")) {
+        mark_review_complete("01",batch_id_rv(),queue_sha_rv(),batch_status_rv)
+      } else {
+        status("Review complete. Awaiting an administrator to continue Workflow 01.")
+      }
       complete(TRUE)
       return(invisible(TRUE))
     }
