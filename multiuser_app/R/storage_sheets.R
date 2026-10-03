@@ -1104,3 +1104,149 @@ write_sheet_assignments <- function(
   append_sheet_assignment_audit(changes, actor_user_id = actor_user_id)
   invisible(verify)
 }
+
+
+write_test_queue_tab <- function(tab, rows) {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tabs <- googlesheets4::sheet_names(ss)
+  if (tab %in% tabs) {
+    stop("Test queue was not created because sheet tab already exists: ", tab, call. = FALSE)
+  }
+  googlesheets4::sheet_add(ss, sheet = tab)
+  googlesheets4::sheet_write(rows, ss = ss, sheet = tab)
+  invisible(TRUE)
+}
+
+test_queue_json <- function(x) {
+  jsonlite::toJSON(
+    x,
+    auto_unbox = TRUE,
+    null = "null",
+    na = "null",
+    digits = NA
+  )
+}
+
+create_test_w02_queue <- function(
+  tab = Sys.getenv("LEM_W02_QUEUE_TAB", unset = "queue_w02_active")
+) {
+  cases <- list(
+    list(
+      review_case_id = "test-w02-001",
+      record_id = "test-w02-record-001",
+      provider = "Scopus",
+      field = "abstract",
+      reason = "provider_field_conflict",
+      canonical = list(
+        title = "Atlantic salmon aquaculture and environmental monitoring",
+        abstract = "Canonical abstract retained in the evidence map.",
+        doi = "10.0000/test.w02.001"
+      ),
+      provider_response = list(
+        title = "Atlantic salmon aquaculture and environmental monitoring",
+        abstract = "Provider abstract supplied for human verification.",
+        returned_doi = "10.0000/test.w02.001",
+        eid = "2-s2.0-TEST001",
+        author_keywords = c("Atlantic salmon", "aquaculture")
+      )
+    ),
+    list(
+      review_case_id = "test-w02-002",
+      record_id = "test-w02-record-002",
+      provider = "Scopus",
+      field = "doi",
+      reason = "returned_doi_mismatch",
+      canonical = list(
+        title = "Rainbow trout farming and water quality",
+        abstract = "Canonical metadata for a synthetic test record.",
+        doi = "10.0000/test.w02.002"
+      ),
+      provider_response = list(
+        title = "Rainbow trout farming and water quality",
+        abstract = "Synthetic provider response used only for assignment testing.",
+        returned_doi = "10.0000/test.w02.WRONG",
+        eid = "2-s2.0-TEST002",
+        author_keywords = c("rainbow trout", "water quality")
+      )
+    )
+  )
+
+  json <- vapply(cases, test_queue_json, character(1))
+  payload <- paste0(paste(json, collapse = "\n"), "\n")
+  sha <- digest::digest(payload, algo = "sha256", serialize = FALSE)
+  batch_id <- "w02-test-assignment-smoke"
+
+  rows <- data.frame(
+    batch_id = rep(batch_id, length(cases)),
+    queue_sha256 = rep(sha, length(cases)),
+    case_index = as.character(seq_along(cases)),
+    review_case_id = vapply(cases, function(x) x$review_case_id, character(1)),
+    case_json = json,
+    stringsAsFactors = FALSE
+  )
+  write_test_queue_tab(tab, rows)
+  invisible(list(batch_id = batch_id, queue_sha256 = sha, cases = cases))
+}
+
+create_test_w08_queue <- function(
+  tab = Sys.getenv("LEM_W08_QUEUE_TAB", unset = "queue_w08_active")
+) {
+  issue1 <- list(
+    issue_type = "zero_topic_eligibility_uncertain",
+    allowed_human_outcomes = c("include_uncoded", "exclude_record"),
+    automated_value = list()
+  )
+  issue1$issue_state_sha256 <- digest::digest(
+    test_queue_json(issue1), algo = "sha256", serialize = FALSE
+  )
+
+  issue2 <- list(
+    issue_type = "species_none",
+    allowed_human_outcomes = c("assign_unspecified_species", "exclude_record"),
+    automated_value = list()
+  )
+  issue2$issue_state_sha256 <- digest::digest(
+    test_queue_json(issue2), algo = "sha256", serialize = FALSE
+  )
+
+  cases <- list(
+    list(
+      record_id = "test-w08-record-001",
+      title = "Synthetic salmon farming topic annotation record",
+      abstract = "A synthetic record for testing Workflow 08 reviewer assignment and completion.",
+      issues = list(issue1)
+    ),
+    list(
+      record_id = "test-w08-record-002",
+      title = "Synthetic farmed salmon species annotation record",
+      abstract = "A second synthetic record for testing single-reviewer Workflow 08 assignment.",
+      issues = list(issue2)
+    )
+  )
+
+  json <- vapply(cases, test_queue_json, character(1))
+  payload <- paste0(paste(json, collapse = "\n"), "\n")
+  sha <- digest::digest(payload, algo = "sha256", serialize = FALSE)
+  batch_id <- "w08-test-assignment-smoke"
+
+  rows <- data.frame(
+    batch_id = rep(batch_id, length(cases)),
+    queue_sha256 = rep(sha, length(cases)),
+    case_index = as.character(seq_along(cases)),
+    record_id = vapply(cases, function(x) x$record_id, character(1)),
+    case_json = json,
+    source_run_id = rep("", length(cases)),
+    species_options_json = rep("[]", length(cases)),
+    topic_options_json = rep("[]", length(cases)),
+    stringsAsFactors = FALSE
+  )
+  write_test_queue_tab(tab, rows)
+  invisible(list(batch_id = batch_id, queue_sha256 = sha, cases = cases))
+}
+
+test_queue_tab_exists <- function(tab) {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab %in% googlesheets4::sheet_names(ss)
+}
