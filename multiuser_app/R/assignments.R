@@ -474,3 +474,50 @@ cancel_assignment_ids <- function(
   validate_assignment_registry(out)
   list(assignments = out, cancelled = changed)
 }
+
+
+cancellable_assignments_for_user <- function(
+  assignments,
+  active_events,
+  workflow,
+  batch_id,
+  task_type,
+  user_id
+) {
+  xs <- cancellable_assignments(
+    assignments, active_events, workflow, batch_id, task_type
+  )
+  Filter(
+    function(x) identical(normalise_assignment_row(x)$user_id, as.character(user_id)),
+    xs
+  )
+}
+
+cancel_user_assignments <- function(
+  assignments,
+  user_id,
+  active_events,
+  workflow,
+  batch_id,
+  task_type
+) {
+  user_id <- as.character(user_id %||% "")
+  if (!nzchar(user_id)) stop("Select a reviewer", call. = FALSE)
+
+  xs <- cancellable_assignments_for_user(
+    assignments, active_events, workflow, batch_id, task_type, user_id
+  )
+  if (!length(xs)) {
+    stop("This reviewer has no unfinished assignments to remove", call. = FALSE)
+  }
+
+  ids <- vapply(xs, function(x) normalise_assignment_row(x)$assignment_id, character(1))
+  cancel_assignment_ids(
+    assignments,
+    ids,
+    active_events,
+    workflow,
+    batch_id,
+    task_type
+  )
+}
