@@ -1323,6 +1323,91 @@ create_test_w08_queue <- function(
   invisible(list(batch_id = batch_id, queue_sha256 = sha, cases = cases))
 }
 
+start_fresh_test_w08_queue <- function(
+  tab = Sys.getenv("LEM_W08_QUEUE_TAB", unset = "queue_w08_active")
+) {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tabs <- googlesheets4::sheet_names(ss)
+  if (!tab %in% tabs) {
+    return(create_test_w08_queue(tab))
+  }
+
+  existing <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
+  existing_batch <- if ("batch_id" %in% names(existing) && nrow(existing)) {
+    unique(as.character(existing$batch_id))
+  } else character()
+
+  if (
+    length(existing_batch) != 1L ||
+    !grepl("^w08-test-assignment-smoke", existing_batch[[1L]])
+  ) {
+    stop("Fresh test batch refused because the active W08 queue is not a synthetic test queue", call. = FALSE)
+  }
+
+  stamp <- format(Sys.time(), tz = "UTC", format = "%Y%m%d%H%M%S")
+  batch_id <- paste0("w08-test-assignment-smoke-", stamp)
+
+  make_issue <- function(issue_type, outcomes) {
+    z <- list(
+      issue_type = issue_type,
+      allowed_human_outcomes = outcomes,
+      automated_value = list()
+    )
+    z$issue_state_sha256 <- digest::digest(
+      test_queue_json(z), algo = "sha256", serialize = FALSE
+    )
+    z
+  }
+
+  cases <- list(
+    list(
+      record_id = paste0("test-w08-", stamp, "-001"),
+      title = "Synthetic salmon farming topic annotation record",
+      abstract = "A synthetic record for testing Workflow 08 reviewer assignment and completion.",
+      issues = list(make_issue(
+        "zero_topic_eligibility_uncertain",
+        c("include_uncoded", "exclude_record")
+      ))
+    ),
+    list(
+      record_id = paste0("test-w08-", stamp, "-002"),
+      title = "Synthetic farmed salmon species annotation record",
+      abstract = "A synthetic record for testing Workflow 08 shared assignment and controlled species coding.",
+      issues = list(make_issue(
+        "species_none",
+        c("assign_named_species", "assign_unspecified_species", "exclude_record")
+      ))
+    )
+  )
+
+  json <- vapply(cases, test_queue_json, character(1))
+  payload <- paste0(paste(json, collapse = "\n"), "\n")
+  sha <- digest::digest(payload, algo = "sha256", serialize = FALSE)
+  species <- c(
+    "Atlantic salmon","Rainbow trout","Chinook salmon","Coho salmon",
+    "Sockeye salmon","Chum salmon","Pink salmon","Masu salmon","Unspecified species"
+  )
+
+  rows <- data.frame(
+    batch_id = rep(batch_id, length(cases)),
+    queue_sha256 = rep(sha, length(cases)),
+    case_index = as.character(seq_along(cases)),
+    record_id = vapply(cases, function(x) x$record_id, character(1)),
+    case_json = json,
+    source_run_id = rep("", length(cases)),
+    species_options_json = c(
+      jsonlite::toJSON(species, auto_unbox = FALSE),
+      rep("", max(0L, length(cases) - 1L))
+    ),
+    topic_options_json = rep("[]", length(cases)),
+    stringsAsFactors = FALSE
+  )
+
+  googlesheets4::sheet_write(rows, ss = ss, sheet = tab)
+  invisible(list(batch_id = batch_id, queue_sha256 = sha, cases = cases))
+}
+
 test_queue_tab_exists <- function(tab) {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
