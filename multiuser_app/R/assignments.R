@@ -319,6 +319,56 @@ unresolved_unassigned_case_ids <- function(
   case_ids[!case_ids %in% resolved_ids & !case_ids %in% assigned_ids]
 }
 
+unresolved_shared_pool_case_ids_for_users <- function(
+  cases,
+  assignments,
+  active_events,
+  workflow,
+  batch_id,
+  task_type,
+  user_ids
+) {
+  if (!length(cases)) return(character())
+
+  user_ids <- unique(as.character(user_ids))
+  user_ids <- user_ids[nzchar(user_ids)]
+  if (!length(user_ids)) return(character())
+
+  case_ids <- vapply(
+    cases,
+    function(x) as.character(x$review_case_id %||% x$case_id %||% x$record_id %||% ""),
+    character(1)
+  )
+  case_ids <- unique(case_ids[nzchar(case_ids)])
+
+  resolving_events <- Filter(decision_resolves_case, active_events %||% list())
+  resolved_ids <- if (length(resolving_events)) {
+    unique(vapply(resolving_events, decision_case_id, character(1)))
+  } else character()
+
+  active_batch <- active_assignments_for_batch(
+    assignments, workflow, batch_id, task_type
+  )
+
+  unresolved <- case_ids[!case_ids %in% resolved_ids]
+  unresolved[vapply(
+    unresolved,
+    function(cid) {
+      assigned_users <- unique(vapply(
+        Filter(
+          function(x) identical(normalise_assignment_row(x)$case_id, cid),
+          active_batch
+        ),
+        function(x) normalise_assignment_row(x)$user_id,
+        character(1)
+      ))
+      any(!user_ids %in% assigned_users)
+    },
+    logical(1)
+  )]
+}
+
+
 plan_shared_pool_assignment <- function(
   cases,
   assignments,
@@ -341,8 +391,8 @@ plan_shared_pool_assignment <- function(
     stop("Percentage cannot exceed 100", call. = FALSE)
   }
 
-  eligible <- unresolved_unassigned_case_ids(
-    cases, assignments, active_events, workflow, batch_id, task_type
+  eligible <- unresolved_shared_pool_case_ids_for_users(
+    cases, assignments, active_events, workflow, batch_id, task_type, user_ids
   )
   n_available <- length(eligible)
   if (!n_available) {
@@ -365,12 +415,33 @@ plan_shared_pool_assignment <- function(
   requested <- max(0L, min(as.integer(requested), n_available))
   chosen <- if (requested) eligible[seq_len(requested)] else character()
 
-  rows <- vector("list", length(chosen))
+  rows <- list()
   by_user <- setNames(integer(length(user_ids)), user_ids)
+  active_batch <- active_assignments_for_batch(
+    assignments, workflow, batch_id, task_type
+  )
+  next_user_index <- 1L
+
   if (length(chosen)) {
-    for (i in seq_along(chosen)) {
-      uid <- user_ids[[((i - 1L) %% length(user_ids)) + 1L]]
-      cid <- chosen[[i]]
+    for (cid in chosen) {
+      already_assigned <- unique(vapply(
+        Filter(
+          function(x) identical(normalise_assignment_row(x)$case_id, cid),
+          active_batch
+        ),
+        function(x) normalise_assignment_row(x)$user_id,
+        character(1)
+      ))
+      candidate_users <- user_ids[!user_ids %in% already_assigned]
+      if (!length(candidate_users)) next
+
+      rotated <- c(
+        user_ids[seq.int(next_user_index, length(user_ids))],
+        if (next_user_index > 1L) user_ids[seq_len(next_user_index - 1L)] else character()
+      )
+      uid <- rotated[rotated %in% candidate_users][[1L]]
+      next_user_index <- match(uid, user_ids) %% length(user_ids) + 1L
+
       prior_same_key <- Filter(
         function(x) {
           a <- normalise_assignment_row(x)
@@ -394,7 +465,7 @@ plan_shared_pool_assignment <- function(
           1L, 24L
         )
       )
-      rows[[i]] <- list(
+      rows[[length(rows) + 1L]] <- list(
         assignment_id = assignment_id,
         workflow = as.character(workflow),
         task_type = as.character(task_type),
@@ -526,6 +597,98 @@ cancel_user_assignments <- function(
 }
 
 
+plan_single_reviewer_assignment <- function(
+  cases,
+  assignments,
+  active_events,
+  workflow,
+  batch_id,
+  task_type,
+  user_ids,
+  allocation_type = c("number", "percentage"),
+  amount
+) {
+  allocation_type <- match.arg(allocation_type)
+  user_ids <- unique(as.character(user_ids))
+  user_ids <- user_ids[nzchar(user_ids)]
+  if (!length(user_ids)) stop("Select at least one reviewer", call. = FALSE)
+
+  amount <- suppressWarnings(as.numeric(amount))
+  if (is.na(amount) || amount <= 0) {
+    stop("Assignment amount must be greater than zero", call. = FALSE)
+  }
+  if (identical(allocation_type, "percentage") && amount > 100) {
+    stop("Percentage cannot exceed 100", call. = FALSE)
+  }
+
+  eligible <- unresolved_unassigned_case_ids(
+    cases, assignments, active_events, workflow, batch_id, task_type
+  )
+  n_available <- length(eligible)
+  requested <- if (identical(allocation_type, "percentage")) {
+    n <- floor(n_available * amount / 100 + 0.5)
+    if (amount > 0 && n_available > 0) max(1L, n) else 0L
+  } else {
+    as.integer(floor(amount))
+  }
+  requested <- max(0L, min(as.integer(requested), n_available))
+  chosen <- if (requested) eligible[seq_len(requested)] else character()
+
+  rows <- list()
+  by_user <- setNames(integer(length(user_ids)), user_ids)
+  if (length(chosen)) {
+    for (i in seq_along(chosen)) {
+      uid <- user_ids[[((i - 1L) %% length(user_ids)) + 1L]]
+      cid <- chosen[[i]]
+      prior_same_key <- Filter(
+        function(x) {
+          a <- normalise_assignment_row(x)
+          identical(a$workflow, as.character(workflow)) &&
+            identical(a$task_type, as.character(task_type)) &&
+            identical(a$batch_id, as.character(batch_id)) &&
+            identical(a$case_id, cid) &&
+            identical(a$user_id, uid)
+        },
+        assignments %||% list()
+      )
+      generation <- length(prior_same_key) + 1L
+      assignment_id <- paste0(
+        "asg-",
+        substr(
+          digest::digest(
+            paste(workflow, task_type, batch_id, cid, uid, generation, sep = "|"),
+            algo = "sha256",
+            serialize = FALSE
+          ),
+          1L, 24L
+        )
+      )
+      rows[[length(rows) + 1L]] <- list(
+        assignment_id = assignment_id,
+        workflow = as.character(workflow),
+        task_type = as.character(task_type),
+        batch_id = as.character(batch_id),
+        case_id = cid,
+        user_id = uid,
+        blind_group = "",
+        status = "assigned"
+      )
+      by_user[[uid]] <- by_user[[uid]] + 1L
+    }
+  }
+
+  validate_assignment_registry(c(assignments, rows))
+  list(
+    new_assignments = rows,
+    available = n_available,
+    requested = requested,
+    allocated = length(rows),
+    by_user = by_user,
+    case_ids = chosen
+  )
+}
+
+
 plan_workflow_assignment <- function(
   cases,
   assignments,
@@ -537,7 +700,23 @@ plan_workflow_assignment <- function(
   allocation_type = c("number", "percentage"),
   amount
 ) {
-  plan_shared_pool_assignment(
+  mode <- assignment_mode_for(workflow, task_type)
+
+  if (identical(mode, ASSIGNMENT_MODES[["shared_work_pool"]])) {
+    return(plan_shared_pool_assignment(
+      cases = cases,
+      assignments = assignments,
+      active_events = active_events,
+      workflow = workflow,
+      batch_id = batch_id,
+      task_type = task_type,
+      user_ids = user_ids,
+      allocation_type = allocation_type,
+      amount = amount
+    ))
+  }
+
+  plan_single_reviewer_assignment(
     cases = cases,
     assignments = assignments,
     active_events = active_events,
