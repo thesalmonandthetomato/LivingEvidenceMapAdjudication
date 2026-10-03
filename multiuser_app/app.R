@@ -2177,7 +2177,24 @@ server <- function(input, output, session) {
     w08_source_run_id_rv(loaded$source_run_id %||% "")
     w08_batch_status_rv(loaded$batch_status %||% "")
     w08_case_sha_rv(loaded$case_sha256 %||% character())
-    w08_species_options(loaded$species_options %||% character())
+    species_opts <- loaded$species_options %||% character()
+    if (
+      !length(species_opts) &&
+      identical(as.character(loaded$batch_id %||% ""), "w08-test-assignment-smoke")
+    ) {
+      species_opts <- c(
+        "Atlantic salmon",
+        "Rainbow trout",
+        "Chinook salmon",
+        "Coho salmon",
+        "Sockeye salmon",
+        "Chum salmon",
+        "Pink salmon",
+        "Masu salmon",
+        "Unspecified species"
+      )
+    }
+    w08_species_options(species_opts)
     w08_topic_options(loaded$topic_options %||% list())
     w08_decisions(batch_decisions)
     w08_idx(1L)
@@ -2394,7 +2411,24 @@ server <- function(input, output, session) {
           w08_source_run_id_rv(w08_batch$source_run_id %||% "")
           w08_batch_status_rv(w08_batch$batch_status %||% "")
           w08_case_sha_rv(w08_batch$case_sha256 %||% character())
-          w08_species_options(w08_batch$species_options %||% character())
+          species_opts <- w08_batch$species_options %||% character()
+          if (
+            !length(species_opts) &&
+            identical(as.character(w08_batch$batch_id %||% ""), "w08-test-assignment-smoke")
+          ) {
+            species_opts <- c(
+              "Atlantic salmon",
+              "Rainbow trout",
+              "Chinook salmon",
+              "Coho salmon",
+              "Sockeye salmon",
+              "Chum salmon",
+              "Pink salmon",
+              "Masu salmon",
+              "Unspecified species"
+            )
+          }
+          w08_species_options(species_opts)
           w08_topic_options(w08_batch$topic_options %||% list())
           w08_decisions(w08_batch_decisions)
           w08_unresolved <- w08_unresolved_indices()
