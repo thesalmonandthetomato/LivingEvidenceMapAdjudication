@@ -35,19 +35,20 @@ write_local_decision <- function(path, decision) {
   case_events <- Filter(function(x) identical(decision_event_case_id(x), case_id), events)
 
   authority_user <- ""
-  resolving_events <- Filter(
-    function(x) {
-      decision <- tolower(trimws(as.character(x$decision %||% "")))
-      nzchar(decision) && !identical(decision, "uncertain")
-    },
-    case_events
-  )
-  if (length(resolving_events)) {
-    first_times <- vapply(resolving_events, decision_event_time, character(1))
-    first_idx <- order(first_times, seq_along(resolving_events), decreasing = FALSE)[[1L]]
-    authority_user <- as.character(resolving_events[[first_idx]]$user_id %||% resolving_events[[first_idx]]$reviewer %||% "")
-    if (nzchar(authority_user) && !identical(authority_user, user_id)) {
-      stop("This case has already been resolved by another reviewer", call. = FALSE)
+  active_case <- if (length(case_events)) {
+    active_decision_events(
+      case_events,
+      case_fields = c("case_id", "review_case_id"),
+      identity_scope = "case"
+    )
+  } else list()
+  if (length(active_case)) {
+    active_decision <- tolower(trimws(as.character(active_case[[1L]]$decision %||% "")))
+    if (nzchar(active_decision) && !identical(active_decision, "uncertain")) {
+      authority_user <- as.character(active_case[[1L]]$user_id %||% active_case[[1L]]$reviewer %||% "")
+      if (nzchar(authority_user) && !identical(authority_user, user_id)) {
+        stop("This case has already been resolved by another reviewer", call. = FALSE)
+      }
     }
   }
 
