@@ -521,3 +521,28 @@ cancel_user_assignments <- function(
     task_type
   )
 }
+
+
+plan_workflow_assignment <- function(
+  cases,
+  assignments,
+  active_events,
+  workflow,
+  batch_id,
+  task_type,
+  user_ids,
+  allocation_type = c("number", "percentage"),
+  amount
+) {
+  plan_shared_pool_assignment(
+    cases = cases,
+    assignments = assignments,
+    active_events = active_events,
+    workflow = workflow,
+    batch_id = batch_id,
+    task_type = task_type,
+    user_ids = user_ids,
+    allocation_type = allocation_type,
+    amount = amount
+  )
+}
