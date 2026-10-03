@@ -259,7 +259,32 @@ record_card <- function(rec, label, fields, side = c("a","b")) {
 
 ui <- page_fillable(
   theme = theme,
-  tags$head(tags$style(HTML("
+  tags$head(
+    tags$script(HTML("
+      (function() {
+        const storagePrefix = 'lem-accordion:';
+        function restoreDetails(root) {
+          (root || document).querySelectorAll('details[data-accordion-key]').forEach(function(el) {
+            const key = storagePrefix + el.getAttribute('data-accordion-key');
+            const saved = sessionStorage.getItem(key);
+            if (saved === 'open') el.open = true;
+            if (saved === 'closed') el.open = false;
+            if (!el.dataset.lemBound) {
+              el.addEventListener('toggle', function() {
+                sessionStorage.setItem(key, el.open ? 'open' : 'closed');
+              });
+              el.dataset.lemBound = '1';
+            }
+          });
+        }
+        document.addEventListener('DOMContentLoaded', function() {
+          restoreDetails(document);
+          const observer = new MutationObserver(function() { restoreDetails(document); });
+          observer.observe(document.body, { childList: true, subtree: true });
+        });
+      })();
+    ")),
+    tags$style(HTML("
     body { background:#f7f8fa; }
     .app-shell { max-width:1500px; margin:0 auto; padding:20px; width:100%; }
     .login-shell { max-width:520px; margin:8vh auto 0 auto; padding:20px; width:100%; }
@@ -335,7 +360,8 @@ ui <- page_fillable(
     @media (max-width: 1000px) { .pipeline-kpis { grid-template-columns:repeat(3,minmax(135px,1fr)); } }
     @media (max-width: 620px) { .pipeline-kpis { grid-template-columns:repeat(2,minmax(120px,1fr)); } }
     @media (max-width: 390px) { .pipeline-kpis { grid-template-columns:1fr; } }
-  "))),
+  ")))
+  ),
   uiOutput("root_ui")
 )
 
@@ -1238,6 +1264,7 @@ server <- function(input, output, session) {
 
       tags$details(
         class = "assignment-workflow",
+        `data-accordion-key` = paste0("workflow-", z$workflow, "-", z$task_type, "-", z$batch_id),
         tags$summary(
           div(
             class = "d-inline-flex flex-wrap align-items-center gap-2",
@@ -1287,6 +1314,7 @@ server <- function(input, output, session) {
           ) {
             tags$details(
               class = "assignment-workflow mt-2",
+              `data-accordion-key` = "manage-w01-deduplication",
               tags$summary(tags$strong("Manage assignments")),
               div(
                 class = "pt-2",
@@ -1333,11 +1361,11 @@ server <- function(input, output, session) {
                 tags$strong("Remove unfinished assignments"),
                 tags$p(
                   class = "text-secondary small mb-2",
-                  "Only unresolved active assignments can be removed. Completed or already resolved cases are protected."
+                  "Choose a reviewer to remove all of their unfinished W01 assignments. Completed or already resolved cases are protected."
                 ),
-                checkboxGroupInput(
-                  "w01_remove_assignment_ids",
-                  NULL,
+                selectInput(
+                  "w01_remove_assignment_user",
+                  "Reviewer",
                   choices = {
                     cancellable <- cancellable_assignments(
                       assignment_registry_rv(),
@@ -1346,26 +1374,27 @@ server <- function(input, output, session) {
                       batch_id_rv(),
                       "deduplication"
                     )
-                    case_ids <- vapply(
-                      w01_all_cases_rv(),
-                      function(x) as.character(x$review_case_id %||% x$case_id %||% ""),
+                    user_ids <- unique(vapply(
+                      cancellable,
+                      function(x) normalise_assignment_row(x)$user_id,
                       character(1)
-                    )
-                    ids <- vapply(cancellable, function(x) normalise_assignment_row(x)$assignment_id, character(1))
-                    labels <- vapply(cancellable, function(x) {
-                      a <- normalise_assignment_row(x)
-                      u <- find_user_by_id(user_registry_rv(), a$user_id, require_active = FALSE)
-                      reviewer_label <- if (is.null(u)) a$user_id else u$display_name
-                      case_index <- match(a$case_id, case_ids)
-                      case_label <- if (is.na(case_index)) a$case_id else paste0("Case ", case_index)
-                      paste0(reviewer_label, " · ", case_label)
+                    ))
+                    labels <- vapply(user_ids, function(uid) {
+                      u <- find_user_by_id(user_registry_rv(), uid, require_active = FALSE)
+                      reviewer_label <- if (is.null(u)) uid else u$display_name
+                      n <- sum(vapply(
+                        cancellable,
+                        function(x) identical(normalise_assignment_row(x)$user_id, uid),
+                        logical(1)
+                      ))
+                      paste0(reviewer_label, " (", n, " unfinished)")
                     }, character(1))
-                    stats::setNames(ids, labels)
+                    stats::setNames(user_ids, labels)
                   }
                 ),
                 actionButton(
                   "w01_remove_assignments",
-                  "Remove selected assignments",
+                  "Remove reviewer's unfinished assignments",
                   class = "btn-outline-danger btn-sm"
                 )
               )
@@ -1379,6 +1408,7 @@ server <- function(input, output, session) {
       class = "assignment-summary",
       tags$details(
         class = "assignment-disclosure",
+        `data-accordion-key` = "administration-assignments",
         tags$summary(
           div(
             class = "d-inline-flex flex-wrap align-items-center gap-2 p-3",
@@ -1537,11 +1567,11 @@ server <- function(input, output, session) {
       return()
     }
 
-    selected_ids <- as.character(input$w01_remove_assignment_ids %||% character())
+    selected_user <- as.character(input$w01_remove_assignment_user %||% "")
     result <- tryCatch(
-      cancel_assignment_ids(
+      cancel_user_assignments(
         assignment_registry_rv(),
-        selected_ids,
+        selected_user,
         w01_active_assignment_events(),
         "01",
         batch_id_rv(),
