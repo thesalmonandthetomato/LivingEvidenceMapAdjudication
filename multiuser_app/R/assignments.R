@@ -190,6 +190,44 @@ assignment_progress <- function(
   first <- normalise_assignment_row(xs[[1L]])
   mode <- assignment_mode_for(first$workflow, first$task_type)
 
+  # Count direct adjudications even when an administrator completed a case
+  # without a pre-existing formal assignment. The decision itself is the
+  # authoritative provenance record; this synthetic row is reporting-only.
+  resolving_events <- Filter(decision_resolves_case, events)
+  if (length(resolving_events)) {
+    existing_keys <- vapply(
+      xs,
+      function(x) {
+        a <- normalise_assignment_row(x)
+        paste(a$case_id, a$user_id, sep = "|")
+      },
+      character(1)
+    )
+    implicit <- list()
+    for (e in resolving_events) {
+      cid <- decision_case_id(e)
+      uid <- decision_user_id(e)
+      key <- paste(cid, uid, sep = "|")
+      if (!nzchar(cid) || !nzchar(uid) || key %in% existing_keys) next
+      implicit[[length(implicit) + 1L]] <- list(
+        assignment_id = paste0("implicit-", substr(
+          digest::digest(paste(first$workflow, first$task_type, first$batch_id, cid, uid, sep="|"),
+                         algo="sha256", serialize=FALSE),
+          1L, 24L
+        )),
+        workflow = first$workflow,
+        task_type = first$task_type,
+        batch_id = first$batch_id,
+        case_id = cid,
+        user_id = uid,
+        blind_group = paste0("implicit-", first$workflow, "-", first$task_type),
+        status = "assigned"
+      )
+      existing_keys <- c(existing_keys, key)
+    }
+    xs <- c(xs, implicit)
+  }
+
   effective <- lapply(xs, function(x) {
     a <- normalise_assignment_row(x)
     if (identical(mode, ASSIGNMENT_MODES[["independent_blind_review"]])) {
