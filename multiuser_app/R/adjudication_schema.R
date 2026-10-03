@@ -58,7 +58,7 @@ ADJUDICATION_SCHEMA <- list(
   )
 )
 
-ADJUDICATION_ASSIGNMENT_STATES <- c("assigned", "complete", "resolved_elsewhere")
+ADJUDICATION_ASSIGNMENT_STATES <- c("assigned", "complete", "resolved_elsewhere", "cancelled")
 ADJUDICATION_DECISIONS <- c("include", "exclude", "uncertain")
 
 is_sha256 <- function(x) {
