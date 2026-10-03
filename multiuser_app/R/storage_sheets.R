@@ -465,9 +465,15 @@ w04_decision_tab <- function() {
   Sys.getenv("LEM_W04_DECISION_TAB", unset = "decisions_w04_validation")
 }
 
-read_sheet_w04_queue <- function(
-  tab = Sys.getenv("LEM_W04_QUEUE_TAB", unset = "queue_w04_validation_active")
-) {
+w04_resolution_decision_tab <- function() {
+  Sys.getenv("LEM_W04_RESOLUTION_DECISION_TAB", unset = "decisions_w04_resolution")
+}
+
+w04_conflict_decision_tab <- function() {
+  Sys.getenv("LEM_W04_CONFLICT_DECISION_TAB", unset = "decisions_w04_conflict")
+}
+
+read_sheet_w04_queue_from_tab <- function(tab) {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tabs <- googlesheets4::sheet_names(ss)
@@ -488,22 +494,25 @@ read_sheet_w04_queue <- function(
   if("highlight_exclude_json" %in% names(x) && nzchar(as.character(x$highlight_exclude_json[[1L]] %||% ""))) {
     exclude_terms <- as.character(jsonlite::fromJSON(x$highlight_exclude_json[[1L]]))
   }
-  x_core <- x[,required,drop=FALSE]
-  hashes <- unique(x_core$queue_sha256)
-  batches <- unique(x_core$batch_id)
+  review_mode <- if("review_mode" %in% names(x)) as.character(x$review_mode[[1L]] %||% "") else ""
+  source_run_id <- if("source_run_id" %in% names(x)) as.character(x$source_run_id[[1L]] %||% "") else ""
+
+  core <- x[,required,drop=FALSE]
+  hashes <- unique(core$queue_sha256)
+  batches <- unique(core$batch_id)
   if(length(hashes)!=1L || !nzchar(hashes[[1L]])) stop("W04 queue has invalid queue_sha256",call.=FALSE)
   if(length(batches)!=1L || !nzchar(batches[[1L]])) stop("W04 queue has invalid batch_id",call.=FALSE)
-  if(anyDuplicated(x_core$review_case_id)) stop("W04 queue contains duplicate review_case_id",call.=FALSE)
+  if(anyDuplicated(core$review_case_id)) stop("W04 queue contains duplicate review_case_id",call.=FALSE)
   status <- latest_batch_status("04",batches[[1L]],hashes[[1L]])
   if(identical(status,"consumed")) return(NULL)
 
-  reconstructed <- paste0(paste(x_core$case_json,collapse="\n"),"\n")
+  reconstructed <- paste0(paste(core$case_json,collapse="\n"),"\n")
   actual_sha <- digest::digest(reconstructed,algo="sha256",serialize=FALSE)
   if(!identical(actual_sha,hashes[[1L]])) stop("W04 queue SHA-256 validation failed",call.=FALSE)
 
-  cases <- lapply(x_core$case_json,jsonlite::fromJSON,simplifyVector=FALSE)
+  cases <- lapply(core$case_json,jsonlite::fromJSON,simplifyVector=FALSE)
   ids <- vapply(cases,function(z)as.character(z$review_case_id %||% ""),character(1))
-  if(!identical(ids,x_core$review_case_id)) stop("W04 queue case IDs do not match stored metadata",call.=FALSE)
+  if(!identical(ids,core$review_case_id)) stop("W04 queue case IDs do not match stored metadata",call.=FALSE)
 
   list(
     batch_id=batches[[1L]],
@@ -511,14 +520,27 @@ read_sheet_w04_queue <- function(
     cases=cases,
     highlight_include=include_terms,
     highlight_exclude=exclude_terms,
+    review_mode=review_mode,
+    source_run_id=source_run_id,
     batch_status=status
   )
 }
 
-read_sheet_w04_decision_log <- function() {
+read_sheet_w04_queue <- function(tab = Sys.getenv("LEM_W04_QUEUE_TAB", unset = "queue_w04_validation_active")) {
+  read_sheet_w04_queue_from_tab(tab)
+}
+
+read_sheet_w04_resolution_queue <- function(tab = Sys.getenv("LEM_W04_RESOLUTION_QUEUE_TAB", unset = "queue_w04_resolution_active")) {
+  read_sheet_w04_queue_from_tab(tab)
+}
+
+read_sheet_w04_conflict_queue <- function(tab = Sys.getenv("LEM_W04_CONFLICT_QUEUE_TAB", unset = "queue_w04_conflict_active")) {
+  read_sheet_w04_queue_from_tab(tab)
+}
+
+read_sheet_w04_decision_log_from_tab <- function(tab) {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
-  tab <- w04_decision_tab()
   tabs <- googlesheets4::sheet_names(ss)
   if(!tab %in% tabs) return(list())
   x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
@@ -526,8 +548,8 @@ read_sheet_w04_decision_log <- function() {
   lapply(seq_len(nrow(x)),function(i)as.list(x[i,,drop=FALSE]))
 }
 
-active_sheet_w04_decisions <- function() {
-  xs <- read_sheet_w04_decision_log()
+active_w04_decisions_from_tab <- function(tab) {
+  xs <- read_sheet_w04_decision_log_from_tab(tab)
   if(!length(xs)) return(list())
   resolved <- vapply(xs,function(x)as.character(x$resolved_at_utc %||% ""),character(1))
   ord <- order(resolved,seq_along(xs),decreasing=TRUE)
@@ -536,29 +558,31 @@ active_sheet_w04_decisions <- function() {
   xs[!duplicated(ids)]
 }
 
-append_sheet_w04_decision <- function(decision, prior_decision=NULL) {
+read_sheet_w04_decision_log <- function() read_sheet_w04_decision_log_from_tab(w04_decision_tab())
+active_sheet_w04_decisions <- function() active_w04_decisions_from_tab(w04_decision_tab())
+active_sheet_w04_resolution_decisions <- function() active_w04_decisions_from_tab(w04_resolution_decision_tab())
+active_sheet_w04_conflict_decisions <- function() active_w04_decisions_from_tab(w04_conflict_decision_tab())
+
+append_w04_decision_to_tab <- function(decision, prior_decision=NULL, tab, prefix="w04-dec-") {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
-  tab <- w04_decision_tab()
   tabs <- googlesheets4::sheet_names(ss)
 
   required_cols <- c(
     "decision_id","review_case_id","record_id","decision","rationale",
     "reviewer","resolved_at_utc","queue_sha256","supersedes_decision_id"
   )
-
   if(!tab %in% tabs) {
     googlesheets4::sheet_add(ss,sheet=tab)
     empty <- as.data.frame(setNames(replicate(length(required_cols),character(),simplify=FALSE),required_cols))
     googlesheets4::sheet_write(empty,ss=ss,sheet=tab)
   }
 
-  decision_id <- paste0("w04-val-dec-",digest::digest(
+  decision_id <- paste0(prefix,digest::digest(
     paste(decision$review_case_id,decision$resolved_at_utc,decision$decision,sep="|"),
     algo="sha256",serialize=FALSE
   ))
   supersedes <- if(is.null(prior_decision)) "" else as.character(prior_decision$decision_id %||% "")
-
   row <- data.frame(
     decision_id=decision_id,
     review_case_id=as.character(decision$review_case_id),
@@ -571,12 +595,21 @@ append_sheet_w04_decision <- function(decision, prior_decision=NULL) {
     supersedes_decision_id=supersedes,
     stringsAsFactors=FALSE
   )
-
   googlesheets4::sheet_append(ss,data=row,sheet=tab)
   x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
   hits <- x[as.character(x$decision_id)==decision_id,,drop=FALSE]
   if(nrow(hits)!=1L) stop("W04 Google Sheets write could not be verified",call.=FALSE)
   as.list(hits[1,,drop=FALSE])
+}
+
+append_sheet_w04_decision <- function(decision, prior_decision=NULL) {
+  append_w04_decision_to_tab(decision,prior_decision,w04_decision_tab(),"w04-val-dec-")
+}
+append_sheet_w04_resolution_decision <- function(decision, prior_decision=NULL) {
+  append_w04_decision_to_tab(decision,prior_decision,w04_resolution_decision_tab(),"w04-res-dec-")
+}
+append_sheet_w04_conflict_decision <- function(decision, prior_decision=NULL) {
+  append_w04_decision_to_tab(decision,prior_decision,w04_conflict_decision_tab(),"w04-conf-dec-")
 }
 
 
