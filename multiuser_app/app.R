@@ -1424,11 +1424,12 @@ server <- function(input, output, session) {
           character(1)
         ))
       } else character()
-      assigned_case_ids <- unique(vapply(
-        g$assignments,
+      active_group_assignments <- active_assignments(g$assignments)
+      assigned_case_ids <- if (length(active_group_assignments)) unique(vapply(
+        active_group_assignments,
         function(x) normalise_assignment_row(x)$case_id,
         character(1)
-      ))
+      )) else character()
       unassigned <- if (length(all_case_ids)) {
         sum(nzchar(all_case_ids) & !all_case_ids %in% assigned_case_ids)
       } else 0L
@@ -2440,6 +2441,17 @@ server <- function(input, output, session) {
       return(FALSE)
     }
     z <- w02_current_case()
+    if (
+      assignment_mode_active(assignment_registry_rv(), "02", w02_batch_id_rv(), "enrichment") &&
+      !session_can("manage_assignments") &&
+      !user_has_active_assignment(
+        assignment_registry_rv(), "02", w02_batch_id_rv(), "enrichment",
+        as.character(z$review_case_id), session_reviewer_id()
+      )
+    ) {
+      w02_status("This assignment is no longer active. Return to tasks to refresh your queue.")
+      return(FALSE)
+    }
     current <- w02_decisions()
     prior <- NULL
     if (length(current)) {
@@ -2969,6 +2981,17 @@ server <- function(input, output, session) {
     }
     z <- w08_current_case()
     rid <- as.character(z$record_id)
+    if (
+      assignment_mode_active(assignment_registry_rv(), "08", w08_batch_id_rv(), "annotation") &&
+      !session_can("manage_assignments") &&
+      !user_has_active_assignment(
+        assignment_registry_rv(), "08", w08_batch_id_rv(), "annotation",
+        rid, session_reviewer_id()
+      )
+    ) {
+      w08_status("This assignment is no longer active. Return to tasks to refresh your queue.")
+      return(FALSE)
+    }
     issues <- z$issues %||% list()
     now <- format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ")
     issue_decisions <- vector("list",length(issues))
