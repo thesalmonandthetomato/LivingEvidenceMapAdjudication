@@ -1424,10 +1424,12 @@ server <- function(input, output, session) {
       remove_choices <- stats::setNames(remove_ids, remove_labels)
 
       mode <- assignment_mode_for(cfg$workflow, cfg$task_type)
-      guidance <- if (identical(mode, ASSIGNMENT_MODES[["single_reviewer"]])) {
-        "Add unresolved, currently unassigned cases. Each case is assigned to one reviewer only. The requested amount is divided as evenly as possible across the selected reviewers."
+      guidance <- if (identical(mode, ASSIGNMENT_MODES[["shared_work_pool"]])) {
+        "Choose whether to split different unresolved records between reviewers, or give the same records to all selected reviewers. In the shared option, the first substantive decision resolves the record for everyone."
+      } else if (identical(mode, ASSIGNMENT_MODES[["single_reviewer"]])) {
+        "Add unresolved, currently unassigned cases. Each case is assigned to one reviewer only."
       } else {
-        "Add unresolved cases that are not already assigned to the selected reviewer. Shared-pool cases may be assigned to more than one reviewer; the first substantive decision resolves the case for everyone."
+        "Assign independent blinded reviews."
       }
 
       tags$details(
@@ -1443,16 +1445,31 @@ server <- function(input, output, session) {
             choices = eligible_choices,
             multiple = TRUE
           ),
+          if (identical(mode, ASSIGNMENT_MODES[["shared_work_pool"]])) {
+            radioButtons(
+              paste0(cfg$prefix, "_assignment_strategy"),
+              "Allocation pattern",
+              choices = c(
+                "Split different records between reviewers" = "split",
+                "Same records to all reviewers · first decision wins" = "shared"
+              ),
+              selected = "split"
+            )
+          },
           radioButtons(
             paste0(cfg$prefix, "_assignment_type"),
             "Assign by",
-            choices = c("Number of cases" = "number", "Percentage" = "percentage"),
+            choices = c(
+              "Number of cases" = "number",
+              "Percentage" = "percentage",
+              "All available" = "all"
+            ),
             selected = "number",
             inline = TRUE
           ),
           numericInput(
             paste0(cfg$prefix, "_assignment_amount"),
-            "Additional amount",
+            "Amount (ignored when All available is selected)",
             value = 1,
             min = 1,
             step = 1
@@ -1682,6 +1699,7 @@ server <- function(input, output, session) {
       return(list(error = "Administrator permission is required."))
     }
     selected <- as.character(input$w01_assignment_users %||% character())
+    strategy <- as.character(input$w01_assignment_strategy %||% "split")
     type <- as.character(input$w01_assignment_type %||% "number")
     amount <- input$w01_assignment_amount %||% NA_real_
 
@@ -1695,7 +1713,8 @@ server <- function(input, output, session) {
         task_type = "deduplication",
         user_ids = selected,
         allocation_type = type,
-        amount = amount
+        amount = amount,
+        allocation_strategy = strategy
       ),
       error = function(e) list(error = conditionMessage(e))
     )
@@ -1745,10 +1764,13 @@ server <- function(input, output, session) {
       tags$div(
         class = "small",
         sprintf(
-          "%d unresolved case%s available to the selected reviewer(s); %d will be allocated.",
+          "%d unresolved case%s available; %d case%s selected, creating %d assignment%s.",
           plan$available,
           if (plan$available == 1L) "" else "s",
-          plan$allocated
+          plan$selected_cases %||% length(plan$case_ids %||% character()),
+          if ((plan$selected_cases %||% length(plan$case_ids %||% character())) == 1L) "" else "s",
+          plan$allocated,
+          if (plan$allocated == 1L) "" else "s"
         )
       ),
       if (length(reviewer_lines)) tags$ul(class = "small mb-0 mt-1", reviewer_lines)
@@ -1844,6 +1866,7 @@ server <- function(input, output, session) {
 
   workflow_assignment_plan <- function(prefix, cases, events, workflow, batch_id, task_type) {
     selected <- as.character(input[[paste0(prefix, "_assignment_users")]] %||% character())
+    strategy <- as.character(input[[paste0(prefix, "_assignment_strategy")]] %||% "split")
     type <- as.character(input[[paste0(prefix, "_assignment_type")]] %||% "number")
     amount <- input[[paste0(prefix, "_assignment_amount")]] %||% NA_real_
     tryCatch(
@@ -1856,7 +1879,8 @@ server <- function(input, output, session) {
         task_type = task_type,
         user_ids = selected,
         allocation_type = type,
-        amount = amount
+        amount = amount,
+        allocation_strategy = strategy
       ),
       error = function(e) list(error = conditionMessage(e))
     )
@@ -1899,10 +1923,13 @@ server <- function(input, output, session) {
       tags$div(
         class = "small",
         sprintf(
-          "%d unresolved unassigned case%s available; %d will be allocated.",
+          "%d unresolved case%s available; %d case%s selected, creating %d assignment%s.",
           plan$available,
           if (plan$available == 1L) "" else "s",
-          plan$allocated
+          plan$selected_cases %||% length(plan$case_ids %||% character()),
+          if ((plan$selected_cases %||% length(plan$case_ids %||% character())) == 1L) "" else "s",
+          plan$allocated,
+          if (plan$allocated == 1L) "" else "s"
         )
       ),
       if (length(reviewer_lines)) tags$ul(class = "small mb-0 mt-1", reviewer_lines)
