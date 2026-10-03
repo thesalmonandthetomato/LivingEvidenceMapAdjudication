@@ -162,13 +162,10 @@ read_sheet_decision_log <- function() {
 }
 
 active_sheet_decisions <- function() {
-  rows <- read_sheet_decision_log()
-  if (!length(rows)) return(list())
-  by_case <- split(rows, vapply(rows, function(x) x$review_case_id, character(1)))
-  lapply(by_case, function(xs) {
-    ord <- order(vapply(xs, function(x) x$resolved_at_utc, character(1)), decreasing = TRUE)
-    xs[[ord[[1L]]]]
-  })
+  active_decision_events(
+    read_sheet_decision_log(),
+    case_fields = c("case_id", "review_case_id")
+  )
 }
 
 append_sheet_decision <- function(decision, prior_decision = NULL) {
@@ -346,14 +343,10 @@ read_sheet_w02_decision_log <- function() {
 }
 
 active_sheet_w02_decisions <- function() {
-  xs <- read_sheet_w02_decision_log()
-  if (!length(xs)) return(list())
-
-  resolved <- vapply(xs, function(x) as.character(x$resolved_at_utc %||% ""), character(1))
-  ord <- order(resolved, seq_along(xs), decreasing = TRUE)
-  xs <- xs[ord]
-  ids <- vapply(xs, function(x) as.character(x$review_case_id %||% ""), character(1))
-  xs[!duplicated(ids)]
+  active_decision_events(
+    read_sheet_w02_decision_log(),
+    case_fields = c("case_id", "review_case_id")
+  )
 }
 
 append_sheet_w02_decision <- function(decision, prior_decision = NULL) {
@@ -549,13 +542,10 @@ read_sheet_w04_decision_log_from_tab <- function(tab) {
 }
 
 active_w04_decisions_from_tab <- function(tab) {
-  xs <- read_sheet_w04_decision_log_from_tab(tab)
-  if(!length(xs)) return(list())
-  resolved <- vapply(xs,function(x)as.character(x$resolved_at_utc %||% ""),character(1))
-  ord <- order(resolved,seq_along(xs),decreasing=TRUE)
-  xs <- xs[ord]
-  ids <- vapply(xs,function(x)as.character(x$review_case_id %||% ""),character(1))
-  xs[!duplicated(ids)]
+  active_decision_events(
+    read_sheet_w04_decision_log_from_tab(tab),
+    case_fields = c("case_id", "review_case_id")
+  )
 }
 
 read_sheet_w04_decision_log <- function() read_sheet_w04_decision_log_from_tab(w04_decision_tab())
@@ -688,12 +678,10 @@ read_sheet_w08_decision_log <- function() {
 }
 
 active_sheet_w08_decisions <- function() {
-  rows <- read_sheet_w08_decision_log()
-  if(!length(rows)) return(list())
-  ord <- order(vapply(rows,function(x)as.character(x$resolved_at_utc %||% ""),character(1)),decreasing=TRUE)
-  rows <- rows[ord]
-  ids <- vapply(rows,function(x)as.character(x$record_id %||% ""),character(1))
-  rows[!duplicated(ids)]
+  active_decision_events(
+    read_sheet_w08_decision_log(),
+    case_fields = c("case_id", "record_id")
+  )
 }
 
 append_sheet_w08_decision <- function(decision, prior_decision=NULL) {
