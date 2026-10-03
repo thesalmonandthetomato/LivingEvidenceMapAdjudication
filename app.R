@@ -1016,6 +1016,9 @@ server <- function(input, output, session) {
         }
 
         w04_batch <- load_w04_batch()
+        if (!is.null(w04_batch) && identical(as.character(w04_batch$review_mode %||% ""), "resolution")) {
+          w04_batch <- NULL
+        }
         if (!is.null(w04_batch)) {
           w04_all_decisions <- active_sheet_w04_decisions()
           w04_cases_rv(w04_batch$cases)
