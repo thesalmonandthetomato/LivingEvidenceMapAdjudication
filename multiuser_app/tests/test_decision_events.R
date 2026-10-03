@@ -48,6 +48,28 @@ stopifnot(
   setequal(vapply(active, function(x) x$decision_id, character(1)), c("d2", "d3"))
 )
 
+independent <- normalise_decision_events(
+  c(
+    events,
+    list(list(
+      decision_id = "d4b",
+      review_case_id = "case-1",
+      reviewer = "usr-b",
+      decision = "include",
+      resolved_at_utc = "2026-10-03T08:02:30Z",
+      supersedes_decision_id = ""
+    ))
+  ),
+  case_fields = c("case_id", "review_case_id")
+)
+independent_active <- independent[vapply(independent, function(x) isTRUE(x$active), logical(1))]
+case1_active <- Filter(function(x) identical(x$case_id, "case-1"), independent_active)
+stopifnot(
+  length(case1_active) == 2L,
+  setequal(vapply(case1_active, function(x) x$user_id, character(1)), c("usr-a","usr-b")),
+  identical(Filter(function(x) identical(x$user_id, "usr-b"), case1_active)[[1L]]$version, 1L)
+)
+
 saved <- normalise_saved_decision_event(
   list(
     decision_id = "d4",
