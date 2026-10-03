@@ -747,9 +747,22 @@ server <- function(input, output, session) {
       w01_remaining <- if (w01_total) length(unresolved_indices()) else 0L
       w01_completed <- max(0L, w01_total - w01_remaining)
 
-      w02_total <- length(w02_cases_rv() %||% list())
-      w02_remaining <- if (w02_total) length(w02_unresolved_indices()) else 0L
-      w02_completed <- max(0L, w02_total - w02_remaining)
+      w02_user_total <- length(w02_cases_rv() %||% list())
+      w02_user_remaining <- if (w02_user_total) length(w02_unresolved_indices()) else 0L
+      if (session_can("manage_assignments")) {
+        w02_total <- length(w02_all_cases_rv() %||% list())
+        w02_all_ids <- if (w02_total) vapply(
+          w02_all_cases_rv(),
+          function(x) as.character(x$review_case_id %||% ""),
+          character(1)
+        ) else character()
+        w02_completed <- sum(w02_all_ids %in% w02_resolved_ids())
+        w02_remaining <- max(0L, w02_total - w02_completed)
+      } else {
+        w02_total <- w02_user_total
+        w02_remaining <- w02_user_remaining
+        w02_completed <- max(0L, w02_total - w02_remaining)
+      }
 
       w04_total <- length(w04_cases_rv() %||% list())
       w04_remaining <- if (w04_total) length(w04_unresolved_indices()) else 0L
@@ -763,11 +776,24 @@ server <- function(input, output, session) {
       w04_conflict_remaining <- if (w04_conflict_total) length(w04_conflict_unresolved_indices()) else 0L
       w04_conflict_completed <- max(0L, w04_conflict_total - w04_conflict_remaining)
 
-      annotation_total <- length(w08_cases_rv() %||% list())
-      annotation_remaining <- if (annotation_total) length(w08_unresolved_indices()) else 0L
-      annotation_completed <- max(0L, annotation_total - annotation_remaining)
+      w08_user_total <- length(w08_cases_rv() %||% list())
+      w08_user_remaining <- if (w08_user_total) length(w08_unresolved_indices()) else 0L
+      if (session_can("manage_assignments")) {
+        annotation_total <- length(w08_all_cases_rv() %||% list())
+        w08_all_ids <- if (annotation_total) vapply(
+          w08_all_cases_rv(),
+          function(x) as.character(x$record_id %||% ""),
+          character(1)
+        ) else character()
+        annotation_completed <- sum(w08_all_ids %in% w08_decision_ids())
+        annotation_remaining <- max(0L, annotation_total - annotation_completed)
+      } else {
+        annotation_total <- w08_user_total
+        annotation_remaining <- w08_user_remaining
+        annotation_completed <- max(0L, annotation_total - annotation_remaining)
+      }
 
-      stage_card <- function(title, workflow, description, total, completed, remaining, button_id = NULL, button_label = NULL, batch = "", lifecycle_status = "") {
+      stage_card <- function(title, workflow, description, total, completed, remaining, button_id = NULL, button_label = NULL, batch = "", lifecycle_status = "", can_open = TRUE, idle_text = "No records awaiting review") {
         card(
           class = "task-card h-100",
           card_header(
@@ -790,10 +816,10 @@ server <- function(input, output, session) {
             if (identical(lifecycle_status,"review_complete")) {
               tags$div(class="small mb-2",tags$span(class="task-badge","Awaiting workflow completion"))
             },
-            if (!is.null(button_id) && remaining > 0L) {
+            if (!is.null(button_id) && remaining > 0L && isTRUE(can_open)) {
               actionButton(button_id, button_label, class = "btn-primary mt-auto")
             } else {
-              tags$div(class = "text-secondary small mt-auto", "No records awaiting review")
+              tags$div(class = "text-secondary small mt-auto", idle_text)
             }
           )
         )
@@ -836,7 +862,11 @@ server <- function(input, output, session) {
               if (w02_remaining > 0L) "open_w02" else NULL,
               "Continue enrichment",
               w02_batch_id_rv(),
-              w02_batch_status_rv()
+              w02_batch_status_rv(),
+              can_open = w02_user_remaining > 0L,
+              idle_text = if (
+                w02_remaining > 0L && session_can("manage_assignments") && w02_user_remaining == 0L
+              ) "Active cases are awaiting assignment" else "No records awaiting review"
             )
           ),
           div(
@@ -888,7 +918,11 @@ server <- function(input, output, session) {
               if (annotation_remaining > 0L) "open_w08" else NULL,
               "Continue annotation",
               w08_batch_id_rv(),
-              w08_batch_status_rv()
+              w08_batch_status_rv(),
+              can_open = w08_user_remaining > 0L,
+              idle_text = if (
+                annotation_remaining > 0L && session_can("manage_assignments") && w08_user_remaining == 0L
+              ) "Active cases are awaiting assignment" else "No records awaiting review"
             )
           )
         )
