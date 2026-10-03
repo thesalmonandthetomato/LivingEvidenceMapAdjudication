@@ -40,11 +40,20 @@ read_assignment_registry <- function(local_path = NULL) {
 }
 
 
-save_assignment_registry <- function(assignments, local_path = NULL, actor_user_id = "") {
+save_assignment_registry <- function(
+  assignments,
+  local_path = NULL,
+  actor_user_id = "",
+  expected_current_signature = NULL
+) {
   b <- storage_backend()
   if (identical(b, "local")) return(write_local_assignments(local_path, assignments))
   if (identical(b, "google_sheets")) {
-    return(write_sheet_assignments(assignments, actor_user_id = actor_user_id))
+    return(write_sheet_assignments(
+      assignments,
+      actor_user_id = actor_user_id,
+      expected_current_signature = expected_current_signature
+    ))
   }
   stop("Unsupported LEM_STORAGE_BACKEND: ", b, call. = FALSE)
 }
