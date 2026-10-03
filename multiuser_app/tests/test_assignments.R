@@ -241,3 +241,60 @@ stopifnot(
 )
 
 cat("PASS: allocation planning, safe cancellation, and reviewer-level removal\n")
+
+
+# W02 shared-pool mode and W08 single-reviewer mode.
+stopifnot(
+  identical(
+    assignment_mode_for("02", "enrichment"),
+    ASSIGNMENT_MODES[["shared_work_pool"]]
+  ),
+  identical(
+    assignment_mode_for("08", "annotation"),
+    ASSIGNMENT_MODES[["single_reviewer"]]
+  )
+)
+
+w08_event <- list(
+  record_id = "w08-record-1",
+  reviewer = "usr-a",
+  issue_decisions_json = "[{\"decision\":\"assign_none\"}]",
+  resolved_at_utc = "2026-10-03T11:30:00Z"
+)
+stopifnot(
+  isTRUE(decision_resolves_case(w08_event)),
+  identical(decision_case_id(w08_event), "w08-record-1")
+)
+
+w08_assignments <- list(
+  list(
+    assignment_id="w08-a1", workflow="08", task_type="annotation",
+    batch_id="w08-batch", case_id="w08-record-1", user_id="usr-a",
+    blind_group="pool-08-annotation", status="assigned"
+  )
+)
+stopifnot(
+  user_has_active_assignment(
+    w08_assignments, "08", "w08-batch", "annotation",
+    "w08-record-1", "usr-a"
+  ),
+  !user_has_active_assignment(
+    w08_assignments, "08", "w08-batch", "annotation",
+    "w08-record-1", "usr-b"
+  )
+)
+
+w08_progress <- assignment_progress(
+  w08_assignments,
+  list(w08_event),
+  users,
+  workflow = "08",
+  batch_id = "w08-batch",
+  task_type = "annotation"
+)
+stopifnot(
+  identical(w08_progress$completed, 1L),
+  identical(w08_progress$remaining, 0L)
+)
+
+cat("PASS: W02 shared-pool and W08 single-reviewer assignment semantics\n")
