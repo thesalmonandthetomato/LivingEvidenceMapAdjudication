@@ -293,6 +293,8 @@ server <- function(input, output, session) {
   w04_cases_rv <- reactiveVal(NULL)
   w04_queue_sha_rv <- reactiveVal("")
   w04_batch_id_rv <- reactiveVal("")
+  w04_source_run_id_rv <- reactiveVal("")
+  w04_review_mode_rv <- reactiveVal("")
   w04_idx <- reactiveVal(1L)
   w04_decisions <- reactiveVal(list())
   w04_batch_status_rv <- reactiveVal("")
@@ -662,12 +664,16 @@ server <- function(input, output, session) {
           div(
             class = "col-12 col-lg-6",
             stage_card(
-              "Screening",
+              if (identical(w04_review_mode_rv(),"resolution")) "Screening resolution" else "Screening",
               "Workflow 04",
-              "Human screening or validation records awaiting review.",
+              if (identical(w04_review_mode_rv(),"resolution")) {
+                "Model screening conflicts requiring a final human include/exclude decision."
+              } else {
+                "Human screening or validation records awaiting review."
+              },
               w04_total, w04_completed, w04_remaining,
               if (w04_remaining > 0L) "open_w04" else NULL,
-              "Continue screening",
+              if (identical(w04_review_mode_rv(),"resolution")) "Resolve screening conflicts" else "Continue screening",
               w04_batch_id_rv(),
               w04_batch_status_rv()
             )
@@ -719,9 +725,15 @@ server <- function(input, output, session) {
         div(
           class = "d-flex justify-content-between align-items-center mb-3",
           div(
-            tags$h2("LivingEvidenceMap validation screening", class="mb-0"),
+            tags$h2(
+              if (identical(w04_review_mode_rv(),"resolution")) "LivingEvidenceMap screening resolution" else "LivingEvidenceMap validation screening",
+              class="mb-0"
+            ),
             tags$div(
-              sprintf("Workflow 04 · blind human validation · %s", w04_batch_id_rv()),
+              sprintf(
+                if (identical(w04_review_mode_rv(),"resolution")) "Workflow 04 · resolve model conflicts · %s" else "Workflow 04 · blind human validation · %s",
+                w04_batch_id_rv()
+              ),
               class="text-secondary"
             )
           ),
@@ -743,7 +755,7 @@ server <- function(input, output, session) {
                 class = "decision-row d-flex flex-wrap gap-2",
                 actionButton("w04_retain", "Include", class = "btn-success"),
                 actionButton("w04_exclude", "Exclude", class = "btn-outline-danger"),
-                actionButton("w04_uncertain", "Unsure", class = "btn-outline-secondary")
+                if (!identical(w04_review_mode_rv(),"resolution")) actionButton("w04_uncertain", "Unsure", class = "btn-outline-secondary")
               ),
               div(
                 class = "nav-row d-flex gap-2",
@@ -1327,6 +1339,20 @@ server <- function(input, output, session) {
           class="abstract-text",
           highlight_screening_text(b$abstract %||% "",w04_include_terms(),w04_exclude_terms())
         ),
+        if (identical(w04_review_mode_rv(),"resolution")) {
+          votes <- as.character((z$screening %||% list())$votes %||% character())
+          div(
+            class="mt-3 p-2 border rounded",
+            tags$strong("Model decisions: "),
+            if (length(votes)) {
+              tagList(lapply(seq_along(votes), function(i) {
+                tags$span(class="task-badge me-1", sprintf("Pass %d: %s", i, votes[[i]]))
+              }))
+            } else {
+              tags$span(class="text-secondary","No model vote provenance available")
+            }
+          )
+        },
         div(
           class="w04-keywords",
           tags$strong("Keywords: "),
@@ -1351,7 +1377,7 @@ server <- function(input, output, session) {
       review_case_id=as.character(z$review_case_id),
       record_id=as.character(z$record_id),
       decision=choice,
-      rationale="Manual validation screening in Shiny",
+      rationale=if (identical(w04_review_mode_rv(),"resolution")) "Manual resolution of Workflow 04 model conflict in Shiny" else "Manual validation screening in Shiny",
       reviewer=reviewer,
       resolved_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
       queue_sha256=w04_queue_sha_rv()
