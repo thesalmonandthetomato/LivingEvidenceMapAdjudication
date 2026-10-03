@@ -1670,7 +1670,7 @@
       "checksum": "20d13bbd9b004db228881d352910513d"
     },
     "app.R": {
-      "checksum": "ea8d1b34af6e7b409228eda8ca53e970"
+      "checksum": "167d332f67b66128be9679e9f5faf06b"
     },
     "docs/workflow02_adjudication_contract.md": {
       "checksum": "70e8056f8d6149f52ed939221645e1f9"
@@ -1682,7 +1682,7 @@
       "checksum": "480a0d337e4fbf1a18baca82acdbcb23"
     },
     "multiuser_app/app.R": {
-      "checksum": "67b082ed1cbcf14fc23e43628e43b781"
+      "checksum": "a065c3bf2c31a294c09288c0ca5a6ac1"
     },
     "multiuser_app/DEVELOPMENT_TODO.md": {
       "checksum": "7ee53afe9396a1ada23aee3be6b9bb64"
