@@ -50,4 +50,23 @@ stopifnot(
   isTRUE(active[[1L]]$active)
 )
 
-cat("PASS: W01 local decision events are append-only and active state resolves correctly\n")
+d3 <- d1
+d3$reviewer <- "usr-sini"
+d3$decision <- "duplicate"
+d3$resolved_at_utc <- "2026-10-03T06:32:00Z"
+
+s3 <- write_local_decision(path, d3)
+stopifnot(
+  identical(as.integer(s3$version), 1L),
+  identical(as.character(s3$user_id), "usr-sini"),
+  identical(as.character(s3$supersedes_decision_id), "")
+)
+
+active_two_reviewers <- read_local_decisions(path)
+case_events <- Filter(function(x) identical(as.character(x$case_id), "case-001"), active_two_reviewers)
+stopifnot(
+  length(case_events) == 2L,
+  setequal(vapply(case_events, function(x) as.character(x$user_id), character(1)), c("usr-neal","usr-sini"))
+)
+
+cat("PASS: W01 local decision events are append-only, reviewer-independent and active state resolves correctly\n")
