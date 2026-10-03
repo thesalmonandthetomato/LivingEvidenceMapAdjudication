@@ -150,8 +150,39 @@ plan_again <- plan_shared_pool_assignment(
   amount = 3
 )
 stopifnot(
-  identical(plan_again$available, 6L),
-  length(intersect(plan_number$case_ids, plan_again$case_ids)) == 0L
+  identical(plan_again$available, 9L),
+  identical(plan_again$allocated, 3L)
+)
+
+# A shared-pool case already assigned to one reviewer remains available
+# to a different reviewer until the case is substantively resolved.
+shared_first <- plan_shared_pool_assignment(
+  cases = list(list(review_case_id = "shared-case")),
+  assignments = list(),
+  active_events = list(),
+  workflow = "01",
+  batch_id = "batch-shared",
+  task_type = "deduplication",
+  user_ids = "usr-a",
+  allocation_type = "number",
+  amount = 1
+)
+shared_second <- plan_shared_pool_assignment(
+  cases = list(list(review_case_id = "shared-case")),
+  assignments = shared_first$new_assignments,
+  active_events = list(),
+  workflow = "01",
+  batch_id = "batch-shared",
+  task_type = "deduplication",
+  user_ids = "usr-b",
+  allocation_type = "number",
+  amount = 1
+)
+stopifnot(
+  identical(shared_second$available, 1L),
+  identical(shared_second$allocated, 1L),
+  identical(normalise_assignment_row(shared_second$new_assignments[[1L]])$case_id, "shared-case"),
+  identical(normalise_assignment_row(shared_second$new_assignments[[1L]])$user_id, "usr-b")
 )
 
 removal_assignments <- list(
@@ -295,6 +326,34 @@ w08_progress <- assignment_progress(
 stopifnot(
   identical(w08_progress$completed, 1L),
   identical(w08_progress$remaining, 0L)
+)
+
+
+single_first <- plan_workflow_assignment(
+  cases = list(list(record_id = "single-record")),
+  assignments = list(),
+  active_events = list(),
+  workflow = "08",
+  batch_id = "single-batch",
+  task_type = "annotation",
+  user_ids = "usr-a",
+  allocation_type = "number",
+  amount = 1
+)
+single_second <- plan_workflow_assignment(
+  cases = list(list(record_id = "single-record")),
+  assignments = single_first$new_assignments,
+  active_events = list(),
+  workflow = "08",
+  batch_id = "single-batch",
+  task_type = "annotation",
+  user_ids = "usr-b",
+  allocation_type = "number",
+  amount = 1
+)
+stopifnot(
+  identical(single_first$allocated, 1L),
+  identical(single_second$allocated, 0L)
 )
 
 cat("PASS: W02 shared-pool and W08 single-reviewer assignment semantics\n")
