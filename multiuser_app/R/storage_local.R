@@ -35,10 +35,17 @@ write_local_decision <- function(path, decision) {
   case_events <- Filter(function(x) identical(decision_event_case_id(x), case_id), events)
 
   authority_user <- ""
-  if (length(case_events)) {
-    first_times <- vapply(case_events, decision_event_time, character(1))
-    first_idx <- order(first_times, seq_along(case_events), decreasing = FALSE)[[1L]]
-    authority_user <- as.character(case_events[[first_idx]]$user_id %||% case_events[[first_idx]]$reviewer %||% "")
+  resolving_events <- Filter(
+    function(x) {
+      decision <- tolower(trimws(as.character(x$decision %||% "")))
+      nzchar(decision) && !identical(decision, "uncertain")
+    },
+    case_events
+  )
+  if (length(resolving_events)) {
+    first_times <- vapply(resolving_events, decision_event_time, character(1))
+    first_idx <- order(first_times, seq_along(resolving_events), decreasing = FALSE)[[1L]]
+    authority_user <- as.character(resolving_events[[first_idx]]$user_id %||% resolving_events[[first_idx]]$reviewer %||% "")
     if (nzchar(authority_user) && !identical(authority_user, user_id)) {
       stop("This case has already been resolved by another reviewer", call. = FALSE)
     }
