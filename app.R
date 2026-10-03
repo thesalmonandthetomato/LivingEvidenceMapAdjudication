@@ -33,7 +33,12 @@ normalise_display_text <- function(x) {
   trimws(x)
 }
 
+screening_green_terms <- c(
+  "farmed", "farm", "farming", "aquaculture", "mariculture", "cage", "pen"
+)
+
 highlight_screening_text <- function(text, include_terms = character(), exclude_terms = character()) {
+  include_terms <- unique(c(as.character(include_terms), screening_green_terms))
   text <- normalise_display_text(text)
   if (!nzchar(text)) return("")
   terms <- c(
@@ -1001,6 +1006,37 @@ server <- function(input, output, session) {
           current_decisions <- filter_batch_decisions(all_decisions, batch$queue_sha256)
         }
         w02_batch <- load_w02_batch()
+
+        # One-off lifecycle repair for the completed historical W02 batch.
+        # Finalizer run 37016080508 successfully applied and published all 13
+        # decisions from source run 36989928117 before consumed-status
+        # acknowledgement was added to the W02 finalizer.
+        if (
+          !is.null(w02_batch) &&
+          identical(as.character(w02_batch$batch_id), "w02-run-36989928117") &&
+          identical(as.character(w02_batch$batch_status %||% ""), "review_complete")
+        ) {
+          repair_decisions <- active_sheet_w02_decisions()
+          repair_decisions <- w02_filter_batch_decisions(repair_decisions, w02_batch$queue_sha256)
+          repair_ids <- w02_resolved_ids(repair_decisions)
+          repair_case_ids <- vapply(w02_batch$cases, function(x) as.character(x$review_case_id), character(1))
+          if (
+            length(w02_batch$cases) == 13L &&
+            setequal(repair_ids, repair_case_ids)
+          ) {
+            append_batch_status(
+              stage = "02",
+              batch_id = w02_batch$batch_id,
+              queue_sha256 = w02_batch$queue_sha256,
+              status = "consumed",
+              workflow_run_id = "37016080508",
+              source_run_id = "36989928117",
+              message = "Historical lifecycle repair: W02 decisions were successfully applied and published by finalizer run 37016080508."
+            )
+            w02_batch <- load_w02_batch()
+          }
+        }
+
         if (!is.null(w02_batch)) {
           w02_all_decisions <- active_sheet_w02_decisions()
           w02_cases_rv(w02_batch$cases)
