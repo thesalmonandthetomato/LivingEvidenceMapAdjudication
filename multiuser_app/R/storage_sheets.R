@@ -1265,7 +1265,7 @@ create_test_w08_queue <- function(
 
   issue2 <- list(
     issue_type = "species_none",
-    allowed_human_outcomes = c("assign_unspecified_species", "exclude_record"),
+    allowed_human_outcomes = c("assign_named_species", "assign_unspecified_species", "exclude_record"),
     automated_value = list()
   )
   issue2$issue_state_sha256 <- digest::digest(
@@ -1299,7 +1299,23 @@ create_test_w08_queue <- function(
     record_id = vapply(cases, function(x) x$record_id, character(1)),
     case_json = json,
     source_run_id = rep("", length(cases)),
-    species_options_json = rep("[]", length(cases)),
+    species_options_json = c(
+      jsonlite::toJSON(
+        c(
+          "Atlantic salmon",
+          "Rainbow trout",
+          "Chinook salmon",
+          "Coho salmon",
+          "Sockeye salmon",
+          "Chum salmon",
+          "Pink salmon",
+          "Masu salmon",
+          "Unspecified species"
+        ),
+        auto_unbox = FALSE
+      ),
+      rep("", max(0L, length(cases) - 1L))
+    ),
     topic_options_json = rep("[]", length(cases)),
     stringsAsFactors = FALSE
   )
