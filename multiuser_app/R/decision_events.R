@@ -9,7 +9,12 @@ decision_event_scalar <- function(x, fields, default = "") {
   default
 }
 
-normalise_decision_events <- function(events, case_fields = c("case_id", "review_case_id", "record_id")) {
+normalise_decision_events <- function(
+  events,
+  case_fields = c("case_id", "review_case_id", "record_id"),
+  identity_scope = c("case", "case_user")
+) {
+  identity_scope <- match.arg(identity_scope)
   if (!length(events)) return(list())
 
   out <- vector("list", length(events))
@@ -24,7 +29,11 @@ normalise_decision_events <- function(events, case_fields = c("case_id", "review
     }
 
     user_id <- decision_event_scalar(x, c("user_id", "reviewer"))
-    event_key <- paste(case_id, user_id, sep = "|")
+    event_key <- if (identical(identity_scope, "case_user")) {
+      paste(case_id, user_id, sep = "|")
+    } else {
+      case_id
+    }
 
     prior_version <- if (exists(event_key, envir = versions, inherits = FALSE)) {
       get(event_key, envir = versions, inherits = FALSE)
@@ -46,7 +55,13 @@ normalise_decision_events <- function(events, case_fields = c("case_id", "review
 
   event_keys <- vapply(
     out,
-    function(x) paste(as.character(x$case_id), as.character(x$user_id), sep = "|"),
+    function(x) {
+      if (identical(identity_scope, "case_user")) {
+        paste(as.character(x$case_id), as.character(x$user_id), sep = "|")
+      } else {
+        as.character(x$case_id)
+      }
+    },
     character(1)
   )
   latest <- !duplicated(event_keys, fromLast = TRUE)
@@ -55,15 +70,34 @@ normalise_decision_events <- function(events, case_fields = c("case_id", "review
   out
 }
 
-active_decision_events <- function(events, case_fields = c("case_id", "review_case_id", "record_id")) {
-  xs <- normalise_decision_events(events, case_fields = case_fields)
+active_decision_events <- function(
+  events,
+  case_fields = c("case_id", "review_case_id", "record_id"),
+  identity_scope = c("case", "case_user")
+) {
+  identity_scope <- match.arg(identity_scope)
+  xs <- normalise_decision_events(
+    events,
+    case_fields = case_fields,
+    identity_scope = identity_scope
+  )
   if (!length(xs)) return(list())
   xs[vapply(xs, function(x) isTRUE(x$active), logical(1))]
 }
 
 
-canonical_event_by_id <- function(events, decision_id, case_fields = c("case_id", "review_case_id", "record_id")) {
-  xs <- normalise_decision_events(events, case_fields = case_fields)
+canonical_event_by_id <- function(
+  events,
+  decision_id,
+  case_fields = c("case_id", "review_case_id", "record_id"),
+  identity_scope = c("case", "case_user")
+) {
+  identity_scope <- match.arg(identity_scope)
+  xs <- normalise_decision_events(
+    events,
+    case_fields = case_fields,
+    identity_scope = identity_scope
+  )
   hits <- Filter(
     function(x) identical(as.character(x$decision_id %||% ""), as.character(decision_id)),
     xs
