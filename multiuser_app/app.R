@@ -384,6 +384,7 @@ server <- function(input, output, session) {
   batch_status_rv <- reactiveVal("")
   decisions <- reactiveVal(list())
 
+  w02_all_cases_rv <- reactiveVal(list())
   w02_cases_rv <- reactiveVal(NULL)
   w02_queue_sha_rv <- reactiveVal("")
   w02_batch_id_rv <- reactiveVal("")
@@ -421,6 +422,7 @@ server <- function(input, output, session) {
   w04_conflict_batch_status_rv <- reactiveVal("")
   w04_conflict_status <- reactiveVal("")
 
+  w08_all_cases_rv <- reactiveVal(list())
   w08_cases_rv <- reactiveVal(NULL)
   w08_queue_sha_rv <- reactiveVal("")
   w08_batch_id_rv <- reactiveVal("")
@@ -1141,6 +1143,31 @@ server <- function(input, output, session) {
     identical(progress$remaining, 0L)
   }
 
+
+  w02_active_assignment_events <- function() {
+    w02_decisions() %||% list()
+  }
+
+  w08_active_assignment_events <- function() {
+    w08_decisions() %||% list()
+  }
+
+  workflow_all_assignments_complete <- function(workflow, batch_id, task_type, events) {
+    assignments <- active_assignments_for_batch(
+      assignment_registry_rv(), workflow, batch_id, task_type
+    )
+    if (!length(assignments)) return(TRUE)
+    progress <- assignment_progress(
+      assignments,
+      events,
+      user_registry_rv(),
+      workflow = workflow,
+      batch_id = batch_id,
+      task_type = task_type
+    )
+    identical(progress$remaining, 0L)
+  }
+
   output$assignment_progress <- renderUI({
     req(authenticated())
     if (!session_can("manage_assignments")) return(NULL)
@@ -1640,6 +1667,8 @@ server <- function(input, output, session) {
     assignment_registry_rv(list())
     assignment_manage_status("")
     w01_all_cases_rv(list())
+    w02_all_cases_rv(list())
+    w08_all_cases_rv(list())
     app_view("tasks")
     complete(FALSE)
     failed_attempts(0L)
@@ -1719,17 +1748,40 @@ server <- function(input, output, session) {
 
         if (!is.null(w02_batch)) {
           w02_all_decisions <- active_sheet_w02_decisions()
-          w02_cases_rv(w02_batch$cases)
+          w02_batch_decisions <- w02_filter_batch_decisions(w02_all_decisions, w02_batch$queue_sha256)
+          w02_all_cases_rv(w02_batch$cases)
+          w02_visible_cases <- cases_for_assignment_user(
+            w02_batch$cases,
+            assignment_registry_rv(),
+            "02",
+            w02_batch$batch_id,
+            login_user,
+            task_type = "enrichment",
+            active_events = w02_batch_decisions
+          )
+          w02_cases_rv(w02_visible_cases)
           w02_queue_sha_rv(w02_batch$queue_sha256)
           w02_batch_id_rv(w02_batch$batch_id)
           w02_batch_status_rv(w02_batch$batch_status %||% "")
-          w02_decisions(w02_filter_batch_decisions(w02_all_decisions, w02_batch$queue_sha256))
+          w02_decisions(w02_batch_decisions)
           w02_unresolved <- w02_unresolved_indices()
-          w02_idx(if (length(w02_unresolved)) w02_unresolved[[1L]] else max(1L, length(w02_batch$cases)))
-          if(!length(w02_unresolved) && !identical(w02_batch_status_rv(),"review_complete") &&
-             user_can(login_user,"control_workflows")) {
+          w02_idx(if (length(w02_unresolved)) w02_unresolved[[1L]] else max(1L, length(w02_visible_cases)))
+          if(
+            user_can(login_user,"control_workflows") &&
+            !identical(w02_batch_status_rv(),"review_complete") &&
+            workflow_all_assignments_complete("02", w02_batch_id_rv(), "enrichment", w02_batch_decisions) &&
+            length(w02_all_cases_rv()) > 0L &&
+            all(vapply(
+              w02_all_cases_rv(),
+              function(x) as.character(x$review_case_id %||% "") %in% w02_resolved_ids(w02_batch_decisions),
+              logical(1)
+            ))
+          ) {
             mark_review_complete("02",w02_batch_id_rv(),w02_queue_sha_rv(),w02_batch_status_rv)
           }
+        } else {
+          w02_all_cases_rv(list())
+          w02_cases_rv(NULL)
         }
 
         w04_batch <- load_w04_batch()
@@ -1783,7 +1835,18 @@ server <- function(input, output, session) {
         w08_batch <- load_w08_batch()
         if (!is.null(w08_batch)) {
           w08_all_decisions <- active_sheet_w08_decisions()
-          w08_cases_rv(w08_batch$cases)
+          w08_batch_decisions <- w08_filter_batch_decisions(w08_all_decisions,w08_batch$queue_sha256)
+          w08_all_cases_rv(w08_batch$cases)
+          w08_visible_cases <- cases_for_assignment_user(
+            w08_batch$cases,
+            assignment_registry_rv(),
+            "08",
+            w08_batch$batch_id,
+            login_user,
+            task_type = "annotation",
+            active_events = w08_batch_decisions
+          )
+          w08_cases_rv(w08_visible_cases)
           w08_queue_sha_rv(w08_batch$queue_sha256)
           w08_batch_id_rv(w08_batch$batch_id)
           w08_source_run_id_rv(w08_batch$source_run_id %||% "")
@@ -1791,13 +1854,25 @@ server <- function(input, output, session) {
           w08_case_sha_rv(w08_batch$case_sha256 %||% character())
           w08_species_options(w08_batch$species_options %||% character())
           w08_topic_options(w08_batch$topic_options %||% list())
-          w08_decisions(w08_filter_batch_decisions(w08_all_decisions,w08_batch$queue_sha256))
+          w08_decisions(w08_batch_decisions)
           w08_unresolved <- w08_unresolved_indices()
-          w08_idx(if(length(w08_unresolved)) w08_unresolved[[1L]] else max(1L,length(w08_batch$cases)))
-          if(!length(w08_unresolved) && !identical(w08_batch_status_rv(),"review_complete") &&
-             user_can(login_user,"control_workflows")) {
+          w08_idx(if(length(w08_unresolved)) w08_unresolved[[1L]] else max(1L,length(w08_visible_cases)))
+          if(
+            user_can(login_user,"control_workflows") &&
+            !identical(w08_batch_status_rv(),"review_complete") &&
+            workflow_all_assignments_complete("08", w08_batch_id_rv(), "annotation", w08_batch_decisions) &&
+            length(w08_all_cases_rv()) > 0L &&
+            all(vapply(
+              w08_all_cases_rv(),
+              function(x) as.character(x$record_id %||% "") %in% w08_decision_ids(w08_batch_decisions),
+              logical(1)
+            ))
+          ) {
             mark_review_complete("08",w08_batch_id_rv(),w08_queue_sha_rv(),w08_batch_status_rv)
           }
+        } else {
+          w08_all_cases_rv(list())
+          w08_cases_rv(NULL)
         }
 
         if (!is.null(batch)) {
