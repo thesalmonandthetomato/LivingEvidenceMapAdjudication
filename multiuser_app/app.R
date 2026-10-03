@@ -2594,6 +2594,7 @@ server <- function(input, output, session) {
     reason <- as.character(z$reason %||% z$conflict$reason %||% "")
     buttons <- if (identical(reason, "returned_doi_mismatch")) {
       tagList(
+        actionButton("w02_accept_field", "Accept provider field", class="btn-success"),
         actionButton("w02_reject_match", "Reject provider match", class="btn-outline-danger"),
         actionButton("w02_uncertain", "Unsure", class="btn-outline-secondary")
       )
