@@ -871,3 +871,204 @@ read_sheet_users <- function() {
   validate_user_registry(users)
   users
 }
+
+
+assignment_registry_tab <- function() {
+  Sys.getenv("LEM_GOOGLE_ASSIGNMENTS_TAB", unset = "assignments")
+}
+
+assignment_audit_tab <- function() {
+  Sys.getenv("LEM_GOOGLE_ASSIGNMENT_AUDIT_TAB", unset = "assignment_audit")
+}
+
+ensure_sheet_assignment_registry <- function() {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- assignment_registry_tab()
+  tabs <- googlesheets4::sheet_names(ss)
+  cols <- ADJUDICATION_SCHEMA$assignments
+
+  if (!tab %in% tabs) {
+    googlesheets4::sheet_add(ss, sheet = tab)
+    empty <- as.data.frame(
+      setNames(replicate(length(cols), character(), simplify = FALSE), cols),
+      stringsAsFactors = FALSE
+    )
+    googlesheets4::sheet_write(empty, ss = ss, sheet = tab)
+  }
+  invisible(TRUE)
+}
+
+ensure_sheet_assignment_audit <- function() {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- assignment_audit_tab()
+  tabs <- googlesheets4::sheet_names(ss)
+  cols <- c(
+    "event_id","event_at_utc","actor_user_id","action",
+    "assignment_id","workflow","task_type","batch_id","case_id",
+    "user_id","blind_group","status"
+  )
+
+  if (!tab %in% tabs) {
+    googlesheets4::sheet_add(ss, sheet = tab)
+    empty <- as.data.frame(
+      setNames(replicate(length(cols), character(), simplify = FALSE), cols),
+      stringsAsFactors = FALSE
+    )
+    googlesheets4::sheet_write(empty, ss = ss, sheet = tab)
+  }
+  invisible(TRUE)
+}
+
+sheet_assignment_rows <- function(x) {
+  if (is.null(x) || !nrow(x)) return(list())
+  missing <- setdiff(ADJUDICATION_SCHEMA$assignments, names(x))
+  if (length(missing)) {
+    stop("Assignment registry tab missing field(s): ", paste(missing, collapse = ", "), call. = FALSE)
+  }
+  out <- lapply(seq_len(nrow(x)), function(i) {
+    normalise_assignment_row(as.list(x[i, ADJUDICATION_SCHEMA$assignments, drop = FALSE]))
+  })
+  validate_assignment_registry(out)
+  out
+}
+
+read_sheet_assignments <- function(create_if_missing = TRUE) {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- assignment_registry_tab()
+  tabs <- googlesheets4::sheet_names(ss)
+
+  if (!tab %in% tabs) {
+    if (!isTRUE(create_if_missing)) return(list())
+    ensure_sheet_assignment_registry()
+  }
+
+  x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
+  sheet_assignment_rows(x)
+}
+
+assignment_row_signature <- function(x) {
+  a <- normalise_assignment_row(x)
+  paste(vapply(ADJUDICATION_SCHEMA$assignments, function(nm) a[[nm]], character(1)), collapse = "|")
+}
+
+assignment_registry_signature <- function(assignments) {
+  assignments <- lapply(assignments %||% list(), normalise_assignment_row)
+  if (!length(assignments)) return(digest::digest("", algo = "sha256", serialize = FALSE))
+  rows <- vapply(assignments, assignment_row_signature, character(1))
+  digest::digest(paste(sort(rows), collapse = "\n"), algo = "sha256", serialize = FALSE)
+}
+
+assignment_changes <- function(before, after) {
+  before <- lapply(before %||% list(), normalise_assignment_row)
+  after <- lapply(after %||% list(), normalise_assignment_row)
+
+  before_by_id <- setNames(before, vapply(before, function(x) x$assignment_id, character(1)))
+  after_by_id <- setNames(after, vapply(after, function(x) x$assignment_id, character(1)))
+  ids <- union(names(before_by_id), names(after_by_id))
+
+  out <- list()
+  for (id in ids) {
+    b <- before_by_id[[id]]
+    a <- after_by_id[[id]]
+    if (is.null(b) && !is.null(a)) {
+      out[[length(out) + 1L]] <- list(action = "created", assignment = a)
+    } else if (!is.null(b) && is.null(a)) {
+      out[[length(out) + 1L]] <- list(action = "removed", assignment = b)
+    } else if (!identical(assignment_row_signature(b), assignment_row_signature(a))) {
+      action <- if (!identical(b$status, a$status) && identical(a$status, "cancelled")) {
+        "cancelled"
+      } else {
+        "updated"
+      }
+      out[[length(out) + 1L]] <- list(action = action, assignment = a)
+    }
+  }
+  out
+}
+
+append_sheet_assignment_audit <- function(changes, actor_user_id = "") {
+  if (!length(changes)) return(invisible(TRUE))
+  gs4_auth_from_env()
+  ensure_sheet_assignment_audit()
+  ss <- sheet_id_from_env()
+  tab <- assignment_audit_tab()
+  now <- format(Sys.time(), tz = "UTC", format = "%Y-%m-%dT%H:%M:%SZ")
+
+  rows <- lapply(seq_along(changes), function(i) {
+    ch <- changes[[i]]
+    a <- normalise_assignment_row(ch$assignment)
+    event_id <- paste0(
+      "asg-event-",
+      substr(digest::digest(
+        paste(now, actor_user_id, ch$action, a$assignment_id, i, sep = "|"),
+        algo = "sha256", serialize = FALSE
+      ), 1L, 24L)
+    )
+    data.frame(
+      event_id = event_id,
+      event_at_utc = now,
+      actor_user_id = as.character(actor_user_id),
+      action = as.character(ch$action),
+      assignment_id = a$assignment_id,
+      workflow = a$workflow,
+      task_type = a$task_type,
+      batch_id = a$batch_id,
+      case_id = a$case_id,
+      user_id = a$user_id,
+      blind_group = a$blind_group,
+      status = a$status,
+      stringsAsFactors = FALSE
+    )
+  })
+  audit <- do.call(rbind, rows)
+  googlesheets4::sheet_append(ss, data = audit, sheet = tab)
+  invisible(TRUE)
+}
+
+write_sheet_assignments <- function(assignments, actor_user_id = "") {
+  assignments <- lapply(assignments %||% list(), normalise_assignment_row)
+  validate_assignment_registry(assignments)
+
+  gs4_auth_from_env()
+  ensure_sheet_assignment_registry()
+  ss <- sheet_id_from_env()
+  tab <- assignment_registry_tab()
+
+  before <- read_sheet_assignments(create_if_missing = FALSE)
+  before_sig <- assignment_registry_signature(before)
+  changes <- assignment_changes(before, assignments)
+  if (!length(changes)) return(invisible(assignments))
+
+  # Re-read immediately before the write. This is a small optimistic
+  # concurrency guard so an administrator cannot silently overwrite a
+  # different assignment update that landed after the initial read.
+  latest <- read_sheet_assignments(create_if_missing = FALSE)
+  if (!identical(before_sig, assignment_registry_signature(latest))) {
+    stop("Assignment registry changed during this operation; refresh and try again", call. = FALSE)
+  }
+
+  df <- if (length(assignments)) {
+    rows <- lapply(assignments, function(a) {
+      as.data.frame(as.list(a[ADJUDICATION_SCHEMA$assignments]), stringsAsFactors = FALSE)
+    })
+    do.call(rbind, rows)
+  } else {
+    as.data.frame(
+      setNames(replicate(length(ADJUDICATION_SCHEMA$assignments), character(), simplify = FALSE), ADJUDICATION_SCHEMA$assignments),
+      stringsAsFactors = FALSE
+    )
+  }
+
+  googlesheets4::sheet_write(df, ss = ss, sheet = tab)
+
+  verify <- read_sheet_assignments(create_if_missing = FALSE)
+  if (!identical(assignment_registry_signature(verify), assignment_registry_signature(assignments))) {
+    stop("Assignment registry write verification failed", call. = FALSE)
+  }
+
+  append_sheet_assignment_audit(changes, actor_user_id = actor_user_id)
+  invisible(verify)
+}
