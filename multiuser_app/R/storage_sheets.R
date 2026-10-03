@@ -746,6 +746,25 @@ append_sheet_w08_decision <- function(decision, prior_decision=NULL) {
   ss <- sheet_id_from_env()
   tab <- w08_decision_tab()
   tabs <- googlesheets4::sheet_names(ss)
+
+  current_active <- active_sheet_w08_decisions()
+  record_id <- as.character(decision$record_id %||% "")
+  user_id <- as.character(decision$reviewer %||% "")
+  current_record <- Filter(
+    function(x) identical(as.character(x$record_id %||% x$case_id %||% ""), record_id),
+    current_active
+  )
+  if (length(current_record)) {
+    current <- current_record[[1L]]
+    current_user <- as.character(current$reviewer %||% current$user_id %||% "")
+    if (
+      nzchar(current_user) &&
+      !identical(current_user, user_id)
+    ) {
+      stop("This annotation record has already been resolved by another reviewer", call. = FALSE)
+    }
+  }
+
   cols <- c(
     "decision_id","record_id","queue_sha256","record_case_sha256",
     "issue_decisions_json","reviewer","resolved_at_utc","supersedes_decision_id"
