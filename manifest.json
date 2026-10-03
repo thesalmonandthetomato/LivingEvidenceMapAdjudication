@@ -1670,7 +1670,7 @@
       "checksum": "20d13bbd9b004db228881d352910513d"
     },
     "app.R": {
-      "checksum": "4f963fb5095da8b424cda6d71b90abd9"
+      "checksum": "62f849c66ac48dad9e21815b3a2e22f7"
     },
     "docs/workflow02_adjudication_contract.md": {
       "checksum": "70e8056f8d6149f52ed939221645e1f9"
@@ -1682,7 +1682,10 @@
       "checksum": "480a0d337e4fbf1a18baca82acdbcb23"
     },
     "multiuser_app/app.R": {
-      "checksum": "76b473f5245548cdbb9a303b53b5d6d0"
+      "checksum": "67b082ed1cbcf14fc23e43628e43b781"
+    },
+    "multiuser_app/DEVELOPMENT_TODO.md": {
+      "checksum": "7ee53afe9396a1ada23aee3be6b9bb64"
     },
     "multiuser_app/fixtures/w01_real_sample_2.jsonl": {
       "checksum": "b95ff9acc42004e0c32e0bbeec3d93a9"
@@ -1693,23 +1696,32 @@
     "multiuser_app/R/auth.R": {
       "checksum": "cadec0238e5356811bd8495088892a66"
     },
+    "multiuser_app/R/decision_events.R": {
+      "checksum": "92a0474af543efcecd66fa86bfba6c0e"
+    },
     "multiuser_app/R/github_dispatch.R": {
-      "checksum": "509988ef82ca8d697586286d0fde79bd"
+      "checksum": "adb11735d6d8a97e7bdc4b70aecd59a9"
     },
     "multiuser_app/R/storage_backend.R": {
       "checksum": "6260fc9b86ef54c9db5af9ef604c6a0b"
     },
     "multiuser_app/R/storage_local.R": {
-      "checksum": "5004b00ddb543e2da8d176905dd2b3c4"
+      "checksum": "55f4eb147890cd079ff9558b2b39cf60"
     },
     "multiuser_app/R/storage_sheets.R": {
-      "checksum": "2dcd3e8441caed05929089db658a31c3"
+      "checksum": "70a718a65a59fb40244195c0057f067d"
     },
     "multiuser_app/R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
     },
     "multiuser_app/R/w01_contract.R": {
       "checksum": "08a1be968420750f0593f092c2b7caab"
+    },
+    "multiuser_app/tests/test_decision_events.R": {
+      "checksum": "903fc30207a8dd807b827f39cb0f1b3e"
+    },
+    "multiuser_app/tests/test_w01_decision_events.R": {
+      "checksum": "ea168f5ad54ab29e7c51b8408a267068"
     },
     "R/auth.R": {
       "checksum": "386d3f17d2856f50d104d87761906e16"
