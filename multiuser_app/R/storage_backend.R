@@ -42,3 +42,13 @@ read_assignment_registry <- function(local_path = NULL) {
   }
   stop("Unsupported LEM_STORAGE_BACKEND: ", b, call. = FALSE)
 }
+
+
+save_assignment_registry <- function(assignments, local_path = NULL) {
+  b <- storage_backend()
+  if (identical(b, "local")) return(write_local_assignments(local_path, assignments))
+  if (identical(b, "google_sheets")) {
+    stop("Assignment editing is not yet enabled for Google Sheets-backed deployments", call. = FALSE)
+  }
+  stop("Unsupported LEM_STORAGE_BACKEND: ", b, call. = FALSE)
+}
