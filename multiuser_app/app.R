@@ -1023,12 +1023,7 @@ server <- function(input, output, session) {
           tags$div(class="saved-note", textOutput("save_status")),
           div(
             class = "d-flex flex-wrap gap-2",
-            div(
-              class = "decision-row d-flex flex-wrap gap-2",
-              actionButton("duplicate", "Same record", class = "btn-success"),
-              actionButton("not_duplicate", "Different records", class = "btn-outline-danger"),
-              actionButton("uncertain", "Unsure", class = "btn-outline-secondary")
-            ),
+            uiOutput("w01_decision_buttons"),
             div(
               class = "nav-row d-flex gap-2",
               actionButton("previous", "← Previous"),
@@ -1284,6 +1279,43 @@ server <- function(input, output, session) {
   })
 
   current_case <- reactive({ req(authenticated(), cases_rv()); cases_rv()[[idx()]] })
+
+  w01_current_saved_choice <- reactive({
+    z <- current_case()
+    ds <- decisions()
+    if (!length(ds)) return("")
+    hit <- Filter(
+      function(x) identical(
+        as.character(x$review_case_id %||% x$case_id %||% ""),
+        as.character(z$review_case_id)
+      ),
+      ds
+    )
+    if (!length(hit)) return("")
+    as.character(hit[[1L]]$decision %||% "")
+  })
+
+  output$w01_decision_buttons <- renderUI({
+    choice <- w01_current_saved_choice()
+    div(
+      class = "decision-row d-flex flex-wrap gap-2",
+      actionButton(
+        "duplicate", "Same record",
+        class = paste("btn-success", if (identical(choice, "duplicate")) "decision-selected" else ""),
+        `aria-pressed` = if (identical(choice, "duplicate")) "true" else "false"
+      ),
+      actionButton(
+        "not_duplicate", "Different records",
+        class = paste("btn-outline-danger", if (identical(choice, "not_duplicate")) "decision-selected" else ""),
+        `aria-pressed` = if (identical(choice, "not_duplicate")) "true" else "false"
+      ),
+      actionButton(
+        "uncertain", "Unsure",
+        class = paste("btn-outline-secondary", if (identical(choice, "uncertain")) "decision-selected" else ""),
+        `aria-pressed` = if (identical(choice, "uncertain")) "true" else "false"
+      )
+    )
+  })
 
   output$batch_label <- renderText({
     req(authenticated())
