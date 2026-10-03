@@ -34,7 +34,45 @@ normalise_display_text <- function(x) {
 }
 
 screening_green_terms <- c(
-  "farmed", "farm", "farming", "aquaculture", "mariculture", "cage", "pen"
+  "salmon",
+  "salmonid",
+  "salmonids",
+  "salmonidae",
+  "Salmo",
+  "Oncorhynchus",
+  "rainbow trout",
+  "farm",
+  "farms",
+  "farmed",
+  "farming",
+  "farmer",
+  "farmers",
+  "cage",
+  "cages",
+  "caged",
+  "caging",
+  "pen",
+  "pens",
+  "penned",
+  "aquaculture",
+  "aquacultures",
+  "aquacultural",
+  "aquacultured",
+  "aquaculturing",
+  "aquaculturist",
+  "aquaculturists",
+  "commercial",
+  "commercials",
+  "commercially",
+  "commerciality",
+  "commercialisation",
+  "commercialization",
+  "commercialise",
+  "commercialize",
+  "commercialised",
+  "commercialized",
+  "commercialising",
+  "commercializing"
 )
 
 highlight_screening_text <- function(text, include_terms = character(), exclude_terms = character()) {
