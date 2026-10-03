@@ -360,7 +360,7 @@ ui <- page_fillable(
     @media (max-width: 1000px) { .pipeline-kpis { grid-template-columns:repeat(3,minmax(135px,1fr)); } }
     @media (max-width: 620px) { .pipeline-kpis { grid-template-columns:repeat(2,minmax(120px,1fr)); } }
     @media (max-width: 390px) { .pipeline-kpis { grid-template-columns:1fr; } }
-  ")))
+  "))
   ),
   uiOutput("root_ui")
 )
