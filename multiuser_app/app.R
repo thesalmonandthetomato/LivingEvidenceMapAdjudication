@@ -1269,10 +1269,10 @@ server <- function(input, output, session) {
               tags$thead(tags$tr(
                 tags$th("Reviewer"),
                 tags$th("Role"),
-                tags$th("Assigned"),
+                tags$th("Total"),
                 tags$th("Completed"),
                 tags$th("Released"),
-                tags$th("Remaining"),
+                tags$th("Current"),
                 tags$th("Progress"),
                 tags$th("Last activity")
               )),
@@ -1292,7 +1292,7 @@ server <- function(input, output, session) {
                 class = "pt-2",
                 tags$p(
                   class = "text-secondary small mb-2",
-                  "Allocate unresolved, currently unassigned cases. The requested total is divided as evenly as possible across the selected reviewers."
+                  "Add unresolved, currently unassigned cases. The amount below is the number or percentage of NEW cases to add, divided as evenly as possible across the selected reviewers."
                 ),
                 selectInput(
                   "w01_assignment_users",
@@ -1318,7 +1318,7 @@ server <- function(input, output, session) {
                 ),
                 numericInput(
                   "w01_assignment_amount",
-                  "Amount",
+                  "Additional amount",
                   value = 1,
                   min = 1,
                   step = 1
@@ -1328,6 +1328,45 @@ server <- function(input, output, session) {
                   class = "d-flex align-items-center gap-2 mt-2",
                   actionButton("w01_apply_assignments", "Apply assignments", class = "btn-primary btn-sm"),
                   tags$span(class = "saved-note", textOutput("w01_assignment_status", inline = TRUE))
+                ),
+                tags$hr(),
+                tags$strong("Remove unfinished assignments"),
+                tags$p(
+                  class = "text-secondary small mb-2",
+                  "Only unresolved active assignments can be removed. Completed or already resolved cases are protected."
+                ),
+                checkboxGroupInput(
+                  "w01_remove_assignment_ids",
+                  NULL,
+                  choices = {
+                    cancellable <- cancellable_assignments(
+                      assignment_registry_rv(),
+                      w01_active_assignment_events(),
+                      "01",
+                      batch_id_rv(),
+                      "deduplication"
+                    )
+                    case_ids <- vapply(
+                      w01_all_cases_rv(),
+                      function(x) as.character(x$review_case_id %||% x$case_id %||% ""),
+                      character(1)
+                    )
+                    ids <- vapply(cancellable, function(x) normalise_assignment_row(x)$assignment_id, character(1))
+                    labels <- vapply(cancellable, function(x) {
+                      a <- normalise_assignment_row(x)
+                      u <- find_user_by_id(user_registry_rv(), a$user_id, require_active = FALSE)
+                      reviewer_label <- if (is.null(u)) a$user_id else u$display_name
+                      case_index <- match(a$case_id, case_ids)
+                      case_label <- if (is.na(case_index)) a$case_id else paste0("Case ", case_index)
+                      paste0(reviewer_label, " · ", case_label)
+                    }, character(1))
+                    stats::setNames(ids, labels)
+                  }
+                ),
+                actionButton(
+                  "w01_remove_assignments",
+                  "Remove selected assignments",
+                  class = "btn-outline-danger btn-sm"
                 )
               )
             )
@@ -1401,11 +1440,33 @@ server <- function(input, output, session) {
 
     selected <- as.character(input$w01_assignment_users %||% character())
     registry <- user_registry_rv()
+    current_assignments <- active_assignments_for_batch(
+      assignment_registry_rv(),
+      "01",
+      batch_id_rv(),
+      "deduplication"
+    )
     reviewer_lines <- lapply(selected, function(uid) {
       u <- find_user_by_id(registry, uid, require_active = FALSE)
       label <- if (is.null(u)) uid else u$display_name
-      n <- as.integer(plan$by_user[[uid]] %||% 0L)
-      tags$li(sprintf("%s: %d case%s", label, n, if (n == 1L) "" else "s"))
+      n_new <- as.integer(plan$by_user[[uid]] %||% 0L)
+      current_for_user <- Filter(
+        function(x) identical(normalise_assignment_row(x)$user_id, uid),
+        current_assignments
+      )
+      current_unresolved <- sum(vapply(
+        current_for_user,
+        function(x) is.null(case_authoritative_event(w01_active_assignment_events(), normalise_assignment_row(x)$case_id)),
+        logical(1)
+      ))
+      tags$li(sprintf(
+        "%s: %d current + %d new = %d active case%s",
+        label,
+        current_unresolved,
+        n_new,
+        current_unresolved + n_new,
+        if ((current_unresolved + n_new) == 1L) "" else "s"
+      ))
     })
 
     div(
@@ -1459,9 +1520,54 @@ server <- function(input, output, session) {
 
     assignment_registry_rv(updated)
     assignment_manage_status(sprintf(
-      "Assigned %d case%s.",
+      "Added %d new case%s.",
       plan$allocated,
       if (plan$allocated == 1L) "" else "s"
+    ))
+  })
+
+  observeEvent(input$w01_remove_assignments, {
+    req(authenticated())
+    if (!session_can("manage_assignments")) {
+      assignment_manage_status("You do not have permission to manage assignments.")
+      return()
+    }
+    if (!identical(storage_backend(), "local")) {
+      assignment_manage_status("Assignment editing is not yet enabled for the Google Sheets backend.")
+      return()
+    }
+
+    selected_ids <- as.character(input$w01_remove_assignment_ids %||% character())
+    result <- tryCatch(
+      cancel_assignment_ids(
+        assignment_registry_rv(),
+        selected_ids,
+        w01_active_assignment_events(),
+        "01",
+        batch_id_rv(),
+        "deduplication"
+      ),
+      error = function(e) e
+    )
+    if (inherits(result, "error")) {
+      assignment_manage_status(conditionMessage(result))
+      return()
+    }
+
+    saved <- tryCatch({
+      save_assignment_registry(result$assignments, assignment_path)
+      TRUE
+    }, error = function(e) {
+      assignment_manage_status(paste("Assignment removal failed:", conditionMessage(e)))
+      FALSE
+    })
+    if (!isTRUE(saved)) return()
+
+    assignment_registry_rv(result$assignments)
+    assignment_manage_status(sprintf(
+      "Removed %d unfinished assignment%s.",
+      result$cancelled,
+      if (result$cancelled == 1L) "" else "s"
     ))
   })
 
