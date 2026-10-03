@@ -109,6 +109,18 @@ write_local_decision <- function(path, decision) {
 }
 
 
+read_local_assignments <- function(path) {
+  if (is.null(path) || !nzchar(as.character(path)) || !file.exists(path)) return(list())
+  lines <- readLines(path, warn = FALSE, encoding = "UTF-8")
+  lines <- lines[nzchar(trimws(lines))]
+  if (!length(lines)) return(list())
+  assignments <- lapply(lines, jsonlite::fromJSON, simplifyVector = FALSE)
+  assignments <- lapply(assignments, normalise_assignment_row)
+  validate_assignment_registry(assignments)
+  assignments
+}
+
+
 read_local_users <- function(path) {
   if (is.null(path) || !nzchar(as.character(path)) || !file.exists(path)) return(list())
   lines <- readLines(path, warn = FALSE, encoding = "UTF-8")
