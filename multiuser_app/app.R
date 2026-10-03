@@ -419,6 +419,11 @@ server <- function(input, output, session) {
   }
 
   mark_review_complete <- function(stage,batch_id,queue_sha,status_rv) {
+    if (identical(storage_backend(), "local")) {
+      status_rv("review_complete")
+      return(invisible(TRUE))
+    }
+
     current <- tryCatch(
       append_batch_status(
         stage=stage,
