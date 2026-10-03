@@ -291,6 +291,11 @@ ui <- page_fillable(
     .record-card { border:1px solid #dde3e8; box-shadow:0 2px 10px rgba(22,33,43,.05); }
     .record-card .card-body { padding:0; }
     .compact-record-body { padding:.65rem .9rem .8rem .9rem; }
+    .w08-species-issue { min-height:430px; overflow:visible !important; }
+    .w08-species-issue .card-body,
+    .w08-species-issue .selectize-control,
+    .w08-species-issue .selectize-input { overflow:visible !important; }
+    .w08-species-issue .selectize-dropdown { z-index:2000; max-height:240px; overflow-y:auto; }
     .record-title { font-size:1.05rem; font-weight:700; line-height:1.25; margin-bottom:.45rem; }
     .record-meta { display:grid; grid-template-columns:78px 1fr; gap:.08rem .55rem; margin:0; line-height:1.28; }
     .record-meta dt { color:#66727d; font-weight:600; }
@@ -3274,7 +3279,7 @@ server <- function(input, output, session) {
     )
 
     card(
-      class="mb-3",
+      class=paste("mb-3", if (identical(typ, "species_none")) "w08-species-issue" else ""),
       card_header(tags$strong(unname(label_map[[typ]] %||% typ))),
       div(
         class="p-3",
