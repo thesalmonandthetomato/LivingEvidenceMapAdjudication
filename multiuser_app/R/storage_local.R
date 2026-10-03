@@ -31,7 +31,14 @@ write_local_decision <- function(path, decision) {
   case_id <- as.character(decision$review_case_id %||% decision$case_id %||% "")
   if (!nzchar(case_id)) stop("Local decision is missing review_case_id", call. = FALSE)
 
-  prior_events <- Filter(function(x) identical(decision_event_case_id(x), case_id), events)
+  user_id <- as.character(decision$reviewer %||% decision$user_id %||% "")
+  prior_events <- Filter(
+    function(x) {
+      identical(decision_event_case_id(x), case_id) &&
+        identical(as.character(x$user_id %||% x$reviewer %||% ""), user_id)
+    },
+    events
+  )
   prior <- NULL
   if (length(prior_events)) {
     prior_versions <- vapply(prior_events, function(x) {
@@ -50,7 +57,6 @@ write_local_decision <- function(path, decision) {
   event_at <- as.character(decision$resolved_at_utc %||% format(
     Sys.time(), tz = "UTC", format = "%Y-%m-%dT%H:%M:%SZ"
   ))
-  user_id <- as.character(decision$reviewer %||% decision$user_id %||% "")
   supersedes <- if (is.null(prior)) "" else as.character(prior$decision_id %||% "")
 
   decision_id <- paste0(
