@@ -1106,16 +1106,35 @@ write_sheet_assignments <- function(
 }
 
 
-write_test_queue_tab <- function(tab, rows) {
+write_test_queue_tab <- function(tab, rows, expected_batch_id = "") {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tabs <- googlesheets4::sheet_names(ss)
+
   if (tab %in% tabs) {
-    stop("Test queue was not created because sheet tab already exists: ", tab, call. = FALSE)
+    existing <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
+    existing_batch <- if ("batch_id" %in% names(existing) && nrow(existing)) {
+      unique(as.character(existing$batch_id))
+    } else character()
+
+    if (
+      nzchar(as.character(expected_batch_id)) &&
+      length(existing_batch) == 1L &&
+      identical(existing_batch[[1L]], as.character(expected_batch_id))
+    ) {
+      return(invisible("existing_test_queue"))
+    }
+
+    stop(
+      "Test queue was not created because sheet tab already exists and is not the expected synthetic test queue: ",
+      tab,
+      call. = FALSE
+    )
   }
+
   googlesheets4::sheet_add(ss, sheet = tab)
   googlesheets4::sheet_write(rows, ss = ss, sheet = tab)
-  invisible(TRUE)
+  invisible("created")
 }
 
 test_queue_json <- function(x) {
@@ -1185,7 +1204,7 @@ create_test_w02_queue <- function(
     case_json = json,
     stringsAsFactors = FALSE
   )
-  write_test_queue_tab(tab, rows)
+  write_test_queue_tab(tab, rows, expected_batch_id = batch_id)
   invisible(list(batch_id = batch_id, queue_sha256 = sha, cases = cases))
 }
 
@@ -1241,7 +1260,7 @@ create_test_w08_queue <- function(
     topic_options_json = rep("[]", length(cases)),
     stringsAsFactors = FALSE
   )
-  write_test_queue_tab(tab, rows)
+  write_test_queue_tab(tab, rows, expected_batch_id = batch_id)
   invisible(list(batch_id = batch_id, queue_sha256 = sha, cases = cases))
 }
 
