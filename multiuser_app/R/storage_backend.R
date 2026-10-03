@@ -30,3 +30,15 @@ read_user_registry <- function(local_path = NULL) {
   validate_user_registry(users)
   users
 }
+
+
+read_assignment_registry <- function(local_path = NULL) {
+  b <- storage_backend()
+  if (identical(b, "local")) return(read_local_assignments(local_path))
+  if (identical(b, "google_sheets")) {
+    # Assignment persistence for Google Sheets is introduced in Phase 3B.
+    # Until then, absence of a registry leaves existing Sheet-backed behaviour unchanged.
+    return(list())
+  }
+  stop("Unsupported LEM_STORAGE_BACKEND: ", b, call. = FALSE)
+}
