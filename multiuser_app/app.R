@@ -1099,7 +1099,8 @@ server <- function(input, output, session) {
     assignments <- assignments_for_batch(
       assignment_registry_rv(),
       "01",
-      batch_id_rv()
+      batch_id_rv(),
+      task_type = "deduplication"
     )
     if (!length(assignments)) return(TRUE)
     progress <- assignment_progress(
@@ -1250,7 +1251,11 @@ server <- function(input, output, session) {
     if (!is.null(login_user)) {
       loaded <- tryCatch({
         user_registry_rv(registry)
-        assignment_registry_rv(read_assignment_registry(assignment_path))
+        loaded_assignments <- read_assignment_registry(assignment_path)
+        if (identical(storage_backend(), "local")) {
+          loaded_assignments <- resolve_fixture_assignment_users(loaded_assignments, registry)
+        }
+        assignment_registry_rv(loaded_assignments)
         pipeline_status_rv(if(identical(storage_backend(),"google_sheets")) read_latest_pipeline_status() else NULL)
         manual_screening_rv(tryCatch(read_manual_screening_metrics(),error=function(e)NULL))
         batch <- load_batch()
@@ -1258,9 +1263,6 @@ server <- function(input, output, session) {
         if (!is.null(batch)) {
           all_decisions <- read_active_decisions(decision_path)
           current_decisions <- filter_batch_decisions(all_decisions, batch$queue_sha256)
-          if (assignment_mode_active(assignment_registry_rv(), "01", batch$batch_id)) {
-            current_decisions <- decision_events_for_user(current_decisions, login_user$user_id)
-          }
         }
         w02_batch <- load_w02_batch()
 
@@ -1385,7 +1387,9 @@ server <- function(input, output, session) {
             assignment_registry_rv(),
             "01",
             batch$batch_id,
-            login_user
+            login_user,
+            task_type = "deduplication",
+            active_events = current_decisions
           )
           cases_rv(visible_cases)
           queue_sha_rv(batch$queue_sha256)
@@ -2399,7 +2403,8 @@ server <- function(input, output, session) {
       assignments_active <- assignment_mode_active(
         assignment_registry_rv(),
         "01",
-        batch_id_rv()
+        batch_id_rv(),
+        task_type = "deduplication"
       )
       if (assignments_active && !w01_all_assignments_complete()) {
         status("Your assigned review is complete. Waiting for other assigned reviewers.")
