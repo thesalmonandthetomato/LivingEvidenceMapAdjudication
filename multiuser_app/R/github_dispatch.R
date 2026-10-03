@@ -166,3 +166,42 @@ dispatch_w08_resume <- function(source_run_id, batch_id, queue_sha256) {
 
   invisible(TRUE)
 }
+
+
+dispatch_w04_resolution_resume <- function(source_run_id, batch_id, queue_sha256) {
+  source_run_id <- as.character(source_run_id)
+  batch_id <- as.character(batch_id)
+  queue_sha256 <- tolower(as.character(queue_sha256))
+  if (!grepl("^[0-9]+$", source_run_id)) stop("Invalid W04 source run ID", call. = FALSE)
+  if (!nzchar(batch_id)) stop("Invalid W04 batch ID", call. = FALSE)
+  if (!grepl("^[0-9a-f]{64}$", queue_sha256)) stop("Invalid W04 queue SHA-256", call. = FALSE)
+
+  endpoint <- sprintf(
+    "https://api.github.com/repos/%s/actions/workflows/workflow_04_resume_after_shiny.yml/dispatches",
+    github_dispatch_repo()
+  )
+
+  req <- httr2::request(endpoint) |>
+    httr2::req_method("POST") |>
+    httr2::req_headers(
+      Authorization = paste("Bearer", github_dispatch_token()),
+      Accept = "application/vnd.github+json",
+      `X-GitHub-Api-Version` = "2022-11-28",
+      `User-Agent` = "LivingEvidenceMap-Adjudication"
+    ) |>
+    httr2::req_body_json(list(
+      ref = "workflow01-final-architecture",
+      inputs = list(
+        source_run_id = source_run_id,
+        batch_id = batch_id,
+        queue_sha256 = queue_sha256
+      )
+    ))
+
+  resp <- httr2::req_perform(req)
+  status <- httr2::resp_status(resp)
+  if (!identical(status, 204L)) {
+    stop(sprintf("W04 resolution resume dispatch failed with HTTP %d", status), call. = FALSE)
+  }
+  invisible(TRUE)
+}
