@@ -546,3 +546,26 @@ plan_workflow_assignment <- function(
     amount = amount
   )
 }
+
+
+user_has_active_assignment <- function(
+  assignments,
+  workflow,
+  batch_id,
+  task_type,
+  case_id,
+  user_id
+) {
+  xs <- assignments_for_user(
+    assignments,
+    workflow,
+    batch_id,
+    user_id,
+    task_type
+  )
+  any(vapply(
+    xs,
+    function(x) identical(normalise_assignment_row(x)$case_id, as.character(case_id)),
+    logical(1)
+  ))
+}
