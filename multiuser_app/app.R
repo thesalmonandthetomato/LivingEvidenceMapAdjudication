@@ -8,6 +8,7 @@ suppressPackageStartupMessages({
 source("R/w01_contract.R", local = TRUE)
 source("R/adjudication_schema.R", local = TRUE)
 source("R/users.R", local = TRUE)
+source("R/decision_events.R", local = TRUE)
 source("R/storage_local.R", local = TRUE)
 source("R/storage_sheets.R", local = TRUE)
 source("R/storage_backend.R", local = TRUE)
