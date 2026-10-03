@@ -63,4 +63,20 @@ stopifnot(
   isTRUE(active[[1L]]$active)
 )
 
-cat("PASS: W01 first reviewer owns the case and may revise it; other reviewers are blocked\n")
+path_uncertain <- file.path(tmp_dir, "uncertain.jsonl")
+u1 <- d1
+u1$decision <- "uncertain"
+u1$resolved_at_utc <- "2026-10-03T06:40:00Z"
+write_local_decision(path_uncertain, u1)
+
+u2 <- d1
+u2$reviewer <- "usr-sini"
+u2$decision <- "duplicate"
+u2$resolved_at_utc <- "2026-10-03T06:41:00Z"
+u2_saved <- write_local_decision(path_uncertain, u2)
+stopifnot(
+  identical(as.character(u2_saved$user_id), "usr-sini"),
+  identical(as.character(u2_saved$decision), "duplicate")
+)
+
+cat("PASS: W01 authority blocks competing resolved decisions but uncertain leaves the case open\n")
