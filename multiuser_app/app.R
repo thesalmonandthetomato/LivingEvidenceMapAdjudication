@@ -1354,13 +1354,11 @@ server <- function(input, output, session) {
           return(tags$div(
             class = "mt-2",
             tags$div(class = "text-secondary small mb-2", "No active W02 queue is loaded."),
-            if (identical(storage_backend(), "google_sheets")) {
-              actionButton(
-                "create_test_w02_queue_inline",
-                "Create W02 test queue",
-                class = "btn-outline-secondary btn-sm"
-              )
-            }
+            actionButton(
+              "create_test_w02_queue_inline",
+              "Create W02 test queue",
+              class = "btn-outline-secondary btn-sm"
+            )
           ))
         }
         if (
@@ -1371,13 +1369,11 @@ server <- function(input, output, session) {
           return(tags$div(
             class = "mt-2",
             tags$div(class = "text-secondary small mb-2", "No active W08 queue is loaded."),
-            if (identical(storage_backend(), "google_sheets")) {
-              actionButton(
-                "create_test_w08_queue_inline",
-                "Create W08 test queue",
-                class = "btn-outline-secondary btn-sm"
-              )
-            }
+            actionButton(
+              "create_test_w08_queue_inline",
+              "Create W08 test queue",
+              class = "btn-outline-secondary btn-sm"
+            )
           ))
         }
         return(NULL)
@@ -1631,10 +1627,7 @@ server <- function(input, output, session) {
             div(class = "assignment-kpi", tags$span("Remaining"), tags$strong(total_remaining)),
             div(class = "assignment-kpi", tags$span("Conflicts"), tags$strong("Not enabled"))
           ),
-          if (
-            identical(storage_backend(), "google_sheets") &&
-            (!has_w02_batch || !has_w08_batch)
-          ) {
+          if (!has_w02_batch || !has_w08_batch) {
             tags$details(
               class = "assignment-workflow mb-2",
               `data-accordion-key` = "test-queue-setup",
