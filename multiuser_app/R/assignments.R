@@ -238,7 +238,6 @@ resolve_fixture_assignment_users <- function(assignments, users) {
   active <- active_users(users)
   admins <- Filter(function(x) identical(normalise_user_row(x)$role, "administrator"), active)
   reviewers <- Filter(function(x) identical(normalise_user_row(x)$role, "reviewer"), active)
-  reviewers <- reviewers[order(vapply(reviewers, function(x) normalise_user_row(x)$display_name, character(1)))]
 
   resolve_id <- function(id) {
     if (identical(id, "fixture:administrator")) {
