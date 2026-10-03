@@ -705,11 +705,13 @@ server <- function(input, output, session) {
         ),
         kpi(
           "Geography",
-          paste0(fmt_pipeline_n(p$geography_with)," / ",fmt_pipeline_n(p$geography_without))
+          paste0(fmt_pipeline_n(p$geography_with)," / ",fmt_pipeline_n(p$geography_without)),
+          "with / without"
         ),
         kpi(
           "Topics",
-          paste0(fmt_pipeline_n(p$topic_with)," / ",fmt_pipeline_n(p$topic_without))
+          paste0(fmt_pipeline_n(p$topic_with)," / ",fmt_pipeline_n(p$topic_without)),
+          "with / without"
         ),
         kpi("Canonical database",fmt_pipeline_n(p$canonical_existing),"pre-update")
       ),
@@ -3197,9 +3199,25 @@ server <- function(input, output, session) {
 
     extras <- switch(
       typ,
-      species_none = tagList(
-        selectizeInput(paste0("w08_species_",j),"Named species",choices=w08_species_options(),multiple=TRUE)
-      ),
+      species_none = {
+        species_choices <- w08_species_options()
+        tagList(
+          if (length(species_choices)) {
+            selectizeInput(
+              paste0("w08_species_",j),
+              "Named species",
+              choices = species_choices,
+              multiple = TRUE,
+              options = list(create = FALSE, persist = FALSE)
+            )
+          } else {
+            tags$div(
+              class = "text-danger small",
+              "Accepted species list is unavailable for this queue. Named-species assignment is disabled."
+            )
+          }
+        )
+      },
       geography_unresolved = tagList(
         textInput(paste0("w08_iso3_",j),"ISO3 codes (semicolon separated)",""),
         textInput(paste0("w08_country_",j),"Country names (semicolon separated)","")
@@ -3298,9 +3316,19 @@ server <- function(input, output, session) {
       final_value <- NULL
       if(typ=="species_none") {
         if(choice=="assign_named_species") {
+          allowed_species <- unique(as.character(w08_species_options() %||% character()))
+          allowed_species <- allowed_species[nzchar(allowed_species)]
+          if(!length(allowed_species)) {
+            w08_status("Accepted species list is unavailable; named-species assignment is disabled.")
+            return(FALSE)
+          }
           vals <- as.character(input[[paste0("w08_species_",j)]] %||% character())
           vals <- vals[nzchar(vals)]
           if(!length(vals)) {w08_status("Select at least one named species.");return(FALSE)}
+          if(any(!vals %in% allowed_species)) {
+            w08_status("Named species must be selected from the accepted project species list.")
+            return(FALSE)
+          }
           final_value <- list(included=TRUE,farmed_species=vals)
         } else if(choice=="assign_unspecified_species") {
           final_value <- list(included=TRUE,farmed_species=c("Unspecified species"))
