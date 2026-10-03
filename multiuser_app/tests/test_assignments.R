@@ -10,13 +10,25 @@ users <- list(
   list(user_id="usr-b", email="b@example.org", display_name="Reviewer B", role="reviewer", active=TRUE)
 )
 
-assignments <- list(
-  list(assignment_id="a1", workflow="04", batch_id="batch-1", case_id="case-1", user_id="usr-a", blind_group="g1", status="assigned"),
-  list(assignment_id="a2", workflow="04", batch_id="batch-1", case_id="case-1", user_id="usr-b", blind_group="g1", status="assigned"),
-  list(assignment_id="a3", workflow="04", batch_id="batch-1", case_id="case-2", user_id="usr-a", blind_group="g2", status="assigned")
+shared <- list(
+  list(assignment_id="s1", workflow="01", task_type="deduplication", batch_id="batch-1", case_id="case-1", user_id="usr-a", blind_group="pool", status="assigned"),
+  list(assignment_id="s2", workflow="01", task_type="deduplication", batch_id="batch-1", case_id="case-1", user_id="usr-b", blind_group="pool", status="assigned"),
+  list(assignment_id="s3", workflow="01", task_type="deduplication", batch_id="batch-1", case_id="case-2", user_id="usr-a", blind_group="pool", status="assigned")
 )
 
-validate_assignment_registry(assignments)
+blind <- list(
+  list(assignment_id="b1", workflow="04", task_type="manual_screening", batch_id="batch-4", case_id="case-9", user_id="usr-a", blind_group="blind-1", status="assigned"),
+  list(assignment_id="b2", workflow="04", task_type="manual_screening", batch_id="batch-4", case_id="case-9", user_id="usr-b", blind_group="blind-1", status="assigned")
+)
+
+validate_assignment_registry(shared)
+validate_assignment_registry(blind)
+
+stopifnot(
+  identical(assignment_mode_for("01","deduplication"), "shared_work_pool"),
+  identical(assignment_mode_for("04","manual_screening"), "independent_blind_review"),
+  identical(assignment_mode_for("08","annotation"), "single_reviewer")
+)
 
 cases <- list(
   list(review_case_id="case-1"),
@@ -25,38 +37,62 @@ cases <- list(
 )
 
 reviewer_a <- find_user_by_id(users, "usr-a")
+reviewer_b <- find_user_by_id(users, "usr-b")
 admin <- find_user_by_id(users, "usr-admin")
 
-visible_a <- cases_for_assignment_user(cases, assignments, "04", "batch-1", reviewer_a)
+events_shared <- list(
+  list(case_id="case-1", user_id="usr-a", event_at_utc="2026-10-03T09:00:00Z")
+)
+
+visible_b <- cases_for_assignment_user(
+  cases, shared, "01", "batch-1", reviewer_b,
+  task_type="deduplication", active_events=events_shared
+)
+stopifnot(length(visible_b) == 0L)
+
+visible_a <- cases_for_assignment_user(
+  cases, shared, "01", "batch-1", reviewer_a,
+  task_type="deduplication", active_events=events_shared
+)
 stopifnot(
   length(visible_a) == 2L,
   setequal(vapply(visible_a, function(x) x$review_case_id, character(1)), c("case-1","case-2"))
 )
 
-visible_admin <- cases_for_assignment_user(cases, assignments, "04", "batch-1", admin)
+visible_admin <- cases_for_assignment_user(
+  cases, shared, "01", "batch-1", admin,
+  task_type="deduplication", active_events=events_shared
+)
 stopifnot(length(visible_admin) == 3L)
 
-events <- list(
-  list(case_id="case-1", user_id="usr-a", event_at_utc="2026-10-03T09:00:00Z"),
-  list(case_id="case-1", user_id="usr-b", event_at_utc="2026-10-03T09:01:00Z")
-)
-
-p <- assignment_progress(assignments, events, users)
+p_shared <- assignment_progress(shared, events_shared, users)
 stopifnot(
-  identical(p$assigned, 3L),
-  identical(p$completed, 2L),
-  identical(p$remaining, 1L)
+  identical(p_shared$assigned, 3L),
+  identical(p_shared$completed, 1L),
+  identical(p_shared$resolved_elsewhere, 1L),
+  identical(p_shared$remaining, 1L),
+  identical(p_shared$cases, 2L)
 )
 
-pa <- Filter(function(x) identical(x$user_id, "usr-a"), p$by_user)[[1L]]
-pb <- Filter(function(x) identical(x$user_id, "usr-b"), p$by_user)[[1L]]
+blind_events_one <- list(
+  list(case_id="case-9", user_id="usr-a", event_at_utc="2026-10-03T09:10:00Z")
+)
+p_blind_one <- assignment_progress(blind, blind_events_one, users)
 stopifnot(
-  identical(pa$assigned, 2L),
-  identical(pa$completed, 1L),
-  identical(pa$remaining, 1L),
-  identical(pb$assigned, 1L),
-  identical(pb$completed, 1L),
-  identical(pb$remaining, 0L)
+  identical(p_blind_one$completed, 1L),
+  identical(p_blind_one$resolved_elsewhere, 0L),
+  identical(p_blind_one$remaining, 1L)
 )
 
-cat("PASS: assignment filtering and progress\n")
+blind_events_two <- c(
+  blind_events_one,
+  list(list(case_id="case-9", user_id="usr-b", event_at_utc="2026-10-03T09:11:00Z"))
+)
+p_blind_two <- assignment_progress(blind, blind_events_two, users)
+stopifnot(
+  identical(p_blind_two$completed, 2L),
+  identical(p_blind_two$resolved_elsewhere, 0L),
+  identical(p_blind_two$remaining, 0L)
+)
+
+cat("PASS: shared-pool and blind-review assignment semantics\n")
