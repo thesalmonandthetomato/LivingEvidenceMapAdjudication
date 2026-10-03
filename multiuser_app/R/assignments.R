@@ -101,7 +101,10 @@ decision_user_id <- function(x) {
 
 decision_resolves_case <- function(x) {
   decision <- tolower(trimws(as.character(x$decision %||% "")))
-  nzchar(decision) && !identical(decision, "uncertain")
+  if (nzchar(decision)) return(!identical(decision, "uncertain"))
+  issue_json <- trimws(as.character(x$issue_decisions_json %||% ""))
+  if (nzchar(issue_json)) return(TRUE)
+  FALSE
 }
 
 case_authoritative_event <- function(events, case_id) {
