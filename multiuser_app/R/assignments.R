@@ -670,7 +670,7 @@ plan_single_reviewer_assignment <- function(
         batch_id = as.character(batch_id),
         case_id = cid,
         user_id = uid,
-        blind_group = "",
+        blind_group = paste0("single-", workflow, "-", task_type),
         status = "assigned"
       )
       by_user[[uid]] <- by_user[[uid]] + 1L
