@@ -1124,7 +1124,6 @@ server <- function(input, output, session) {
   }
 
   w01_active_assignment_events <- function() {
-    if (!identical(storage_backend(), "local")) return(list())
     decisions() %||% list()
   }
 
@@ -1177,8 +1176,6 @@ server <- function(input, output, session) {
     has_w01_batch <- nzchar(as.character(batch_id_rv())) && length(w01_all_cases_rv()) > 0L
     has_w02_batch <- nzchar(as.character(w02_batch_id_rv())) && length(w02_all_cases_rv()) > 0L
     has_w08_batch <- nzchar(as.character(w08_batch_id_rv())) && length(w08_all_cases_rv()) > 0L
-    if (!length(all_assignments) && !has_w01_batch && !has_w02_batch && !has_w08_batch) return(NULL)
-
     task_labels <- c(
       deduplication = "Deduplication",
       enrichment = "Enrichment",
