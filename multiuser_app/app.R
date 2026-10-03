@@ -1427,7 +1427,7 @@ server <- function(input, output, session) {
       guidance <- if (identical(mode, ASSIGNMENT_MODES[["single_reviewer"]])) {
         "Add unresolved, currently unassigned cases. Each case is assigned to one reviewer only. The requested amount is divided as evenly as possible across the selected reviewers."
       } else {
-        "Add unresolved, currently unassigned cases. The requested amount is divided as evenly as possible across the selected reviewers."
+        "Add unresolved cases that are not already assigned to the selected reviewer. Shared-pool cases may be assigned to more than one reviewer; the first substantive decision resolves the case for everyone."
       }
 
       tags$details(
@@ -1745,7 +1745,7 @@ server <- function(input, output, session) {
       tags$div(
         class = "small",
         sprintf(
-          "%d unresolved unassigned case%s available; %d will be allocated.",
+          "%d unresolved case%s available to the selected reviewer(s); %d will be allocated.",
           plan$available,
           if (plan$available == 1L) "" else "s",
           plan$allocated
