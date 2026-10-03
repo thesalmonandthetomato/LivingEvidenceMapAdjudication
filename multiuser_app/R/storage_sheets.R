@@ -359,6 +359,27 @@ append_sheet_w02_decision <- function(decision, prior_decision = NULL) {
   tab <- w02_decision_tab()
   tabs <- googlesheets4::sheet_names(ss)
 
+  current_active <- active_sheet_w02_decisions()
+  case_id <- as.character(decision$review_case_id %||% "")
+  user_id <- as.character(decision$reviewer %||% "")
+  current_case <- Filter(
+    function(x) identical(as.character(x$review_case_id %||% ""), case_id),
+    current_active
+  )
+  if (length(current_case)) {
+    current <- current_case[[1L]]
+    current_decision <- tolower(trimws(as.character(current$decision %||% "")))
+    current_user <- as.character(current$reviewer %||% current$user_id %||% "")
+    if (
+      nzchar(current_decision) &&
+      !identical(current_decision, "uncertain") &&
+      nzchar(current_user) &&
+      !identical(current_user, user_id)
+    ) {
+      stop("This enrichment case has already been resolved by another reviewer", call. = FALSE)
+    }
+  }
+
   required_cols <- c(
     "decision_id","review_case_id","record_id","provider","field","reason",
     "decision","note","reviewer","resolved_at_utc","queue_sha256",
