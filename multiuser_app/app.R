@@ -302,18 +302,19 @@ ui <- page_fillable(
     .task-badge { background:#eef3f1; border-radius:999px; padding:.2rem .55rem; font-size:.78rem; }
     .pipeline-summary { background:#fff; border:1px solid #dde3e8; border-radius:12px; padding:.85rem 1rem; margin-bottom:1rem; box-shadow:0 2px 10px rgba(22,33,43,.04); }
     .pipeline-summary-top { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:.65rem 1rem; margin-bottom:.65rem; }
-    .pipeline-kpis { display:grid; grid-template-columns:repeat(9,minmax(82px,1fr)); border-top:1px solid #edf0f2; border-bottom:1px solid #edf0f2; }
-    .pipeline-kpi { padding:.55rem .55rem .5rem .55rem; min-width:0; }
-    .pipeline-kpi + .pipeline-kpi { border-left:1px solid #edf0f2; }
-    .pipeline-kpi-label { display:block; color:#6a747d; font-size:.78rem; line-height:1.15; margin-bottom:.18rem; }
-    .pipeline-kpi-value { display:block; font-size:1.12rem; line-height:1.18; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .pipeline-kpi-sub { display:block; color:#7c858d; font-size:.74rem; line-height:1.15; margin-top:.1rem; }
-    .workflow-line { display:grid; grid-template-columns:repeat(10,1fr); gap:.28rem; margin-top:.65rem; }
+    .pipeline-kpis { display:grid; grid-template-columns:repeat(5,minmax(145px,1fr)); gap:.5rem; margin-top:.15rem; }
+    .pipeline-kpi { background:#f7f8fa; border:1px solid #e1e5e9; border-radius:8px; padding:.62rem .72rem .58rem .72rem; min-width:0; }
+    .pipeline-kpi-label { display:block; color:#6a747d; font-size:.8rem; line-height:1.2; margin-bottom:.2rem; overflow-wrap:anywhere; }
+    .pipeline-kpi-value { display:block; font-size:1.12rem; line-height:1.2; font-weight:700; white-space:normal; overflow-wrap:anywhere; }
+    .pipeline-kpi-sub { display:block; color:#7c858d; font-size:.74rem; line-height:1.2; margin-top:.12rem; overflow-wrap:anywhere; }
+    .workflow-line { display:grid; grid-template-columns:repeat(10,1fr); gap:.28rem; margin-top:.75rem; }
     .workflow-segment { height:7px; border-radius:999px; background:#e5e9ec; }
     .workflow-segment.done { background:#1f5d50; }
     .workflow-segment.active { background:#8fb7ac; box-shadow:0 0 0 1px #1f5d50 inset; }
     .workflow-labels { display:grid; grid-template-columns:repeat(10,1fr); gap:.28rem; margin-top:.22rem; color:#7b858d; font-size:.69rem; text-align:center; }
-    @media (max-width: 1000px) { .pipeline-kpis { grid-template-columns:repeat(3,1fr); } .pipeline-kpi + .pipeline-kpi { border-left:0; } .pipeline-kpi { border-right:1px solid #edf0f2; border-bottom:1px solid #edf0f2; } }
+    @media (max-width: 1000px) { .pipeline-kpis { grid-template-columns:repeat(3,minmax(135px,1fr)); } }
+    @media (max-width: 620px) { .pipeline-kpis { grid-template-columns:repeat(2,minmax(120px,1fr)); } }
+    @media (max-width: 390px) { .pipeline-kpis { grid-template-columns:1fr; } }
   "))),
   uiOutput("root_ui")
 )
