@@ -1174,7 +1174,9 @@ server <- function(input, output, session) {
 
     all_assignments <- assignment_registry_rv()
     has_w01_batch <- nzchar(as.character(batch_id_rv())) && length(w01_all_cases_rv()) > 0L
-    if (!length(all_assignments) && !has_w01_batch) return(NULL)
+    has_w02_batch <- nzchar(as.character(w02_batch_id_rv())) && length(w02_all_cases_rv()) > 0L
+    has_w08_batch <- nzchar(as.character(w08_batch_id_rv())) && length(w08_all_cases_rv()) > 0L
+    if (!length(all_assignments) && !has_w01_batch && !has_w02_batch && !has_w08_batch) return(NULL)
 
     task_labels <- c(
       deduplication = "Deduplication",
@@ -1208,9 +1210,17 @@ server <- function(input, output, session) {
         identical(z$workflow, "01") &&
         identical(z$task_type, "deduplication") &&
         identical(z$batch_id, batch_id_rv())
-      ) {
-        return(w01_active_assignment_events())
-      }
+      ) return(w01_active_assignment_events())
+      if (
+        identical(z$workflow, "02") &&
+        identical(z$task_type, "enrichment") &&
+        identical(z$batch_id, w02_batch_id_rv())
+      ) return(w02_active_assignment_events())
+      if (
+        identical(z$workflow, "08") &&
+        identical(z$task_type, "annotation") &&
+        identical(z$batch_id, w08_batch_id_rv())
+      ) return(w08_active_assignment_events())
       list()
     }
 
@@ -1227,36 +1237,32 @@ server <- function(input, output, session) {
       list(assignments = a, meta = z, progress = p)
     })
 
-    if (has_w01_batch) {
-      has_current_w01_group <- any(vapply(
+    add_empty_group <- function(workflow, task_type, batch_id, mode) {
+      key <- paste(workflow, task_type, batch_id, sep = "|")
+      has_group <- any(vapply(
         group_progress,
         function(g) {
-          identical(g$meta$workflow, "01") &&
-            identical(g$meta$task_type, "deduplication") &&
-            identical(g$meta$batch_id, batch_id_rv())
+          identical(g$meta$workflow, workflow) &&
+            identical(g$meta$task_type, task_type) &&
+            identical(g$meta$batch_id, batch_id)
         },
         logical(1)
       ))
-      if (!has_current_w01_group) {
-        group_progress[[paste("01", "deduplication", batch_id_rv(), sep = "|")]] <- list(
+      if (!has_group) {
+        group_progress[[key]] <<- list(
           assignments = list(),
-          meta = list(
-            workflow = "01",
-            task_type = "deduplication",
-            batch_id = batch_id_rv()
-          ),
+          meta = list(workflow = workflow, task_type = task_type, batch_id = batch_id),
           progress = list(
-            assigned = 0L,
-            completed = 0L,
-            resolved_elsewhere = 0L,
-            remaining = 0L,
-            cases = 0L,
-            by_user = list(),
-            mode = ASSIGNMENT_MODES[["shared_work_pool"]]
+            assigned = 0L, completed = 0L, resolved_elsewhere = 0L,
+            remaining = 0L, cases = 0L, by_user = list(), mode = mode
           )
         )
       }
     }
+
+    if (has_w01_batch) add_empty_group("01","deduplication",batch_id_rv(),ASSIGNMENT_MODES[["shared_work_pool"]])
+    if (has_w02_batch) add_empty_group("02","enrichment",w02_batch_id_rv(),ASSIGNMENT_MODES[["shared_work_pool"]])
+    if (has_w08_batch) add_empty_group("08","annotation",w08_batch_id_rv(),ASSIGNMENT_MODES[["single_reviewer"]])
 
     total_assigned <- sum(vapply(group_progress, function(x) x$progress$assigned, integer(1)))
     total_completed <- sum(vapply(group_progress, function(x) x$progress$completed, integer(1)))
@@ -1271,15 +1277,21 @@ server <- function(input, output, session) {
       task_label <- task_labels[[z$task_type]] %||% z$task_type
       mode_label <- mode_labels[[mode]] %||% mode
 
-      all_case_ids <- if (
-        identical(z$workflow, "01") &&
-        identical(z$task_type, "deduplication") &&
-        identical(z$batch_id, batch_id_rv()) &&
-        length(w01_all_cases_rv())
-      ) {
+      group_cases <- if (
+        identical(z$workflow,"01") && identical(z$task_type,"deduplication") &&
+        identical(z$batch_id,batch_id_rv())
+      ) w01_all_cases_rv() else if (
+        identical(z$workflow,"02") && identical(z$task_type,"enrichment") &&
+        identical(z$batch_id,w02_batch_id_rv())
+      ) w02_all_cases_rv() else if (
+        identical(z$workflow,"08") && identical(z$task_type,"annotation") &&
+        identical(z$batch_id,w08_batch_id_rv())
+      ) w08_all_cases_rv() else list()
+
+      all_case_ids <- if (length(group_cases)) {
         unique(vapply(
-          w01_all_cases_rv(),
-          function(x) as.character(x$review_case_id %||% x$case_id %||% ""),
+          group_cases,
+          function(x) as.character(x$review_case_id %||% x$case_id %||% x$record_id %||% ""),
           character(1)
         ))
       } else character()
