@@ -1262,8 +1262,16 @@ server <- function(input, output, session) {
     }
 
     if (has_w01_batch) add_empty_group("01","deduplication",batch_id_rv(),ASSIGNMENT_MODES[["shared_work_pool"]])
-    if (has_w02_batch) add_empty_group("02","enrichment",w02_batch_id_rv(),ASSIGNMENT_MODES[["shared_work_pool"]])
-    if (has_w08_batch) add_empty_group("08","annotation",w08_batch_id_rv(),ASSIGNMENT_MODES[["single_reviewer"]])
+    add_empty_group(
+      "02","enrichment",
+      if (has_w02_batch) w02_batch_id_rv() else "no-active-queue",
+      ASSIGNMENT_MODES[["shared_work_pool"]]
+    )
+    add_empty_group(
+      "08","annotation",
+      if (has_w08_batch) w08_batch_id_rv() else "no-active-queue",
+      ASSIGNMENT_MODES[["single_reviewer"]]
+    )
 
     total_assigned <- sum(vapply(group_progress, function(x) x$progress$assigned, integer(1)))
     total_completed <- sum(vapply(group_progress, function(x) x$progress$completed, integer(1)))
@@ -1294,7 +1302,43 @@ server <- function(input, output, session) {
              events=w08_active_assignment_events(), label="W08")
       } else NULL
 
-      if (is.null(cfg)) return(NULL)
+      if (is.null(cfg)) {
+        if (
+          identical(z$workflow, "02") &&
+          identical(z$task_type, "enrichment") &&
+          identical(z$batch_id, "no-active-queue")
+        ) {
+          return(tags$div(
+            class = "mt-2",
+            tags$div(class = "text-secondary small mb-2", "No active W02 queue is loaded."),
+            if (identical(storage_backend(), "google_sheets")) {
+              actionButton(
+                "create_test_w02_queue_inline",
+                "Create W02 test queue",
+                class = "btn-outline-secondary btn-sm"
+              )
+            }
+          ))
+        }
+        if (
+          identical(z$workflow, "08") &&
+          identical(z$task_type, "annotation") &&
+          identical(z$batch_id, "no-active-queue")
+        ) {
+          return(tags$div(
+            class = "mt-2",
+            tags$div(class = "text-secondary small mb-2", "No active W08 queue is loaded."),
+            if (identical(storage_backend(), "google_sheets")) {
+              actionButton(
+                "create_test_w08_queue_inline",
+                "Create W08 test queue",
+                class = "btn-outline-secondary btn-sm"
+              )
+            }
+          ))
+        }
+        return(NULL)
+      }
 
       eligible_users <- Filter(
         function(u) isTRUE(normalise_user_row(u)$active) && user_can(u, "adjudicate_assigned"),
@@ -1474,7 +1518,11 @@ server <- function(input, output, session) {
             tags$span(class = "task-badge", mode_label),
             tags$span(
               class = "text-secondary small",
-              sprintf("%d cases · %d remaining assignments", p$cases, p$remaining)
+              if (identical(z$batch_id, "no-active-queue")) {
+                "No active queue"
+              } else {
+                sprintf("%d cases · %d remaining assignments", p$cases, p$remaining)
+              }
             )
           )
         ),
@@ -1949,11 +1997,11 @@ server <- function(input, output, session) {
 
   output$test_queue_status <- renderText(test_queue_status())
 
-  observeEvent(input$create_test_w02_queue, {
+  create_and_load_w02_test_queue <- function() {
     req(authenticated())
     if (!session_can("manage_assignments")) {
       test_queue_status("Administrator permission is required.")
-      return()
+      return(invisible(FALSE))
     }
 
     made <- tryCatch({
@@ -1963,12 +2011,12 @@ server <- function(input, output, session) {
       test_queue_status(paste("W02 test queue could not be created:", conditionMessage(e)))
       FALSE
     })
-    if (!isTRUE(made)) return()
+    if (!isTRUE(made)) return(invisible(FALSE))
 
     loaded <- tryCatch(load_w02_batch(), error = function(e) e)
     if (inherits(loaded, "error") || is.null(loaded)) {
       test_queue_status("W02 queue was created but could not be loaded.")
-      return()
+      return(invisible(FALSE))
     }
 
     all_decisions <- tryCatch(active_sheet_w02_decisions(), error = function(e) list())
@@ -1990,13 +2038,14 @@ server <- function(input, output, session) {
     w02_decisions(batch_decisions)
     w02_idx(1L)
     test_queue_status("W02 test queue created and loaded.")
-  })
+    invisible(TRUE)
+  }
 
-  observeEvent(input$create_test_w08_queue, {
+  create_and_load_w08_test_queue <- function() {
     req(authenticated())
     if (!session_can("manage_assignments")) {
       test_queue_status("Administrator permission is required.")
-      return()
+      return(invisible(FALSE))
     }
 
     made <- tryCatch({
@@ -2006,12 +2055,12 @@ server <- function(input, output, session) {
       test_queue_status(paste("W08 test queue could not be created:", conditionMessage(e)))
       FALSE
     })
-    if (!isTRUE(made)) return()
+    if (!isTRUE(made)) return(invisible(FALSE))
 
     loaded <- tryCatch(load_w08_batch(), error = function(e) e)
     if (inherits(loaded, "error") || is.null(loaded)) {
       test_queue_status("W08 queue was created but could not be loaded.")
-      return()
+      return(invisible(FALSE))
     }
 
     all_decisions <- tryCatch(active_sheet_w08_decisions(), error = function(e) list())
@@ -2037,8 +2086,24 @@ server <- function(input, output, session) {
     w08_decisions(batch_decisions)
     w08_idx(1L)
     test_queue_status("W08 test queue created and loaded.")
+    invisible(TRUE)
+  }
+
+  observeEvent(input$create_test_w02_queue, {
+    create_and_load_w02_test_queue()
+  })
+  observeEvent(input$create_test_w02_queue_inline, {
+    create_and_load_w02_test_queue()
   })
 
+  observeEvent(input$create_test_w08_queue, {
+    create_and_load_w08_test_queue()
+  })
+  observeEvent(input$create_test_w08_queue_inline, {
+    create_and_load_w08_test_queue()
+  })
+
+  # Legacy observer bodies replaced by the shared helpers below.
   observeEvent(input$logout, {
     authenticated(FALSE)
     current_user(NULL)
