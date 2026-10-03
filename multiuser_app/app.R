@@ -1269,6 +1269,135 @@ server <- function(input, output, session) {
     total_released <- sum(vapply(group_progress, function(x) x$progress$resolved_elsewhere, integer(1)))
     total_remaining <- sum(vapply(group_progress, function(x) x$progress$remaining, integer(1)))
 
+    assignment_manager_ui <- function(z) {
+      cfg <- if (
+        identical(z$workflow, "01") &&
+        identical(z$task_type, "deduplication") &&
+        identical(z$batch_id, batch_id_rv())
+      ) {
+        list(prefix="w01", workflow="01", task_type="deduplication", batch_id=batch_id_rv(),
+             events=w01_active_assignment_events(), label="W01")
+      } else if (
+        identical(z$workflow, "02") &&
+        identical(z$task_type, "enrichment") &&
+        identical(z$batch_id, w02_batch_id_rv())
+      ) {
+        list(prefix="w02", workflow="02", task_type="enrichment", batch_id=w02_batch_id_rv(),
+             events=w02_active_assignment_events(), label="W02")
+      } else if (
+        identical(z$workflow, "08") &&
+        identical(z$task_type, "annotation") &&
+        identical(z$batch_id, w08_batch_id_rv())
+      ) {
+        list(prefix="w08", workflow="08", task_type="annotation", batch_id=w08_batch_id_rv(),
+             events=w08_active_assignment_events(), label="W08")
+      } else NULL
+
+      if (is.null(cfg)) return(NULL)
+
+      eligible_users <- Filter(
+        function(u) isTRUE(normalise_user_row(u)$active) && user_can(u, "adjudicate_assigned"),
+        user_registry_rv()
+      )
+      eligible_ids <- vapply(eligible_users, function(u) normalise_user_row(u)$user_id, character(1))
+      eligible_labels <- vapply(eligible_users, function(u) normalise_user_row(u)$display_name, character(1))
+      eligible_choices <- stats::setNames(eligible_ids, eligible_labels)
+
+      cancellable <- cancellable_assignments(
+        assignment_registry_rv(),
+        cfg$events,
+        cfg$workflow,
+        cfg$batch_id,
+        cfg$task_type
+      )
+      remove_ids <- unique(vapply(
+        cancellable,
+        function(x) normalise_assignment_row(x)$user_id,
+        character(1)
+      ))
+      remove_labels <- vapply(remove_ids, function(uid) {
+        u <- find_user_by_id(user_registry_rv(), uid, require_active = FALSE)
+        reviewer_label <- if (is.null(u)) uid else u$display_name
+        n <- sum(vapply(
+          cancellable,
+          function(x) identical(normalise_assignment_row(x)$user_id, uid),
+          logical(1)
+        ))
+        paste0(reviewer_label, " (", n, " unfinished)")
+      }, character(1))
+      remove_choices <- stats::setNames(remove_ids, remove_labels)
+
+      mode <- assignment_mode_for(cfg$workflow, cfg$task_type)
+      guidance <- if (identical(mode, ASSIGNMENT_MODES[["single_reviewer"]])) {
+        "Add unresolved, currently unassigned cases. Each case is assigned to one reviewer only. The requested amount is divided as evenly as possible across the selected reviewers."
+      } else {
+        "Add unresolved, currently unassigned cases. The requested amount is divided as evenly as possible across the selected reviewers."
+      }
+
+      tags$details(
+        class = "assignment-workflow mt-2",
+        `data-accordion-key` = paste0("manage-", cfg$prefix, "-", cfg$task_type),
+        tags$summary(tags$strong("Manage assignments")),
+        div(
+          class = "pt-2",
+          tags$p(class = "text-secondary small mb-2", guidance),
+          selectInput(
+            paste0(cfg$prefix, "_assignment_users"),
+            "Reviewers",
+            choices = eligible_choices,
+            multiple = TRUE
+          ),
+          radioButtons(
+            paste0(cfg$prefix, "_assignment_type"),
+            "Assign by",
+            choices = c("Number of cases" = "number", "Percentage" = "percentage"),
+            selected = "number",
+            inline = TRUE
+          ),
+          numericInput(
+            paste0(cfg$prefix, "_assignment_amount"),
+            "Additional amount",
+            value = 1,
+            min = 1,
+            step = 1
+          ),
+          uiOutput(paste0(cfg$prefix, "_assignment_preview")),
+          div(
+            class = "d-flex align-items-center gap-2 mt-2",
+            actionButton(
+              paste0(cfg$prefix, "_apply_assignments"),
+              "Apply assignments",
+              class = "btn-primary btn-sm"
+            ),
+            tags$span(
+              class = "saved-note",
+              textOutput(paste0(cfg$prefix, "_assignment_status"), inline = TRUE)
+            )
+          ),
+          tags$hr(),
+          tags$strong("Remove unfinished assignments"),
+          tags$p(
+            class = "text-secondary small mb-2",
+            paste0(
+              "Choose a reviewer to remove all of their unfinished ",
+              cfg$label,
+              " assignments. Completed or already resolved cases are protected."
+            )
+          ),
+          selectInput(
+            paste0(cfg$prefix, "_remove_assignment_user"),
+            "Reviewer",
+            choices = remove_choices
+          ),
+          actionButton(
+            paste0(cfg$prefix, "_remove_assignments"),
+            "Remove reviewer's unfinished assignments",
+            class = "btn-outline-danger btn-sm"
+          )
+        )
+      )
+    }
+
     workflow_sections <- lapply(group_progress, function(g) {
       z <- g$meta
       p <- g$progress
@@ -1378,99 +1507,7 @@ server <- function(input, output, session) {
             )
           ),
           tags$div(class = "assignment-mode-note mt-2", mode_note),
-          if (
-            identical(z$workflow, "01") &&
-            identical(z$task_type, "deduplication") &&
-            identical(z$batch_id, batch_id_rv())
-          ) {
-            tags$details(
-              class = "assignment-workflow mt-2",
-              `data-accordion-key` = "manage-w01-deduplication",
-              tags$summary(tags$strong("Manage assignments")),
-              div(
-                class = "pt-2",
-                tags$p(
-                  class = "text-secondary small mb-2",
-                  "Add unresolved, currently unassigned cases. The amount below is the number or percentage of NEW cases to add, divided as evenly as possible across the selected reviewers."
-                ),
-                selectInput(
-                  "w01_assignment_users",
-                  "Reviewers",
-                  choices = {
-                    eligible_users <- Filter(
-                      function(u) isTRUE(normalise_user_row(u)$active) &&
-                        user_can(u, "adjudicate_assigned"),
-                      user_registry_rv()
-                    )
-                    ids <- vapply(eligible_users, function(u) normalise_user_row(u)$user_id, character(1))
-                    labels <- vapply(eligible_users, function(u) normalise_user_row(u)$display_name, character(1))
-                    stats::setNames(ids, labels)
-                  },
-                  multiple = TRUE
-                ),
-                radioButtons(
-                  "w01_assignment_type",
-                  "Assign by",
-                  choices = c("Number of cases" = "number", "Percentage" = "percentage"),
-                  selected = "number",
-                  inline = TRUE
-                ),
-                numericInput(
-                  "w01_assignment_amount",
-                  "Additional amount",
-                  value = 1,
-                  min = 1,
-                  step = 1
-                ),
-                uiOutput("w01_assignment_preview"),
-                div(
-                  class = "d-flex align-items-center gap-2 mt-2",
-                  actionButton("w01_apply_assignments", "Apply assignments", class = "btn-primary btn-sm"),
-                  tags$span(class = "saved-note", textOutput("w01_assignment_status", inline = TRUE))
-                ),
-                tags$hr(),
-                tags$strong("Remove unfinished assignments"),
-                tags$p(
-                  class = "text-secondary small mb-2",
-                  "Choose a reviewer to remove all of their unfinished W01 assignments. Completed or already resolved cases are protected."
-                ),
-                selectInput(
-                  "w01_remove_assignment_user",
-                  "Reviewer",
-                  choices = {
-                    cancellable <- cancellable_assignments(
-                      assignment_registry_rv(),
-                      w01_active_assignment_events(),
-                      "01",
-                      batch_id_rv(),
-                      "deduplication"
-                    )
-                    user_ids <- unique(vapply(
-                      cancellable,
-                      function(x) normalise_assignment_row(x)$user_id,
-                      character(1)
-                    ))
-                    labels <- vapply(user_ids, function(uid) {
-                      u <- find_user_by_id(user_registry_rv(), uid, require_active = FALSE)
-                      reviewer_label <- if (is.null(u)) uid else u$display_name
-                      n <- sum(vapply(
-                        cancellable,
-                        function(x) identical(normalise_assignment_row(x)$user_id, uid),
-                        logical(1)
-                      ))
-                      paste0(reviewer_label, " (", n, " unfinished)")
-                    }, character(1))
-                    stats::setNames(user_ids, labels)
-                  }
-                ),
-                actionButton(
-                  "w01_remove_assignments",
-                  "Remove reviewer's unfinished assignments",
-                  class = "btn-outline-danger btn-sm"
-                )
-              )
-            )
-          }
+          assignment_manager_ui(z)
         )
       )
     })
