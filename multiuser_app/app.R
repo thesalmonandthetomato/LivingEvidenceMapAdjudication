@@ -640,7 +640,7 @@ server <- function(input, output, session) {
             tags$h2("Human verification", class = "mb-1"),
             tags$div("Records remaining at each verification stage.", class = "text-secondary")
           ),
-          tags$span(class = "task-badge", "LivingEvidenceMap")
+          uiOutput("session_identity")
         ),
         pipeline_summary_ui(),
         div(
@@ -714,7 +714,8 @@ server <- function(input, output, session) {
             )
           ),
           div(
-            class = "d-flex align-items-center gap-3",
+            class = "d-flex align-items-center gap-3 flex-wrap justify-content-end",
+            uiOutput("session_identity"),
             actionButton("back_to_tasks_w02", "Back to tasks", class = "btn-outline-secondary btn-sm"),
             uiOutput("w02_progress_text")
           )
@@ -738,7 +739,8 @@ server <- function(input, output, session) {
             )
           ),
           div(
-            class = "d-flex align-items-center gap-3",
+            class = "d-flex align-items-center gap-3 flex-wrap justify-content-end",
+            uiOutput("session_identity"),
             actionButton("back_to_tasks_w04", "Back to tasks", class = "btn-outline-secondary btn-sm"),
             uiOutput("w04_progress_text")
           )
@@ -782,7 +784,8 @@ server <- function(input, output, session) {
             )
           ),
           div(
-            class="d-flex align-items-center gap-3",
+            class="d-flex align-items-center gap-3 flex-wrap justify-content-end",
+            uiOutput("session_identity"),
             actionButton("back_to_tasks_w08","Back to tasks",class="btn-outline-secondary btn-sm"),
             uiOutput("w08_progress_text")
           )
@@ -830,7 +833,8 @@ server <- function(input, output, session) {
             tags$div(textOutput("batch_label"), class="text-secondary")
           ),
           div(
-            class = "d-flex align-items-center gap-3",
+            class = "d-flex align-items-center gap-3 flex-wrap justify-content-end",
+            uiOutput("session_identity"),
             actionButton("back_to_tasks", "Back to tasks", class = "btn-outline-secondary btn-sm"),
             div(textOutput("progress_text"))
           )
@@ -864,6 +868,20 @@ server <- function(input, output, session) {
   login_status <- reactiveVal("")
   output$login_status <- renderText(login_status())
 
+  output$session_identity <- renderUI({
+    req(authenticated(), current_user())
+    u <- current_user()
+    role_label <- if (identical(as.character(u$role), "administrator")) "Administrator" else "Reviewer"
+    div(
+      class = "d-flex align-items-center gap-2 flex-wrap justify-content-end",
+      tags$span(
+        class = "text-secondary small",
+        paste0(as.character(u$display_name), " · ", role_label)
+      ),
+      actionButton("logout", "Log out", class = "btn-outline-secondary btn-sm")
+    )
+  })
+
   session_reviewer_id <- function() {
     u <- current_user()
     if (is.null(u)) return(reviewer)
@@ -873,6 +891,16 @@ server <- function(input, output, session) {
   session_can <- function(permission) {
     user_can(current_user(), permission)
   }
+
+  observeEvent(input$logout, {
+    authenticated(FALSE)
+    current_user(NULL)
+    app_view("tasks")
+    complete(FALSE)
+    failed_attempts(0L)
+    lock_until(as.POSIXct(NA))
+    login_status("")
+  })
 
   observeEvent(input$login, {
     now <- Sys.time()
