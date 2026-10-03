@@ -27,7 +27,7 @@ validate_assignment_registry(blind)
 stopifnot(
   identical(assignment_mode_for("01","deduplication"), "shared_work_pool"),
   identical(assignment_mode_for("04","manual_screening"), "independent_blind_review"),
-  identical(assignment_mode_for("08","annotation"), "single_reviewer")
+  identical(assignment_mode_for("08","annotation"), "shared_work_pool")
 )
 
 cases <- list(
@@ -274,7 +274,7 @@ stopifnot(
 cat("PASS: allocation planning, safe cancellation, and reviewer-level removal\n")
 
 
-# W02 shared-pool mode and W08 single-reviewer mode.
+# W02 and W08 both use first-completed shared-pool semantics.
 stopifnot(
   identical(
     assignment_mode_for("02", "enrichment"),
@@ -282,7 +282,7 @@ stopifnot(
   ),
   identical(
     assignment_mode_for("08", "annotation"),
-    ASSIGNMENT_MODES[["single_reviewer"]]
+    ASSIGNMENT_MODES[["shared_work_pool"]]
   )
 )
 
@@ -329,31 +329,44 @@ stopifnot(
 )
 
 
-single_first <- plan_workflow_assignment(
-  cases = list(list(record_id = "single-record")),
+split_plan <- plan_workflow_assignment(
+  cases = list(
+    list(record_id = "w08-split-1"),
+    list(record_id = "w08-split-2")
+  ),
   assignments = list(),
   active_events = list(),
   workflow = "08",
-  batch_id = "single-batch",
+  batch_id = "w08-split-batch",
   task_type = "annotation",
-  user_ids = "usr-a",
-  allocation_type = "number",
-  amount = 1
-)
-single_second <- plan_workflow_assignment(
-  cases = list(list(record_id = "single-record")),
-  assignments = single_first$new_assignments,
-  active_events = list(),
-  workflow = "08",
-  batch_id = "single-batch",
-  task_type = "annotation",
-  user_ids = "usr-b",
-  allocation_type = "number",
-  amount = 1
+  user_ids = c("usr-a","usr-b"),
+  allocation_type = "all",
+  allocation_strategy = "split"
 )
 stopifnot(
-  identical(single_first$allocated, 1L),
-  identical(single_second$allocated, 0L)
+  identical(split_plan$selected_cases, 2L),
+  identical(split_plan$allocated, 2L),
+  identical(unname(split_plan$by_user), c(1L,1L))
 )
 
-cat("PASS: W02 shared-pool and W08 single-reviewer assignment semantics\n")
+shared_plan <- plan_workflow_assignment(
+  cases = list(
+    list(record_id = "w08-share-1"),
+    list(record_id = "w08-share-2")
+  ),
+  assignments = list(),
+  active_events = list(),
+  workflow = "08",
+  batch_id = "w08-share-batch",
+  task_type = "annotation",
+  user_ids = c("usr-a","usr-b"),
+  allocation_type = "all",
+  allocation_strategy = "shared"
+)
+stopifnot(
+  identical(shared_plan$selected_cases, 2L),
+  identical(shared_plan$allocated, 4L),
+  identical(unname(shared_plan$by_user), c(2L,2L))
+)
+
+cat("PASS: W02 and W08 shared-pool assignment semantics\n")
