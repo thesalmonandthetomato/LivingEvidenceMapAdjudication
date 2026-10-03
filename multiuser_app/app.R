@@ -315,8 +315,8 @@ ui <- page_fillable(
     .assignment-progress-fill { height:100%; background:#1f5d50; }
     .assignment-disclosure > summary, .assignment-workflow > summary { cursor:pointer; list-style:none; }
     .assignment-disclosure > summary::-webkit-details-marker, .assignment-workflow > summary::-webkit-details-marker { display:none; }
-    .assignment-disclosure > summary::before, .assignment-workflow > summary::before { content:"▸"; display:inline-block; width:1.1rem; color:#66727d; }
-    .assignment-disclosure[open] > summary::before, .assignment-workflow[open] > summary::before { content:"▾"; }
+    .assignment-disclosure > summary::before, .assignment-workflow > summary::before { content:'▸'; display:inline-block; width:1.1rem; color:#66727d; }
+    .assignment-disclosure[open] > summary::before, .assignment-workflow[open] > summary::before { content:'▾'; }
     .assignment-workflow { border-top:1px solid #e7eaed; padding:.65rem 0 .15rem 0; }
     .assignment-mode-note { color:#66727d; font-size:.8rem; }
     @media (max-width:620px) { .assignment-kpis { grid-template-columns:repeat(2,minmax(100px,1fr)); } }
