@@ -154,4 +154,66 @@ stopifnot(
   length(intersect(plan_number$case_ids, plan_again$case_ids)) == 0L
 )
 
-cat("PASS: shared-pool modes plus number/percentage assignment planning\n")
+removal_assignments <- list(
+  list(assignment_id="rm-1", workflow="01", task_type="deduplication", batch_id="batch-rm", case_id="rm-case-1", user_id="usr-a", blind_group="pool", status="assigned"),
+  list(assignment_id="rm-2", workflow="01", task_type="deduplication", batch_id="batch-rm", case_id="rm-case-2", user_id="usr-b", blind_group="pool", status="assigned")
+)
+removal_events <- list(
+  list(case_id="rm-case-2", user_id="usr-b", decision="duplicate", event_at_utc="2026-10-03T10:15:00Z")
+)
+
+cancellable <- cancellable_assignments(
+  removal_assignments, removal_events, "01", "batch-rm", "deduplication"
+)
+stopifnot(
+  length(cancellable) == 1L,
+  identical(normalise_assignment_row(cancellable[[1L]])$assignment_id, "rm-1")
+)
+
+removed <- cancel_assignment_ids(
+  removal_assignments, "rm-1", removal_events, "01", "batch-rm", "deduplication"
+)
+stopifnot(
+  identical(removed$cancelled, 1L),
+  identical(normalise_assignment_row(removed$assignments[[1L]])$status, "cancelled"),
+  length(active_assignments_for_batch(
+    removed$assignments, "01", "batch-rm", "deduplication"
+  )) == 1L
+)
+
+blocked_remove <- tryCatch(
+  {
+    cancel_assignment_ids(
+      removal_assignments, "rm-2", removal_events, "01", "batch-rm", "deduplication"
+    )
+    FALSE
+  },
+  error = function(e) grepl("completed, resolved, or no longer active", conditionMessage(e), fixed = TRUE)
+)
+stopifnot(isTRUE(blocked_remove))
+
+reassign_cases <- list(
+  list(review_case_id="rm-case-1"),
+  list(review_case_id="rm-case-2")
+)
+replan <- plan_shared_pool_assignment(
+  cases = reassign_cases,
+  assignments = removed$assignments,
+  active_events = removal_events,
+  workflow = "01",
+  batch_id = "batch-rm",
+  task_type = "deduplication",
+  user_ids = "usr-a",
+  allocation_type = "number",
+  amount = 1
+)
+stopifnot(
+  identical(replan$allocated, 1L),
+  identical(replan$case_ids, "rm-case-1"),
+  !identical(
+    normalise_assignment_row(replan$new_assignments[[1L]])$assignment_id,
+    "rm-1"
+  )
+)
+
+cat("PASS: allocation planning and safe unfinished-assignment cancellation\n")
