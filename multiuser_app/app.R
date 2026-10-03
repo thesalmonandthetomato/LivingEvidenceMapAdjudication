@@ -1313,7 +1313,7 @@ server <- function(input, output, session) {
     add_empty_group(
       "08","annotation",
       if (has_w08_batch) w08_batch_id_rv() else "no-active-queue",
-      ASSIGNMENT_MODES[["single_reviewer"]]
+      ASSIGNMENT_MODES[["shared_work_pool"]]
     )
 
     total_assigned <- sum(vapply(group_progress, function(x) x$progress$assigned, integer(1)))
