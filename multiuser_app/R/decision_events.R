@@ -65,3 +65,22 @@ canonical_event_by_id <- function(events, decision_id, case_fields = c("case_id"
   if (length(hits) != 1L) stop("Decision event could not be uniquely resolved", call. = FALSE)
   hits[[1L]]
 }
+
+
+normalise_saved_decision_event <- function(event, prior_decision = NULL, case_fields = c("case_id", "review_case_id", "record_id")) {
+  case_id <- decision_event_scalar(event, case_fields)
+  if (!nzchar(case_id)) stop("Saved decision is missing a case identifier", call. = FALSE)
+
+  prior_version <- 0L
+  if (!is.null(prior_decision)) {
+    z <- suppressWarnings(as.integer(prior_decision$version %||% NA_integer_))
+    if (!is.na(z) && z > 0L) prior_version <- z
+  }
+
+  event$case_id <- case_id
+  event$user_id <- decision_event_scalar(event, c("user_id", "reviewer"))
+  event$version <- prior_version + 1L
+  event$active <- TRUE
+  event$event_at_utc <- decision_event_scalar(event, c("event_at_utc", "resolved_at_utc"))
+  event
+}
