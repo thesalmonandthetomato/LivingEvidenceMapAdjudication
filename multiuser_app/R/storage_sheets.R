@@ -174,6 +174,30 @@ append_sheet_decision <- function(decision, prior_decision = NULL) {
   ss <- sheet_id_from_env()
   tab <- sheet_decision_tab()
 
+  # Shared-work-pool authority: once another reviewer has made a substantive
+  # decision, later reviewers must not overwrite it. "uncertain" is explicitly
+  # non-resolving, and the authoritative reviewer may revise their own decision.
+  current_active <- active_sheet_decisions()
+  case_id <- as.character(decision$review_case_id %||% "")
+  user_id <- as.character(decision$reviewer %||% "")
+  current_case <- Filter(
+    function(x) identical(as.character(x$review_case_id %||% x$case_id %||% ""), case_id),
+    current_active
+  )
+  if (length(current_case)) {
+    current <- current_case[[1L]]
+    current_decision <- tolower(trimws(as.character(current$decision %||% "")))
+    current_user <- as.character(current$reviewer %||% current$user_id %||% "")
+    if (
+      nzchar(current_decision) &&
+      !identical(current_decision, "uncertain") &&
+      nzchar(current_user) &&
+      !identical(current_user, user_id)
+    ) {
+      stop("This deduplication case has already been resolved by another reviewer", call. = FALSE)
+    }
+  }
+
   decision_id <- paste0("dec-", digest::digest(
     paste(decision$review_case_id, decision$resolved_at_utc, decision$decision, sep="|"),
     algo="sha256", serialize=FALSE
