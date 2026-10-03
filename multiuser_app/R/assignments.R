@@ -39,13 +39,17 @@ validate_assignment_registry <- function(assignments) {
   ids <- vapply(assignments, function(x) x$assignment_id, character(1))
   if (anyDuplicated(ids)) stop("Assignment registry contains duplicate assignment_id", call. = FALSE)
 
+  active_assignments <- Filter(
+    function(x) !identical(normalise_assignment_row(x)$status, "cancelled"),
+    assignments
+  )
   keys <- vapply(
-    assignments,
+    active_assignments,
     function(x) paste(x$workflow, x$task_type, x$batch_id, x$case_id, x$user_id, sep = "|"),
     character(1)
   )
   if (anyDuplicated(keys)) {
-    stop("Assignment registry contains duplicate case/user assignments", call. = FALSE)
+    stop("Assignment registry contains duplicate active case/user assignments", call. = FALSE)
   }
   invisible(TRUE)
 }
@@ -64,12 +68,23 @@ assignments_for_batch <- function(assignments, workflow, batch_id, task_type = N
   )
 }
 
+active_assignments <- function(assignments) {
+  Filter(
+    function(x) !identical(normalise_assignment_row(x)$status, "cancelled"),
+    assignments %||% list()
+  )
+}
+
+active_assignments_for_batch <- function(assignments, workflow, batch_id, task_type = NULL) {
+  active_assignments(assignments_for_batch(assignments, workflow, batch_id, task_type))
+}
+
 assignment_mode_active <- function(assignments, workflow, batch_id, task_type = NULL) {
-  length(assignments_for_batch(assignments, workflow, batch_id, task_type)) > 0L
+  length(active_assignments_for_batch(assignments, workflow, batch_id, task_type)) > 0L
 }
 
 assignments_for_user <- function(assignments, workflow, batch_id, user_id, task_type = NULL) {
-  xs <- assignments_for_batch(assignments, workflow, batch_id, task_type)
+  xs <- active_assignments_for_batch(assignments, workflow, batch_id, task_type)
   Filter(
     function(x) identical(normalise_assignment_row(x)$user_id, as.character(user_id)),
     xs
@@ -113,7 +128,7 @@ cases_for_assignment_user <- function(
   active_events = list()
 ) {
   if (!length(cases)) return(list())
-  batch_assignments <- assignments_for_batch(assignments, workflow, batch_id, task_type)
+  batch_assignments <- active_assignments_for_batch(assignments, workflow, batch_id, task_type)
   if (!length(batch_assignments)) return(cases)
 
   if (user_can(user, "manage_assignments")) return(cases)
@@ -155,7 +170,7 @@ assignment_progress <- function(
   validate_assignment_registry(assignments)
   xs <- assignments
   if (!is.null(workflow) && !is.null(batch_id)) {
-    xs <- assignments_for_batch(assignments, workflow, batch_id, task_type)
+    xs <- active_assignments_for_batch(assignments, workflow, batch_id, task_type)
   }
   if (!length(xs)) {
     return(list(
@@ -296,7 +311,7 @@ unresolved_unassigned_case_ids <- function(
   resolved_ids <- if (length(resolving_events)) {
     unique(vapply(resolving_events, decision_case_id, character(1)))
   } else character()
-  batch_assignments <- assignments_for_batch(assignments, workflow, batch_id, task_type)
+  batch_assignments <- active_assignments_for_batch(assignments, workflow, batch_id, task_type)
   assigned_ids <- assignment_case_ids(batch_assignments)
   case_ids[!case_ids %in% resolved_ids & !case_ids %in% assigned_ids]
 }
@@ -353,11 +368,23 @@ plan_shared_pool_assignment <- function(
     for (i in seq_along(chosen)) {
       uid <- user_ids[[((i - 1L) %% length(user_ids)) + 1L]]
       cid <- chosen[[i]]
+      prior_same_key <- Filter(
+        function(x) {
+          a <- normalise_assignment_row(x)
+          identical(a$workflow, as.character(workflow)) &&
+            identical(a$task_type, as.character(task_type)) &&
+            identical(a$batch_id, as.character(batch_id)) &&
+            identical(a$case_id, cid) &&
+            identical(a$user_id, uid)
+        },
+        assignments %||% list()
+      )
+      generation <- length(prior_same_key) + 1L
       assignment_id <- paste0(
         "asg-",
         substr(
           digest::digest(
-            paste(workflow, task_type, batch_id, cid, uid, sep = "|"),
+            paste(workflow, task_type, batch_id, cid, uid, generation, sep = "|"),
             algo = "sha256",
             serialize = FALSE
           ),
@@ -389,4 +416,61 @@ plan_shared_pool_assignment <- function(
     by_user = by_user,
     case_ids = chosen
   )
+}
+
+
+cancellable_assignments <- function(
+  assignments,
+  active_events,
+  workflow,
+  batch_id,
+  task_type
+) {
+  xs <- active_assignments_for_batch(assignments, workflow, batch_id, task_type)
+  Filter(
+    function(x) {
+      a <- normalise_assignment_row(x)
+      resolved <- case_authoritative_event(active_events, a$case_id)
+      is.null(resolved)
+    },
+    xs
+  )
+}
+
+cancel_assignment_ids <- function(
+  assignments,
+  assignment_ids,
+  active_events,
+  workflow,
+  batch_id,
+  task_type
+) {
+  assignment_ids <- unique(as.character(assignment_ids))
+  assignment_ids <- assignment_ids[nzchar(assignment_ids)]
+  if (!length(assignment_ids)) stop("Select at least one assignment to remove", call. = FALSE)
+
+  cancellable <- cancellable_assignments(
+    assignments, active_events, workflow, batch_id, task_type
+  )
+  allowed <- vapply(
+    cancellable,
+    function(x) normalise_assignment_row(x)$assignment_id,
+    character(1)
+  )
+  blocked <- setdiff(assignment_ids, allowed)
+  if (length(blocked)) {
+    stop("One or more selected assignments are completed, resolved, or no longer active", call. = FALSE)
+  }
+
+  changed <- 0L
+  out <- lapply(assignments, function(x) {
+    a <- normalise_assignment_row(x)
+    if (a$assignment_id %in% assignment_ids && !identical(a$status, "cancelled")) {
+      a$status <- "cancelled"
+      changed <<- changed + 1L
+    }
+    a
+  })
+  validate_assignment_registry(out)
+  list(assignments = out, cancelled = changed)
 }
