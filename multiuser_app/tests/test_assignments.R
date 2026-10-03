@@ -95,4 +95,63 @@ stopifnot(
   identical(p_blind_two$remaining, 0L)
 )
 
-cat("PASS: shared-pool and blind-review assignment semantics\n")
+allocation_cases <- lapply(seq_len(10), function(i) list(review_case_id = paste0("alloc-", i)))
+allocation_events <- list(
+  list(case_id="alloc-1", user_id="usr-a", decision="uncertain", event_at_utc="2026-10-03T10:00:00Z"),
+  list(case_id="alloc-2", user_id="usr-a", decision="duplicate", event_at_utc="2026-10-03T10:01:00Z")
+)
+
+plan_number <- plan_shared_pool_assignment(
+  cases = allocation_cases,
+  assignments = list(),
+  active_events = allocation_events,
+  workflow = "01",
+  batch_id = "batch-alloc",
+  task_type = "deduplication",
+  user_ids = c("usr-a","usr-b"),
+  allocation_type = "number",
+  amount = 3
+)
+stopifnot(
+  identical(plan_number$available, 9L),
+  identical(plan_number$allocated, 3L),
+  identical(unname(plan_number$by_user), c(2L,1L)),
+  "alloc-1" %in% plan_number$case_ids,
+  !"alloc-2" %in% plan_number$case_ids
+)
+
+plan_percent <- plan_shared_pool_assignment(
+  cases = allocation_cases,
+  assignments = list(),
+  active_events = allocation_events,
+  workflow = "01",
+  batch_id = "batch-percent",
+  task_type = "deduplication",
+  user_ids = c("usr-a","usr-b"),
+  allocation_type = "percentage",
+  amount = 50
+)
+stopifnot(
+  identical(plan_percent$available, 9L),
+  identical(plan_percent$allocated, 5L),
+  identical(unname(plan_percent$by_user), c(3L,2L))
+)
+
+after_first <- c(plan_number$new_assignments)
+plan_again <- plan_shared_pool_assignment(
+  cases = allocation_cases,
+  assignments = after_first,
+  active_events = allocation_events,
+  workflow = "01",
+  batch_id = "batch-alloc",
+  task_type = "deduplication",
+  user_ids = c("usr-a","usr-b"),
+  allocation_type = "number",
+  amount = 3
+)
+stopifnot(
+  identical(plan_again$available, 6L),
+  length(intersect(plan_number$case_ids, plan_again$case_ids)) == 0L
+)
+
+cat("PASS: shared-pool modes plus number/percentage assignment planning\n")
