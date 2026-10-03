@@ -41,7 +41,7 @@ reviewer_b <- find_user_by_id(users, "usr-b")
 admin <- find_user_by_id(users, "usr-admin")
 
 events_shared <- list(
-  list(case_id="case-1", user_id="usr-a", event_at_utc="2026-10-03T09:00:00Z")
+  list(case_id="case-1", user_id="usr-a", decision="duplicate", event_at_utc="2026-10-03T09:00:00Z")
 )
 
 visible_b <- cases_for_assignment_user(
