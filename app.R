@@ -75,8 +75,11 @@ screening_green_terms <- c(
   "commercializing"
 )
 
+screening_red_terms <- c("hatcheries")
+
 highlight_screening_text <- function(text, include_terms = character(), exclude_terms = character()) {
   include_terms <- unique(c(as.character(include_terms), screening_green_terms))
+  exclude_terms <- unique(c(as.character(exclude_terms), screening_red_terms))
   text <- normalise_display_text(text)
   if (!nzchar(text)) return("")
   terms <- c(
@@ -285,6 +288,7 @@ ui <- page_fillable(
     .decision-panel { margin-bottom:.85rem; }
     .decision-panel .card-body { padding:.75rem 1rem; }
     .decision-row .btn { min-width:125px; }
+    .decision-row .btn.decision-selected { outline:3px solid #17212b; outline-offset:2px; font-weight:700; }
     .saved-note { font-weight:600; color:#1f5d50; min-height:1.2rem; }
     .nav-row .btn { min-width:95px; }
     .task-shell { max-width:1050px; margin:4vh auto 0 auto; padding:20px; width:100%; }
@@ -862,12 +866,7 @@ server <- function(input, output, session) {
             tags$div(class="saved-note", textOutput("w04_save_status")),
             div(
               class = "d-flex flex-wrap gap-2",
-              div(
-                class = "decision-row d-flex flex-wrap gap-2",
-                actionButton("w04_retain", "Include", class = "btn-success"),
-                actionButton("w04_exclude", "Exclude", class = "btn-outline-danger"),
-                actionButton("w04_uncertain", "Unsure", class = "btn-outline-secondary")
-              ),
+              uiOutput("w04_decision_buttons"),
               div(
                 class = "nav-row d-flex gap-2",
                 actionButton("w04_previous", "← Previous"),
@@ -898,10 +897,7 @@ server <- function(input, output, session) {
           div(class="d-flex flex-wrap justify-content-between align-items-center gap-2",
             tags$div(class="saved-note",textOutput("w04_resolution_save_status")),
             div(class="d-flex flex-wrap gap-2",
-              div(class="decision-row d-flex flex-wrap gap-2",
-                actionButton("w04_resolution_retain","Include",class="btn-success"),
-                actionButton("w04_resolution_exclude","Exclude",class="btn-outline-danger")
-              ),
+              uiOutput("w04_resolution_decision_buttons"),
               div(class="nav-row d-flex gap-2",
                 actionButton("w04_resolution_previous","← Previous"),
                 actionButton("w04_resolution_next","Next →")
@@ -1511,6 +1507,40 @@ server <- function(input, output, session) {
     w04_cases_rv()[[w04_idx()]]
   })
 
+  w04_current_saved_choice <- reactive({
+    z <- w04_current_case()
+    ds <- w04_decisions()
+    if (!length(ds)) return("")
+    hit <- Filter(
+      function(x) identical(as.character(x$review_case_id %||% ""), as.character(z$review_case_id)),
+      ds
+    )
+    if (!length(hit)) return("")
+    as.character(hit[[1L]]$decision %||% "")
+  })
+
+  output$w04_decision_buttons <- renderUI({
+    choice <- w04_current_saved_choice()
+    div(
+      class = "decision-row d-flex flex-wrap gap-2",
+      actionButton(
+        "w04_retain", "Include",
+        class = paste("btn-success", if (identical(choice, "retain")) "decision-selected" else ""),
+        `aria-pressed` = if (identical(choice, "retain")) "true" else "false"
+      ),
+      actionButton(
+        "w04_exclude", "Exclude",
+        class = paste("btn-outline-danger", if (identical(choice, "exclude")) "decision-selected" else ""),
+        `aria-pressed` = if (identical(choice, "exclude")) "true" else "false"
+      ),
+      actionButton(
+        "w04_uncertain", "Unsure",
+        class = paste("btn-outline-secondary", if (identical(choice, "uncertain")) "decision-selected" else ""),
+        `aria-pressed` = if (identical(choice, "uncertain")) "true" else "false"
+      )
+    )
+  })
+
   output$w04_progress_text <- renderUI({
     req(authenticated(),w04_cases_rv())
     total <- length(w04_cases_rv())
@@ -1632,6 +1662,35 @@ server <- function(input, output, session) {
   w04_resolution_current_case <- reactive({
     req(authenticated(),w04_resolution_cases_rv())
     w04_resolution_cases_rv()[[w04_resolution_idx()]]
+  })
+
+  w04_resolution_current_saved_choice <- reactive({
+    z <- w04_resolution_current_case()
+    ds <- w04_resolution_decisions()
+    if (!length(ds)) return("")
+    hit <- Filter(
+      function(x) identical(as.character(x$review_case_id %||% ""), as.character(z$review_case_id)),
+      ds
+    )
+    if (!length(hit)) return("")
+    as.character(hit[[1L]]$decision %||% "")
+  })
+
+  output$w04_resolution_decision_buttons <- renderUI({
+    choice <- w04_resolution_current_saved_choice()
+    div(
+      class = "decision-row d-flex flex-wrap gap-2",
+      actionButton(
+        "w04_resolution_retain", "Include",
+        class = paste("btn-success", if (identical(choice, "retain")) "decision-selected" else ""),
+        `aria-pressed` = if (identical(choice, "retain")) "true" else "false"
+      ),
+      actionButton(
+        "w04_resolution_exclude", "Exclude",
+        class = paste("btn-outline-danger", if (identical(choice, "exclude")) "decision-selected" else ""),
+        `aria-pressed` = if (identical(choice, "exclude")) "true" else "false"
+      )
+    )
   })
 
   output$w04_resolution_progress_text <- renderUI({
