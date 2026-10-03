@@ -15,32 +15,10 @@ decision_event_time <- function(x) {
 }
 
 active_local_decisions <- function(path) {
-  events <- read_local_decision_events(path)
-  if (!length(events)) return(list())
-
-  case_ids <- vapply(events, decision_event_case_id, character(1))
-  keep <- nzchar(case_ids)
-  events <- events[keep]
-  case_ids <- case_ids[keep]
-  if (!length(events)) return(list())
-
-  # Append-only semantics: the latest event for a case is the effective decision.
-  # Version is authoritative where present; event time and file order break ties.
-  versions <- vapply(events, function(x) {
-    z <- suppressWarnings(as.integer(x$version %||% NA_integer_))
-    if (is.na(z)) 0L else z
-  }, integer(1))
-  times <- vapply(events, decision_event_time, character(1))
-  ord <- order(case_ids, versions, times, seq_along(events))
-  events <- events[ord]
-  case_ids <- case_ids[ord]
-
-  latest <- !duplicated(case_ids, fromLast = TRUE)
-  out <- events[latest]
-  lapply(out, function(x) {
-    x$active <- TRUE
-    x
-  })
+  active_decision_events(
+    read_local_decision_events(path),
+    case_fields = c("case_id", "review_case_id")
+  )
 }
 
 # Backwards-compatible name used by the existing app/backend.
