@@ -8,6 +8,7 @@ suppressPackageStartupMessages({
 source("R/w01_contract.R", local = TRUE)
 source("R/adjudication_schema.R", local = TRUE)
 source("R/users.R", local = TRUE)
+source("R/assignments.R", local = TRUE)
 source("R/decision_events.R", local = TRUE)
 source("R/storage_local.R", local = TRUE)
 source("R/storage_sheets.R", local = TRUE)
@@ -17,6 +18,7 @@ source("R/github_dispatch.R", local = TRUE)
 
 queue_path <- Sys.getenv("LEM_W01_QUEUE", unset = "fixtures/w01_real_sample_2.jsonl")
 decision_path <- Sys.getenv("LEM_W01_DECISIONS", unset = "local_state/w01_decisions.jsonl")
+assignment_path <- Sys.getenv("LEM_ASSIGNMENTS", unset = "fixtures/assignments_w01_local.jsonl")
 reviewer <- Sys.getenv("LEM_REVIEWER", unset = "prototype-reviewer")
 
 dir.create(dirname(decision_path), recursive = TRUE, showWarnings = FALSE)
@@ -300,6 +302,18 @@ ui <- page_fillable(
     .task-kpi { background:#f7f8fa; border:1px solid #e1e5e9; border-radius:8px; padding:.55rem .65rem; }
     .task-kpi strong { display:block; font-size:1.15rem; }
     .task-badge { background:#eef3f1; border-radius:999px; padding:.2rem .55rem; font-size:.78rem; }
+    .assignment-summary { margin-bottom:1rem; border:1px solid #dde3e8; box-shadow:0 2px 10px rgba(22,33,43,.04); }
+    .assignment-kpis { display:grid; grid-template-columns:repeat(5,minmax(100px,1fr)); gap:.5rem; margin-bottom:.75rem; }
+    .assignment-kpi { background:#f7f8fa; border:1px solid #e1e5e9; border-radius:8px; padding:.55rem .65rem; }
+    .assignment-kpi span { display:block; color:#6a747d; font-size:.76rem; }
+    .assignment-kpi strong { display:block; font-size:1.08rem; margin-top:.08rem; }
+    .assignment-table-wrap { overflow-x:auto; }
+    .assignment-table { width:100%; border-collapse:collapse; font-size:.86rem; }
+    .assignment-table th,.assignment-table td { padding:.42rem .5rem; border-top:1px solid #e7eaed; text-align:left; vertical-align:middle; white-space:nowrap; }
+    .assignment-table th { color:#66727d; font-weight:600; }
+    .assignment-progress-bar { width:110px; height:7px; border-radius:999px; background:#e5e9ec; overflow:hidden; display:inline-block; vertical-align:middle; margin-right:.4rem; }
+    .assignment-progress-fill { height:100%; background:#1f5d50; }
+    @media (max-width:620px) { .assignment-kpis { grid-template-columns:repeat(2,minmax(100px,1fr)); } }
     .pipeline-summary { background:#fff; border:1px solid #dde3e8; border-radius:12px; padding:.85rem 1rem; margin-bottom:1rem; box-shadow:0 2px 10px rgba(22,33,43,.04); }
     .pipeline-summary-top { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:.65rem 1rem; margin-bottom:.65rem; }
     .pipeline-kpis { display:grid; grid-template-columns:repeat(5,minmax(145px,1fr)); gap:.5rem; margin-top:.15rem; }
@@ -322,6 +336,9 @@ ui <- page_fillable(
 server <- function(input, output, session) {
   authenticated <- reactiveVal(FALSE)
   current_user <- reactiveVal(NULL)
+  user_registry_rv <- reactiveVal(list())
+  assignment_registry_rv <- reactiveVal(list())
+  w01_all_cases_rv <- reactiveVal(list())
   app_view <- reactiveVal("tasks")
   failed_attempts <- reactiveVal(0L)
   lock_until <- reactiveVal(as.POSIXct(NA))
@@ -757,6 +774,7 @@ server <- function(input, output, session) {
           uiOutput("session_identity")
         ),
         pipeline_summary_ui(),
+        uiOutput("assignment_progress"),
         div(
           class = "row g-3",
           div(
@@ -1072,6 +1090,9 @@ server <- function(input, output, session) {
   observeEvent(input$logout, {
     authenticated(FALSE)
     current_user(NULL)
+    user_registry_rv(list())
+    assignment_registry_rv(list())
+    w01_all_cases_rv(list())
     app_view("tasks")
     complete(FALSE)
     failed_attempts(0L)
@@ -1102,6 +1123,8 @@ server <- function(input, output, session) {
 
     if (!is.null(login_user)) {
       loaded <- tryCatch({
+        user_registry_rv(registry)
+        assignment_registry_rv(read_assignment_registry(assignment_path))
         pipeline_status_rv(if(identical(storage_backend(),"google_sheets")) read_latest_pipeline_status() else NULL)
         manual_screening_rv(tryCatch(read_manual_screening_metrics(),error=function(e)NULL))
         batch <- load_batch()
@@ -1109,6 +1132,9 @@ server <- function(input, output, session) {
         if (!is.null(batch)) {
           all_decisions <- read_active_decisions(decision_path)
           current_decisions <- filter_batch_decisions(all_decisions, batch$queue_sha256)
+          if (assignment_mode_active(assignment_registry_rv(), "01", batch$batch_id)) {
+            current_decisions <- decision_events_for_user(current_decisions, login_user$user_id)
+          }
         }
         w02_batch <- load_w02_batch()
 
@@ -1227,30 +1253,40 @@ server <- function(input, output, session) {
         }
 
         if (!is.null(batch)) {
-          cases_rv(batch$cases)
-        queue_sha_rv(batch$queue_sha256)
-        batch_id_rv(batch$batch_id)
-        decisions(current_decisions)
+          w01_all_cases_rv(batch$cases)
+          visible_cases <- cases_for_assignment_user(
+            batch$cases,
+            assignment_registry_rv(),
+            "01",
+            batch$batch_id,
+            login_user
+          )
+          cases_rv(visible_cases)
+          queue_sha_rv(batch$queue_sha256)
+          batch_id_rv(batch$batch_id)
+          decisions(current_decisions)
 
-        ids <- vapply(batch$cases, function(x) as.character(x$review_case_id), character(1))
-        done_ids <- if (length(current_decisions)) {
-          unique(vapply(current_decisions, function(x) as.character(x$review_case_id), character(1)))
-        } else character()
-        unresolved <- which(!ids %in% done_ids)
+          ids <- vapply(visible_cases, function(x) as.character(x$review_case_id), character(1))
+          done_ids <- if (length(current_decisions)) {
+            unique(vapply(current_decisions, function(x) as.character(x$review_case_id), character(1)))
+          } else character()
+          unresolved <- which(!ids %in% done_ids)
 
           if (length(unresolved)) {
             idx(unresolved[[1L]])
             complete(FALSE)
           } else {
-            idx(max(1L,length(batch$cases)))
+            idx(max(1L,length(visible_cases)))
             complete(TRUE)
             if(!identical(batch_status_rv(),"review_complete") &&
-               user_can(login_user,"control_workflows")) {
+               user_can(login_user,"control_workflows") &&
+               w01_all_assignments_complete()) {
               mark_review_complete("01",batch_id_rv(),queue_sha_rv(),batch_status_rv)
             }
           }
         } else {
           cases_rv(NULL)
+          w01_all_cases_rv(list())
           queue_sha_rv("")
           batch_id_rv("")
           batch_status_rv("")
