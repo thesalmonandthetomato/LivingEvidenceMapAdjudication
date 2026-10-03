@@ -637,6 +637,11 @@ server <- function(input, output, session) {
           "include / exclude"
         ),
         kpi(
+          "Species",
+          fmt_pipeline_n(p$screened_include),
+          "records processed"
+        ),
+        kpi(
           "Geography",
           paste0(fmt_pipeline_n(p$geography_with)," / ",fmt_pipeline_n(p$geography_without))
         ),
