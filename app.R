@@ -293,14 +293,31 @@ server <- function(input, output, session) {
   w04_cases_rv <- reactiveVal(NULL)
   w04_queue_sha_rv <- reactiveVal("")
   w04_batch_id_rv <- reactiveVal("")
-  w04_source_run_id_rv <- reactiveVal("")
-  w04_review_mode_rv <- reactiveVal("")
   w04_idx <- reactiveVal(1L)
   w04_decisions <- reactiveVal(list())
   w04_batch_status_rv <- reactiveVal("")
   w04_status <- reactiveVal("")
   w04_include_terms <- reactiveVal(character())
   w04_exclude_terms <- reactiveVal(character())
+
+  w04_resolution_cases_rv <- reactiveVal(NULL)
+  w04_resolution_queue_sha_rv <- reactiveVal("")
+  w04_resolution_batch_id_rv <- reactiveVal("")
+  w04_resolution_source_run_id_rv <- reactiveVal("")
+  w04_resolution_idx <- reactiveVal(1L)
+  w04_resolution_decisions <- reactiveVal(list())
+  w04_resolution_batch_status_rv <- reactiveVal("")
+  w04_resolution_status <- reactiveVal("")
+  w04_resolution_include_terms <- reactiveVal(character())
+  w04_resolution_exclude_terms <- reactiveVal(character())
+
+  w04_conflict_cases_rv <- reactiveVal(NULL)
+  w04_conflict_queue_sha_rv <- reactiveVal("")
+  w04_conflict_batch_id_rv <- reactiveVal("")
+  w04_conflict_idx <- reactiveVal(1L)
+  w04_conflict_decisions <- reactiveVal(list())
+  w04_conflict_batch_status_rv <- reactiveVal("")
+  w04_conflict_status <- reactiveVal("")
 
   w08_cases_rv <- reactiveVal(NULL)
   w08_queue_sha_rv <- reactiveVal("")
@@ -392,6 +409,36 @@ server <- function(input, output, session) {
   load_w04_batch <- function() {
     if (!identical(storage_backend(), "google_sheets")) return(NULL)
     read_sheet_w04_queue()
+  }
+
+  w04_resolution_decision_ids <- function(ds = w04_resolution_decisions()) {
+    if (!length(ds)) return(character())
+    unique(vapply(ds,function(x)as.character(x$review_case_id %||% ""),character(1)))
+  }
+  w04_resolution_unresolved_indices <- function() {
+    cs <- w04_resolution_cases_rv()
+    if (is.null(cs)) return(integer())
+    ids <- vapply(cs,function(x)as.character(x$review_case_id),character(1))
+    which(!ids %in% w04_resolution_decision_ids())
+  }
+  load_w04_resolution_batch <- function() {
+    if (!identical(storage_backend(),"google_sheets")) return(NULL)
+    read_sheet_w04_resolution_queue()
+  }
+
+  w04_conflict_decision_ids <- function(ds = w04_conflict_decisions()) {
+    if (!length(ds)) return(character())
+    unique(vapply(ds,function(x)as.character(x$review_case_id %||% ""),character(1)))
+  }
+  w04_conflict_unresolved_indices <- function() {
+    cs <- w04_conflict_cases_rv()
+    if (is.null(cs)) return(integer())
+    ids <- vapply(cs,function(x)as.character(x$review_case_id),character(1))
+    which(!ids %in% w04_conflict_decision_ids())
+  }
+  load_w04_conflict_batch <- function() {
+    if (!identical(storage_backend(),"google_sheets")) return(NULL)
+    read_sheet_w04_conflict_queue()
   }
 
   w08_filter_batch_decisions <- function(ds, sha) {
@@ -586,6 +633,14 @@ server <- function(input, output, session) {
       w04_remaining <- if (w04_total) length(w04_unresolved_indices()) else 0L
       w04_completed <- max(0L, w04_total - w04_remaining)
 
+      w04_resolution_total <- length(w04_resolution_cases_rv() %||% list())
+      w04_resolution_remaining <- if (w04_resolution_total) length(w04_resolution_unresolved_indices()) else 0L
+      w04_resolution_completed <- max(0L, w04_resolution_total - w04_resolution_remaining)
+
+      w04_conflict_total <- length(w04_conflict_cases_rv() %||% list())
+      w04_conflict_remaining <- if (w04_conflict_total) length(w04_conflict_unresolved_indices()) else 0L
+      w04_conflict_completed <- max(0L, w04_conflict_total - w04_conflict_remaining)
+
       annotation_total <- length(w08_cases_rv() %||% list())
       annotation_remaining <- if (annotation_total) length(w08_unresolved_indices()) else 0L
       annotation_completed <- max(0L, annotation_total - annotation_remaining)
@@ -664,18 +719,40 @@ server <- function(input, output, session) {
           div(
             class = "col-12 col-lg-6",
             stage_card(
-              if (identical(w04_review_mode_rv(),"resolution")) "Screening resolution" else "Screening",
+              "Manual screening",
               "Workflow 04",
-              if (identical(w04_review_mode_rv(),"resolution")) {
-                "Model screening conflicts requiring a final human include/exclude decision."
-              } else {
-                "Human screening or validation records awaiting review."
-              },
+              "Blind manual title and abstract screening for validation and ongoing human contribution.",
               w04_total, w04_completed, w04_remaining,
               if (w04_remaining > 0L) "open_w04" else NULL,
-              if (identical(w04_review_mode_rv(),"resolution")) "Resolve screening conflicts" else "Continue screening",
+              "Continue manual screening",
               w04_batch_id_rv(),
               w04_batch_status_rv()
+            )
+          ),
+          div(
+            class = "col-12 col-lg-6",
+            stage_card(
+              "Model uncertainty resolution",
+              "Workflow 04",
+              "Records unresolved after model consensus passes requiring a final human include/exclude decision.",
+              w04_resolution_total, w04_resolution_completed, w04_resolution_remaining,
+              if (w04_resolution_remaining > 0L) "open_w04_resolution" else NULL,
+              "Resolve model uncertainty",
+              w04_resolution_batch_id_rv(),
+              w04_resolution_batch_status_rv()
+            )
+          ),
+          div(
+            class = "col-12 col-lg-6",
+            stage_card(
+              "Reviewer conflict resolution",
+              "Workflow 04",
+              "Human–machine or human–human screening conflicts awaiting adjudication.",
+              w04_conflict_total, w04_conflict_completed, w04_conflict_remaining,
+              if (w04_conflict_remaining > 0L) "open_w04_conflict" else NULL,
+              "Resolve reviewer conflicts",
+              w04_conflict_batch_id_rv(),
+              w04_conflict_batch_status_rv()
             )
           ),
           div(
@@ -725,17 +802,8 @@ server <- function(input, output, session) {
         div(
           class = "d-flex justify-content-between align-items-center mb-3",
           div(
-            tags$h2(
-              if (identical(w04_review_mode_rv(),"resolution")) "LivingEvidenceMap screening resolution" else "LivingEvidenceMap validation screening",
-              class="mb-0"
-            ),
-            tags$div(
-              sprintf(
-                if (identical(w04_review_mode_rv(),"resolution")) "Workflow 04 · resolve model conflicts · %s" else "Workflow 04 · blind human validation · %s",
-                w04_batch_id_rv()
-              ),
-              class="text-secondary"
-            )
+            tags$h2("LivingEvidenceMap manual screening", class="mb-0"),
+            tags$div(sprintf("Workflow 04 · blind human screening · %s", w04_batch_id_rv()), class="text-secondary")
           ),
           div(
             class = "d-flex align-items-center gap-3",
@@ -755,7 +823,7 @@ server <- function(input, output, session) {
                 class = "decision-row d-flex flex-wrap gap-2",
                 actionButton("w04_retain", "Include", class = "btn-success"),
                 actionButton("w04_exclude", "Exclude", class = "btn-outline-danger"),
-                if (!identical(w04_review_mode_rv(),"resolution")) actionButton("w04_uncertain", "Unsure", class = "btn-outline-secondary")
+                actionButton("w04_uncertain", "Unsure", class = "btn-outline-secondary")
               ),
               div(
                 class = "nav-row d-flex gap-2",
@@ -766,6 +834,57 @@ server <- function(input, output, session) {
           )
         ),
         uiOutput("w04_case_view")
+      ))
+    }
+
+    if (identical(app_view(), "w04_resolution")) {
+      return(div(
+        class="app-shell",
+        div(class="d-flex justify-content-between align-items-center mb-3",
+          div(
+            tags$h2("LivingEvidenceMap model uncertainty resolution",class="mb-0"),
+            tags$div(sprintf("Workflow 04 · final human decision · %s",w04_resolution_batch_id_rv()),class="text-secondary")
+          ),
+          div(class="d-flex align-items-center gap-3",
+            actionButton("back_to_tasks_w04_resolution","Back to tasks",class="btn-outline-secondary btn-sm"),
+            uiOutput("w04_resolution_progress_text")
+          )
+        ),
+        uiOutput("w04_resolution_progress_bar"),
+        card(class="decision-panel",
+          div(class="d-flex flex-wrap justify-content-between align-items-center gap-2",
+            tags$div(class="saved-note",textOutput("w04_resolution_save_status")),
+            div(class="d-flex flex-wrap gap-2",
+              div(class="decision-row d-flex flex-wrap gap-2",
+                actionButton("w04_resolution_retain","Include",class="btn-success"),
+                actionButton("w04_resolution_exclude","Exclude",class="btn-outline-danger")
+              ),
+              div(class="nav-row d-flex gap-2",
+                actionButton("w04_resolution_previous","← Previous"),
+                actionButton("w04_resolution_next","Next →")
+              )
+            )
+          )
+        ),
+        uiOutput("w04_resolution_case_view")
+      ))
+    }
+
+    if (identical(app_view(), "w04_conflict")) {
+      return(div(
+        class="app-shell",
+        div(class="d-flex justify-content-between align-items-center mb-3",
+          div(
+            tags$h2("LivingEvidenceMap reviewer conflict resolution",class="mb-0"),
+            tags$div(sprintf("Workflow 04 · human–machine / human–human adjudication · %s",w04_conflict_batch_id_rv()),class="text-secondary")
+          ),
+          div(class="d-flex align-items-center gap-3",
+            actionButton("back_to_tasks_w04_conflict","Back to tasks",class="btn-outline-secondary btn-sm")
+          )
+        ),
+        card(class="decision-panel",
+          tags$p("This block is reserved for blinded reviewer conflicts. The final Include/Exclude choice will be stored as the adjudicated decision; agreement with individual reviewers or the model can be inferred from their recorded decisions.")
+        )
       ))
     }
 
@@ -911,6 +1030,33 @@ server <- function(input, output, session) {
           if(!length(w04_unresolved) && !identical(w04_batch_status_rv(),"review_complete")) {
             mark_review_complete("04",w04_batch_id_rv(),w04_queue_sha_rv(),w04_batch_status_rv)
           }
+        }
+
+        w04_resolution_batch <- load_w04_resolution_batch()
+        if (!is.null(w04_resolution_batch)) {
+          all_res <- active_sheet_w04_resolution_decisions()
+          w04_resolution_cases_rv(w04_resolution_batch$cases)
+          w04_resolution_queue_sha_rv(w04_resolution_batch$queue_sha256)
+          w04_resolution_batch_id_rv(w04_resolution_batch$batch_id)
+          w04_resolution_source_run_id_rv(w04_resolution_batch$source_run_id %||% "")
+          w04_resolution_batch_status_rv(w04_resolution_batch$batch_status %||% "")
+          w04_resolution_include_terms(w04_resolution_batch$highlight_include %||% character())
+          w04_resolution_exclude_terms(w04_resolution_batch$highlight_exclude %||% character())
+          w04_resolution_decisions(w04_filter_batch_decisions(all_res,w04_resolution_batch$queue_sha256))
+          rr <- w04_resolution_unresolved_indices()
+          w04_resolution_idx(if(length(rr)) rr[[1L]] else max(1L,length(w04_resolution_batch$cases)))
+        }
+
+        w04_conflict_batch <- load_w04_conflict_batch()
+        if (!is.null(w04_conflict_batch)) {
+          all_conf <- active_sheet_w04_conflict_decisions()
+          w04_conflict_cases_rv(w04_conflict_batch$cases)
+          w04_conflict_queue_sha_rv(w04_conflict_batch$queue_sha256)
+          w04_conflict_batch_id_rv(w04_conflict_batch$batch_id)
+          w04_conflict_batch_status_rv(w04_conflict_batch$batch_status %||% "")
+          w04_conflict_decisions(w04_filter_batch_decisions(all_conf,w04_conflict_batch$queue_sha256))
+          cr <- w04_conflict_unresolved_indices()
+          w04_conflict_idx(if(length(cr)) cr[[1L]] else max(1L,length(w04_conflict_batch$cases)))
         }
 
         w08_batch <- load_w08_batch()
@@ -1339,20 +1485,7 @@ server <- function(input, output, session) {
           class="abstract-text",
           highlight_screening_text(b$abstract %||% "",w04_include_terms(),w04_exclude_terms())
         ),
-        if (identical(w04_review_mode_rv(),"resolution")) {
-          votes <- as.character((z$screening %||% list())$votes %||% character())
-          div(
-            class="mt-3 p-2 border rounded",
-            tags$strong("Model decisions: "),
-            if (length(votes)) {
-              tagList(lapply(seq_along(votes), function(i) {
-                tags$span(class="task-badge me-1", sprintf("Pass %d: %s", i, votes[[i]]))
-              }))
-            } else {
-              tags$span(class="text-secondary","No model vote provenance available")
-            }
-          )
-        },
+
         div(
           class="w04-keywords",
           tags$strong("Keywords: "),
@@ -1377,7 +1510,7 @@ server <- function(input, output, session) {
       review_case_id=as.character(z$review_case_id),
       record_id=as.character(z$record_id),
       decision=choice,
-      rationale=if (identical(w04_review_mode_rv(),"resolution")) "Manual resolution of Workflow 04 model conflict in Shiny" else "Manual validation screening in Shiny",
+      rationale="Manual validation screening in Shiny",
       reviewer=reviewer,
       resolved_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
       queue_sha256=w04_queue_sha_rv()
@@ -1418,6 +1551,80 @@ server <- function(input, output, session) {
     invisible(TRUE)
   }
 
+
+  w04_resolution_current_case <- reactive({
+    req(authenticated(),w04_resolution_cases_rv())
+    w04_resolution_cases_rv()[[w04_resolution_idx()]]
+  })
+
+  output$w04_resolution_progress_text <- renderUI({
+    req(authenticated(),w04_resolution_cases_rv())
+    total<-length(w04_resolution_cases_rv()); remaining<-length(w04_resolution_unresolved_indices())
+    tags$span(sprintf("Record %d of %d · %d remaining",w04_resolution_idx(),total,remaining))
+  })
+
+  output$w04_resolution_progress_bar <- renderUI({
+    req(authenticated(),w04_resolution_cases_rv())
+    total<-length(w04_resolution_cases_rv()); remaining<-length(w04_resolution_unresolved_indices())
+    pct<-if(total)round(100*(total-remaining)/total)else 0
+    div(class="progress mb-3",div(class="progress-bar",role="progressbar",style=sprintf("width:%s%%",pct),sprintf("%s%%",pct)))
+  })
+
+  output$w04_resolution_case_view <- renderUI({
+    z<-w04_resolution_current_case(); b<-z$bibliographic %||% list()
+    votes<-as.character((z$screening %||% list())$votes %||% character())
+    card(class="record-card",
+      card_header(div(class="d-flex justify-content-between align-items-center",
+        tags$strong("Resolve model uncertainty"),
+        tags$span(class="task-badge",sprintf("Record %d",w04_resolution_idx()))
+      )),
+      div(class="compact-record-body w04-text",
+        div(class="record-title",highlight_screening_text(b$title %||% "",w04_resolution_include_terms(),w04_resolution_exclude_terms())),
+        div(class="w04-citation-grid",
+          div(class="w04-citation-item",span(class="w04-citation-label","Authors"),span(class="w04-citation-value",b$authors %||% "")),
+          div(class="w04-citation-item",span(class="w04-citation-label","Year"),span(class="w04-citation-value",b$year %||% "")),
+          div(class="w04-citation-item",span(class="w04-citation-label","Journal"),span(class="w04-citation-value",b$journal %||% "")),
+          div(class="w04-citation-item",span(class="w04-citation-label","Volume"),span(class="w04-citation-value",b$volume %||% "")),
+          div(class="w04-citation-item",span(class="w04-citation-label","Pages"),span(class="w04-citation-value",b$pages %||% ""))
+        ),
+        div(class="w04-doi",tags$strong("DOI: "),b$doi %||% ""),
+        tags$h6(class="abstract-heading","Abstract"),
+        div(class="abstract-text",highlight_screening_text(b$abstract %||% "",w04_resolution_include_terms(),w04_resolution_exclude_terms())),
+        div(class="mt-3 p-2 border rounded",
+          tags$strong("Model decisions: "),
+          if(length(votes)) tagList(lapply(seq_along(votes),function(i)tags$span(class="task-badge me-1",sprintf("Pass %d: %s",i,votes[[i]])))) else tags$span(class="text-secondary","No model vote provenance available")
+        ),
+        div(class="w04-keywords",tags$strong("Keywords: "),highlight_screening_text(b$keywords %||% "",w04_resolution_include_terms(),w04_resolution_exclude_terms()))
+      )
+    )
+  })
+  output$w04_resolution_save_status <- renderText(w04_resolution_status())
+
+  save_w04_resolution_choice <- function(choice) {
+    z<-w04_resolution_current_case(); current<-w04_resolution_decisions(); prior<-NULL
+    if(length(current)){hits<-Filter(function(x)identical(as.character(x$review_case_id %||% ""),as.character(z$review_case_id)),current);if(length(hits))prior<-hits[[1L]]}
+    decision<-list(review_case_id=as.character(z$review_case_id),record_id=as.character(z$record_id),decision=choice,
+      rationale="Manual resolution of Workflow 04 model uncertainty in Shiny",reviewer=reviewer,
+      resolved_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),queue_sha256=w04_resolution_queue_sha_rv())
+    saved<-tryCatch(append_sheet_w04_resolution_decision(decision,prior_decision=prior),error=function(e){w04_resolution_status(paste("Save failed:",conditionMessage(e)));NULL})
+    if(is.null(saved))return(FALSE)
+    remaining<-Filter(function(x)!identical(as.character(x$review_case_id %||% ""),as.character(z$review_case_id)),current)
+    w04_resolution_decisions(c(remaining,list(saved)))
+    w04_resolution_status(sprintf("Saved %s at %s",choice,format(Sys.time(),"%H:%M:%S")));TRUE
+  }
+
+  advance_w04_resolution <- function() {
+    unresolved<-w04_resolution_unresolved_indices()
+    if(!length(unresolved)){
+      mark_review_complete("04",w04_resolution_batch_id_rv(),w04_resolution_queue_sha_rv(),w04_resolution_batch_status_rv)
+      dispatched<-tryCatch({dispatch_w04_resolution_resume(w04_resolution_source_run_id_rv(),w04_resolution_batch_id_rv(),w04_resolution_queue_sha_rv());TRUE},
+        error=function(e){w04_resolution_status(paste("Review complete, but W04 resume dispatch failed:",conditionMessage(e)));FALSE})
+      if(dispatched)w04_resolution_status("Review complete. Workflow 04 finalisation dispatched.")
+      app_view("tasks");return(invisible(TRUE))
+    }
+    later<-unresolved[unresolved>w04_resolution_idx()]
+    w04_resolution_idx(if(length(later))later[[1L]]else unresolved[[1L]]);invisible(TRUE)
+  }
 
   w08_current_case <- reactive({
     req(authenticated(),w08_cases_rv())
@@ -1763,6 +1970,18 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$back_to_tasks_w04, app_view("tasks"))
+  observeEvent(input$open_w04_resolution, {
+    unresolved<-w04_resolution_unresolved_indices()
+    if(length(unresolved))w04_resolution_idx(unresolved[[1L]])
+    app_view("w04_resolution")
+  })
+  observeEvent(input$back_to_tasks_w04_resolution, app_view("tasks"))
+  observeEvent(input$w04_resolution_retain, {if(save_w04_resolution_choice("retain"))advance_w04_resolution()})
+  observeEvent(input$w04_resolution_exclude, {if(save_w04_resolution_choice("exclude"))advance_w04_resolution()})
+  observeEvent(input$w04_resolution_previous, if(w04_resolution_idx()>1L)w04_resolution_idx(w04_resolution_idx()-1L))
+  observeEvent(input$w04_resolution_next, if(w04_resolution_idx()<length(w04_resolution_cases_rv()))w04_resolution_idx(w04_resolution_idx()+1L))
+  observeEvent(input$open_w04_conflict, {app_view("w04_conflict")})
+  observeEvent(input$back_to_tasks_w04_conflict, app_view("tasks"))
   observeEvent(input$open_w08, {
     unresolved <- w08_unresolved_indices()
     if(length(unresolved)) w08_idx(unresolved[[1L]])
