@@ -54,3 +54,14 @@ active_decision_events <- function(events, case_fields = c("case_id", "review_ca
   if (!length(xs)) return(list())
   xs[vapply(xs, function(x) isTRUE(x$active), logical(1))]
 }
+
+
+canonical_event_by_id <- function(events, decision_id, case_fields = c("case_id", "review_case_id", "record_id")) {
+  xs <- normalise_decision_events(events, case_fields = case_fields)
+  hits <- Filter(
+    function(x) identical(as.character(x$decision_id %||% ""), as.character(decision_id)),
+    xs
+  )
+  if (length(hits) != 1L) stop("Decision event could not be uniquely resolved", call. = FALSE)
+  hits[[1L]]
+}
