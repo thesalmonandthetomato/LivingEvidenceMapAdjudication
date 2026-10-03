@@ -84,8 +84,16 @@ decision_user_id <- function(x) {
   as.character(x$user_id %||% x$reviewer %||% "")
 }
 
+decision_resolves_case <- function(x) {
+  decision <- tolower(trimws(as.character(x$decision %||% "")))
+  nzchar(decision) && !identical(decision, "uncertain")
+}
+
 case_authoritative_event <- function(events, case_id) {
-  hits <- Filter(function(x) identical(decision_case_id(x), as.character(case_id)), events %||% list())
+  hits <- Filter(
+    function(x) identical(decision_case_id(x), as.character(case_id)) && decision_resolves_case(x),
+    events %||% list()
+  )
   if (!length(hits)) return(NULL)
   times <- vapply(hits, function(x) as.character(x$event_at_utc %||% x$resolved_at_utc %||% ""), character(1))
   versions <- vapply(hits, function(x) {
@@ -284,8 +292,9 @@ unresolved_unassigned_case_ids <- function(
     character(1)
   )
   case_ids <- case_ids[nzchar(case_ids)]
-  resolved_ids <- if (length(active_events)) {
-    unique(vapply(active_events, decision_case_id, character(1)))
+  resolving_events <- Filter(decision_resolves_case, active_events %||% list())
+  resolved_ids <- if (length(resolving_events)) {
+    unique(vapply(resolving_events, decision_case_id, character(1)))
   } else character()
   batch_assignments <- assignments_for_batch(assignments, workflow, batch_id, task_type)
   assigned_ids <- assignment_case_ids(batch_assignments)
