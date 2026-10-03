@@ -864,9 +864,15 @@ server <- function(input, output, session) {
               w02_batch_id_rv(),
               w02_batch_status_rv(),
               can_open = w02_user_remaining > 0L,
-              idle_text = if (
+              idle_text = if (!nzchar(w02_batch_id_rv())) {
+                "No active queue"
+              } else if (
                 w02_remaining > 0L && session_can("manage_assignments") && w02_user_remaining == 0L
-              ) "Active cases are awaiting assignment" else "No records awaiting review"
+              ) {
+                "Active cases are awaiting assignment"
+              } else {
+                "No records awaiting review"
+              }
             )
           ),
           div(
@@ -920,9 +926,15 @@ server <- function(input, output, session) {
               w08_batch_id_rv(),
               w08_batch_status_rv(),
               can_open = w08_user_remaining > 0L,
-              idle_text = if (
+              idle_text = if (!nzchar(w08_batch_id_rv())) {
+                "No active queue"
+              } else if (
                 annotation_remaining > 0L && session_can("manage_assignments") && w08_user_remaining == 0L
-              ) "Active cases are awaiting assignment" else "No records awaiting review"
+              ) {
+                "Active cases are awaiting assignment"
+              } else {
+                "No records awaiting review"
+              }
             )
           )
         )
