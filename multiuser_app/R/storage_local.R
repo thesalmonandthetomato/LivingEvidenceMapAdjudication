@@ -32,21 +32,26 @@ write_local_decision <- function(path, decision) {
   if (!nzchar(case_id)) stop("Local decision is missing review_case_id", call. = FALSE)
 
   user_id <- as.character(decision$reviewer %||% decision$user_id %||% "")
-  prior_events <- Filter(
-    function(x) {
-      identical(decision_event_case_id(x), case_id) &&
-        identical(as.character(x$user_id %||% x$reviewer %||% ""), user_id)
-    },
-    events
-  )
+  case_events <- Filter(function(x) identical(decision_event_case_id(x), case_id), events)
+
+  authority_user <- ""
+  if (length(case_events)) {
+    first_times <- vapply(case_events, decision_event_time, character(1))
+    first_idx <- order(first_times, seq_along(case_events), decreasing = FALSE)[[1L]]
+    authority_user <- as.character(case_events[[first_idx]]$user_id %||% case_events[[first_idx]]$reviewer %||% "")
+    if (nzchar(authority_user) && !identical(authority_user, user_id)) {
+      stop("This case has already been resolved by another reviewer", call. = FALSE)
+    }
+  }
+
   prior <- NULL
-  if (length(prior_events)) {
-    prior_versions <- vapply(prior_events, function(x) {
+  if (length(case_events)) {
+    prior_versions <- vapply(case_events, function(x) {
       z <- suppressWarnings(as.integer(x$version %||% NA_integer_))
       if (is.na(z)) 0L else z
     }, integer(1))
-    prior_times <- vapply(prior_events, decision_event_time, character(1))
-    prior <- prior_events[[order(prior_versions, prior_times, seq_along(prior_events), decreasing = TRUE)[[1L]]]]
+    prior_times <- vapply(case_events, decision_event_time, character(1))
+    prior <- case_events[[order(prior_versions, prior_times, seq_along(case_events), decreasing = TRUE)[[1L]]]]
   }
 
   version <- if (is.null(prior)) 1L else {
@@ -93,7 +98,6 @@ write_local_decision <- function(path, decision) {
 
   dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
 
-  # Preserve append-only history while still using an atomic file replacement.
   updated <- c(events, list(event))
   tmp <- tempfile(pattern = "w01-decision-events-", tmpdir = dirname(path), fileext = ".jsonl")
   con <- file(tmp, "wt", encoding = "UTF-8")
