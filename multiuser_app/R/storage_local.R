@@ -131,6 +131,30 @@ read_local_assignments <- function(path) {
 }
 
 
+write_local_assignments <- function(path, assignments) {
+  assignments <- lapply(assignments %||% list(), normalise_assignment_row)
+  validate_assignment_registry(assignments)
+  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+  tmp <- tempfile(pattern = "assignments-", tmpdir = dirname(path), fileext = ".jsonl")
+  con <- file(tmp, "wt", encoding = "UTF-8")
+  on.exit(try(close(con), silent = TRUE), add = TRUE)
+  for (a in assignments) {
+    writeLines(
+      jsonlite::toJSON(a, auto_unbox = TRUE, null = "null", na = "null"),
+      con,
+      useBytes = TRUE
+    )
+  }
+  close(con)
+  if (!file.rename(tmp, path)) stop("Could not atomically replace local assignment registry", call. = FALSE)
+  verify <- read_local_assignments(path)
+  if (length(verify) != length(assignments)) {
+    stop("Local assignment registry write could not be verified", call. = FALSE)
+  }
+  invisible(assignments)
+}
+
+
 read_local_users <- function(path) {
   if (is.null(path) || !nzchar(as.character(path)) || !file.exists(path)) return(list())
   lines <- readLines(path, warn = FALSE, encoding = "UTF-8")
