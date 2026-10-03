@@ -1146,7 +1146,8 @@ server <- function(input, output, session) {
     if (!session_can("manage_assignments")) return(NULL)
 
     all_assignments <- assignment_registry_rv()
-    if (!length(all_assignments)) return(NULL)
+    has_w01_batch <- nzchar(as.character(batch_id_rv())) && length(w01_all_cases_rv()) > 0L
+    if (!length(all_assignments) && !has_w01_batch) return(NULL)
 
     task_labels <- c(
       deduplication = "Deduplication",
@@ -1198,6 +1199,37 @@ server <- function(input, output, session) {
       )
       list(assignments = a, meta = z, progress = p)
     })
+
+    if (has_w01_batch) {
+      has_current_w01_group <- any(vapply(
+        group_progress,
+        function(g) {
+          identical(g$meta$workflow, "01") &&
+            identical(g$meta$task_type, "deduplication") &&
+            identical(g$meta$batch_id, batch_id_rv())
+        },
+        logical(1)
+      ))
+      if (!has_current_w01_group) {
+        group_progress[[paste("01", "deduplication", batch_id_rv(), sep = "|")]] <- list(
+          assignments = list(),
+          meta = list(
+            workflow = "01",
+            task_type = "deduplication",
+            batch_id = batch_id_rv()
+          ),
+          progress = list(
+            assigned = 0L,
+            completed = 0L,
+            resolved_elsewhere = 0L,
+            remaining = 0L,
+            cases = 0L,
+            by_user = list(),
+            mode = ASSIGNMENT_MODES[["shared_work_pool"]]
+          )
+        )
+      }
+    }
 
     total_assigned <- sum(vapply(group_progress, function(x) x$progress$assigned, integer(1)))
     total_completed <- sum(vapply(group_progress, function(x) x$progress$completed, integer(1)))
@@ -1523,11 +1555,6 @@ server <- function(input, output, session) {
       assignment_manage_status("You do not have permission to manage assignments.")
       return()
     }
-    if (!identical(storage_backend(), "local")) {
-      assignment_manage_status("Assignment editing is not yet enabled for the Google Sheets backend.")
-      return()
-    }
-
     plan <- w01_assignment_plan()
     if (!is.null(plan$error)) {
       assignment_manage_status(plan$error)
@@ -1539,16 +1566,20 @@ server <- function(input, output, session) {
     }
 
     updated <- c(assignment_registry_rv(), plan$new_assignments)
-    saved <- tryCatch({
-      save_assignment_registry(updated, assignment_path)
-      TRUE
-    }, error = function(e) {
-      assignment_manage_status(paste("Assignment save failed:", conditionMessage(e)))
-      FALSE
-    })
-    if (!isTRUE(saved)) return()
+    persisted <- tryCatch(
+      save_assignment_registry(
+        updated,
+        assignment_path,
+        actor_user_id = session_reviewer_id()
+      ),
+      error = function(e) {
+        assignment_manage_status(paste("Assignment save failed:", conditionMessage(e)))
+        NULL
+      }
+    )
+    if (is.null(persisted)) return()
 
-    assignment_registry_rv(updated)
+    assignment_registry_rv(persisted)
     assignment_manage_status(sprintf(
       "Added %d new case%s.",
       plan$allocated,
@@ -1562,11 +1593,6 @@ server <- function(input, output, session) {
       assignment_manage_status("You do not have permission to manage assignments.")
       return()
     }
-    if (!identical(storage_backend(), "local")) {
-      assignment_manage_status("Assignment editing is not yet enabled for the Google Sheets backend.")
-      return()
-    }
-
     selected_user <- as.character(input$w01_remove_assignment_user %||% "")
     result <- tryCatch(
       cancel_user_assignments(
@@ -1584,16 +1610,20 @@ server <- function(input, output, session) {
       return()
     }
 
-    saved <- tryCatch({
-      save_assignment_registry(result$assignments, assignment_path)
-      TRUE
-    }, error = function(e) {
-      assignment_manage_status(paste("Assignment removal failed:", conditionMessage(e)))
-      FALSE
-    })
-    if (!isTRUE(saved)) return()
+    persisted <- tryCatch(
+      save_assignment_registry(
+        result$assignments,
+        assignment_path,
+        actor_user_id = session_reviewer_id()
+      ),
+      error = function(e) {
+        assignment_manage_status(paste("Assignment removal failed:", conditionMessage(e)))
+        NULL
+      }
+    )
+    if (is.null(persisted)) return()
 
-    assignment_registry_rv(result$assignments)
+    assignment_registry_rv(persisted)
     assignment_manage_status(sprintf(
       "Removed %d unfinished assignment%s.",
       result$cancelled,
