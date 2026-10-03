@@ -1807,7 +1807,13 @@ server <- function(input, output, session) {
       current
     )
     decisions(c(remaining, list(saved)))
-    status(sprintf("Saved %s at %s", choice, format(Sys.time(), "%H:%M:%S")))
+    event_version <- suppressWarnings(as.integer(saved$version %||% NA_integer_))
+    status(sprintf(
+      "Saved %s%s at %s",
+      choice,
+      if (is.na(event_version)) "" else paste0(" · event v", event_version),
+      format(Sys.time(), "%H:%M:%S")
+    ))
     TRUE
   }
 
