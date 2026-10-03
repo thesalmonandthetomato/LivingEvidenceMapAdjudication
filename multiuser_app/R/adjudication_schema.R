@@ -49,7 +49,7 @@ ADJUDICATION_SCHEMA <- list(
     "case_id", "record_id", "batch_id", "case_index", "case_json"
   ),
   assignments = c(
-    "assignment_id", "workflow", "batch_id", "case_id",
+    "assignment_id", "workflow", "task_type", "batch_id", "case_id",
     "user_id", "blind_group", "status"
   ),
   decision_events = c(
@@ -58,7 +58,7 @@ ADJUDICATION_SCHEMA <- list(
   )
 )
 
-ADJUDICATION_ASSIGNMENT_STATES <- c("assigned", "complete")
+ADJUDICATION_ASSIGNMENT_STATES <- c("assigned", "complete", "resolved_elsewhere")
 ADJUDICATION_DECISIONS <- c("include", "exclude", "uncertain")
 
 is_sha256 <- function(x) {
@@ -136,7 +136,7 @@ validate_review_case_contract <- function(x) {
 
 validate_assignment_contract <- function(x) {
   require_contract_fields(x, "assignments")
-  for (nm in c("assignment_id", "workflow", "batch_id", "case_id", "user_id", "blind_group")) {
+  for (nm in c("assignment_id", "workflow", "task_type", "batch_id", "case_id", "user_id", "blind_group")) {
     if (!is_scalar_text(x[[nm]])) stop(nm, " is required", call. = FALSE)
   }
   if (!is_scalar_text(x$status) || !x$status %in% ADJUDICATION_ASSIGNMENT_STATES) {
