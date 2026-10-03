@@ -1327,7 +1327,7 @@ server <- function(input, output, session) {
                 div(
                   class = "d-flex align-items-center gap-2 mt-2",
                   actionButton("w01_apply_assignments", "Apply assignments", class = "btn-primary btn-sm"),
-                  tags$span(class = "saved-note", textOutput("w01_assignment_status"))
+                  tags$span(class = "saved-note", textOutput("w01_assignment_status", inline = TRUE))
                 )
               )
             )
