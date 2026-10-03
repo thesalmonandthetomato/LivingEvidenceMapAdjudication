@@ -1570,7 +1570,8 @@ server <- function(input, output, session) {
       save_assignment_registry(
         updated,
         assignment_path,
-        actor_user_id = session_reviewer_id()
+        actor_user_id = session_reviewer_id(),
+        expected_current_signature = assignment_registry_signature(assignment_registry_rv())
       ),
       error = function(e) {
         assignment_manage_status(paste("Assignment save failed:", conditionMessage(e)))
@@ -1614,7 +1615,8 @@ server <- function(input, output, session) {
       save_assignment_registry(
         result$assignments,
         assignment_path,
-        actor_user_id = session_reviewer_id()
+        actor_user_id = session_reviewer_id(),
+        expected_current_signature = assignment_registry_signature(assignment_registry_rv())
       ),
       error = function(e) {
         assignment_manage_status(paste("Assignment removal failed:", conditionMessage(e)))
