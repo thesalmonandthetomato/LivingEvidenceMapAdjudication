@@ -35,20 +35,16 @@ read_user_registry <- function(local_path = NULL) {
 read_assignment_registry <- function(local_path = NULL) {
   b <- storage_backend()
   if (identical(b, "local")) return(read_local_assignments(local_path))
-  if (identical(b, "google_sheets")) {
-    # Assignment persistence for Google Sheets is introduced in Phase 3B.
-    # Until then, absence of a registry leaves existing Sheet-backed behaviour unchanged.
-    return(list())
-  }
+  if (identical(b, "google_sheets")) return(read_sheet_assignments(create_if_missing = TRUE))
   stop("Unsupported LEM_STORAGE_BACKEND: ", b, call. = FALSE)
 }
 
 
-save_assignment_registry <- function(assignments, local_path = NULL) {
+save_assignment_registry <- function(assignments, local_path = NULL, actor_user_id = "") {
   b <- storage_backend()
   if (identical(b, "local")) return(write_local_assignments(local_path, assignments))
   if (identical(b, "google_sheets")) {
-    stop("Assignment editing is not yet enabled for Google Sheets-backed deployments", call. = FALSE)
+    return(write_sheet_assignments(assignments, actor_user_id = actor_user_id))
   }
   stop("Unsupported LEM_STORAGE_BACKEND: ", b, call. = FALSE)
 }
