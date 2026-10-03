@@ -313,6 +313,12 @@ ui <- page_fillable(
     .assignment-table th { color:#66727d; font-weight:600; }
     .assignment-progress-bar { width:110px; height:7px; border-radius:999px; background:#e5e9ec; overflow:hidden; display:inline-block; vertical-align:middle; margin-right:.4rem; }
     .assignment-progress-fill { height:100%; background:#1f5d50; }
+    .assignment-disclosure > summary, .assignment-workflow > summary { cursor:pointer; list-style:none; }
+    .assignment-disclosure > summary::-webkit-details-marker, .assignment-workflow > summary::-webkit-details-marker { display:none; }
+    .assignment-disclosure > summary::before, .assignment-workflow > summary::before { content:"▸"; display:inline-block; width:1.1rem; color:#66727d; }
+    .assignment-disclosure[open] > summary::before, .assignment-workflow[open] > summary::before { content:"▾"; }
+    .assignment-workflow { border-top:1px solid #e7eaed; padding:.65rem 0 .15rem 0; }
+    .assignment-mode-note { color:#66727d; font-size:.8rem; }
     @media (max-width:620px) { .assignment-kpis { grid-template-columns:repeat(2,minmax(100px,1fr)); } }
     .pipeline-summary { background:#fff; border:1px solid #dde3e8; border-radius:12px; padding:.85rem 1rem; margin-bottom:1rem; box-shadow:0 2px 10px rgba(22,33,43,.04); }
     .pipeline-summary-top { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:.65rem 1rem; margin-bottom:.65rem; }
@@ -1115,100 +1121,199 @@ server <- function(input, output, session) {
     req(authenticated())
     if (!session_can("manage_assignments")) return(NULL)
 
-    assignments <- assignments_for_batch(
-      assignment_registry_rv(),
-      "01",
-      batch_id_rv()
-    )
-    if (!length(assignments)) return(NULL)
+    all_assignments <- assignment_registry_rv()
+    if (!length(all_assignments)) return(NULL)
 
     invalidateLater(30000, session)
-    progress <- assignment_progress(
-      assignments,
-      w01_active_assignment_events(),
-      user_registry_rv()
+
+    task_labels <- c(
+      deduplication = "Deduplication",
+      enrichment = "Enrichment",
+      manual_screening = "Manual screening",
+      model_uncertainty = "Model uncertainty",
+      conflict_resolution = "Conflict resolution",
+      annotation = "Annotation"
+    )
+    workflow_labels_admin <- c(
+      "01" = "W01",
+      "02" = "W02",
+      "04" = "W04",
+      "08" = "W08"
+    )
+    mode_labels <- c(
+      shared_work_pool = "Shared work pool",
+      independent_blind_review = "Independent blind review",
+      single_reviewer = "Single-reviewer assignment"
     )
 
-    all_case_ids <- if (length(w01_all_cases_rv())) {
-      unique(vapply(
-        w01_all_cases_rv(),
-        function(x) as.character(x$review_case_id %||% x$case_id %||% ""),
-        character(1)
-      ))
-    } else character()
-    assigned_case_ids <- unique(vapply(
-      assignments,
-      function(x) normalise_assignment_row(x)$case_id,
-      character(1)
-    ))
-    unassigned <- sum(nzchar(all_case_ids) & !all_case_ids %in% assigned_case_ids)
+    assignment_group_key <- function(x) {
+      a <- normalise_assignment_row(x)
+      paste(a$workflow, a$task_type, a$batch_id, sep = "|")
+    }
+    grouped <- split(all_assignments, vapply(all_assignments, assignment_group_key, character(1)))
 
-    stream_label <- function(workflows) {
-      labels <- c("01" = "W01 deduplication", "02" = "W02 enrichment", "04" = "W04 screening", "08" = "W08 annotation")
-      z <- unique(as.character(workflows))
-      paste(vapply(z, function(x) labels[[x]] %||% paste0("W", x), character(1)), collapse = ", ")
+    events_for_group <- function(a) {
+      z <- normalise_assignment_row(a[[1L]])
+      if (
+        identical(z$workflow, "01") &&
+        identical(z$task_type, "deduplication") &&
+        identical(z$batch_id, batch_id_rv())
+      ) {
+        return(w01_active_assignment_events())
+      }
+      list()
     }
 
-    rows <- lapply(progress$by_user, function(x) {
-      pct <- round(100 * x$progress)
-      role_label <- if (identical(x$role, "administrator")) "Administrator" else "Reviewer"
-      tags$tr(
-        tags$td(x$display_name),
-        tags$td(role_label),
-        tags$td(x$assigned),
-        tags$td(x$completed),
-        tags$td(x$remaining),
-        tags$td(
-          tags$span(
-            class = "assignment-progress-bar",
-            tags$span(class = "assignment-progress-fill", style = sprintf("width:%s%%", pct))
+    group_progress <- lapply(grouped, function(a) {
+      z <- normalise_assignment_row(a[[1L]])
+      p <- assignment_progress(
+        a,
+        events_for_group(a),
+        user_registry_rv(),
+        workflow = z$workflow,
+        batch_id = z$batch_id,
+        task_type = z$task_type
+      )
+      list(assignments = a, meta = z, progress = p)
+    })
+
+    total_assigned <- sum(vapply(group_progress, function(x) x$progress$assigned, integer(1)))
+    total_completed <- sum(vapply(group_progress, function(x) x$progress$completed, integer(1)))
+    total_released <- sum(vapply(group_progress, function(x) x$progress$resolved_elsewhere, integer(1)))
+    total_remaining <- sum(vapply(group_progress, function(x) x$progress$remaining, integer(1)))
+
+    workflow_sections <- lapply(group_progress, function(g) {
+      z <- g$meta
+      p <- g$progress
+      mode <- assignment_mode_for(z$workflow, z$task_type)
+      workflow_label <- workflow_labels_admin[[z$workflow]] %||% paste0("W", z$workflow)
+      task_label <- task_labels[[z$task_type]] %||% z$task_type
+      mode_label <- mode_labels[[mode]] %||% mode
+
+      all_case_ids <- if (
+        identical(z$workflow, "01") &&
+        identical(z$task_type, "deduplication") &&
+        identical(z$batch_id, batch_id_rv()) &&
+        length(w01_all_cases_rv())
+      ) {
+        unique(vapply(
+          w01_all_cases_rv(),
+          function(x) as.character(x$review_case_id %||% x$case_id %||% ""),
+          character(1)
+        ))
+      } else character()
+      assigned_case_ids <- unique(vapply(
+        g$assignments,
+        function(x) normalise_assignment_row(x)$case_id,
+        character(1)
+      ))
+      unassigned <- if (length(all_case_ids)) {
+        sum(nzchar(all_case_ids) & !all_case_ids %in% assigned_case_ids)
+      } else 0L
+
+      rows <- lapply(p$by_user, function(x) {
+        pct <- round(100 * x$progress)
+        role_label <- if (identical(x$role, "administrator")) "Administrator" else "Reviewer"
+        tags$tr(
+          tags$td(x$display_name),
+          tags$td(role_label),
+          tags$td(x$assigned),
+          tags$td(x$completed),
+          tags$td(x$resolved_elsewhere),
+          tags$td(x$remaining),
+          tags$td(
+            tags$span(
+              class = "assignment-progress-bar",
+              tags$span(class = "assignment-progress-fill", style = sprintf("width:%s%%", pct))
+            ),
+            tags$span(sprintf("%s%%", pct))
           ),
-          tags$span(sprintf("%s%%", pct))
+          tags$td(if (nzchar(x$last_activity)) x$last_activity else "No activity")
+        )
+      })
+
+      mode_note <- if (identical(mode, ASSIGNMENT_MODES[["shared_work_pool"]])) {
+        "First valid decision closes the case for every assignee. Other assignments are released."
+      } else if (identical(mode, ASSIGNMENT_MODES[["independent_blind_review"]])) {
+        "Every required reviewer must complete the case independently. Decisions remain blinded until review is complete."
+      } else {
+        "A single completed review resolves the assigned case."
+      }
+
+      tags$details(
+        class = "assignment-workflow",
+        tags$summary(
+          div(
+            class = "d-inline-flex flex-wrap align-items-center gap-2",
+            tags$strong(paste0(workflow_label, " · ", task_label)),
+            tags$span(class = "task-badge", mode_label),
+            tags$span(
+              class = "text-secondary small",
+              sprintf("%d cases · %d remaining assignments", p$cases, p$remaining)
+            )
+          )
         ),
-        tags$td(stream_label(x$workflows)),
-        tags$td(if (nzchar(x$last_activity)) x$last_activity else "No activity")
+        div(
+          class = "pt-2",
+          div(
+            class = "assignment-kpis",
+            div(class = "assignment-kpi", tags$span("Cases"), tags$strong(p$cases)),
+            div(class = "assignment-kpi", tags$span("Assignments"), tags$strong(p$assigned)),
+            div(class = "assignment-kpi", tags$span("Completed"), tags$strong(p$completed)),
+            div(class = "assignment-kpi", tags$span("Released"), tags$strong(p$resolved_elsewhere)),
+            div(class = "assignment-kpi", tags$span("Remaining"), tags$strong(p$remaining))
+          ),
+          if (unassigned > 0L) {
+            tags$div(class = "small mb-2", paste0("Unassigned cases: ", unassigned))
+          },
+          div(
+            class = "assignment-table-wrap",
+            tags$table(
+              class = "assignment-table",
+              tags$thead(tags$tr(
+                tags$th("Reviewer"),
+                tags$th("Role"),
+                tags$th("Assigned"),
+                tags$th("Completed"),
+                tags$th("Released"),
+                tags$th("Remaining"),
+                tags$th("Progress"),
+                tags$th("Last activity")
+              )),
+              tags$tbody(rows)
+            )
+          ),
+          tags$div(class = "assignment-mode-note mt-2", mode_note)
+        )
       )
     })
 
     card(
       class = "assignment-summary",
-      card_header(
-        div(
-          class = "d-flex justify-content-between align-items-center",
-          tags$strong("Assignment progress"),
-          tags$span(class = "task-badge", "Administrator")
-        )
-      ),
-      div(
-        class = "p-3",
-        div(
-          class = "assignment-kpis",
-          div(class = "assignment-kpi", tags$span("Assigned"), tags$strong(progress$assigned)),
-          div(class = "assignment-kpi", tags$span("Completed"), tags$strong(progress$completed)),
-          div(class = "assignment-kpi", tags$span("Remaining"), tags$strong(progress$remaining)),
-          div(class = "assignment-kpi", tags$span("Unassigned cases"), tags$strong(unassigned)),
-          div(class = "assignment-kpi", tags$span("Conflicts generated"), tags$strong("Not enabled"))
-        ),
-        div(
-          class = "assignment-table-wrap",
-          tags$table(
-            class = "assignment-table",
-            tags$thead(tags$tr(
-              tags$th("Reviewer"),
-              tags$th("Role"),
-              tags$th("Assigned"),
-              tags$th("Completed"),
-              tags$th("Remaining"),
-              tags$th("Progress"),
-              tags$th("Current stream"),
-              tags$th("Last activity")
-            )),
-            tags$tbody(rows)
+      tags$details(
+        class = "assignment-disclosure",
+        tags$summary(
+          div(
+            class = "d-inline-flex flex-wrap align-items-center gap-2 p-3",
+            tags$strong("Administration & assignments"),
+            tags$span(class = "task-badge", paste0(length(group_progress), " workflow section", if (length(group_progress) == 1L) "" else "s")),
+            tags$span(
+              class = "text-secondary small",
+              sprintf("%d assignments · %d resolved · %d remaining", total_assigned, total_completed + total_released, total_remaining)
+            )
           )
         ),
-        tags$div(
-          class = "text-secondary small mt-2",
-          "Progress is visible to administrators; individual reviewer decisions remain hidden during independent review."
+        div(
+          class = "px-3 pb-3",
+          div(
+            class = "assignment-kpis",
+            div(class = "assignment-kpi", tags$span("Assignments"), tags$strong(total_assigned)),
+            div(class = "assignment-kpi", tags$span("Completed"), tags$strong(total_completed)),
+            div(class = "assignment-kpi", tags$span("Released"), tags$strong(total_released)),
+            div(class = "assignment-kpi", tags$span("Remaining"), tags$strong(total_remaining)),
+            div(class = "assignment-kpi", tags$span("Conflicts"), tags$strong("Not enabled"))
+          ),
+          workflow_sections
         )
       )
     )
