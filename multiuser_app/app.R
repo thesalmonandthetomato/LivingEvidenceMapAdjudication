@@ -344,6 +344,7 @@ server <- function(input, output, session) {
   current_user <- reactiveVal(NULL)
   user_registry_rv <- reactiveVal(list())
   assignment_registry_rv <- reactiveVal(list())
+  assignment_manage_status <- reactiveVal("")
   w01_all_cases_rv <- reactiveVal(list())
   app_view <- reactiveVal("tasks")
   failed_attempts <- reactiveVal(0L)
@@ -1095,10 +1096,7 @@ server <- function(input, output, session) {
 
   w01_active_assignment_events <- function() {
     if (!identical(storage_backend(), "local")) return(list())
-    active_decision_events(
-      read_local_decision_events(decision_path),
-      case_fields = c("case_id", "review_case_id")
-    )
+    decisions() %||% list()
   }
 
   w01_all_assignments_complete <- function() {
@@ -1123,8 +1121,6 @@ server <- function(input, output, session) {
 
     all_assignments <- assignment_registry_rv()
     if (!length(all_assignments)) return(NULL)
-
-    invalidateLater(30000, session)
 
     task_labels <- c(
       deduplication = "Deduplication",
@@ -1283,7 +1279,59 @@ server <- function(input, output, session) {
               tags$tbody(rows)
             )
           ),
-          tags$div(class = "assignment-mode-note mt-2", mode_note)
+          tags$div(class = "assignment-mode-note mt-2", mode_note),
+          if (
+            identical(z$workflow, "01") &&
+            identical(z$task_type, "deduplication") &&
+            identical(z$batch_id, batch_id_rv())
+          ) {
+            tags$details(
+              class = "assignment-workflow mt-2",
+              tags$summary(tags$strong("Manage assignments")),
+              div(
+                class = "pt-2",
+                tags$p(
+                  class = "text-secondary small mb-2",
+                  "Allocate unresolved, currently unassigned cases. The requested total is divided as evenly as possible across the selected reviewers."
+                ),
+                selectInput(
+                  "w01_assignment_users",
+                  "Reviewers",
+                  choices = {
+                    eligible_users <- Filter(
+                      function(u) isTRUE(normalise_user_row(u)$active) &&
+                        user_can(u, "adjudicate_assigned"),
+                      user_registry_rv()
+                    )
+                    ids <- vapply(eligible_users, function(u) normalise_user_row(u)$user_id, character(1))
+                    labels <- vapply(eligible_users, function(u) normalise_user_row(u)$display_name, character(1))
+                    stats::setNames(ids, labels)
+                  },
+                  multiple = TRUE
+                ),
+                radioButtons(
+                  "w01_assignment_type",
+                  "Assign by",
+                  choices = c("Number of cases" = "number", "Percentage" = "percentage"),
+                  selected = "number",
+                  inline = TRUE
+                ),
+                numericInput(
+                  "w01_assignment_amount",
+                  "Amount",
+                  value = 1,
+                  min = 1,
+                  step = 1
+                ),
+                uiOutput("w01_assignment_preview"),
+                div(
+                  class = "d-flex align-items-center gap-2 mt-2",
+                  actionButton("w01_apply_assignments", "Apply assignments", class = "btn-primary btn-sm"),
+                  tags$span(class = "saved-note", textOutput("w01_assignment_status"))
+                )
+              )
+            )
+          }
         )
       )
     })
@@ -1319,11 +1367,110 @@ server <- function(input, output, session) {
     )
   })
 
+  w01_assignment_plan <- reactive({
+    req(authenticated())
+    if (!session_can("manage_assignments")) {
+      return(list(error = "Administrator permission is required."))
+    }
+    selected <- as.character(input$w01_assignment_users %||% character())
+    type <- as.character(input$w01_assignment_type %||% "number")
+    amount <- input$w01_assignment_amount %||% NA_real_
+
+    tryCatch(
+      plan_shared_pool_assignment(
+        cases = w01_all_cases_rv(),
+        assignments = assignment_registry_rv(),
+        active_events = w01_active_assignment_events(),
+        workflow = "01",
+        batch_id = batch_id_rv(),
+        task_type = "deduplication",
+        user_ids = selected,
+        allocation_type = type,
+        amount = amount
+      ),
+      error = function(e) list(error = conditionMessage(e))
+    )
+  })
+
+  output$w01_assignment_preview <- renderUI({
+    req(authenticated())
+    plan <- w01_assignment_plan()
+    if (!is.null(plan$error)) {
+      return(tags$div(class = "text-secondary small", plan$error))
+    }
+
+    selected <- as.character(input$w01_assignment_users %||% character())
+    registry <- user_registry_rv()
+    reviewer_lines <- lapply(selected, function(uid) {
+      u <- find_user_by_id(registry, uid, require_active = FALSE)
+      label <- if (is.null(u)) uid else u$display_name
+      n <- as.integer(plan$by_user[[uid]] %||% 0L)
+      tags$li(sprintf("%s: %d case%s", label, n, if (n == 1L) "" else "s"))
+    })
+
+    div(
+      class = "p-2 border rounded bg-light",
+      tags$strong("Preview"),
+      tags$div(
+        class = "small",
+        sprintf(
+          "%d unresolved unassigned case%s available; %d will be allocated.",
+          plan$available,
+          if (plan$available == 1L) "" else "s",
+          plan$allocated
+        )
+      ),
+      if (length(reviewer_lines)) tags$ul(class = "small mb-0 mt-1", reviewer_lines)
+    )
+  })
+
+  output$w01_assignment_status <- renderText(assignment_manage_status())
+
+  observeEvent(input$w01_apply_assignments, {
+    req(authenticated())
+    if (!session_can("manage_assignments")) {
+      assignment_manage_status("You do not have permission to manage assignments.")
+      return()
+    }
+    if (!identical(storage_backend(), "local")) {
+      assignment_manage_status("Assignment editing is not yet enabled for the Google Sheets backend.")
+      return()
+    }
+
+    plan <- w01_assignment_plan()
+    if (!is.null(plan$error)) {
+      assignment_manage_status(plan$error)
+      return()
+    }
+    if (!length(plan$new_assignments)) {
+      assignment_manage_status("No eligible cases to assign.")
+      return()
+    }
+
+    updated <- c(assignment_registry_rv(), plan$new_assignments)
+    saved <- tryCatch({
+      save_assignment_registry(updated, assignment_path)
+      TRUE
+    }, error = function(e) {
+      assignment_manage_status(paste("Assignment save failed:", conditionMessage(e)))
+      FALSE
+    })
+    if (!isTRUE(saved)) return()
+
+    assignment_registry_rv(updated)
+    assignment_manage_status(sprintf(
+      "Assigned %d case%s.",
+      plan$allocated,
+      if (plan$allocated == 1L) "" else "s"
+    ))
+  })
+
   observeEvent(input$logout, {
     authenticated(FALSE)
     current_user(NULL)
     user_registry_rv(list())
     assignment_registry_rv(list())
+    assignment_manage_status("")
     w01_all_cases_rv(list())
     app_view("tasks")
     complete(FALSE)
