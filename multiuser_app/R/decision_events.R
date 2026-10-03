@@ -23,15 +23,17 @@ normalise_decision_events <- function(events, case_fields = c("case_id", "review
       stop("Decision event is missing a case identifier", call. = FALSE)
     }
 
-    prior_version <- if (exists(case_id, envir = versions, inherits = FALSE)) {
-      get(case_id, envir = versions, inherits = FALSE)
+    user_id <- decision_event_scalar(x, c("user_id", "reviewer"))
+    event_key <- paste(case_id, user_id, sep = "|")
+
+    prior_version <- if (exists(event_key, envir = versions, inherits = FALSE)) {
+      get(event_key, envir = versions, inherits = FALSE)
     } else {
       0L
     }
     version <- prior_version + 1L
-    assign(case_id, version, envir = versions)
+    assign(event_key, version, envir = versions)
 
-    user_id <- decision_event_scalar(x, c("user_id", "reviewer"))
     event_at <- decision_event_scalar(x, c("event_at_utc", "resolved_at_utc"))
 
     x$case_id <- case_id
@@ -42,8 +44,12 @@ normalise_decision_events <- function(events, case_fields = c("case_id", "review
     out[[i]] <- x
   }
 
-  case_ids <- vapply(out, function(x) as.character(x$case_id), character(1))
-  latest <- !duplicated(case_ids, fromLast = TRUE)
+  event_keys <- vapply(
+    out,
+    function(x) paste(as.character(x$case_id), as.character(x$user_id), sep = "|"),
+    character(1)
+  )
+  latest <- !duplicated(event_keys, fromLast = TRUE)
   for (i in seq_along(out)) out[[i]]$active <- isTRUE(latest[[i]])
 
   out
