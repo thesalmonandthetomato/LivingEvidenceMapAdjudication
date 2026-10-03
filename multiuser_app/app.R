@@ -1354,10 +1354,16 @@ server <- function(input, output, session) {
           return(tags$div(
             class = "mt-2",
             tags$div(class = "text-secondary small mb-2", "No active W02 queue is loaded."),
-            actionButton(
-              "create_test_w02_queue_inline",
-              "Create W02 test queue",
-              class = "btn-outline-secondary btn-sm"
+            tagList(
+              actionButton(
+                "create_test_w02_queue_inline",
+                "Create W02 test queue",
+                class = "btn-outline-secondary btn-sm"
+              ),
+              tags$div(
+                class = "saved-note mt-2",
+                textOutput("test_queue_status_w02", inline = TRUE)
+              )
             )
           ))
         }
@@ -1369,10 +1375,16 @@ server <- function(input, output, session) {
           return(tags$div(
             class = "mt-2",
             tags$div(class = "text-secondary small mb-2", "No active W08 queue is loaded."),
-            actionButton(
-              "create_test_w08_queue_inline",
-              "Create W08 test queue",
-              class = "btn-outline-secondary btn-sm"
+            tagList(
+              actionButton(
+                "create_test_w08_queue_inline",
+                "Create W08 test queue",
+                class = "btn-outline-secondary btn-sm"
+              ),
+              tags$div(
+                class = "saved-note mt-2",
+                textOutput("test_queue_status_w08", inline = TRUE)
+              )
             )
           ))
         }
@@ -2032,6 +2044,8 @@ server <- function(input, output, session) {
   })
 
   output$test_queue_status <- renderText(test_queue_status())
+  output$test_queue_status_w02 <- renderText(test_queue_status())
+  output$test_queue_status_w08 <- renderText(test_queue_status())
 
   create_and_load_w02_test_queue <- function() {
     req(authenticated())
@@ -2044,14 +2058,22 @@ server <- function(input, output, session) {
       create_test_w02_queue()
       TRUE
     }, error = function(e) {
-      test_queue_status(paste("W02 test queue could not be created:", conditionMessage(e)))
+      msg <- paste("W02 test queue could not be created:", conditionMessage(e))
+      test_queue_status(msg)
+      showNotification(msg, type = "error", duration = NULL)
       FALSE
     })
     if (!isTRUE(made)) return(invisible(FALSE))
 
     loaded <- tryCatch(load_w02_batch(), error = function(e) e)
     if (inherits(loaded, "error") || is.null(loaded)) {
-      test_queue_status("W02 queue was created but could not be loaded.")
+      msg <- if (inherits(loaded, "error")) {
+        paste("W02 queue could not be loaded:", conditionMessage(loaded))
+      } else {
+        "W02 queue was created but could not be loaded."
+      }
+      test_queue_status(msg)
+      showNotification(msg, type = "error", duration = NULL)
       return(invisible(FALSE))
     }
 
@@ -2074,6 +2096,7 @@ server <- function(input, output, session) {
     w02_decisions(batch_decisions)
     w02_idx(1L)
     test_queue_status("W02 test queue created and loaded.")
+    showNotification("W02 test queue created and loaded.", type = "message")
     invisible(TRUE)
   }
 
@@ -2088,14 +2111,22 @@ server <- function(input, output, session) {
       create_test_w08_queue()
       TRUE
     }, error = function(e) {
-      test_queue_status(paste("W08 test queue could not be created:", conditionMessage(e)))
+      msg <- paste("W08 test queue could not be created:", conditionMessage(e))
+      test_queue_status(msg)
+      showNotification(msg, type = "error", duration = NULL)
       FALSE
     })
     if (!isTRUE(made)) return(invisible(FALSE))
 
     loaded <- tryCatch(load_w08_batch(), error = function(e) e)
     if (inherits(loaded, "error") || is.null(loaded)) {
-      test_queue_status("W08 queue was created but could not be loaded.")
+      msg <- if (inherits(loaded, "error")) {
+        paste("W08 queue could not be loaded:", conditionMessage(loaded))
+      } else {
+        "W08 queue was created but could not be loaded."
+      }
+      test_queue_status(msg)
+      showNotification(msg, type = "error", duration = NULL)
       return(invisible(FALSE))
     }
 
@@ -2122,6 +2153,7 @@ server <- function(input, output, session) {
     w08_decisions(batch_decisions)
     w08_idx(1L)
     test_queue_status("W08 test queue created and loaded.")
+    showNotification("W08 test queue created and loaded.", type = "message")
     invisible(TRUE)
   }
 
