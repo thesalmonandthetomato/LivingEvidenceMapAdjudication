@@ -488,6 +488,8 @@ read_sheet_w04_queue <- function(
   if("highlight_exclude_json" %in% names(x) && nzchar(as.character(x$highlight_exclude_json[[1L]] %||% ""))) {
     exclude_terms <- as.character(jsonlite::fromJSON(x$highlight_exclude_json[[1L]]))
   }
+  review_mode <- if("review_mode" %in% names(x)) as.character(x$review_mode[[1L]] %||% "") else ""
+  source_run_id <- if("source_run_id" %in% names(x)) as.character(x$source_run_id[[1L]] %||% "") else ""
   x_core <- x[,required,drop=FALSE]
   hashes <- unique(x_core$queue_sha256)
   batches <- unique(x_core$batch_id)
@@ -511,6 +513,8 @@ read_sheet_w04_queue <- function(
     cases=cases,
     highlight_include=include_terms,
     highlight_exclude=exclude_terms,
+    review_mode=review_mode,
+    source_run_id=source_run_id,
     batch_status=status
   )
 }
