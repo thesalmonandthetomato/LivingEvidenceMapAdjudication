@@ -377,6 +377,7 @@ server <- function(input, output, session) {
   assignment_registry_rv <- reactiveVal(list())
   assignment_manage_status <- reactiveVal("")
   test_queue_status <- reactiveVal("")
+  w08_fresh_test_status <- reactiveVal("")
   w01_all_cases_rv <- reactiveVal(list())
   app_view <- reactiveVal("tasks")
   failed_attempts <- reactiveVal(0L)
@@ -1513,7 +1514,29 @@ server <- function(input, output, session) {
             paste0(cfg$prefix, "_remove_assignments"),
             "Remove reviewer's unfinished assignments",
             class = "btn-outline-danger btn-sm"
-          )
+          ),
+          if (
+            identical(cfg$workflow, "08") &&
+            grepl("^w08-test-assignment-smoke", cfg$batch_id)
+          ) {
+            tagList(
+              tags$hr(),
+              tags$strong("Synthetic test data"),
+              tags$p(
+                class = "text-secondary small mb-2",
+                "Start a new two-record W08 smoke-test batch. Existing assignments and decisions are retained as history."
+              ),
+              actionButton(
+                "w08_start_fresh_test_batch",
+                "Start fresh W08 test batch",
+                class = "btn-outline-secondary btn-sm"
+              ),
+              tags$span(
+                class = "saved-note ms-2",
+                textOutput("w08_fresh_test_status", inline = TRUE)
+              )
+            )
+          }
         )
       )
     }
@@ -2021,6 +2044,61 @@ server <- function(input, output, session) {
     invisible(TRUE)
   }
 
+  ensure_direct_assignment <- function(
+    workflow,
+    batch_id,
+    task_type,
+    case_obj,
+    case_id,
+    events
+  ) {
+    uid <- session_reviewer_id()
+    if (!nzchar(uid)) return(invisible(FALSE))
+
+    if (user_has_active_assignment(
+      assignment_registry_rv(),
+      workflow,
+      batch_id,
+      task_type,
+      case_id,
+      uid
+    )) {
+      return(invisible(TRUE))
+    }
+
+    plan <- tryCatch(
+      plan_shared_pool_assignment(
+        cases = list(case_obj),
+        assignments = assignment_registry_rv(),
+        active_events = events,
+        workflow = workflow,
+        batch_id = batch_id,
+        task_type = task_type,
+        user_ids = uid,
+        allocation_type = "all",
+        allocation_strategy = "shared"
+      ),
+      error = function(e) e
+    )
+    if (inherits(plan, "error") || !length(plan$new_assignments)) {
+      return(invisible(FALSE))
+    }
+
+    persisted <- tryCatch(
+      save_assignment_registry(
+        c(assignment_registry_rv(), plan$new_assignments),
+        assignment_path,
+        actor_user_id = uid,
+        expected_current_signature = assignment_registry_signature(assignment_registry_rv())
+      ),
+      error = function(e) NULL
+    )
+    if (is.null(persisted)) return(invisible(FALSE))
+
+    assignment_registry_rv(persisted)
+    invisible(TRUE)
+  }
+
   w02_assignment_plan <- reactive({
     req(authenticated())
     workflow_assignment_plan(
@@ -2075,6 +2153,51 @@ server <- function(input, output, session) {
       w08_batch_id_rv(),
       "annotation"
     )
+  })
+
+  output$w08_fresh_test_status <- renderText(w08_fresh_test_status())
+
+  observeEvent(input$w08_start_fresh_test_batch, {
+    req(authenticated())
+    if (!session_can("manage_assignments")) {
+      w08_fresh_test_status("Administrator permission is required.")
+      return()
+    }
+
+    made <- tryCatch(start_fresh_test_w08_queue(), error = function(e) e)
+    if (inherits(made, "error")) {
+      w08_fresh_test_status(paste("Fresh W08 test batch failed:", conditionMessage(made)))
+      return()
+    }
+
+    loaded <- tryCatch(load_w08_batch(), error = function(e) e)
+    if (inherits(loaded, "error") || is.null(loaded)) {
+      w08_fresh_test_status("Fresh W08 test batch was written but could not be loaded.")
+      return()
+    }
+
+    all_decisions <- tryCatch(active_sheet_w08_decisions(), error = function(e) list())
+    batch_decisions <- w08_filter_batch_decisions(all_decisions, loaded$queue_sha256)
+    w08_all_cases_rv(loaded$cases)
+    w08_cases_rv(cases_for_assignment_user(
+      loaded$cases,
+      assignment_registry_rv(),
+      "08",
+      loaded$batch_id,
+      current_user(),
+      task_type = "annotation",
+      active_events = batch_decisions
+    ))
+    w08_queue_sha_rv(loaded$queue_sha256)
+    w08_batch_id_rv(loaded$batch_id)
+    w08_source_run_id_rv(loaded$source_run_id %||% "")
+    w08_batch_status_rv(loaded$batch_status %||% "")
+    w08_case_sha_rv(loaded$case_sha256 %||% character())
+    w08_species_options(loaded$species_options %||% character())
+    w08_topic_options(loaded$topic_options %||% list())
+    w08_decisions(batch_decisions)
+    w08_idx(1L)
+    w08_fresh_test_status("Fresh W08 test batch created.")
   })
 
   output$test_queue_status <- renderText(test_queue_status())
@@ -2771,6 +2894,20 @@ server <- function(input, output, session) {
       return(FALSE)
     }
     z <- w02_current_case()
+
+    if (
+      session_can("manage_assignments") &&
+      !user_has_active_assignment(
+        assignment_registry_rv(), "02", w02_batch_id_rv(), "enrichment",
+        as.character(z$review_case_id), session_reviewer_id()
+      )
+    ) {
+      ensure_direct_assignment(
+        "02", w02_batch_id_rv(), "enrichment",
+        z, as.character(z$review_case_id), w02_active_assignment_events()
+      )
+    }
+
     if (
       assignment_mode_active(assignment_registry_rv(), "02", w02_batch_id_rv(), "enrichment") &&
       !session_can("manage_assignments") &&
@@ -3327,6 +3464,20 @@ server <- function(input, output, session) {
     }
     z <- w08_current_case()
     rid <- as.character(z$record_id)
+
+    if (
+      session_can("manage_assignments") &&
+      !user_has_active_assignment(
+        assignment_registry_rv(), "08", w08_batch_id_rv(), "annotation",
+        rid, session_reviewer_id()
+      )
+    ) {
+      ensure_direct_assignment(
+        "08", w08_batch_id_rv(), "annotation",
+        z, rid, w08_active_assignment_events()
+      )
+    }
+
     if (
       assignment_mode_active(assignment_registry_rv(), "08", w08_batch_id_rv(), "annotation") &&
       !session_can("manage_assignments") &&
@@ -3482,6 +3633,20 @@ server <- function(input, output, session) {
       return(FALSE)
     }
     z <- current_case()
+
+    if (
+      session_can("manage_assignments") &&
+      !user_has_active_assignment(
+        assignment_registry_rv(), "01", batch_id_rv(), "deduplication",
+        as.character(z$review_case_id), session_reviewer_id()
+      )
+    ) {
+      ensure_direct_assignment(
+        "01", batch_id_rv(), "deduplication",
+        z, as.character(z$review_case_id), w01_active_assignment_events()
+      )
+    }
+
     current <- decisions()
     prior <- NULL
     if (length(current)) {
