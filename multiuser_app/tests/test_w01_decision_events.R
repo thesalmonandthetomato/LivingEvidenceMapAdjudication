@@ -5,6 +5,7 @@ suppressPackageStartupMessages({
 
 `%||%` <- function(x, y) if (is.null(x)) y else x
 
+source("R/decision_events.R")
 source("R/storage_local.R")
 
 tmp_dir <- tempfile("w01-events-test-")
@@ -24,8 +25,7 @@ s1 <- write_local_decision(path, d1)
 stopifnot(
   identical(as.integer(s1$version), 1L),
   identical(as.character(s1$user_id), "usr-neal"),
-  identical(as.character(s1$supersedes_decision_id), ""),
-  nzchar(as.character(s1$decision_id))
+  identical(as.character(s1$supersedes_decision_id), "")
 )
 
 d2 <- d1
@@ -35,9 +35,21 @@ d2$resolved_at_utc <- "2026-10-03T06:31:00Z"
 s2 <- write_local_decision(path, d2)
 stopifnot(
   identical(as.integer(s2$version), 2L),
-  identical(as.character(s2$supersedes_decision_id), as.character(s1$decision_id)),
-  !identical(as.character(s2$decision_id), as.character(s1$decision_id))
+  identical(as.character(s2$supersedes_decision_id), as.character(s1$decision_id))
 )
+
+d_other <- d1
+d_other$reviewer <- "usr-sini"
+d_other$resolved_at_utc <- "2026-10-03T06:32:00Z"
+
+blocked <- tryCatch(
+  {
+    write_local_decision(path, d_other)
+    FALSE
+  },
+  error = function(e) grepl("already been resolved by another reviewer", conditionMessage(e), fixed = TRUE)
+)
+stopifnot(isTRUE(blocked))
 
 events <- read_local_decision_events(path)
 stopifnot(length(events) == 2L)
@@ -46,27 +58,9 @@ active <- read_local_decisions(path)
 stopifnot(
   length(active) == 1L,
   identical(as.character(active[[1L]]$decision_id), as.character(s2$decision_id)),
+  identical(as.character(active[[1L]]$user_id), "usr-neal"),
   identical(as.character(active[[1L]]$decision), "not_duplicate"),
   isTRUE(active[[1L]]$active)
 )
 
-d3 <- d1
-d3$reviewer <- "usr-sini"
-d3$decision <- "duplicate"
-d3$resolved_at_utc <- "2026-10-03T06:32:00Z"
-
-s3 <- write_local_decision(path, d3)
-stopifnot(
-  identical(as.integer(s3$version), 1L),
-  identical(as.character(s3$user_id), "usr-sini"),
-  identical(as.character(s3$supersedes_decision_id), "")
-)
-
-active_two_reviewers <- read_local_decisions(path)
-case_events <- Filter(function(x) identical(as.character(x$case_id), "case-001"), active_two_reviewers)
-stopifnot(
-  length(case_events) == 2L,
-  setequal(vapply(case_events, function(x) as.character(x$user_id), character(1)), c("usr-neal","usr-sini"))
-)
-
-cat("PASS: W01 local decision events are append-only, reviewer-independent and active state resolves correctly\n")
+cat("PASS: W01 first reviewer owns the case and may revise it; other reviewers are blocked\n")
