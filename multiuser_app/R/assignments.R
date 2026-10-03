@@ -229,3 +229,37 @@ assignment_progress <- function(
     mode = mode
   )
 }
+
+
+resolve_fixture_assignment_users <- function(assignments, users) {
+  if (!length(assignments)) return(list())
+  validate_user_registry(users)
+
+  active <- active_users(users)
+  admins <- Filter(function(x) identical(normalise_user_row(x)$role, "administrator"), active)
+  reviewers <- Filter(function(x) identical(normalise_user_row(x)$role, "reviewer"), active)
+  reviewers <- reviewers[order(vapply(reviewers, function(x) normalise_user_row(x)$display_name, character(1)))]
+
+  resolve_id <- function(id) {
+    if (identical(id, "fixture:administrator")) {
+      if (!length(admins)) stop("Local assignment fixture requires an active administrator", call. = FALSE)
+      return(normalise_user_row(admins[[1L]])$user_id)
+    }
+    if (grepl("^fixture:reviewer:[0-9]+$", id)) {
+      n <- suppressWarnings(as.integer(sub("^fixture:reviewer:", "", id)))
+      if (is.na(n) || n < 1L || n > length(reviewers)) {
+        stop("Local assignment fixture reviewer alias cannot be resolved", call. = FALSE)
+      }
+      return(normalise_user_row(reviewers[[n]])$user_id)
+    }
+    id
+  }
+
+  resolved <- lapply(assignments, function(x) {
+    a <- normalise_assignment_row(x)
+    a$user_id <- resolve_id(a$user_id)
+    a
+  })
+  validate_assignment_registry(resolved)
+  resolved
+}
