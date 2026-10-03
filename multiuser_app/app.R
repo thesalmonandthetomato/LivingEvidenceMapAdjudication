@@ -371,6 +371,7 @@ server <- function(input, output, session) {
   user_registry_rv <- reactiveVal(list())
   assignment_registry_rv <- reactiveVal(list())
   assignment_manage_status <- reactiveVal("")
+  test_queue_status <- reactiveVal("")
   w01_all_cases_rv <- reactiveVal(list())
   app_view <- reactiveVal("tasks")
   failed_attempts <- reactiveVal(0L)
@@ -1539,6 +1540,40 @@ server <- function(input, output, session) {
             div(class = "assignment-kpi", tags$span("Remaining"), tags$strong(total_remaining)),
             div(class = "assignment-kpi", tags$span("Conflicts"), tags$strong("Not enabled"))
           ),
+          if (
+            identical(storage_backend(), "google_sheets") &&
+            (!has_w02_batch || !has_w08_batch)
+          ) {
+            tags$details(
+              class = "assignment-workflow mb-2",
+              `data-accordion-key` = "test-queue-setup",
+              tags$summary(tags$strong("Test queue setup")),
+              div(
+                class = "pt-2",
+                tags$p(
+                  class = "text-secondary small mb-2",
+                  "Create small synthetic W02/W08 queues in this isolated Google Sheet for assignment smoke testing. Existing queue tabs are never overwritten."
+                ),
+                div(
+                  class = "d-flex flex-wrap gap-2",
+                  if (!has_w02_batch) actionButton(
+                    "create_test_w02_queue",
+                    "Create W02 test queue",
+                    class = "btn-outline-secondary btn-sm"
+                  ),
+                  if (!has_w08_batch) actionButton(
+                    "create_test_w08_queue",
+                    "Create W08 test queue",
+                    class = "btn-outline-secondary btn-sm"
+                  )
+                ),
+                tags$div(
+                  class = "saved-note mt-2",
+                  textOutput("test_queue_status", inline = TRUE)
+                )
+              )
+            )
+          },
           workflow_sections
         )
       )
@@ -1912,12 +1947,105 @@ server <- function(input, output, session) {
     )
   })
 
+  output$test_queue_status <- renderText(test_queue_status())
+
+  observeEvent(input$create_test_w02_queue, {
+    req(authenticated())
+    if (!session_can("manage_assignments")) {
+      test_queue_status("Administrator permission is required.")
+      return()
+    }
+
+    made <- tryCatch({
+      create_test_w02_queue()
+      TRUE
+    }, error = function(e) {
+      test_queue_status(paste("W02 test queue could not be created:", conditionMessage(e)))
+      FALSE
+    })
+    if (!isTRUE(made)) return()
+
+    loaded <- tryCatch(load_w02_batch(), error = function(e) e)
+    if (inherits(loaded, "error") || is.null(loaded)) {
+      test_queue_status("W02 queue was created but could not be loaded.")
+      return()
+    }
+
+    all_decisions <- tryCatch(active_sheet_w02_decisions(), error = function(e) list())
+    batch_decisions <- w02_filter_batch_decisions(all_decisions, loaded$queue_sha256)
+    w02_all_cases_rv(loaded$cases)
+    visible <- cases_for_assignment_user(
+      loaded$cases,
+      assignment_registry_rv(),
+      "02",
+      loaded$batch_id,
+      current_user(),
+      task_type = "enrichment",
+      active_events = batch_decisions
+    )
+    w02_cases_rv(visible)
+    w02_queue_sha_rv(loaded$queue_sha256)
+    w02_batch_id_rv(loaded$batch_id)
+    w02_batch_status_rv(loaded$batch_status %||% "")
+    w02_decisions(batch_decisions)
+    w02_idx(1L)
+    test_queue_status("W02 test queue created and loaded.")
+  })
+
+  observeEvent(input$create_test_w08_queue, {
+    req(authenticated())
+    if (!session_can("manage_assignments")) {
+      test_queue_status("Administrator permission is required.")
+      return()
+    }
+
+    made <- tryCatch({
+      create_test_w08_queue()
+      TRUE
+    }, error = function(e) {
+      test_queue_status(paste("W08 test queue could not be created:", conditionMessage(e)))
+      FALSE
+    })
+    if (!isTRUE(made)) return()
+
+    loaded <- tryCatch(load_w08_batch(), error = function(e) e)
+    if (inherits(loaded, "error") || is.null(loaded)) {
+      test_queue_status("W08 queue was created but could not be loaded.")
+      return()
+    }
+
+    all_decisions <- tryCatch(active_sheet_w08_decisions(), error = function(e) list())
+    batch_decisions <- w08_filter_batch_decisions(all_decisions, loaded$queue_sha256)
+    w08_all_cases_rv(loaded$cases)
+    visible <- cases_for_assignment_user(
+      loaded$cases,
+      assignment_registry_rv(),
+      "08",
+      loaded$batch_id,
+      current_user(),
+      task_type = "annotation",
+      active_events = batch_decisions
+    )
+    w08_cases_rv(visible)
+    w08_queue_sha_rv(loaded$queue_sha256)
+    w08_batch_id_rv(loaded$batch_id)
+    w08_source_run_id_rv(loaded$source_run_id %||% "")
+    w08_batch_status_rv(loaded$batch_status %||% "")
+    w08_case_sha_rv(loaded$case_sha256 %||% character())
+    w08_species_options(loaded$species_options %||% character())
+    w08_topic_options(loaded$topic_options %||% list())
+    w08_decisions(batch_decisions)
+    w08_idx(1L)
+    test_queue_status("W08 test queue created and loaded.")
+  })
+
   observeEvent(input$logout, {
     authenticated(FALSE)
     current_user(NULL)
     user_registry_rv(list())
     assignment_registry_rv(list())
     assignment_manage_status("")
+    test_queue_status("")
     w01_all_cases_rv(list())
     w02_all_cases_rv(list())
     w08_all_cases_rv(list())
