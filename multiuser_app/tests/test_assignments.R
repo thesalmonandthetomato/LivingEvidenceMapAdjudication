@@ -216,4 +216,28 @@ stopifnot(
   )
 )
 
-cat("PASS: allocation planning and safe unfinished-assignment cancellation\n")
+user_level_assignments <- list(
+  list(assignment_id="u-1", workflow="01", task_type="deduplication", batch_id="batch-user", case_id="u-case-1", user_id="usr-a", blind_group="pool", status="assigned"),
+  list(assignment_id="u-2", workflow="01", task_type="deduplication", batch_id="batch-user", case_id="u-case-2", user_id="usr-a", blind_group="pool", status="assigned"),
+  list(assignment_id="u-3", workflow="01", task_type="deduplication", batch_id="batch-user", case_id="u-case-3", user_id="usr-b", blind_group="pool", status="assigned")
+)
+
+user_removed <- cancel_user_assignments(
+  user_level_assignments,
+  "usr-a",
+  list(),
+  "01",
+  "batch-user",
+  "deduplication"
+)
+stopifnot(
+  identical(user_removed$cancelled, 2L),
+  all(vapply(
+    user_removed$assignments[1:2],
+    function(x) identical(normalise_assignment_row(x)$status, "cancelled"),
+    logical(1)
+  )),
+  identical(normalise_assignment_row(user_removed$assignments[[3L]])$status, "assigned")
+)
+
+cat("PASS: allocation planning, safe cancellation, and reviewer-level removal\n")
