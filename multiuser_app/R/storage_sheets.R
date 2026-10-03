@@ -1028,7 +1028,11 @@ append_sheet_assignment_audit <- function(changes, actor_user_id = "") {
   invisible(TRUE)
 }
 
-write_sheet_assignments <- function(assignments, actor_user_id = "") {
+write_sheet_assignments <- function(
+  assignments,
+  actor_user_id = "",
+  expected_current_signature = NULL
+) {
   assignments <- lapply(assignments %||% list(), normalise_assignment_row)
   validate_assignment_registry(assignments)
 
@@ -1039,6 +1043,13 @@ write_sheet_assignments <- function(assignments, actor_user_id = "") {
 
   before <- read_sheet_assignments(create_if_missing = FALSE)
   before_sig <- assignment_registry_signature(before)
+  if (
+    !is.null(expected_current_signature) &&
+    nzchar(as.character(expected_current_signature)) &&
+    !identical(before_sig, as.character(expected_current_signature))
+  ) {
+    stop("Assignment registry has changed since this dashboard loaded; refresh and try again", call. = FALSE)
+  }
   changes <- assignment_changes(before, assignments)
   if (!length(changes)) return(invisible(assignments))
 
