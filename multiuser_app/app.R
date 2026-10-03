@@ -1087,6 +1087,132 @@ server <- function(input, output, session) {
     user_can(current_user(), permission)
   }
 
+  w01_active_assignment_events <- function() {
+    if (!identical(storage_backend(), "local")) return(list())
+    active_decision_events(
+      read_local_decision_events(decision_path),
+      case_fields = c("case_id", "review_case_id")
+    )
+  }
+
+  w01_all_assignments_complete <- function() {
+    assignments <- assignments_for_batch(
+      assignment_registry_rv(),
+      "01",
+      batch_id_rv()
+    )
+    if (!length(assignments)) return(TRUE)
+    progress <- assignment_progress(
+      assignments,
+      w01_active_assignment_events(),
+      user_registry_rv()
+    )
+    identical(progress$remaining, 0L)
+  }
+
+  output$assignment_progress <- renderUI({
+    req(authenticated())
+    if (!session_can("manage_assignments")) return(NULL)
+
+    assignments <- assignments_for_batch(
+      assignment_registry_rv(),
+      "01",
+      batch_id_rv()
+    )
+    if (!length(assignments)) return(NULL)
+
+    invalidateLater(30000, session)
+    progress <- assignment_progress(
+      assignments,
+      w01_active_assignment_events(),
+      user_registry_rv()
+    )
+
+    all_case_ids <- if (length(w01_all_cases_rv())) {
+      unique(vapply(
+        w01_all_cases_rv(),
+        function(x) as.character(x$review_case_id %||% x$case_id %||% ""),
+        character(1)
+      ))
+    } else character()
+    assigned_case_ids <- unique(vapply(
+      assignments,
+      function(x) normalise_assignment_row(x)$case_id,
+      character(1)
+    ))
+    unassigned <- sum(nzchar(all_case_ids) & !all_case_ids %in% assigned_case_ids)
+
+    stream_label <- function(workflows) {
+      labels <- c("01" = "W01 deduplication", "02" = "W02 enrichment", "04" = "W04 screening", "08" = "W08 annotation")
+      z <- unique(as.character(workflows))
+      paste(vapply(z, function(x) labels[[x]] %||% paste0("W", x), character(1)), collapse = ", ")
+    }
+
+    rows <- lapply(progress$by_user, function(x) {
+      pct <- round(100 * x$progress)
+      role_label <- if (identical(x$role, "administrator")) "Administrator" else "Reviewer"
+      tags$tr(
+        tags$td(x$display_name),
+        tags$td(role_label),
+        tags$td(x$assigned),
+        tags$td(x$completed),
+        tags$td(x$remaining),
+        tags$td(
+          tags$span(
+            class = "assignment-progress-bar",
+            tags$span(class = "assignment-progress-fill", style = sprintf("width:%s%%", pct))
+          ),
+          tags$span(sprintf("%s%%", pct))
+        ),
+        tags$td(stream_label(x$workflows)),
+        tags$td(if (nzchar(x$last_activity)) x$last_activity else "No activity")
+      )
+    })
+
+    card(
+      class = "assignment-summary",
+      card_header(
+        div(
+          class = "d-flex justify-content-between align-items-center",
+          tags$strong("Assignment progress"),
+          tags$span(class = "task-badge", "Administrator")
+        )
+      ),
+      div(
+        class = "p-3",
+        div(
+          class = "assignment-kpis",
+          div(class = "assignment-kpi", tags$span("Assigned"), tags$strong(progress$assigned)),
+          div(class = "assignment-kpi", tags$span("Completed"), tags$strong(progress$completed)),
+          div(class = "assignment-kpi", tags$span("Remaining"), tags$strong(progress$remaining)),
+          div(class = "assignment-kpi", tags$span("Unassigned cases"), tags$strong(unassigned)),
+          div(class = "assignment-kpi", tags$span("Conflicts generated"), tags$strong("Not enabled"))
+        ),
+        div(
+          class = "assignment-table-wrap",
+          tags$table(
+            class = "assignment-table",
+            tags$thead(tags$tr(
+              tags$th("Reviewer"),
+              tags$th("Role"),
+              tags$th("Assigned"),
+              tags$th("Completed"),
+              tags$th("Remaining"),
+              tags$th("Progress"),
+              tags$th("Current stream"),
+              tags$th("Last activity")
+            )),
+            tags$tbody(rows)
+          )
+        ),
+        tags$div(
+          class = "text-secondary small mt-2",
+          "Progress is visible to administrators; individual reviewer decisions remain hidden during independent review."
+        )
+      )
+    )
+  })
+
   observeEvent(input$logout, {
     authenticated(FALSE)
     current_user(NULL)
@@ -2270,7 +2396,14 @@ server <- function(input, output, session) {
   advance_after_save <- function() {
     unresolved <- unresolved_indices()
     if (!length(unresolved)) {
-      if(session_can("control_workflows")) {
+      assignments_active <- assignment_mode_active(
+        assignment_registry_rv(),
+        "01",
+        batch_id_rv()
+      )
+      if (assignments_active && !w01_all_assignments_complete()) {
+        status("Your assigned review is complete. Waiting for other assigned reviewers.")
+      } else if(session_can("control_workflows")) {
         mark_review_complete("01",batch_id_rv(),queue_sha_rv(),batch_status_rv)
       } else {
         status("Review complete. Awaiting an administrator to continue Workflow 01.")
