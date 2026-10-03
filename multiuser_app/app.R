@@ -1709,6 +1709,208 @@ server <- function(input, output, session) {
     ))
   })
 
+
+  workflow_assignment_plan <- function(prefix, cases, events, workflow, batch_id, task_type) {
+    selected <- as.character(input[[paste0(prefix, "_assignment_users")]] %||% character())
+    type <- as.character(input[[paste0(prefix, "_assignment_type")]] %||% "number")
+    amount <- input[[paste0(prefix, "_assignment_amount")]] %||% NA_real_
+    tryCatch(
+      plan_workflow_assignment(
+        cases = cases,
+        assignments = assignment_registry_rv(),
+        active_events = events,
+        workflow = workflow,
+        batch_id = batch_id,
+        task_type = task_type,
+        user_ids = selected,
+        allocation_type = type,
+        amount = amount
+      ),
+      error = function(e) list(error = conditionMessage(e))
+    )
+  }
+
+  workflow_assignment_preview <- function(plan, prefix, workflow, batch_id, task_type, events) {
+    if (!is.null(plan$error)) {
+      return(tags$div(class = "text-secondary small", plan$error))
+    }
+    selected <- as.character(input[[paste0(prefix, "_assignment_users")]] %||% character())
+    registry <- user_registry_rv()
+    current_assignments <- active_assignments_for_batch(
+      assignment_registry_rv(), workflow, batch_id, task_type
+    )
+    reviewer_lines <- lapply(selected, function(uid) {
+      u <- find_user_by_id(registry, uid, require_active = FALSE)
+      label <- if (is.null(u)) uid else u$display_name
+      n_new <- as.integer(plan$by_user[[uid]] %||% 0L)
+      current_for_user <- Filter(
+        function(x) identical(normalise_assignment_row(x)$user_id, uid),
+        current_assignments
+      )
+      current_unresolved <- sum(vapply(
+        current_for_user,
+        function(x) is.null(case_authoritative_event(events, normalise_assignment_row(x)$case_id)),
+        logical(1)
+      ))
+      tags$li(sprintf(
+        "%s: %d current + %d new = %d active case%s",
+        label,
+        current_unresolved,
+        n_new,
+        current_unresolved + n_new,
+        if ((current_unresolved + n_new) == 1L) "" else "s"
+      ))
+    })
+    div(
+      class = "p-2 border rounded bg-light",
+      tags$strong("Preview"),
+      tags$div(
+        class = "small",
+        sprintf(
+          "%d unresolved unassigned case%s available; %d will be allocated.",
+          plan$available,
+          if (plan$available == 1L) "" else "s",
+          plan$allocated
+        )
+      ),
+      if (length(reviewer_lines)) tags$ul(class = "small mb-0 mt-1", reviewer_lines)
+    )
+  }
+
+  apply_workflow_assignments <- function(plan) {
+    if (!session_can("manage_assignments")) {
+      assignment_manage_status("You do not have permission to manage assignments.")
+      return(invisible(FALSE))
+    }
+    if (!is.null(plan$error)) {
+      assignment_manage_status(plan$error)
+      return(invisible(FALSE))
+    }
+    if (!length(plan$new_assignments)) {
+      assignment_manage_status("No eligible cases to assign.")
+      return(invisible(FALSE))
+    }
+    updated <- c(assignment_registry_rv(), plan$new_assignments)
+    persisted <- tryCatch(
+      save_assignment_registry(
+        updated,
+        assignment_path,
+        actor_user_id = session_reviewer_id(),
+        expected_current_signature = assignment_registry_signature(assignment_registry_rv())
+      ),
+      error = function(e) {
+        assignment_manage_status(paste("Assignment save failed:", conditionMessage(e)))
+        NULL
+      }
+    )
+    if (is.null(persisted)) return(invisible(FALSE))
+    assignment_registry_rv(persisted)
+    assignment_manage_status(sprintf(
+      "Added %d new case%s.",
+      plan$allocated,
+      if (plan$allocated == 1L) "" else "s"
+    ))
+    invisible(TRUE)
+  }
+
+  remove_workflow_user_assignments <- function(user_id, events, workflow, batch_id, task_type) {
+    if (!session_can("manage_assignments")) {
+      assignment_manage_status("You do not have permission to manage assignments.")
+      return(invisible(FALSE))
+    }
+    result <- tryCatch(
+      cancel_user_assignments(
+        assignment_registry_rv(),
+        as.character(user_id %||% ""),
+        events,
+        workflow,
+        batch_id,
+        task_type
+      ),
+      error = function(e) e
+    )
+    if (inherits(result, "error")) {
+      assignment_manage_status(conditionMessage(result))
+      return(invisible(FALSE))
+    }
+    persisted <- tryCatch(
+      save_assignment_registry(
+        result$assignments,
+        assignment_path,
+        actor_user_id = session_reviewer_id(),
+        expected_current_signature = assignment_registry_signature(assignment_registry_rv())
+      ),
+      error = function(e) {
+        assignment_manage_status(paste("Assignment removal failed:", conditionMessage(e)))
+        NULL
+      }
+    )
+    if (is.null(persisted)) return(invisible(FALSE))
+    assignment_registry_rv(persisted)
+    assignment_manage_status(sprintf(
+      "Removed %d unfinished assignment%s.",
+      result$cancelled,
+      if (result$cancelled == 1L) "" else "s"
+    ))
+    invisible(TRUE)
+  }
+
+  w02_assignment_plan <- reactive({
+    req(authenticated())
+    workflow_assignment_plan(
+      "w02", w02_all_cases_rv(), w02_active_assignment_events(),
+      "02", w02_batch_id_rv(), "enrichment"
+    )
+  })
+  output$w02_assignment_preview <- renderUI({
+    req(authenticated())
+    workflow_assignment_preview(
+      w02_assignment_plan(), "w02", "02", w02_batch_id_rv(),
+      "enrichment", w02_active_assignment_events()
+    )
+  })
+  output$w02_assignment_status <- renderText(assignment_manage_status())
+  observeEvent(input$w02_apply_assignments, {
+    apply_workflow_assignments(w02_assignment_plan())
+  })
+  observeEvent(input$w02_remove_assignments, {
+    remove_workflow_user_assignments(
+      input$w02_remove_assignment_user,
+      w02_active_assignment_events(),
+      "02",
+      w02_batch_id_rv(),
+      "enrichment"
+    )
+  })
+
+  w08_assignment_plan <- reactive({
+    req(authenticated())
+    workflow_assignment_plan(
+      "w08", w08_all_cases_rv(), w08_active_assignment_events(),
+      "08", w08_batch_id_rv(), "annotation"
+    )
+  })
+  output$w08_assignment_preview <- renderUI({
+    req(authenticated())
+    workflow_assignment_preview(
+      w08_assignment_plan(), "w08", "08", w08_batch_id_rv(),
+      "annotation", w08_active_assignment_events()
+    )
+  })
+  output$w08_assignment_status <- renderText(assignment_manage_status())
+  observeEvent(input$w08_apply_assignments, {
+    apply_workflow_assignments(w08_assignment_plan())
+  })
+  observeEvent(input$w08_remove_assignments, {
+    remove_workflow_user_assignments(
+      input$w08_remove_assignment_user,
+      w08_active_assignment_events(),
+      "08",
+      w08_batch_id_rv(),
+      "annotation"
+    )
+  })
+
   observeEvent(input$logout, {
     authenticated(FALSE)
     current_user(NULL)
