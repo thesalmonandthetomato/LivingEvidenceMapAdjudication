@@ -1670,7 +1670,7 @@
       "checksum": "20d13bbd9b004db228881d352910513d"
     },
     "app.R": {
-      "checksum": "325e9b9136e0827dfdbe765da41e6749"
+      "checksum": "1246e27e3ff2393d84e9b7eb9afd86b3"
     },
     "docs/workflow02_adjudication_contract.md": {
       "checksum": "70e8056f8d6149f52ed939221645e1f9"
@@ -1680,6 +1680,33 @@
     },
     "fixtures/w01_real_sample_2.provenance.json": {
       "checksum": "480a0d337e4fbf1a18baca82acdbcb23"
+    },
+    "multiuser_app/app.R": {
+      "checksum": "559860232930181ecfa183b1b4d9a9e4"
+    },
+    "multiuser_app/R/adjudication_schema.R": {
+      "checksum": "2ff06f7ff1af518a1026070f6963beb3"
+    },
+    "multiuser_app/R/auth.R": {
+      "checksum": "cadec0238e5356811bd8495088892a66"
+    },
+    "multiuser_app/R/github_dispatch.R": {
+      "checksum": "509988ef82ca8d697586286d0fde79bd"
+    },
+    "multiuser_app/R/storage_backend.R": {
+      "checksum": "6260fc9b86ef54c9db5af9ef604c6a0b"
+    },
+    "multiuser_app/R/storage_local.R": {
+      "checksum": "5004b00ddb543e2da8d176905dd2b3c4"
+    },
+    "multiuser_app/R/storage_sheets.R": {
+      "checksum": "2dcd3e8441caed05929089db658a31c3"
+    },
+    "multiuser_app/R/users.R": {
+      "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
+    },
+    "multiuser_app/R/w01_contract.R": {
+      "checksum": "08a1be968420750f0593f092c2b7caab"
     },
     "R/auth.R": {
       "checksum": "386d3f17d2856f50d104d87761906e16"
