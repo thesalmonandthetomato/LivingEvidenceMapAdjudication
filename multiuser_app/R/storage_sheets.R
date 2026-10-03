@@ -203,7 +203,11 @@ append_sheet_decision <- function(decision, prior_decision = NULL) {
   }
 
   verify <- normalise_sheet_rows(hits)[[1L]]
-  invisible(verify)
+  invisible(normalise_saved_decision_event(
+    verify,
+    prior_decision = prior_decision,
+    case_fields = c("case_id", "review_case_id")
+  ))
 }
 
 export_active_sheet_w01_decisions <- function(output_path) {
@@ -393,7 +397,11 @@ append_sheet_w02_decision <- function(decision, prior_decision = NULL) {
   x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
   hits <- x[as.character(x$decision_id) == decision_id, , drop = FALSE]
   if (nrow(hits) != 1L) stop("W02 Google Sheets write could not be verified", call.=FALSE)
-  as.list(hits[1, , drop=FALSE])
+  normalise_saved_decision_event(
+    as.list(hits[1, , drop=FALSE]),
+    prior_decision = prior_decision,
+    case_fields = c("case_id", "review_case_id")
+  )
 }
 
 
@@ -589,7 +597,11 @@ append_w04_decision_to_tab <- function(decision, prior_decision=NULL, tab, prefi
   x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
   hits <- x[as.character(x$decision_id)==decision_id,,drop=FALSE]
   if(nrow(hits)!=1L) stop("W04 Google Sheets write could not be verified",call.=FALSE)
-  as.list(hits[1,,drop=FALSE])
+  normalise_saved_decision_event(
+    as.list(hits[1,,drop=FALSE]),
+    prior_decision = prior_decision,
+    case_fields = c("case_id", "review_case_id")
+  )
 }
 
 append_sheet_w04_decision <- function(decision, prior_decision=NULL) {
@@ -731,7 +743,11 @@ append_sheet_w08_decision <- function(decision, prior_decision=NULL) {
   verify <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
   hit <- verify[verify$decision_id==decision_id,,drop=FALSE]
   if(nrow(hit)!=1L) stop("W08 decision write verification failed",call.=FALSE)
-  as.list(hit[1,,drop=FALSE])
+  normalise_saved_decision_event(
+    as.list(hit[1,,drop=FALSE]),
+    prior_decision = prior_decision,
+    case_fields = c("case_id", "record_id")
+  )
 }
 
 
