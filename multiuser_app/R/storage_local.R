@@ -18,7 +18,14 @@ write_local_decision <- function(path, decision) {
   for (d in current) writeLines(jsonlite::toJSON(d, auto_unbox=TRUE, null="null", na="null"), con, useBytes=TRUE)
   close(con)
   if (!file.rename(tmp, path)) stop("Could not atomically replace local decision store", call.=FALSE)
-  invisible(TRUE)
+
+  # Match the Google Sheets backend contract: callers need the saved decision
+  # object, not merely a success flag, so reactive decision state remains typed.
+  saved <- read_local_decisions(path)
+  ids <- vapply(saved, function(x) as.character(x$review_case_id), character(1))
+  hit <- match(as.character(decision$review_case_id), ids)
+  if (is.na(hit)) stop("Local decision write could not be verified", call.=FALSE)
+  saved[[hit]]
 }
 
 
