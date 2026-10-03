@@ -150,7 +150,7 @@ plan_again <- plan_shared_pool_assignment(
   amount = 3
 )
 stopifnot(
-  identical(plan_again$available, 9L),
+  identical(plan_again$available, 6L),
   identical(plan_again$allocated, 3L)
 )
 
@@ -165,7 +165,8 @@ shared_first <- plan_shared_pool_assignment(
   task_type = "deduplication",
   user_ids = "usr-a",
   allocation_type = "number",
-  amount = 1
+  amount = 1,
+  allocation_strategy = "shared"
 )
 shared_second <- plan_shared_pool_assignment(
   cases = list(list(review_case_id = "shared-case")),
@@ -176,7 +177,8 @@ shared_second <- plan_shared_pool_assignment(
   task_type = "deduplication",
   user_ids = "usr-b",
   allocation_type = "number",
-  amount = 1
+  amount = 1,
+  allocation_strategy = "shared"
 )
 stopifnot(
   identical(shared_second$available, 1L),
