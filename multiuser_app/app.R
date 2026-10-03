@@ -566,18 +566,17 @@ server <- function(input, output, session) {
         class = "login-shell",
         card(
           card_header(tags$strong("LivingEvidenceMap adjudication")),
-          if (individual_auth_configured()) {
-            tagList(
-              tags$p("Sign in with your adjudication account."),
-              textInput("login_email", "Email"),
-              passwordInput("access_key", "Access key")
-            )
-          } else {
-            tagList(
-              tags$p("Enter the adjudication access key to continue."),
-              passwordInput("access_key", "Access key")
-            )
-          },
+          tagList(
+            tags$p("Sign in with your adjudication account."),
+            textInput("login_email", "Email"),
+            passwordInput("access_key", "Access key"),
+            if (!individual_auth_configured()) {
+              tags$div(
+                class = "mt-2 text-danger small",
+                "Individual authentication is not configured for this deployment. Check LEM_INITIAL_USERS_JSON and LEM_USER_ACCESS_KEY_HASHES_JSON in Connect Cloud."
+              )
+            }
+          ),
           actionButton("login", "Continue", class = "btn-primary"),
           tags$div(class = "mt-2 text-danger", textOutput("login_status"))
         )
@@ -883,14 +882,14 @@ server <- function(input, output, session) {
       return()
     }
     login_user <- tryCatch({
-      if (individual_auth_configured()) {
-        registry <- read_user_registry()
-        authenticate_registered_user(registry, input$login_email, input$access_key)
-      } else if (access_key_valid(input$access_key)) {
-        legacy_session_user()
-      } else {
-        NULL
+      if (!individual_auth_configured()) {
+        stop(
+          "Individual authentication is not configured. Check LEM_INITIAL_USERS_JSON and LEM_USER_ACCESS_KEY_HASHES_JSON in Connect Cloud.",
+          call. = FALSE
+        )
       }
+      registry <- read_user_registry()
+      authenticate_registered_user(registry, input$login_email, input$access_key)
     }, error = function(e) {
       login_status(paste("Login configuration error:", conditionMessage(e)))
       NULL
