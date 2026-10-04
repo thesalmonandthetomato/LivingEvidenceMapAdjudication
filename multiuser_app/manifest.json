@@ -1508,6 +1508,9 @@
     "R/w01_contract.R": {
       "checksum": "08a1be968420750f0593f092c2b7caab"
     },
+    "R/w04_blind_resolution.R": {
+      "checksum": "7b3d44077c31fc6b8b97a2644d261540"
+    },
     "tests/test_assignments.R": {
       "checksum": "5bbf859b3777cc2668d29d45dab6f627"
     },
