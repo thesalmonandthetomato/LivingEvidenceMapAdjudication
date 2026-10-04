@@ -3,26 +3,103 @@ suppressPackageStartupMessages({
   library(jsonlite)
 })
 
-gs4_auth_from_env <- function() {
+.lem_gs4_cache <- new.env(parent = emptyenv())
+.lem_gs4_cache$auth_fingerprint <- ""
+.lem_gs4_cache$credential_path <- ""
+.lem_gs4_cache$sheet_names <- list()
+.lem_gs4_cache$sheet_names_at <- list()
+
+gs4_auth_from_env <- function(force = FALSE) {
   sa_json <- Sys.getenv("LEM_GOOGLE_SERVICE_ACCOUNT_JSON", unset = "")
   if (!nzchar(sa_json)) stop("LEM_GOOGLE_SERVICE_ACCOUNT_JSON is not set", call.=FALSE)
 
+  fingerprint <- digest::digest(sa_json, algo = "sha256", serialize = FALSE)
+  if (
+    !isTRUE(force) &&
+    identical(.lem_gs4_cache$auth_fingerprint, fingerprint)
+  ) {
+    return(invisible(TRUE))
+  }
+
   credential_path <- sa_json
-  cleanup <- FALSE
   if (!file.exists(credential_path)) {
     parsed <- tryCatch(jsonlite::fromJSON(sa_json, simplifyVector = FALSE), error = function(e) NULL)
     if (is.null(parsed) || is.null(parsed$type) || !identical(parsed$type, "service_account")) {
       stop("LEM_GOOGLE_SERVICE_ACCOUNT_JSON is neither a readable file path nor valid service-account JSON", call.=FALSE)
     }
-    credential_path <- tempfile(pattern = "lem-google-service-account-", fileext = ".json")
-    writeLines(sa_json, credential_path, useBytes = TRUE)
-    Sys.chmod(credential_path, mode = "0600")
-    cleanup <- TRUE
+
+    cached_path <- .lem_gs4_cache$credential_path
+    if (is.null(cached_path) || !nzchar(as.character(cached_path)) || !file.exists(as.character(cached_path))) {
+      cached_path <- tempfile(pattern = "lem-google-service-account-", fileext = ".json")
+      writeLines(sa_json, cached_path, useBytes = TRUE)
+      Sys.chmod(cached_path, mode = "0600")
+      .lem_gs4_cache$credential_path <- cached_path
+    }
+    credential_path <- as.character(cached_path)
   }
 
-  on.exit(if (cleanup && file.exists(credential_path)) unlink(credential_path), add = TRUE)
   googlesheets4::gs4_auth(path = credential_path, cache = FALSE)
+  .lem_gs4_cache$auth_fingerprint <- fingerprint
   invisible(TRUE)
+}
+
+sheet_names_cache_ttl <- function() {
+  ttl <- suppressWarnings(as.numeric(
+    Sys.getenv("LEM_GOOGLE_SHEET_NAMES_CACHE_SECONDS", unset = "60")
+  ))
+  if (is.na(ttl) || ttl < 0) 60 else ttl
+}
+
+invalidate_sheet_names_cache <- function(ss = NULL) {
+  if (is.null(ss)) {
+    .lem_gs4_cache$sheet_names <- list()
+    .lem_gs4_cache$sheet_names_at <- list()
+    return(invisible(TRUE))
+  }
+
+  key <- as.character(ss)
+  names_cache <- .lem_gs4_cache$sheet_names
+  time_cache <- .lem_gs4_cache$sheet_names_at
+  names_cache[[key]] <- NULL
+  time_cache[[key]] <- NULL
+  .lem_gs4_cache$sheet_names <- names_cache
+  .lem_gs4_cache$sheet_names_at <- time_cache
+  invisible(TRUE)
+}
+
+sheet_names_cached <- function(ss, refresh = FALSE) {
+  gs4_auth_from_env()
+  key <- as.character(ss)
+  ttl <- sheet_names_cache_ttl()
+  now <- as.numeric(Sys.time())
+  names_cache <- .lem_gs4_cache$sheet_names
+  time_cache <- .lem_gs4_cache$sheet_names_at
+  cached <- names_cache[[key]]
+  cached_at <- time_cache[[key]]
+
+  if (
+    !isTRUE(refresh) &&
+    !is.null(cached) &&
+    !is.null(cached_at) &&
+    ttl > 0 &&
+    (now - cached_at) <= ttl
+  ) {
+    return(cached)
+  }
+
+  tabs <- googlesheets4::sheet_names(ss)
+  names_cache[[key]] <- tabs
+  time_cache[[key]] <- now
+  .lem_gs4_cache$sheet_names <- names_cache
+  .lem_gs4_cache$sheet_names_at <- time_cache
+  tabs
+}
+
+sheet_add_cached <- function(ss, sheet) {
+  gs4_auth_from_env()
+  out <- googlesheets4::sheet_add(ss, sheet = sheet)
+  invalidate_sheet_names_cache(ss)
+  invisible(out)
 }
 
 sheet_decision_tab <- function() Sys.getenv("LEM_GOOGLE_DECISIONS_TAB", unset = "decisions")
@@ -42,7 +119,7 @@ read_batch_status_log <- function() {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tab <- batch_status_tab()
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
   if(!tab %in% tabs) return(data.frame())
   x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
   if(!nrow(x)) return(data.frame())
@@ -74,10 +151,10 @@ append_batch_status <- function(stage,batch_id,queue_sha256,status,workflow_run_
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tab <- batch_status_tab()
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
   cols <- c("event_id","stage","batch_id","queue_sha256","status","event_at_utc","workflow_run_id","source_run_id","output_sha256","message")
   if(!tab %in% tabs){
-    googlesheets4::sheet_add(ss,sheet=tab)
+    sheet_add_cached(ss, tab)
     empty <- as.data.frame(setNames(replicate(length(cols),character(),simplify=FALSE),cols),stringsAsFactors=FALSE)
     googlesheets4::sheet_write(empty,ss=ss,sheet=tab)
   }
@@ -121,9 +198,9 @@ ensure_w01_decision_tab <- function() {
     "resolved_at_utc","queue_sha256","supersedes_decision_id"
   )
 
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
   if (!tab %in% tabs) {
-    googlesheets4::sheet_add(ss, sheet = tab)
+    sheet_add_cached(ss, tab)
     empty <- as.data.frame(
       setNames(replicate(length(required_cols), character(), simplify = FALSE), required_cols),
       stringsAsFactors = FALSE
@@ -260,7 +337,7 @@ read_sheet_w01_queue <- function(
   ss <- sheet_id_from_env()
 
   if (!nzchar(tab)) {
-    tabs <- googlesheets4::sheet_names(ss)
+    tabs <- sheet_names_cached(ss)
     if ("queue_w01_active" %in% tabs) {
       tab <- "queue_w01_active"
     } else if ("queue_w01_legacy_730" %in% tabs) {
@@ -270,7 +347,7 @@ read_sheet_w01_queue <- function(
     }
   }
 
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
   if (!tab %in% tabs) return(NULL)
 
   x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
@@ -318,7 +395,7 @@ read_sheet_w02_queue <- function(
 ) {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
   if (!tab %in% tabs) return(NULL)
 
   x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
@@ -364,7 +441,7 @@ read_sheet_w02_decision_log <- function() {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tab <- w02_decision_tab()
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
   if (!tab %in% tabs) return(list())
   x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
   normalise_w02_sheet_rows(x)
@@ -381,7 +458,7 @@ append_sheet_w02_decision <- function(decision, prior_decision = NULL) {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tab <- w02_decision_tab()
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
 
   current_active <- active_sheet_w02_decisions()
   case_id <- as.character(decision$review_case_id %||% "")
@@ -411,7 +488,7 @@ append_sheet_w02_decision <- function(decision, prior_decision = NULL) {
   )
 
   if (!tab %in% tabs) {
-    googlesheets4::sheet_add(ss, sheet = tab)
+    sheet_add_cached(ss, tab)
     empty <- as.data.frame(setNames(replicate(length(required_cols), character(), simplify=FALSE), required_cols))
     googlesheets4::sheet_write(empty, ss = ss, sheet = tab)
   }
@@ -458,7 +535,7 @@ w02_resume_request_exists <- function(queue_sha256, source_run_id) {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tab <- w02_resume_request_tab()
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
   if (!tab %in% tabs) return(FALSE)
 
   x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
@@ -477,7 +554,7 @@ append_w02_resume_request <- function(queue_sha256, source_run_id, status, messa
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tab <- w02_resume_request_tab()
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
 
   required_cols <- c(
     "request_id","queue_sha256","source_run_id","status",
@@ -485,7 +562,7 @@ append_w02_resume_request <- function(queue_sha256, source_run_id, status, messa
   )
 
   if (!tab %in% tabs) {
-    googlesheets4::sheet_add(ss, sheet = tab)
+    sheet_add_cached(ss, tab)
     empty <- as.data.frame(setNames(replicate(length(required_cols), character(), simplify=FALSE), required_cols))
     googlesheets4::sheet_write(empty, ss = ss, sheet = tab)
   }
@@ -522,7 +599,7 @@ w04_conflict_decision_tab <- function() {
 read_sheet_w04_queue_from_tab <- function(tab) {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
   if (!tab %in% tabs) return(NULL)
 
   x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
@@ -587,7 +664,7 @@ read_sheet_w04_conflict_queue <- function(tab = Sys.getenv("LEM_W04_CONFLICT_QUE
 read_sheet_w04_decision_log_from_tab <- function(tab) {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
   if(!tab %in% tabs) return(list())
   x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
   if(!nrow(x)) return(list())
@@ -609,14 +686,14 @@ active_sheet_w04_conflict_decisions <- function() active_w04_decisions_from_tab(
 append_w04_decision_to_tab <- function(decision, prior_decision=NULL, tab, prefix="w04-dec-") {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
 
   required_cols <- c(
     "decision_id","review_case_id","record_id","decision","rationale",
     "reviewer","resolved_at_utc","queue_sha256","supersedes_decision_id"
   )
   if(!tab %in% tabs) {
-    googlesheets4::sheet_add(ss,sheet=tab)
+    sheet_add_cached(ss, tab)
     empty <- as.data.frame(setNames(replicate(length(required_cols),character(),simplify=FALSE),required_cols))
     googlesheets4::sheet_write(empty,ss=ss,sheet=tab)
   }
@@ -669,7 +746,7 @@ read_sheet_w08_queue <- function(
 ) {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
   if (!tab %in% tabs) return(NULL)
 
   x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
@@ -727,7 +804,7 @@ read_sheet_w08_decision_log <- function() {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tab <- w08_decision_tab()
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
   if(!tab %in% tabs) return(list())
   x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
   if(!nrow(x)) return(list())
@@ -745,7 +822,7 @@ append_sheet_w08_decision <- function(decision, prior_decision=NULL) {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tab <- w08_decision_tab()
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
 
   current_active <- active_sheet_w08_decisions()
   record_id <- as.character(decision$record_id %||% "")
@@ -771,7 +848,7 @@ append_sheet_w08_decision <- function(decision, prior_decision=NULL) {
   )
 
   if(!tab %in% tabs) {
-    googlesheets4::sheet_add(ss,sheet=tab)
+    sheet_add_cached(ss, tab)
     empty <- as.data.frame(setNames(replicate(length(cols),character(),simplify=FALSE),cols),stringsAsFactors=FALSE)
     googlesheets4::sheet_write(empty,ss=ss,sheet=tab)
   }
@@ -856,7 +933,7 @@ read_latest_pipeline_status <- function() {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tab <- pipeline_status_tab()
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
   if(!tab %in% tabs) return(NULL)
   x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
   if(!nrow(x)) return(NULL)
@@ -897,11 +974,11 @@ ensure_sheet_user_registry <- function() {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tab <- user_registry_tab()
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
   cols <- ADJUDICATION_SCHEMA$users
 
   if (!tab %in% tabs) {
-    googlesheets4::sheet_add(ss, sheet = tab)
+    sheet_add_cached(ss, tab)
     empty <- as.data.frame(
       setNames(replicate(length(cols), character(), simplify = FALSE), cols),
       stringsAsFactors = FALSE
@@ -915,7 +992,7 @@ read_sheet_users <- function() {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tab <- user_registry_tab()
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
 
   # Phase 1A is deliberately non-invasive: absence of the user tab is an
   # empty registry, not a reason to create or mutate the spreadsheet.
@@ -949,11 +1026,11 @@ ensure_sheet_assignment_registry <- function() {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tab <- assignment_registry_tab()
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
   cols <- ADJUDICATION_SCHEMA$assignments
 
   if (!tab %in% tabs) {
-    googlesheets4::sheet_add(ss, sheet = tab)
+    sheet_add_cached(ss, tab)
     empty <- as.data.frame(
       setNames(replicate(length(cols), character(), simplify = FALSE), cols),
       stringsAsFactors = FALSE
@@ -967,7 +1044,7 @@ ensure_sheet_assignment_audit <- function() {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tab <- assignment_audit_tab()
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
   cols <- c(
     "event_id","event_at_utc","actor_user_id","action",
     "assignment_id","workflow","task_type","batch_id","case_id",
@@ -975,7 +1052,7 @@ ensure_sheet_assignment_audit <- function() {
   )
 
   if (!tab %in% tabs) {
-    googlesheets4::sheet_add(ss, sheet = tab)
+    sheet_add_cached(ss, tab)
     empty <- as.data.frame(
       setNames(replicate(length(cols), character(), simplify = FALSE), cols),
       stringsAsFactors = FALSE
@@ -1002,7 +1079,7 @@ read_sheet_assignments <- function(create_if_missing = TRUE) {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tab <- assignment_registry_tab()
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
 
   if (!tab %in% tabs) {
     if (!isTRUE(create_if_missing)) return(list())
@@ -1152,7 +1229,7 @@ write_sheet_assignments <- function(
 write_test_queue_tab <- function(tab, rows, expected_batch_id = "") {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
 
   if (tab %in% tabs) {
     existing <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
@@ -1175,7 +1252,7 @@ write_test_queue_tab <- function(tab, rows, expected_batch_id = "") {
     )
   }
 
-  googlesheets4::sheet_add(ss, sheet = tab)
+  sheet_add_cached(ss, tab)
   googlesheets4::sheet_write(rows, ss = ss, sheet = tab)
   invisible("created")
 }
@@ -1328,7 +1405,7 @@ start_fresh_test_w08_queue <- function(
 ) {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
-  tabs <- googlesheets4::sheet_names(ss)
+  tabs <- sheet_names_cached(ss)
   if (!tab %in% tabs) {
     return(create_test_w08_queue(tab))
   }
@@ -1411,5 +1488,5 @@ start_fresh_test_w08_queue <- function(
 test_queue_tab_exists <- function(tab) {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
-  tab %in% googlesheets4::sheet_names(ss)
+  tab %in% sheet_names_cached(ss)
 }
