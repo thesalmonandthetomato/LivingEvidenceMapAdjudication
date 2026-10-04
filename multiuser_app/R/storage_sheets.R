@@ -681,17 +681,28 @@ read_sheet_w04_decision_log_from_tab <- function(tab) {
   lapply(seq_len(nrow(x)),function(i)as.list(x[i,,drop=FALSE]))
 }
 
-active_w04_decisions_from_tab <- function(tab) {
+active_w04_decisions_from_tab <- function(
+  tab,
+  identity_scope = c("case", "case_user")
+) {
+  identity_scope <- match.arg(identity_scope)
   active_decision_events(
     read_sheet_w04_decision_log_from_tab(tab),
-    case_fields = c("case_id", "review_case_id")
+    case_fields = c("case_id", "review_case_id"),
+    identity_scope = identity_scope
   )
 }
 
 read_sheet_w04_decision_log <- function() read_sheet_w04_decision_log_from_tab(w04_decision_tab())
-active_sheet_w04_decisions <- function() active_w04_decisions_from_tab(w04_decision_tab())
-active_sheet_w04_resolution_decisions <- function() active_w04_decisions_from_tab(w04_resolution_decision_tab())
-active_sheet_w04_conflict_decisions <- function() active_w04_decisions_from_tab(w04_conflict_decision_tab())
+active_sheet_w04_decisions <- function() {
+  active_w04_decisions_from_tab(w04_decision_tab(), identity_scope = "case_user")
+}
+active_sheet_w04_resolution_decisions <- function() {
+  active_w04_decisions_from_tab(w04_resolution_decision_tab(), identity_scope = "case")
+}
+active_sheet_w04_conflict_decisions <- function() {
+  active_w04_decisions_from_tab(w04_conflict_decision_tab(), identity_scope = "case")
+}
 
 append_w04_decision_to_tab <- function(decision, prior_decision=NULL, tab, prefix="w04-dec-") {
   gs4_auth_from_env()
@@ -709,7 +720,13 @@ append_w04_decision_to_tab <- function(decision, prior_decision=NULL, tab, prefi
   }
 
   decision_id <- paste0(prefix,digest::digest(
-    paste(decision$review_case_id,decision$resolved_at_utc,decision$decision,sep="|"),
+    paste(
+      decision$review_case_id,
+      decision$reviewer %||% "",
+      decision$resolved_at_utc,
+      decision$decision,
+      sep="|"
+    ),
     algo="sha256",serialize=FALSE
   ))
   supersedes <- if(is.null(prior_decision)) "" else as.character(prior_decision$decision_id %||% "")
