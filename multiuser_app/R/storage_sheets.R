@@ -8,6 +8,16 @@ suppressPackageStartupMessages({
 .lem_gs4_cache$credential_path <- ""
 .lem_gs4_cache$sheet_names <- list()
 .lem_gs4_cache$sheet_names_at <- list()
+reg.finalizer(
+  .lem_gs4_cache,
+  function(e) {
+    path <- e$credential_path
+    if (!is.null(path) && nzchar(as.character(path)) && file.exists(as.character(path))) {
+      unlink(as.character(path))
+    }
+  },
+  onexit = TRUE
+)
 
 gs4_auth_from_env <- function(force = FALSE) {
   sa_json <- Sys.getenv("LEM_GOOGLE_SERVICE_ACCOUNT_JSON", unset = "")
