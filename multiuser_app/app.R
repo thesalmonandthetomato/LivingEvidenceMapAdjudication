@@ -3,6 +3,7 @@ suppressPackageStartupMessages({
   library(bslib)
   library(jsonlite)
   library(digest)
+  library(countrycode)
 })
 
 source("R/w01_contract.R", local = TRUE)
@@ -36,6 +37,35 @@ normalise_display_text <- function(x) {
   x <- as.character(x %||% "")
   x <- gsub("[[:space:]]+", " ", x)
   trimws(x)
+}
+
+
+w08_country_lookup <- local({
+  x <- countrycode::codelist
+  keep <- !is.na(x$iso3c) & nzchar(as.character(x$iso3c)) &
+    !is.na(x$country.name.en) & nzchar(as.character(x$country.name.en))
+  z <- unique(data.frame(
+    iso3c = toupper(as.character(x$iso3c[keep])),
+    country_name = as.character(x$country.name.en[keep]),
+    stringsAsFactors = FALSE
+  ))
+  z <- z[order(z$country_name, z$iso3c), , drop = FALSE]
+  rownames(z) <- NULL
+  z
+})
+
+w08_country_choices <- function() {
+  stats::setNames(
+    w08_country_lookup$iso3c,
+    paste0(w08_country_lookup$iso3c, " — ", w08_country_lookup$country_name)
+  )
+}
+
+w08_country_names_for_iso3 <- function(iso3) {
+  iso3 <- toupper(as.character(iso3 %||% character()))
+  idx <- match(iso3, w08_country_lookup$iso3c)
+  if (anyNA(idx)) return(NULL)
+  unname(w08_country_lookup$country_name[idx])
 }
 
 screening_green_terms <- c(
@@ -3557,16 +3587,31 @@ server <- function(input, output, session) {
         )
       },
       geography_model_failure = tagList(
-        textInput(paste0("w08_iso3_",j),"ISO3 codes (semicolon separated)",""),
-        textInput(paste0("w08_country_",j),"Country names (semicolon separated)","")
+        selectizeInput(
+          paste0("w08_geo_",j),
+          "Countries",
+          choices = w08_country_choices(),
+          multiple = TRUE,
+          options = list(create = FALSE, persist = FALSE)
+        )
       ),
       geography_unresolved = tagList(
-        textInput(paste0("w08_iso3_",j),"ISO3 codes (semicolon separated)",""),
-        textInput(paste0("w08_country_",j),"Country names (semicolon separated)","")
+        selectizeInput(
+          paste0("w08_geo_",j),
+          "Countries",
+          choices = w08_country_choices(),
+          multiple = TRUE,
+          options = list(create = FALSE, persist = FALSE)
+        )
       ),
       geography_evidence_unvalidated = tagList(
-        textInput(paste0("w08_iso3_",j),"Override ISO3 codes (semicolon separated)",""),
-        textInput(paste0("w08_country_",j),"Override country names (semicolon separated)","")
+        selectizeInput(
+          paste0("w08_geo_",j),
+          "Override countries",
+          choices = w08_country_choices(),
+          multiple = TRUE,
+          options = list(create = FALSE, persist = FALSE)
+        )
       ),
       topic_extreme_disagreement = {
         opts <- w08_topic_options()
@@ -3576,7 +3621,22 @@ server <- function(input, output, session) {
             vapply(opts,function(x)as.character(x$hierarchy_path %||% x$path_id %||% ""),character(1))
           )
         } else character()
-        tagList(selectizeInput(paste0("w08_topics_",j),"Replacement topic set",choices=topic_choices,multiple=TRUE))
+        tagList(
+          if (length(topic_choices)) {
+            selectizeInput(
+              paste0("w08_topics_",j),
+              "Replacement topic set",
+              choices = topic_choices,
+              multiple = TRUE,
+              options = list(create = FALSE, persist = FALSE)
+            )
+          } else {
+            tags$div(
+              class = "text-danger small",
+              "Accepted topic ontology is unavailable for this queue. Topic replacement is disabled."
+            )
+          }
+        )
       },
       NULL
     )
@@ -3701,10 +3761,11 @@ server <- function(input, output, session) {
         }
       } else if(typ %in% c("geography_model_failure","geography_unresolved","geography_evidence_unvalidated")) {
         if(choice %in% c("assign_country_set","override_country_set")) {
-          iso <- toupper(split_semicolon(input[[paste0("w08_iso3_",j)]]))
-          country <- split_semicolon(input[[paste0("w08_country_",j)]])
-          if(!length(iso)||length(iso)!=length(country)||any(nchar(iso)!=3L)) {
-            w08_status("Enter matching ISO3 codes and country names for the geography decision.")
+          iso <- unique(toupper(as.character(input[[paste0("w08_geo_",j)]] %||% character())))
+          iso <- iso[nzchar(iso)]
+          country <- w08_country_names_for_iso3(iso)
+          if(!length(iso) || is.null(country)) {
+            w08_status("Select at least one country from the accepted ISO country list.")
             return(FALSE)
           }
           final_value <- list(geography_status="RESOLVED",iso3c=iso,country_names=country)
@@ -3720,9 +3781,25 @@ server <- function(input, output, session) {
         if(choice=="accept_retained_topics") {
           final_value <- list(included=TRUE,path_ids=retained_ids)
         } else if(choice=="replace_topic_set") {
-          vals <- as.character(input[[paste0("w08_topics_",j)]] %||% character())
+          opts <- w08_topic_options()
+          allowed_topic_ids <- if(length(opts)) {
+            unique(vapply(opts,function(x)as.character(x$path_id %||% ""),character(1)))
+          } else character()
+          allowed_topic_ids <- allowed_topic_ids[nzchar(allowed_topic_ids)]
+          vals <- unique(as.character(input[[paste0("w08_topics_",j)]] %||% character()))
           vals <- vals[nzchar(vals)]
-          if(!length(vals)) {w08_status("Select at least one replacement topic.");return(FALSE)}
+          if(!length(allowed_topic_ids)) {
+            w08_status("Accepted topic ontology is unavailable; topic replacement is disabled.")
+            return(FALSE)
+          }
+          if(!length(vals)) {
+            w08_status("Select at least one replacement topic.")
+            return(FALSE)
+          }
+          if(any(!vals %in% allowed_topic_ids)) {
+            w08_status("Replacement topics must be selected from the accepted project ontology.")
+            return(FALSE)
+          }
           final_value <- list(included=TRUE,path_ids=vals)
         } else if(choice=="exclude_record") {
           final_value <- list(included=FALSE)
