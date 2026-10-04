@@ -11,6 +11,7 @@ source("R/adjudication_schema.R", local = TRUE)
 source("R/users.R", local = TRUE)
 source("R/assignments.R", local = TRUE)
 source("R/decision_events.R", local = TRUE)
+source("R/w04_blind_resolution.R", local = TRUE)
 source("R/storage_local.R", local = TRUE)
 source("R/storage_sheets.R", local = TRUE)
 source("R/storage_backend.R", local = TRUE)
@@ -670,13 +671,68 @@ server <- function(input, output, session) {
     read_sheet_w04_resolution_queue()
   }
 
+  w04_blind_outcomes <- reactive({
+    if (!nzchar(as.character(w04_batch_id_rv())) || !length(w04_all_cases_rv())) return(list())
+    w04_blind_case_outcomes(
+      cases = w04_all_cases_rv(),
+      assignments = assignment_registry_rv(),
+      decisions = w04_decisions(),
+      batch_id = w04_batch_id_rv(),
+      task_type = "manual_screening"
+    )
+  })
+
+  w04_blind_review_complete <- reactive({
+    if (!nzchar(as.character(w04_batch_id_rv()))) return(FALSE)
+    workflow_all_assignments_complete(
+      "04", w04_batch_id_rv(), "manual_screening", w04_decisions()
+    )
+  })
+
+  w04_blind_conflict_cases <- reactive({
+    if (!isTRUE(w04_blind_review_complete())) return(list())
+    conflicts <- w04_blind_conflicts(w04_blind_outcomes())
+    lapply(conflicts, function(x) {
+      z <- x$case
+      z$blind_review <- list(
+        status = x$status,
+        assigned_user_ids = x$assigned_user_ids,
+        completed_user_ids = x$completed_user_ids,
+        reviewer_decisions = x$reviewer_decisions
+      )
+      z$conflict_source <- "blind_manual_screening"
+      z
+    })
+  })
+
+  w04_blind_agreement_count <- reactive({
+    if (!isTRUE(w04_blind_review_complete())) return(0L)
+    length(w04_blind_agreements(w04_blind_outcomes()))
+  })
+
+  w04_active_conflict_cases <- reactive({
+    blind <- w04_blind_conflict_cases()
+    if (length(blind)) return(blind)
+    w04_conflict_cases_rv() %||% list()
+  })
+
+  w04_active_conflict_queue_sha <- reactive({
+    if (length(w04_blind_conflict_cases())) return(w04_queue_sha_rv())
+    w04_conflict_queue_sha_rv()
+  })
+
+  w04_active_conflict_batch_id <- reactive({
+    if (length(w04_blind_conflict_cases())) return(w04_batch_id_rv())
+    w04_conflict_batch_id_rv()
+  })
+
   w04_conflict_decision_ids <- function(ds = w04_conflict_decisions()) {
     if (!length(ds)) return(character())
     unique(vapply(ds,function(x)as.character(x$review_case_id %||% ""),character(1)))
   }
   w04_conflict_unresolved_indices <- function() {
-    cs <- w04_conflict_cases_rv()
-    if (is.null(cs)) return(integer())
+    cs <- w04_active_conflict_cases()
+    if (!length(cs)) return(integer())
     ids <- vapply(cs,function(x)as.character(x$review_case_id),character(1))
     which(!ids %in% w04_conflict_decision_ids())
   }
@@ -1190,16 +1246,31 @@ server <- function(input, output, session) {
         div(class="d-flex justify-content-between align-items-center mb-3",
           div(
             tags$h2("LivingEvidenceMap reviewer conflict resolution",class="mb-0"),
-            tags$div(sprintf("Workflow 04 · human–machine / human–human adjudication · %s",w04_conflict_batch_id_rv()),class="text-secondary")
+            tags$div(sprintf("Workflow 04 · human–machine / human–human adjudication · %s",w04_active_conflict_batch_id()),class="text-secondary")
           ),
           div(class="d-flex align-items-center gap-3 flex-wrap justify-content-end",
             uiOutput("session_identity"),
             actionButton("back_to_tasks_w04_conflict","Back to tasks",class="btn-outline-secondary btn-sm")
           )
         ),
-        card(class="decision-panel",
-          tags$p("This block is reserved for blinded reviewer conflicts. The final Include/Exclude choice will be stored as the adjudicated decision; agreement with individual reviewers or the model can be inferred from their recorded decisions.")
-        )
+        uiOutput("w04_conflict_progress_bar"),
+        card(
+          class="decision-panel",
+          div(
+            class="d-flex flex-wrap justify-content-between align-items-center gap-2",
+            tags$div(class="saved-note",textOutput("w04_conflict_save_status")),
+            div(
+              class="d-flex flex-wrap gap-2",
+              uiOutput("w04_conflict_decision_buttons"),
+              div(
+                class="nav-row d-flex gap-2",
+                actionButton("w04_conflict_previous","← Previous"),
+                actionButton("w04_conflict_next","Next →")
+              )
+            )
+          )
+        ),
+        uiOutput("w04_conflict_case_view")
       ))
     }
 
