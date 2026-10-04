@@ -4366,24 +4366,12 @@ server <- function(input, output, session) {
       )
       if (!all_complete) {
         w04_status("Your blinded review is complete. Waiting for the other assigned reviewer(s).")
+      } else if (session_can("manage_assignments")) {
+        w04_status(
+          "All assigned manual screening is complete. Use Consistency checking to compare selected raters, save the analysis, and create any conflict set that should be adjudicated."
+        )
       } else {
-        agreements <- w04_blind_agreement_count()
-        conflicts <- length(w04_blind_conflict_cases())
-        if (conflicts > 0L) {
-          w04_status(sprintf(
-            "All independent reviews are complete: %d case%s auto-resolved by agreement; %d conflict%s require adjudication.",
-            agreements, if (agreements == 1L) "" else "s",
-            conflicts, if (conflicts == 1L) "" else "s"
-          ))
-        } else {
-          if (session_can("control_workflows") && !identical(w04_batch_status_rv(),"review_complete")) {
-            mark_review_complete("04",w04_batch_id_rv(),w04_queue_sha_rv(),w04_batch_status_rv)
-          }
-          w04_status(sprintf(
-            "All independent reviews are complete and agree. %d case%s auto-resolved. Downstream finalisation remains gated pending the independent-review finaliser.",
-            agreements, if (agreements == 1L) "" else "s"
-          ))
-        }
+        w04_status("Your assigned manual screening is complete.")
       }
       app_view("tasks")
       return(invisible(TRUE))
@@ -4572,20 +4560,38 @@ server <- function(input, output, session) {
     b <- z$bibliographic %||% list()
     blind <- z$blind_review %||% list()
     reviewer_decisions <- blind$reviewer_decisions %||% list()
+    rater_label <- function(uid) {
+      if (identical(uid,"model")) return("Model")
+      u <- find_user_by_id(user_registry_rv(),uid,require_active=FALSE)
+      if (is.null(u)) uid else as.character(u$display_name)
+    }
     reviewer_badges <- if (length(reviewer_decisions)) {
+      ids <- names(reviewer_decisions)
+      if (is.null(ids) || any(!nzchar(ids))) {
+        ids <- paste0("rater-",seq_along(reviewer_decisions))
+      }
       lapply(seq_along(reviewer_decisions), function(i) {
         d <- as.character(reviewer_decisions[[i]]$decision %||% "")
         label <- c(retain="Include",exclude="Exclude",uncertain="Unsure")[[d]] %||% d
-        tags$span(class="task-badge me-1",sprintf("Reviewer %d: %s",i,label))
+        tags$span(
+          class="task-badge me-1",
+          sprintf("%s: %s",rater_label(ids[[i]]),label)
+        )
       })
     } else NULL
+    comparison_ids <- names(reviewer_decisions)
+    comparison_label <- if (length(comparison_ids)) {
+      paste(vapply(comparison_ids,rater_label,character(1)),collapse=" vs ")
+    } else {
+      "selected raters"
+    }
 
     card(
       class="record-card",
       card_header(
         div(
           class="d-flex justify-content-between align-items-center",
-          tags$strong("Resolve reviewer conflict"),
+          tags$strong(paste("Resolve conflict ·",comparison_label)),
           tags$span(class="task-badge",as.character(z$record_id %||% z$review_case_id %||% ""))
         )
       ),
@@ -4603,7 +4609,7 @@ server <- function(input, output, session) {
         if (length(reviewer_badges)) {
           div(
             class="mt-3 p-2 border rounded",
-            tags$strong("Independent reviewer decisions: "),
+            tags$strong("Decisions in this comparison: "),
             tagList(reviewer_badges)
           )
         },
@@ -4661,21 +4667,14 @@ server <- function(input, output, session) {
   advance_w04_conflict <- function() {
     unresolved <- w04_conflict_unresolved_indices()
     if(!length(unresolved)) {
-      if (
-        length(w04_blind_conflict_cases()) &&
-        session_can("control_workflows") &&
-        !identical(w04_batch_status_rv(),"review_complete")
-      ) {
-        mark_review_complete("04",w04_batch_id_rv(),w04_queue_sha_rv(),w04_batch_status_rv)
-      }
-      if(length(w04_blind_conflict_cases())) {
+      set <- w04_active_consistency_conflict_set()
+      if (!is.null(set)) {
         w04_conflict_status(sprintf(
-          "All reviewer conflicts resolved. %d agreement case%s were auto-resolved. Downstream finalisation remains gated pending the independent-review finaliser.",
-          w04_blind_agreement_count(),
-          if(w04_blind_agreement_count()==1L)"" else "s"
+          "All conflicts in %s have a resolved decision. The resolution is definitive for this case unless superseded by a later adjudication.",
+          as.character(set$conflict_set_id %||% "this conflict set")
         ))
       } else {
-        w04_conflict_status("All reviewer conflicts resolved.")
+        w04_conflict_status("All conflicts in this assigned conflict queue have been resolved.")
       }
       app_view("tasks")
       return(invisible(TRUE))
