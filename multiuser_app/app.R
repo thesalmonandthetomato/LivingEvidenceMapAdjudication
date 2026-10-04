@@ -1724,8 +1724,8 @@ server <- function(input, output, session) {
             div(class = "assignment-kpi", tags$span("Cases"), tags$strong(p$cases)),
             div(class = "assignment-kpi", tags$span("Assignments"), tags$strong(p$assigned)),
             div(class = "assignment-kpi", tags$span("Completed"), tags$strong(p$completed)),
-            div(class = "assignment-kpi", tags$span("Released"), tags$strong(p$resolved_elsewhere)),
-            div(class = "assignment-kpi", tags$span("Remaining"), tags$strong(p$remaining))
+            div(class = "assignment-kpi", tags$span("Closed"), tags$strong(p$resolved_elsewhere)),
+            div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(p$remaining))
           ),
           if (unassigned > 0L) {
             tags$div(class = "small mb-2", paste0("Unassigned cases: ", unassigned))
@@ -1775,8 +1775,8 @@ server <- function(input, output, session) {
             class = "assignment-kpis",
             div(class = "assignment-kpi", tags$span("Assignments"), tags$strong(total_assigned)),
             div(class = "assignment-kpi", tags$span("Completed"), tags$strong(total_completed)),
-            div(class = "assignment-kpi", tags$span("Released"), tags$strong(total_released)),
-            div(class = "assignment-kpi", tags$span("Remaining"), tags$strong(total_remaining)),
+            div(class = "assignment-kpi", tags$span("Closed"), tags$strong(total_released)),
+            div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(total_remaining)),
             div(class = "assignment-kpi", tags$span("Conflicts"), tags$strong("Not enabled"))
           ),
           if (!has_w02_batch || !has_w08_batch) {
