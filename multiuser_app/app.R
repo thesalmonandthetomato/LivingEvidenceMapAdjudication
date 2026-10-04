@@ -315,6 +315,22 @@ ui <- page_fillable(
     .w08-issue-card .selectize-control,
     .w08-issue-card .selectize-input { overflow:visible !important; }
     .w08-issue-card .selectize-dropdown { z-index:3000; max-height:240px; overflow-y:auto; }
+    .w08-review-layout {
+      display:grid;
+      grid-template-columns:minmax(0,1.35fr) minmax(360px,.85fr);
+      gap:1rem;
+      align-items:start;
+    }
+    .w08-review-evidence,
+    .w08-review-decisions { min-width:0; }
+    .w08-review-decisions .w08-issue-card,
+    .w08-review-decisions .w08-species-issue {
+      min-height:0;
+    }
+    .w08-review-decisions .w08-issue-card:last-child { margin-bottom:0 !important; }
+    @media (max-width: 980px) {
+      .w08-review-layout { grid-template-columns:1fr; }
+    }
     #lem-busy-overlay {
       display:none;
       position:fixed;
@@ -3546,12 +3562,17 @@ server <- function(input, output, session) {
         )
       ),
       div(
-        class="compact-record-body w04-text",
-        div(class="record-title",as.character(z$title %||% "")),
-        tags$h6(class="abstract-heading","Abstract"),
-        div(class="abstract-text",normalise_display_text(z$abstract %||% "")),
-        tags$hr(class="record-divider"),
-        tagList(lapply(seq_along(issues),function(j)w08_issue_panel(issues[[j]],j)))
+        class="compact-record-body w04-text w08-review-layout",
+        div(
+          class="w08-review-evidence",
+          div(class="record-title",as.character(z$title %||% "")),
+          tags$h6(class="abstract-heading","Abstract"),
+          div(class="abstract-text",normalise_display_text(z$abstract %||% ""))
+        ),
+        div(
+          class="w08-review-decisions",
+          tagList(lapply(seq_along(issues),function(j)w08_issue_panel(issues[[j]],j)))
+        )
       )
     )
   })
