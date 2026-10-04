@@ -34,7 +34,7 @@ jobs:
 
       - name: Install dependencies
         shell: Rscript {0}
-        run: install.packages(c("rsconnect","shiny","bslib","jsonlite","digest","googlesheets4","httr2"))
+        run: install.packages(c("rsconnect","shiny","bslib","jsonlite","digest","googlesheets4","httr2","countrycode"))
 
       - name: Parse application files
         shell: Rscript {0}
