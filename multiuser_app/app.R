@@ -709,7 +709,8 @@ server <- function(input, output, session) {
     if(is.na(completed)) completed <- 0L
 
     status_label <- tolower(trimws(as.character(p$status_label %||% "")))
-    update_finalised <- grepl("complete|completed|final|finalised|finalized", status_label)
+    update_finalised <- is.na(active) &&
+      grepl("(^|\\b)(complete|completed|final|finalised|finalized)(\\b|$)", status_label)
 
     workflow_labels <- c("W00","W01","W02","W03","W04","W05","W06","W07","W08","W10")
     segs <- lapply(seq_along(workflow_labels),function(i){
