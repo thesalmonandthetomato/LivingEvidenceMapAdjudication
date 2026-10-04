@@ -5044,7 +5044,7 @@ server <- function(input, output, session) {
       zero_topic_eligibility_uncertain="Topic eligibility verification"
     )
     allowed <- as.character(issue$allowed_human_outcomes %||% character())
-    if (typ %in% c("geography_unresolved","geography_evidence_unvalidated")) {
+    if (identical(typ,"geography_evidence_unvalidated")) {
       model_iso <- unique(toupper(as.character(unlist(
         av$iso3c %||%
         av$luna_iso3c %||%
@@ -5077,7 +5077,12 @@ server <- function(input, output, session) {
       no_code="Retain with no topic code",
       include_uncoded="Retain uncoded"
     )
-    choices <- setNames(allowed,unname(labels[allowed]))
+    choice_labels <- unname(labels[allowed])
+    names(choice_labels) <- allowed
+    if (identical(typ,"geography_unresolved") && "assign_country_set" %in% allowed) {
+      choice_labels[["assign_country_set"]] <- "Accept / amend model geography"
+    }
+    choices <- setNames(allowed,unname(choice_labels[allowed]))
 
     detail <- switch(
       typ,
@@ -5143,16 +5148,22 @@ server <- function(input, output, session) {
           options = list(create = FALSE, persist = FALSE)
         )
       ),
-      geography_unresolved = tagList(
-        selectizeInput(
-          paste0("w08_geo_",j),
-          "Countries",
-          choices = w08_country_choices(),
-          selected = toupper(as.character(unlist(saved_value$iso3c %||% character(), use.names = FALSE))),
-          multiple = TRUE,
-          options = list(create = FALSE, persist = FALSE)
+      geography_unresolved = {
+        model_selected <- toupper(as.character(unlist(
+          saved_value$iso3c %||% av$luna_iso3c %||% av$iso3c %||% character(),
+          use.names = FALSE
+        )))
+        tagList(
+          selectizeInput(
+            paste0("w08_geo_",j),
+            "Countries",
+            choices = w08_country_choices(),
+            selected = model_selected[nzchar(model_selected)],
+            multiple = TRUE,
+            options = list(create = FALSE, persist = FALSE)
+          )
         )
-      ),
+      },
       geography_evidence_unvalidated = tagList(
         selectizeInput(
           paste0("w08_geo_",j),
