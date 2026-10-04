@@ -1467,16 +1467,19 @@
   },
   "files": {
     "app.R": {
-      "checksum": "50870f4546d07a267a1673dc4bcbd8e7"
+      "checksum": "dd73918bac19ee6bb7384abaa860bbd3"
     },
     "DEVELOPMENT_TODO.md": {
-      "checksum": "7ee53afe9396a1ada23aee3be6b9bb64"
+      "checksum": "f63e7dfdacaac0e88610aa7b8e059d70"
     },
     "docs/adjudication_data_contract.md": {
       "checksum": "3919321855a4cb2298dc7f9cbaa3602b"
     },
     "docs/individual_authentication.md": {
       "checksum": "8c7a57fda27783c9d43731d71d7143dc"
+    },
+    "docs/w04_validation_sendback_contract.md": {
+      "checksum": "10dd621b6f8e01ca50f7c76461892085"
     },
     "fixtures/assignments_w01_local.jsonl": {
       "checksum": "33e36050d471ebd693858c5747f1fab3"
@@ -1497,7 +1500,7 @@
       "checksum": "544d137b964d270470ecfe99197ddee1"
     },
     "R/github_dispatch.R": {
-      "checksum": "adb11735d6d8a97e7bdc4b70aecd59a9"
+      "checksum": "7aff66141a1756109b0dccde20670e67"
     },
     "R/storage_backend.R": {
       "checksum": "f6febf54e12c9a4a486e36f05ecd62e1"
@@ -1518,7 +1521,7 @@
       "checksum": "ba6fd28afe370e10d7010181e3aff887"
     },
     "R/w04_validation_lifecycle.R": {
-      "checksum": "10b4e29a7fdfbe10e573a0f8be96f7af"
+      "checksum": "0793acf1d57562d687b254fcc633bfb2"
     },
     "tests/test_assignments.R": {
       "checksum": "56bc23194ae9612a912dbc192d373244"
@@ -1544,8 +1547,11 @@
     "tests/test_w04_blind_resolution.R": {
       "checksum": "a11cf1658b0f1913ddc0d1e637cdcef4"
     },
+    "tests/test_w04_validation_dispatch.R": {
+      "checksum": "bac8a6f0b75122533384cca72f498516"
+    },
     "tests/test_w04_validation_lifecycle.R": {
-      "checksum": "761e6a5604e6e5e499703003c3403ecb"
+      "checksum": "8711ce8a4c4eefc92e61781498c81e7d"
     }
   },
   "users": null
