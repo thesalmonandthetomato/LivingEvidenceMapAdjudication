@@ -5044,6 +5044,26 @@ server <- function(input, output, session) {
       zero_topic_eligibility_uncertain="Topic eligibility verification"
     )
     allowed <- as.character(issue$allowed_human_outcomes %||% character())
+    if (typ %in% c("geography_unresolved","geography_evidence_unvalidated")) {
+      model_iso <- unique(toupper(as.character(unlist(
+        av$iso3c %||%
+        av$luna_iso3c %||%
+        av$luna_country_iso3c %||%
+        av$model_iso3c %||%
+        av$deterministic_primary_iso3c %||%
+        character(),
+        use.names=FALSE
+      ))))
+      model_iso <- model_iso[nzchar(model_iso)]
+      model_names <- as.character(unlist(
+        av$luna_country_names %||% av$model_country_names %||% character(),
+        use.names=FALSE
+      ))
+      model_names <- model_names[nzchar(model_names)]
+      if ((length(model_iso) || length(model_names)) && !"accept_model" %in% allowed) {
+        allowed <- c("accept_model",allowed)
+      }
+    }
     labels <- c(
       assign_named_species="Assign named species",
       assign_unspecified_species="Assign unspecified species",
