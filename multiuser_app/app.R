@@ -1193,7 +1193,7 @@ server <- function(input, output, session) {
     update_finalised <- is.na(active) &&
       grepl("(^|\\b)(complete|completed|final|finalised|finalized)(\\b|$)", status_label)
 
-    workflow_labels <- c("W00","W01","W02","W03","W04","W05","W06","W07","W08","W09","W10")
+    workflow_labels <- c("0 search","1 dedup","2 repair","3 retract","4 screen","5 code","6 country","7 topics","8 review","9 report","10 dashboard")
     segs <- lapply(seq_along(workflow_labels),function(i){
       cls <- "workflow-segment"
       if(i <= completed) cls <- paste(cls,"done")
