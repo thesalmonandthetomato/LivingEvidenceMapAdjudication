@@ -132,15 +132,18 @@ cases_for_assignment_user <- function(
 ) {
   if (!length(cases)) return(list())
   mode <- assignment_mode_for(workflow, task_type %||% "")
+  explicit_user_scope <- identical(mode, ASSIGNMENT_MODES[["independent_blind_review"]]) ||
+    identical(as.character(task_type %||% ""), "conflict_resolution")
+
   batch_assignments <- active_assignments_for_batch(assignments, workflow, batch_id, task_type)
   if (!length(batch_assignments)) {
-    if (identical(mode, ASSIGNMENT_MODES[["independent_blind_review"]])) return(list())
+    if (isTRUE(explicit_user_scope)) return(list())
     return(cases)
   }
 
   if (
     user_can(user, "manage_assignments") &&
-    !identical(mode, ASSIGNMENT_MODES[["independent_blind_review"]])
+    !isTRUE(explicit_user_scope)
   ) return(cases)
 
   user_id <- as.character(normalise_user_row(user)$user_id)
