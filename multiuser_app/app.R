@@ -4912,13 +4912,22 @@ server <- function(input, output, session) {
       u <- find_user_by_id(user_registry_rv(),uid,require_active=FALSE)
       if (is.null(u)) uid else as.character(u$display_name)
     }
-    reviewer_badges <- if (length(reviewer_decisions)) {
-      ids <- names(reviewer_decisions)
+    case_decisions <- reviewer_decisions
+    model_decision <- w04_model_decision_from_case(z)
+    if (nzchar(model_decision) && !"model" %in% names(case_decisions)) {
+      case_decisions$model <- list(
+        decision=model_decision,
+        complete=TRUE,
+        source="model_context"
+      )
+    }
+    reviewer_badges <- if (length(case_decisions)) {
+      ids <- names(case_decisions)
       if (is.null(ids) || any(!nzchar(ids))) {
-        ids <- paste0("rater-",seq_along(reviewer_decisions))
+        ids <- paste0("rater-",seq_along(case_decisions))
       }
-      lapply(seq_along(reviewer_decisions), function(i) {
-        d <- as.character(reviewer_decisions[[i]]$decision %||% "")
+      lapply(seq_along(case_decisions), function(i) {
+        d <- as.character(case_decisions[[i]]$decision %||% "")
         label <- c(retain="Include",exclude="Exclude",uncertain="Unsure")[[d]] %||% d
         badge_class <- if (identical(d,"retain")) {
           "decision-badge-include"
@@ -4963,7 +4972,7 @@ server <- function(input, output, session) {
         if (length(reviewer_badges)) {
           div(
             class="mt-3 p-2 border rounded",
-            tags$strong("Decisions in this comparison: "),
+            tags$strong("Decisions for this case: "),
             tagList(reviewer_badges)
           )
         },
