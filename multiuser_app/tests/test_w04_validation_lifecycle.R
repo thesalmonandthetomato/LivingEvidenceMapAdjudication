@@ -103,6 +103,27 @@ stopifnot(
   identical(wrong_sha$wrong_sha_case_ids, assigned_ids[[1L]])
 )
 
+
+wrong_reviewer_decisions <- decisions
+wrong_reviewer_decisions[[1L]]$reviewer <- "reviewer-z"
+wrong_reviewer <- w04_validation_lifecycle(
+  cases, plan$new_assignments, wrong_reviewer_decisions, batch_id, queue_sha
+)
+stopifnot(
+  isFALSE(wrong_reviewer$ready),
+  identical(wrong_reviewer$mismatched_reviewer_case_ids, assigned_ids[[1L]])
+)
+
+wrong_record_decisions <- decisions
+wrong_record_decisions[[1L]]$record_id <- "record-wrong"
+wrong_record <- w04_validation_lifecycle(
+  cases, plan$new_assignments, wrong_record_decisions, batch_id, queue_sha
+)
+stopifnot(
+  isFALSE(wrong_record$ready),
+  identical(wrong_record$mismatched_record_case_ids, assigned_ids[[1L]])
+)
+
 duplicate_assignments <- c(
   plan$new_assignments,
   list(within(plan$new_assignments[[1L]], {
