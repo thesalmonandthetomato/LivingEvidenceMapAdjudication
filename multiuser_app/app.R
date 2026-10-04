@@ -2860,13 +2860,38 @@ server <- function(input, output, session) {
       w04_consistency_history_loaded(TRUE)
       return()
     }
-    hist <- tryCatch(read_w04_consistency_analyses(),error=function(e)e)
-    if (inherits(hist,"error")) {
-      w04_consistency_status(paste("Could not load saved analyses:",conditionMessage(hist)))
+    loaded <- tryCatch(
+      list(
+        analyses=read_w04_consistency_analyses(),
+        conflict_sets=read_w04_conflict_sets()
+      ),
+      error=function(e)e
+    )
+    if (inherits(loaded,"error")) {
+      w04_consistency_status(paste("Could not load saved W04 analysis history:",conditionMessage(loaded)))
       w04_consistency_history_loaded(TRUE)
       return()
     }
-    w04_consistency_analyses_rv(hist)
+    w04_consistency_analyses_rv(loaded$analyses)
+    w04_conflict_sets_rv(loaded$conflict_sets)
+
+    current_sets <- Filter(
+      function(x) identical(
+        as.character(x$parent_batch_id %||% ""),
+        as.character(w04_batch_id_rv())
+      ),
+      loaded$conflict_sets
+    )
+    if (length(current_sets)) {
+      active_set <- current_sets[[length(current_sets)]]
+      all_conf <- tryCatch(active_sheet_w04_conflict_decisions(),error=function(e)list())
+      set_decisions <- w04_filter_batch_decisions(
+        all_conf,
+        as.character(active_set$conflict_queue_sha256 %||% "")
+      )
+      w04_conflict_decisions(set_decisions)
+      w04_conflict_idx(1L)
+    }
     w04_consistency_history_loaded(TRUE)
   })
 
@@ -2919,7 +2944,71 @@ server <- function(input, output, session) {
           )),
           tags$tbody(rows)
         )
-      )
+      ),
+      {
+        all_saved <- Filter(
+          function(x) identical(
+            as.character(x$batch_id %||% ""),
+            as.character(w04_batch_id_rv())
+          ),
+          w04_consistency_analyses_rv() %||% list()
+        )
+        conflict_ready <- Filter(
+          function(x) {
+            n <- suppressWarnings(as.integer(as.character(x$conflict_n %||% "0")))
+            !is.na(n) && n > 0L
+          },
+          all_saved
+        )
+        if (length(conflict_ready)) {
+          ids <- vapply(conflict_ready,function(x)as.character(x$analysis_id %||% ""),character(1))
+          labels <- vapply(conflict_ready,function(x) {
+            sprintf(
+              "%s · %s conflict%s",
+              as.character(x$analysis_id %||% ""),
+              as.character(x$conflict_n %||% "0"),
+              if (identical(as.character(x$conflict_n %||% "0"),"1")) "" else "s"
+            )
+          },character(1))
+          tagList(
+            tags$hr(),
+            tags$strong("Conflict resolution"),
+            tags$p(
+              class="text-secondary small mb-2",
+              "Create a conflict set from one saved analysis. The exact raters and conflicting records are preserved as provenance."
+            ),
+            selectInput(
+              "w04_conflict_analysis_id",
+              "Saved analysis",
+              choices=stats::setNames(ids,labels),
+              selected=ids[[length(ids)]]
+            ),
+            actionButton(
+              "w04_create_conflict_set",
+              "Create conflict set",
+              class="btn-outline-primary btn-sm"
+            ),
+            {
+              active_set <- w04_active_consistency_conflict_set()
+              if (!is.null(active_set)) {
+                tags$div(
+                  class="text-secondary small mt-2",
+                  sprintf(
+                    "Current conflict set: %s · source analysis: %s",
+                    as.character(active_set$conflict_set_id %||% ""),
+                    as.character(active_set$analysis_id %||% "")
+                  )
+                )
+              }
+            }
+          )
+        } else {
+          tags$div(
+            class="text-secondary small mt-2",
+            "No saved analysis currently contains conflicts."
+          )
+        }
+      }
     )
   })
 
@@ -2976,6 +3065,55 @@ server <- function(input, output, session) {
     }
     w04_consistency_analyses_rv(c(w04_consistency_analyses_rv(),list(saved)))
     w04_consistency_status(paste("Saved",as.character(saved$analysis_id %||% "analysis")))
+  })
+
+  observeEvent(input$w04_create_conflict_set,{
+    req(authenticated())
+    if (!session_can("manage_assignments")) {
+      w04_consistency_status("Administrator permission is required.")
+      return()
+    }
+    analysis_id <- as.character(input$w04_conflict_analysis_id %||% "")
+    if (!nzchar(analysis_id)) {
+      w04_consistency_status("Choose a saved analysis first.")
+      return()
+    }
+    hits <- Filter(
+      function(x) identical(as.character(x$analysis_id %||% ""),analysis_id),
+      w04_consistency_analyses_rv() %||% list()
+    )
+    if (!length(hits)) {
+      w04_consistency_status("The selected saved analysis could not be found.")
+      return()
+    }
+    saved_set <- tryCatch(
+      append_w04_conflict_set(hits[[length(hits)]],created_by=session_reviewer_id()),
+      error=function(e)e
+    )
+    if (inherits(saved_set,"error")) {
+      w04_consistency_status(paste("Conflict-set creation failed:",conditionMessage(saved_set)))
+      return()
+    }
+    existing_ids <- vapply(
+      w04_conflict_sets_rv() %||% list(),
+      function(x)as.character(x$conflict_set_id %||% ""),
+      character(1)
+    )
+    if (!as.character(saved_set$conflict_set_id %||% "") %in% existing_ids) {
+      w04_conflict_sets_rv(c(w04_conflict_sets_rv(),list(saved_set)))
+    }
+
+    all_conf <- tryCatch(active_sheet_w04_conflict_decisions(),error=function(e)list())
+    w04_conflict_decisions(w04_filter_batch_decisions(
+      all_conf,
+      as.character(saved_set$conflict_queue_sha256 %||% "")
+    ))
+    w04_conflict_idx(1L)
+    w04_consistency_status(sprintf(
+      "Created conflict set %s from %s. Assign its cases in the W04 conflict-resolution section below.",
+      as.character(saved_set$conflict_set_id %||% ""),
+      analysis_id
+    ))
   })
 
   w04_assignment_plan <- reactive({
