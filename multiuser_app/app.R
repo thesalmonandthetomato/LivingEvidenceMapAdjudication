@@ -2026,6 +2026,123 @@ server <- function(input, output, session) {
       )
     })
 
+    fmt_agreement_pct <- function(x) {
+      if (is.na(x)) "—" else sprintf("%.1f%%",100*x)
+    }
+    fmt_kappa <- function(x) {
+      if (is.na(x)) "—" else sprintf("%.3f",x)
+    }
+    w04_stats <- w04_blind_agreement_stats(w04_blind_outcomes())
+    reviewer_name <- function(uid) {
+      u <- find_user_by_id(user_registry_rv(),uid,require_active=FALSE)
+      if (is.null(u)) uid else u$display_name
+    }
+    pairwise_rows <- lapply(w04_stats$pairwise,function(x) {
+      tags$tr(
+        tags$td(paste(reviewer_name(x$reviewer_a),"vs",reviewer_name(x$reviewer_b))),
+        tags$td(x$n),
+        tags$td(fmt_agreement_pct(x$agreement)),
+        tags$td(fmt_kappa(x$kappa))
+      )
+    })
+    human_model_rows <- lapply(w04_stats$human_model,function(x) {
+      if (!isTRUE(x$n > 0L)) return(NULL)
+      tags$tr(
+        tags$td(paste(reviewer_name(x$reviewer),"vs model")),
+        tags$td(x$n),
+        tags$td(fmt_agreement_pct(x$agreement)),
+        tags$td(fmt_kappa(x$kappa))
+      )
+    })
+    human_model_rows <- Filter(Negate(is.null),human_model_rows)
+
+    w04_results_panel <- if (has_w04_batch) {
+      tags$details(
+        class="assignment-workflow mb-2",
+        `data-accordion-key`="w04-agreement-results",
+        tags$summary(
+          div(
+            class="d-inline-flex flex-wrap align-items-center gap-2",
+            tags$strong("W04 screening agreement"),
+            tags$span(class="task-badge","Administrator results"),
+            tags$span(
+              class="text-secondary small",
+              sprintf(
+                "%d jointly completed · %s raw agreement · %d conflict%s",
+                w04_stats$complete,
+                fmt_agreement_pct(w04_stats$raw_agreement),
+                w04_stats$conflict_cases,
+                if(w04_stats$conflict_cases==1L)"" else "s"
+              )
+            )
+          )
+        ),
+        div(
+          class="pt-2",
+          div(
+            class="assignment-kpis",
+            div(class="assignment-kpi",tags$span("Jointly completed"),tags$strong(w04_stats$complete)),
+            div(class="assignment-kpi",tags$span("Agreement"),tags$strong(fmt_agreement_pct(w04_stats$raw_agreement))),
+            div(class="assignment-kpi",tags$span("Agreed cases"),tags$strong(w04_stats$agreement_cases)),
+            div(class="assignment-kpi",tags$span("Conflicts"),tags$strong(w04_stats$conflict_cases))
+          ),
+          if(length(pairwise_rows)) {
+            tagList(
+              tags$strong("Human–human agreement"),
+              div(
+                class="assignment-table-wrap mb-2",
+                tags$table(
+                  class="assignment-table",
+                  tags$thead(tags$tr(tags$th("Comparison"),tags$th("N"),tags$th("Agreement"),tags$th("κ"))),
+                  tags$tbody(pairwise_rows)
+                )
+              )
+            )
+          },
+          if(isTRUE(w04_stats$fleiss$n > 0L)) {
+            tags$div(
+              class="small mb-2",
+              sprintf(
+                "Multi-rater agreement: N=%d · Fleiss’ κ=%s · mean observed agreement=%s",
+                w04_stats$fleiss$n,
+                fmt_kappa(w04_stats$fleiss$kappa),
+                fmt_agreement_pct(w04_stats$fleiss$agreement)
+              )
+            )
+          },
+          if(length(human_model_rows)) {
+            tagList(
+              tags$strong("Human–model agreement"),
+              div(
+                class="assignment-table-wrap mb-2",
+                tags$table(
+                  class="assignment-table",
+                  tags$thead(tags$tr(tags$th("Comparison"),tags$th("N"),tags$th("Agreement"),tags$th("κ"))),
+                  tags$tbody(human_model_rows)
+                )
+              ),
+              if(isTRUE(w04_stats$consensus_model$n > 0L)) {
+                tags$div(
+                  class="small",
+                  sprintf(
+                    "Human consensus vs model: N=%d · agreement=%s · κ=%s",
+                    w04_stats$consensus_model$n,
+                    fmt_agreement_pct(w04_stats$consensus_model$agreement),
+                    fmt_kappa(w04_stats$consensus_model$kappa)
+                  )
+                )
+              }
+            )
+          } else {
+            tags$div(
+              class="text-secondary small",
+              "Human–model agreement will appear when the active W04 queue exposes an explicit model decision for the same records."
+            )
+          }
+        )
+      )
+    } else NULL
+
     card(
       class = "assignment-summary",
       tags$details(
@@ -2050,7 +2167,7 @@ server <- function(input, output, session) {
             div(class = "assignment-kpi", tags$span("Completed"), tags$strong(total_completed)),
             div(class = "assignment-kpi", tags$span("Closed"), tags$strong(total_released)),
             div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(total_remaining)),
-            div(class = "assignment-kpi", tags$span("Conflicts"), tags$strong("Not enabled"))
+            div(class = "assignment-kpi", tags$span("Conflicts"), tags$strong(length(w04_all_conflict_cases())))
           ),
           if (!has_w02_batch || !has_w08_batch) {
             tags$details(
@@ -2083,6 +2200,7 @@ server <- function(input, output, session) {
               )
             )
           },
+          w04_results_panel,
           workflow_sections
         )
       )
