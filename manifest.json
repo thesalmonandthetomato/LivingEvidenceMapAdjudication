@@ -1667,7 +1667,7 @@
   },
   "files": {
     ".github/workflows/validate.yml": {
-      "checksum": "20d13bbd9b004db228881d352910513d"
+      "checksum": "eb7849fe81a1e14eea03e8df17957e5c"
     },
     "app.R": {
       "checksum": "54cc1809cb0782513f8bddc6295a4120"
@@ -1682,7 +1682,7 @@
       "checksum": "480a0d337e4fbf1a18baca82acdbcb23"
     },
     "multiuser_app/app.R": {
-      "checksum": "9f471023896f99b4650aff3db3b5292d"
+      "checksum": "fd4dbb95b1aef163e876c12789150ce7"
     },
     "multiuser_app/DEVELOPMENT_TODO.md": {
       "checksum": "7ee53afe9396a1ada23aee3be6b9bb64"
@@ -1724,7 +1724,7 @@
       "checksum": "08a1be968420750f0593f092c2b7caab"
     },
     "multiuser_app/tests/test_assignments.R": {
-      "checksum": "226598c57709fcde39be0df1ef8fa92a"
+      "checksum": "9b9854f4491fb8820320b84bcbb9cd9c"
     },
     "multiuser_app/tests/test_decision_events.R": {
       "checksum": "27f6693f251666375388b6c71d038c95"
