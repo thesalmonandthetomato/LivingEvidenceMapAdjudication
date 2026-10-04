@@ -71,12 +71,14 @@ jobs:
           cat("PASS: multi-user adjudication core tests\n")
 
 
-      - name: Generate Connect Cloud manifest
+      - name: Generate Connect Cloud manifests
         shell: Rscript {0}
         run: |
           rsconnect::writeManifest(appDir=".")
+          rsconnect::writeManifest(appDir="multiuser_app")
           stopifnot(file.exists("manifest.json"))
-          cat("PASS: manifest.json generated\n")
+          stopifnot(file.exists("multiuser_app/manifest.json"))
+          cat("PASS: root and multi-user manifests generated\n")
 
       - name: Commit manifest if changed
         shell: bash
@@ -85,18 +87,30 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin main
-          if git show origin/main:manifest.json > "$RUNNER_TEMP/remote-manifest.json" 2>/dev/null &&
-             cmp -s manifest.json "$RUNNER_TEMP/remote-manifest.json"; then
-            echo "PASS: manifest.json already current on origin/main"
+          root_same=false
+          multi_same=false
+
+          if git show origin/main:manifest.json > "$RUNNER_TEMP/remote-root-manifest.json" 2>/dev/null &&
+             cmp -s manifest.json "$RUNNER_TEMP/remote-root-manifest.json"; then
+            root_same=true
+          fi
+
+          if git show origin/main:multiuser_app/manifest.json > "$RUNNER_TEMP/remote-multi-manifest.json" 2>/dev/null &&
+             cmp -s multiuser_app/manifest.json "$RUNNER_TEMP/remote-multi-manifest.json"; then
+            multi_same=true
+          fi
+
+          if [ "$root_same" = true ] && [ "$multi_same" = true ]; then
+            echo "PASS: root and multi-user manifests already current on origin/main"
             exit 0
           fi
 
-          git add manifest.json
+          git add manifest.json multiuser_app/manifest.json
           if git diff --cached --quiet; then
-            echo "PASS: manifest.json already current"
+            echo "PASS: manifests already current"
             exit 0
           fi
 
-          git commit -m "build: update Connect Cloud manifest"
+          git commit -m "build: update Connect Cloud manifests"
           git pull --rebase origin main
           git push origin HEAD:main
