@@ -74,14 +74,22 @@ w04_blind_case_outcomes <- function(
 
     substantive <- completed_decisions %in% c("retain", "exclude")
     exact_agreement <- all_complete &&
+      length(assigned_users) >= 2L &&
       length(completed_decisions) > 0L &&
       all(substantive) &&
       length(unique(completed_decisions)) == 1L
+
+    single_human <- all_complete &&
+      length(assigned_users) == 1L &&
+      length(completed_decisions) == 1L &&
+      completed_decisions[[1L]] %in% c("retain","exclude")
 
     status <- if (!length(assigned_users)) {
       "unassigned"
     } else if (!all_complete) {
       "pending"
+    } else if (single_human) {
+      "single_human"
     } else if (exact_agreement) {
       "agreement"
     } else {
@@ -95,7 +103,7 @@ w04_blind_case_outcomes <- function(
       assigned_user_ids = assigned_users,
       completed_user_ids = completed_users,
       reviewer_decisions = by_user,
-      final_decision = if (exact_agreement) unique(completed_decisions)[[1L]] else "",
+      final_decision = if (exact_agreement || single_human) unique(completed_decisions)[[1L]] else "",
       case = cases[[i]]
     )
   })
