@@ -929,6 +929,26 @@ plan_w04_manual_assignment <- function(
   user_ids <- user_ids[nzchar(user_ids)]
   if (!length(user_ids)) stop("Select at least one reviewer", call. = FALSE)
 
+  # Stable pseudo-random order keeps assignment previews reproducible while
+  # avoiding dependence on the incoming search-result order.
+  if (length(cases)) {
+    case_ids_for_order <- vapply(
+      cases,
+      function(x) as.character(x$review_case_id %||% x$case_id %||% x$record_id %||% ""),
+      character(1)
+    )
+    random_key <- vapply(
+      case_ids_for_order,
+      function(cid) digest::digest(
+        paste("w04-manual", batch_id, review_mode, cid, sep="|"),
+        algo="sha256",
+        serialize=FALSE
+      ),
+      character(1)
+    )
+    cases <- cases[order(random_key, case_ids_for_order)]
+  }
+
   if (identical(review_mode, "reviewer_consistency")) {
     if (length(user_ids) < 2L) {
       stop("Reviewer consistency requires at least two reviewers", call. = FALSE)
