@@ -417,3 +417,57 @@ w04_consistency_analysis <- function(outcomes, rater_ids) {
     agreement_case_ids = agreement_case_ids
   )
 }
+
+
+w04_conflict_cases_for_raters <- function(
+  outcomes,
+  rater_ids,
+  conflict_case_ids,
+  analysis_id = "",
+  conflict_set_id = ""
+) {
+  outcomes <- outcomes %||% list()
+  rater_ids <- unique(as.character(rater_ids))
+  conflict_case_ids <- unique(as.character(conflict_case_ids))
+  rater_ids <- rater_ids[nzchar(rater_ids)]
+  conflict_case_ids <- conflict_case_ids[nzchar(conflict_case_ids)]
+  if (length(rater_ids) < 2L || !length(conflict_case_ids)) return(list())
+
+  wanted <- Filter(
+    function(x) as.character(x$case_id %||% "") %in% conflict_case_ids,
+    outcomes
+  )
+  if (!length(wanted)) return(list())
+
+  lapply(wanted,function(x) {
+    decisions <- setNames(vector("list",length(rater_ids)),rater_ids)
+    for (i in seq_along(rater_ids)) {
+      rid <- rater_ids[[i]]
+      if (identical(rid,"model")) {
+        decisions[[i]] <- list(
+          decision=w04_model_decision_from_case(x$case),
+          complete=TRUE,
+          source="model"
+        )
+      } else {
+        decisions[[i]] <- x$reviewer_decisions[[rid]] %||% list(
+          decision="",
+          complete=FALSE,
+          source="human"
+        )
+      }
+    }
+    z <- x$case
+    z$blind_review <- list(
+      status="conflict",
+      assigned_user_ids=x$assigned_user_ids,
+      completed_user_ids=x$completed_user_ids,
+      reviewer_decisions=decisions,
+      comparison_rater_ids=rater_ids
+    )
+    z$conflict_source <- "consistency_analysis"
+    z$analysis_id <- as.character(analysis_id)
+    z$conflict_set_id <- as.character(conflict_set_id)
+    z
+  })
+}
