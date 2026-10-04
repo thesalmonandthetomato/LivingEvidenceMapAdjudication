@@ -794,6 +794,35 @@ server <- function(input, output, session) {
     read_sheet_w04_resolution_queue()
   }
 
+  observe({
+    req(authenticated())
+    batch_id <- as.character(w04_batch_id_rv() %||% "")
+    all_cases <- w04_all_cases_rv() %||% list()
+    user <- current_user()
+    if (!nzchar(batch_id) || !length(all_cases) || is.null(user)) {
+      w04_cases_rv(list())
+      return()
+    }
+    visible <- cases_for_assignment_user(
+      all_cases,
+      assignment_registry_rv(),
+      "04",
+      batch_id,
+      user,
+      task_type="manual_screening",
+      active_events=w04_decisions()
+    )
+    w04_cases_rv(visible)
+    unresolved <- if(length(visible)) {
+      ids <- vapply(visible,function(x)as.character(x$review_case_id %||% ""),character(1))
+      which(!ids %in% w04_decision_ids())
+    } else integer()
+    current <- suppressWarnings(as.integer(w04_idx()))
+    if (is.na(current) || current < 1L || current > max(1L,length(visible))) {
+      w04_idx(if(length(unresolved)) unresolved[[1L]] else 1L)
+    }
+  })
+
   w04_blind_outcomes <- reactive({
     if (!nzchar(as.character(w04_batch_id_rv())) || !length(w04_all_cases_rv())) return(list())
     w04_blind_case_outcomes(
@@ -1986,7 +2015,6 @@ server <- function(input, output, session) {
         tags$summary(tags$strong("Manage assignments")),
         div(
           class = "pt-2",
-          tags$p(class = "text-secondary small mb-2", guidance),
           if (
             identical(cfg$workflow,"04") && identical(cfg$task_type,"manual_screening")
           ) {
@@ -2000,6 +2028,7 @@ server <- function(input, output, session) {
               selected = "reviewer_consistency"
             )
           },
+          tags$p(class = "text-secondary small mb-2", guidance),
           selectInput(
             paste0(cfg$prefix, "_assignment_users"),
             "Reviewers",
@@ -2080,6 +2109,23 @@ server <- function(input, output, session) {
       workflow_label <- workflow_labels_admin[[z$workflow]] %||% paste0("W", z$workflow)
       task_label <- task_labels[[z$task_type]] %||% z$task_type
       mode_label <- mode_labels[[mode]] %||% mode
+      if (identical(z$workflow,"04") && identical(z$task_type,"manual_screening")) {
+        active_w04 <- active_assignments_for_batch(
+          assignment_registry_rv(),"04",z$batch_id,"manual_screening"
+        )
+        groups <- unique(vapply(
+          active_w04,
+          function(x) normalise_assignment_row(x)$blind_group,
+          character(1)
+        ))
+        mode_label <- if ("w04-validation-set" %in% groups) {
+          "Build validation set"
+        } else if ("w04-reviewer-consistency" %in% groups) {
+          "Reviewer consistency"
+        } else {
+          "Choose screening purpose"
+        }
+      }
 
       group_cases <- if (
         identical(z$workflow,"01") && identical(z$task_type,"deduplication") &&
