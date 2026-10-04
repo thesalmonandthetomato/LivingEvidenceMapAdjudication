@@ -1888,6 +1888,30 @@ server <- function(input, output, session) {
           ))
         }
         if (
+          identical(z$workflow, "04") &&
+          identical(z$task_type, "manual_screening") &&
+          identical(z$batch_id, "no-active-queue")
+        ) {
+          return(tags$div(
+            class = "mt-2",
+            tags$div(
+              class = "text-secondary small mb-2",
+              "No active W04 manual-screening queue is loaded. Create an isolated synthetic W04 batch to test reviewer-consistency and validation-set assignment modes."
+            ),
+            tagList(
+              actionButton(
+                "create_test_w04_queue_inline",
+                "Create W04 test queue",
+                class = "btn-outline-secondary btn-sm"
+              ),
+              tags$div(
+                class = "saved-note mt-2",
+                textOutput("test_queue_status_w04", inline = TRUE)
+              )
+            )
+          ))
+        }
+        if (
           identical(z$workflow, "08") &&
           identical(z$task_type, "annotation") &&
           identical(z$batch_id, "no-active-queue")
@@ -3324,6 +3348,7 @@ server <- function(input, output, session) {
 
   output$test_queue_status <- renderText(test_queue_status())
   output$test_queue_status_w02 <- renderText(test_queue_status())
+  output$test_queue_status_w04 <- renderText(test_queue_status())
   output$test_queue_status_w08 <- renderText(test_queue_status())
 
   create_and_load_w02_test_queue <- function() {
@@ -3376,6 +3401,62 @@ server <- function(input, output, session) {
     w02_idx(1L)
     test_queue_status("W02 test queue created and loaded.")
     showNotification("W02 test queue created and loaded.", type = "message")
+    invisible(TRUE)
+  }
+
+  create_and_load_w04_test_queue <- function() {
+    req(authenticated())
+    if (!session_can("manage_assignments")) {
+      test_queue_status("Administrator permission is required.")
+      return(invisible(FALSE))
+    }
+
+    made <- tryCatch(
+      create_test_w04_queue(),
+      error=function(e)e
+    )
+    if (inherits(made,"error")) {
+      msg <- paste("W04 test queue could not be created:",conditionMessage(made))
+      test_queue_status(msg)
+      showNotification(msg,type="error",duration=NULL)
+      return(invisible(FALSE))
+    }
+
+    tab <- as.character(made$tab %||% Sys.getenv(
+      "LEM_W04_TEST_QUEUE_TAB",
+      unset="queue_w04_test_active"
+    ))
+    loaded <- tryCatch(
+      read_sheet_w04_queue_from_tab(tab),
+      error=function(e)e
+    )
+    if (inherits(loaded,"error") || is.null(loaded)) {
+      msg <- if (inherits(loaded,"error")) {
+        paste("W04 test queue could not be loaded:",conditionMessage(loaded))
+      } else {
+        "W04 test queue was created but could not be loaded."
+      }
+      test_queue_status(msg)
+      showNotification(msg,type="error",duration=NULL)
+      return(invisible(FALSE))
+    }
+
+    all_decisions <- tryCatch(active_sheet_w04_decisions(),error=function(e)list())
+    batch_decisions <- w04_filter_batch_decisions(all_decisions,loaded$queue_sha256)
+    w04_all_cases_rv(loaded$cases)
+    w04_cases_rv(list())
+    w04_queue_sha_rv(loaded$queue_sha256)
+    w04_batch_id_rv(loaded$batch_id)
+    w04_batch_status_rv(loaded$batch_status %||% "")
+    w04_include_terms(loaded$highlight_include %||% character())
+    w04_exclude_terms(loaded$highlight_exclude %||% character())
+    w04_decisions(batch_decisions)
+    w04_idx(1L)
+    w04_consistency_history_loaded(FALSE)
+    test_queue_status(
+      "W04 test queue created and loaded. Open Manage assignments to choose Reviewer consistency or Build validation set."
+    )
+    showNotification("W04 test queue created and loaded.",type="message")
     invisible(TRUE)
   }
 
@@ -3458,6 +3539,10 @@ server <- function(input, output, session) {
   })
   observeEvent(input$create_test_w02_queue_inline, {
     create_and_load_w02_test_queue()
+  })
+
+  observeEvent(input$create_test_w04_queue_inline, {
+    create_and_load_w04_test_queue()
   })
 
   observeEvent(input$create_test_w08_queue, {
