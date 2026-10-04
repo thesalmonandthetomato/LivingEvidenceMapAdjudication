@@ -49,8 +49,21 @@ stopifnot(grepl(
   app, perl = TRUE
 ))
 
+w04_finalize_start <- regexpr(
+  "dispatch_completed_w04_validation <- function()",
+  app,
+  fixed = TRUE
+)[[1L]]
+w04_finalize_call <- regexpr(
+  "dispatch_w04_validation_finalize(",
+  app,
+  fixed = TRUE
+)[[1L]]
+stopifnot(w04_finalize_start > 0L, w04_finalize_call > w04_finalize_start)
+w04_finalize_block <- substr(app, w04_finalize_start, w04_finalize_call)
+stopifnot(grepl('session_can\\("control_workflows"\\)', w04_finalize_block, perl = TRUE))
+
 for (dispatch_call in c(
-  "dispatch_w04_validation_finalize",
   "dispatch_w04_resolution_resume",
   "dispatch_w08_resume"
 )) {
