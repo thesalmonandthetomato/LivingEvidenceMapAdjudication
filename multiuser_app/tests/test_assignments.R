@@ -3,6 +3,7 @@
 source("R/adjudication_schema.R")
 source("R/users.R")
 source("R/assignments.R")
+source("R/w04_blind_resolution.R")
 
 users <- list(
   list(user_id="usr-admin", email="admin@example.org", display_name="Admin", role="administrator", active=TRUE),
@@ -156,6 +157,40 @@ one_reviewer_error <- tryCatch(
   error=function(e)e
 )
 stopifnot(inherits(one_reviewer_error,"error"))
+
+w04_outcome_assignments <- list(
+  list(assignment_id="bo-1",workflow="04",task_type="manual_screening",batch_id="blind-outcomes",case_id="bo-case-1",user_id="usr-a",blind_group="blind",status="assigned"),
+  list(assignment_id="bo-2",workflow="04",task_type="manual_screening",batch_id="blind-outcomes",case_id="bo-case-1",user_id="usr-b",blind_group="blind",status="assigned"),
+  list(assignment_id="bo-3",workflow="04",task_type="manual_screening",batch_id="blind-outcomes",case_id="bo-case-2",user_id="usr-a",blind_group="blind",status="assigned"),
+  list(assignment_id="bo-4",workflow="04",task_type="manual_screening",batch_id="blind-outcomes",case_id="bo-case-2",user_id="usr-b",blind_group="blind",status="assigned"),
+  list(assignment_id="bo-5",workflow="04",task_type="manual_screening",batch_id="blind-outcomes",case_id="bo-case-3",user_id="usr-a",blind_group="blind",status="assigned"),
+  list(assignment_id="bo-6",workflow="04",task_type="manual_screening",batch_id="blind-outcomes",case_id="bo-case-3",user_id="usr-b",blind_group="blind",status="assigned")
+)
+w04_outcome_cases <- list(
+  list(review_case_id="bo-case-1",record_id="bo-record-1"),
+  list(review_case_id="bo-case-2",record_id="bo-record-2"),
+  list(review_case_id="bo-case-3",record_id="bo-record-3")
+)
+w04_outcome_decisions <- list(
+  list(review_case_id="bo-case-1",reviewer="usr-a",decision="retain"),
+  list(review_case_id="bo-case-1",reviewer="usr-b",decision="retain"),
+  list(review_case_id="bo-case-2",reviewer="usr-a",decision="retain"),
+  list(review_case_id="bo-case-2",reviewer="usr-b",decision="exclude"),
+  list(review_case_id="bo-case-3",reviewer="usr-a",decision="uncertain"),
+  list(review_case_id="bo-case-3",reviewer="usr-b",decision="uncertain")
+)
+w04_outcomes <- w04_blind_case_outcomes(
+  w04_outcome_cases,
+  w04_outcome_assignments,
+  w04_outcome_decisions,
+  "blind-outcomes"
+)
+stopifnot(
+  identical(vapply(w04_outcomes,function(x)x$status,character(1)),c("agreement","conflict","conflict")),
+  identical(w04_outcomes[[1L]]$final_decision,"retain"),
+  length(w04_blind_agreements(w04_outcomes)) == 1L,
+  length(w04_blind_conflicts(w04_outcomes)) == 2L
+)
 
 allocation_cases <- lapply(seq_len(10), function(i) list(review_case_id = paste0("alloc-", i)))
 allocation_events <- list(
