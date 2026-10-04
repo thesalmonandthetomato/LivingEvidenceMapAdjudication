@@ -95,6 +95,68 @@ stopifnot(
   identical(p_blind_two$remaining, 0L)
 )
 
+blind_cases <- list(list(review_case_id="case-9"))
+visible_blind_a <- cases_for_assignment_user(
+  blind_cases, blind, "04", "batch-4", reviewer_a,
+  task_type="manual_screening", active_events=blind_events_one
+)
+visible_blind_admin <- cases_for_assignment_user(
+  blind_cases, blind, "04", "batch-4", admin,
+  task_type="manual_screening", active_events=blind_events_one
+)
+stopifnot(
+  length(visible_blind_a) == 1L,
+  length(visible_blind_admin) == 0L
+)
+
+independent_cases <- lapply(seq_len(4), function(i) list(review_case_id=paste0("blind-",i)))
+independent_plan <- plan_workflow_assignment(
+  cases=independent_cases,
+  assignments=list(),
+  active_events=list(),
+  workflow="04",
+  batch_id="batch-independent",
+  task_type="manual_screening",
+  user_ids=c("usr-a","usr-b"),
+  allocation_type="number",
+  amount=2
+)
+stopifnot(
+  identical(independent_plan$selected_cases, 2L),
+  identical(independent_plan$allocated, 4L),
+  identical(unname(independent_plan$by_user), c(2L,2L)),
+  all(vapply(independent_plan$case_ids, function(cid) {
+    assigned_users <- vapply(
+      Filter(
+        function(x) identical(normalise_assignment_row(x)$case_id,cid),
+        independent_plan$new_assignments
+      ),
+      function(x) normalise_assignment_row(x)$user_id,
+      character(1)
+    )
+    setequal(assigned_users,c("usr-a","usr-b"))
+  }, logical(1)))
+)
+
+one_reviewer_error <- tryCatch(
+  {
+    plan_workflow_assignment(
+      cases=independent_cases,
+      assignments=list(),
+      active_events=list(),
+      workflow="04",
+      batch_id="batch-independent",
+      task_type="manual_screening",
+      user_ids="usr-a",
+      allocation_type="number",
+      amount=1
+    )
+    NULL
+  },
+  error=function(e)e
+)
+stopifnot(inherits(one_reviewer_error,"error"))
+
 allocation_cases <- lapply(seq_len(10), function(i) list(review_case_id = paste0("alloc-", i)))
 allocation_events <- list(
   list(case_id="alloc-1", user_id="usr-a", decision="uncertain", event_at_utc="2026-10-03T10:00:00Z"),
