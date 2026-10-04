@@ -445,6 +445,7 @@ ui <- page_fillable(
     .nav-row .btn { min-width:95px; }
     .task-shell { max-width:1050px; margin:4vh auto 0 auto; padding:20px; width:100%; }
     .task-card { border:1px solid #dde3e8; box-shadow:0 2px 10px rgba(22,33,43,.05); }
+    .task-card .card-header strong { font-size:1.2rem; font-weight:700; line-height:1.2; }
     .task-kpis { display:grid; grid-template-columns:repeat(3,minmax(90px,1fr)); gap:.65rem; margin:.8rem 0; }
     .task-kpi { background:#f7f8fa; border:1px solid #e1e5e9; border-radius:8px; padding:.55rem .65rem; }
     .task-kpi strong { display:block; font-size:1.15rem; }
@@ -3072,6 +3073,21 @@ server <- function(input, output, session) {
     w02_cases_rv()[[w02_idx()]]
   })
 
+  w02_current_saved_choice <- reactive({
+    z <- w02_current_case()
+    ds <- w02_decisions()
+    if (!length(ds)) return("")
+    hit <- Filter(
+      function(x) identical(
+        as.character(x$review_case_id %||% ""),
+        as.character(z$review_case_id)
+      ),
+      ds
+    )
+    if (!length(hit)) return("")
+    as.character(hit[[1L]]$decision %||% "")
+  })
+
   output$w02_progress_text <- renderUI({
     req(authenticated(), w02_cases_rv())
     total <- length(w02_cases_rv())
@@ -3092,18 +3108,43 @@ server <- function(input, output, session) {
 
   output$w02_decision_panel <- renderUI({
     z <- w02_current_case()
+    choice <- w02_current_saved_choice()
     reason <- as.character(z$reason %||% z$conflict$reason %||% "")
     buttons <- if (identical(reason, "returned_doi_mismatch")) {
       tagList(
-        actionButton("w02_accept_field", "Accept provider field", class="btn-success"),
-        actionButton("w02_reject_match", "Reject provider match", class="btn-outline-danger"),
-        actionButton("w02_uncertain", "Unsure", class="btn-outline-secondary")
+        actionButton(
+          "w02_accept_field", "Accept provider field",
+          class=paste("btn-success", if (identical(choice,"accept_provider_field")) "decision-selected" else ""),
+          `aria-pressed`=if (identical(choice,"accept_provider_field")) "true" else "false"
+        ),
+        actionButton(
+          "w02_reject_match", "Reject provider match",
+          class=paste("btn-outline-danger", if (identical(choice,"reject_provider_match")) "decision-selected" else ""),
+          `aria-pressed`=if (identical(choice,"reject_provider_match")) "true" else "false"
+        ),
+        actionButton(
+          "w02_uncertain", "Unsure",
+          class=paste("btn-outline-secondary", if (identical(choice,"uncertain")) "decision-selected" else ""),
+          `aria-pressed`=if (identical(choice,"uncertain")) "true" else "false"
+        )
       )
     } else {
       tagList(
-        actionButton("w02_accept_field", "Accept provider field", class="btn-success"),
-        actionButton("w02_reject_field", "Reject provider field", class="btn-outline-danger"),
-        actionButton("w02_uncertain", "Unsure", class="btn-outline-secondary")
+        actionButton(
+          "w02_accept_field", "Accept provider field",
+          class=paste("btn-success", if (identical(choice,"accept_provider_field")) "decision-selected" else ""),
+          `aria-pressed`=if (identical(choice,"accept_provider_field")) "true" else "false"
+        ),
+        actionButton(
+          "w02_reject_field", "Reject provider field",
+          class=paste("btn-outline-danger", if (identical(choice,"reject_provider_field")) "decision-selected" else ""),
+          `aria-pressed`=if (identical(choice,"reject_provider_field")) "true" else "false"
+        ),
+        actionButton(
+          "w02_uncertain", "Unsure",
+          class=paste("btn-outline-secondary", if (identical(choice,"uncertain")) "decision-selected" else ""),
+          `aria-pressed`=if (identical(choice,"uncertain")) "true" else "false"
+        )
       )
     }
 
