@@ -1695,7 +1695,7 @@
   },
   "files": {
     ".github/workflows/validate.yml": {
-      "checksum": "bdadba68d9515267bfe7d542f595b700"
+      "checksum": "60ae24b39d491515a1d0234fcc8cb47a"
     },
     "app.R": {
       "checksum": "babbee8fe65f9b38f0496962b3c84a07"
@@ -1714,6 +1714,12 @@
     },
     "multiuser_app/DEVELOPMENT_TODO.md": {
       "checksum": "7ee53afe9396a1ada23aee3be6b9bb64"
+    },
+    "multiuser_app/docs/adjudication_data_contract.md": {
+      "checksum": "3919321855a4cb2298dc7f9cbaa3602b"
+    },
+    "multiuser_app/docs/individual_authentication.md": {
+      "checksum": "8c7a57fda27783c9d43731d71d7143dc"
     },
     "multiuser_app/fixtures/assignments_w01_local.jsonl": {
       "checksum": "33e36050d471ebd693858c5747f1fab3"
@@ -1757,11 +1763,20 @@
     "multiuser_app/tests/test_assignments.R": {
       "checksum": "56bc23194ae9612a912dbc192d373244"
     },
+    "multiuser_app/tests/test_auth.R": {
+      "checksum": "71a83aecde7c9af7e37a90d8dfc13b63"
+    },
     "multiuser_app/tests/test_decision_events.R": {
       "checksum": "27f6693f251666375388b6c71d038c95"
     },
     "multiuser_app/tests/test_local_assignments.R": {
       "checksum": "5694c4b318b92fc4926c022bf68fd37c"
+    },
+    "multiuser_app/tests/test_phase1c_permissions.R": {
+      "checksum": "db5fa871508f6ef3a05ab8d01dfe7239"
+    },
+    "multiuser_app/tests/test_users.R": {
+      "checksum": "3478785333151da4bc9976089d9d66b9"
     },
     "multiuser_app/tests/test_w01_decision_events.R": {
       "checksum": "112a0e96d6ba1c604e42171bdea3cd43"
