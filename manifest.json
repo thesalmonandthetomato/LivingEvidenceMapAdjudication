@@ -1725,7 +1725,7 @@
       "checksum": "cd12bcd15240403163354e7a89ac7f40"
     },
     "multiuser_app/R/assignments.R": {
-      "checksum": "f9540dbb29e7f796425a828f7cd1f6fc"
+      "checksum": "df2f8fe115aee966afc699bdd0f446aa"
     },
     "multiuser_app/R/auth.R": {
       "checksum": "cadec0238e5356811bd8495088892a66"
@@ -1743,7 +1743,7 @@
       "checksum": "6cfc5fa65dc8fd1020fad3ca42f2e397"
     },
     "multiuser_app/R/storage_sheets.R": {
-      "checksum": "70a984bedfd0f92fd8aebe77c5762eb1"
+      "checksum": "b887bcebcc113bb5d5394b1668c03cc4"
     },
     "multiuser_app/R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
