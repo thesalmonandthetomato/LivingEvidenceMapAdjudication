@@ -516,7 +516,7 @@ conflict_assignments <- list(
   list(
     assignment_id="conflict-a1",workflow="04",task_type="conflict_resolution",
     batch_id="conflict-batch",case_id="conflict-1",user_id="usr-a",
-    blind_group="",status="assigned"
+    blind_group="conflict-04",status="assigned"
   )
 )
 visible_conflict_a <- cases_for_assignment_user(
