@@ -1657,7 +1657,8 @@ server <- function(input, output, session) {
           ),
           if (
             identical(cfg$workflow, "08") &&
-            grepl("^w08-test-assignment-smoke", cfg$batch_id)
+            grepl("^w08-test-assignment-smoke", cfg$batch_id) &&
+            length(cancellable) > 0L
           ) {
             tagList(
               tags$hr(),
@@ -1766,6 +1767,38 @@ server <- function(input, output, session) {
         ),
         div(
           class = "pt-2",
+          if (
+            identical(z$workflow, "08") &&
+            identical(z$task_type, "annotation") &&
+            grepl("^w08-test-assignment-smoke", z$batch_id) &&
+            identical(as.integer(p$remaining), 0L)
+          ) {
+            div(
+              class = "p-2 mb-2 border rounded bg-light",
+              div(
+                class = "d-flex flex-wrap align-items-center justify-content-between gap-2",
+                div(
+                  tags$strong("No outstanding W08 test assignments"),
+                  tags$div(
+                    class = "text-secondary small",
+                    "Start a fresh four-record smoke-test batch for species, geography and topic adjudication."
+                  )
+                ),
+                div(
+                  class = "d-flex align-items-center gap-2",
+                  actionButton(
+                    "w08_start_fresh_test_batch",
+                    "Start fresh W08 test batch",
+                    class = "btn-outline-secondary btn-sm"
+                  ),
+                  tags$span(
+                    class = "saved-note",
+                    textOutput("w08_fresh_test_status", inline = TRUE)
+                  )
+                )
+              )
+            )
+          },
           div(
             class = "assignment-kpis",
             div(class = "assignment-kpi", tags$span("Cases"), tags$strong(p$cases)),
