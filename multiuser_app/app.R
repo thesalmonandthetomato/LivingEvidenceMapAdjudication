@@ -1632,7 +1632,7 @@ server <- function(input, output, session) {
 
       tags$details(
         class = "assignment-workflow",
-        `data-accordion-key` = paste0("workflow-", z$workflow, "-", z$task_type, "-", z$batch_id),
+        `data-accordion-key` = paste0("workflow-", z$workflow, "-", z$task_type),
         tags$summary(
           div(
             class = "d-inline-flex flex-wrap align-items-center gap-2",
