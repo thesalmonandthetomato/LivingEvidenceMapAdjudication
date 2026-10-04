@@ -72,6 +72,7 @@ jobs:
           source("tests/test_users.R")
           source("tests/test_auth.R")
           source("tests/test_phase1c_permissions.R")
+          source("tests/test_w04_validation_lifecycle.R")
           cat("PASS: multi-user adjudication core tests\n")
 
 
