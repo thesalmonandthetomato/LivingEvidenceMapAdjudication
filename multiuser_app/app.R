@@ -588,6 +588,9 @@ ui <- page_fillable(
     .task-kpi { background:#f7f8fa; border:1px solid #e1e5e9; border-radius:8px; padding:.55rem .65rem; }
     .task-kpi strong { display:block; font-size:1.15rem; }
     .task-badge { background:#eef3f1; border-radius:999px; padding:.2rem .55rem; font-size:.78rem; }
+    .decision-badge-include { background:#dff3e8 !important; color:#1f6b46 !important; border:1px solid #a8d9be; }
+    .decision-badge-exclude { background:#f8e0e0 !important; color:#9d2f2f !important; border:1px solid #e4adad; }
+    .decision-badge-neutral { background:#eef1f4 !important; color:#5f6973 !important; border:1px solid #d7dde2; }
     .assignment-summary { margin-bottom:1rem; border:1px solid #dde3e8; box-shadow:0 2px 10px rgba(22,33,43,.04); }
     .assignment-kpis { display:grid; grid-template-columns:repeat(5,minmax(100px,1fr)); gap:.5rem; margin-bottom:.75rem; }
     .assignment-kpi { background:#f7f8fa; border:1px solid #e1e5e9; border-radius:8px; padding:.55rem .65rem; }
@@ -4917,8 +4920,15 @@ server <- function(input, output, session) {
       lapply(seq_along(reviewer_decisions), function(i) {
         d <- as.character(reviewer_decisions[[i]]$decision %||% "")
         label <- c(retain="Include",exclude="Exclude",uncertain="Unsure")[[d]] %||% d
+        badge_class <- if (identical(d,"retain")) {
+          "decision-badge-include"
+        } else if (identical(d,"exclude")) {
+          "decision-badge-exclude"
+        } else {
+          "decision-badge-neutral"
+        }
         tags$span(
-          class="task-badge me-1",
+          class=paste("task-badge me-1",badge_class),
           sprintf("%s: %s",rater_label(ids[[i]]),label)
         )
       })
