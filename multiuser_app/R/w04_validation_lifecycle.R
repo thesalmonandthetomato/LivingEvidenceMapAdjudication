@@ -53,6 +53,8 @@ w04_validation_lifecycle <- function(
     duplicate_decision_case_ids = character(),
     invalid_decision_case_ids = character(),
     wrong_sha_case_ids = character(),
+    mismatched_reviewer_case_ids = character(),
+    mismatched_record_case_ids = character(),
     reason = ""
   )
 
@@ -115,6 +117,53 @@ w04_validation_lifecycle <- function(
   )
   result$invalid_decision_case_ids <- unique(decision_ids[invalid])
 
+  assignment_user_by_case <- setNames(
+    vapply(case_ids, function(cid) {
+      hits <- Filter(
+        function(x) identical(normalise_assignment_row(x)$case_id, cid),
+        batch_assignments
+      )
+      if (length(hits) != 1L) return("")
+      normalise_assignment_row(hits[[1L]])$user_id
+    }, character(1)),
+    case_ids
+  )
+  decision_user_by_case <- setNames(
+    vapply(case_ids, function(cid) {
+      hits <- Filter(function(x) identical(decision_case_id(x), cid), queue_decisions)
+      if (length(hits) != 1L) return("")
+      decision_user_id(hits[[1L]])
+    }, character(1)),
+    case_ids
+  )
+  result$mismatched_reviewer_case_ids <- case_ids[
+    nzchar(assignment_user_by_case[case_ids]) &
+      nzchar(decision_user_by_case[case_ids]) &
+      assignment_user_by_case[case_ids] != decision_user_by_case[case_ids]
+  ]
+
+  case_record_ids <- setNames(
+    vapply(cases, function(x) as.character(x$record_id %||% ""), character(1)),
+    vapply(
+      cases,
+      function(x) as.character(x$review_case_id %||% x$case_id %||% x$record_id %||% ""),
+      character(1)
+    )
+  )
+  decision_record_by_case <- setNames(
+    vapply(case_ids, function(cid) {
+      hits <- Filter(function(x) identical(decision_case_id(x), cid), queue_decisions)
+      if (length(hits) != 1L) return("")
+      as.character(hits[[1L]]$record_id %||% "")
+    }, character(1)),
+    case_ids
+  )
+  result$mismatched_record_case_ids <- case_ids[
+    nzchar(case_record_ids[case_ids]) &
+      nzchar(decision_record_by_case[case_ids]) &
+      case_record_ids[case_ids] != decision_record_by_case[case_ids]
+  ]
+
   all_case_decisions <- Filter(
     function(x) decision_case_id(x) %in% case_ids,
     decisions
@@ -136,7 +185,9 @@ w04_validation_lifecycle <- function(
     result$duplicate_assignment_case_ids,
     result$duplicate_decision_case_ids,
     result$invalid_decision_case_ids,
-    result$wrong_sha_case_ids
+    result$wrong_sha_case_ids,
+    result$mismatched_reviewer_case_ids,
+    result$mismatched_record_case_ids
   )
   result$ready <- !length(unique(blockers))
   result$reason <- if (isTRUE(result$ready)) "ready" else "incomplete_or_ambiguous"
