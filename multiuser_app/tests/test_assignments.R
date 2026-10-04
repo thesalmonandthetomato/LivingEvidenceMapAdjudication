@@ -275,6 +275,42 @@ stopifnot(
 
 cat("PASS: allocation planning, safe cancellation, and reviewer-level removal\n")
 
+# A cancelled formal assignment must not be recreated as an implicit reporting
+# assignment merely because a decision event exists for the same reviewer/case.
+cancelled_with_event <- list(
+  list(
+    assignment_id="cancelled-1", workflow="01", task_type="deduplication",
+    batch_id="batch-cancelled", case_id="cancelled-case", user_id="usr-a",
+    blind_group="pool", status="cancelled"
+  ),
+  list(
+    assignment_id="active-1", workflow="01", task_type="deduplication",
+    batch_id="batch-cancelled", case_id="active-case", user_id="usr-b",
+    blind_group="pool", status="assigned"
+  )
+)
+cancelled_event <- list(
+  list(
+    case_id="cancelled-case", user_id="usr-a", decision="duplicate",
+    event_at_utc="2026-10-03T10:20:00Z"
+  )
+)
+cancelled_progress <- assignment_progress(
+  cancelled_with_event,
+  cancelled_event,
+  users,
+  workflow="01",
+  batch_id="batch-cancelled",
+  task_type="deduplication"
+)
+stopifnot(
+  identical(cancelled_progress$assigned, 1L),
+  identical(cancelled_progress$remaining, 1L),
+  length(cancelled_progress$by_user) == 1L,
+  identical(cancelled_progress$by_user[[1L]]$user_id, "usr-b")
+)
+
+
 
 # W02 and W08 both use first-completed shared-pool semantics.
 stopifnot(
