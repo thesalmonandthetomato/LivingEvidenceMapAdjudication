@@ -2450,7 +2450,7 @@ server <- function(input, output, session) {
             tags$div(
               class = "d-flex flex-wrap align-items-center gap-2 mt-3 p-2 border rounded bg-light",
               tags$div(
-                tags$strong("Validation batch ready"),
+                tags$strong("Validation set ready"),
                 tags$div(
                   class = "text-secondary small",
                   "Every queue case has exactly one assignment and one valid decision with the expected queue SHA."
@@ -2458,7 +2458,7 @@ server <- function(input, output, session) {
               ),
               actionButton(
                 "w04_finalize_validation",
-                "Finalise validation batch",
+                "Send validation set to GitHub",
                 class = "btn-primary btn-sm"
               )
             )
@@ -4705,7 +4705,7 @@ server <- function(input, output, session) {
     state <- w04_validation_state()
     if (!isTRUE(state$ready)) {
       w04_status(paste0(
-        "W04 validation batch is not ready to finalise (",
+        "W04 validation set is not ready to send to GitHub (",
         as.character(state$reason %||% "incomplete"),
         ")."
       ))
@@ -4732,7 +4732,7 @@ server <- function(input, output, session) {
       FALSE
     })
     if (dispatched) {
-      w04_status("Validation complete. Workflow 04 finalisation dispatched.")
+      w04_status("Validation set sent to GitHub for Workflow 04 finalisation.")
     }
     dispatched
   }
@@ -4799,7 +4799,7 @@ server <- function(input, output, session) {
         w04_status("Your blinded review is complete. Waiting for the other assigned reviewer(s).")
       } else if (identical(validation_state$mode, "validation_set")) {
         if (isTRUE(validation_state$ready) && session_can("control_workflows")) {
-          w04_status("Validation set complete. Use Finalise validation batch in Administration & assignments.")
+          w04_status("Validation set complete. Use Send validation set to GitHub in Administration & assignments.")
         } else if (isTRUE(validation_state$ready)) {
           w04_status("Validation set complete. Awaiting an administrator to finalise Workflow 04.")
         } else if (session_can("manage_assignments")) {
