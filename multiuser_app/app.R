@@ -658,6 +658,7 @@ server <- function(input, output, session) {
   w04_include_terms <- reactiveVal(character())
   w04_exclude_terms <- reactiveVal(character())
   w04_consistency_analyses_rv <- reactiveVal(list())
+  w04_conflict_sets_rv <- reactiveVal(list())
   w04_consistency_history_loaded <- reactiveVal(FALSE)
   w04_consistency_status <- reactiveVal("")
 
@@ -832,9 +833,43 @@ server <- function(input, output, session) {
     length(w04_blind_agreements(w04_blind_outcomes()))
   })
 
+  w04_active_consistency_conflict_set <- reactive({
+    xs <- w04_conflict_sets_rv() %||% list()
+    if (!length(xs)) return(NULL)
+    xs <- Filter(
+      function(x) identical(
+        as.character(x$parent_batch_id %||% ""),
+        as.character(w04_batch_id_rv())
+      ),
+      xs
+    )
+    if (!length(xs)) return(NULL)
+    xs[[length(xs)]]
+  })
+
+  w04_consistency_conflict_cases <- reactive({
+    z <- w04_active_consistency_conflict_set()
+    if (is.null(z)) return(list())
+    rater_ids <- tryCatch(
+      as.character(jsonlite::fromJSON(as.character(z$rater_ids_json %||% "[]"))),
+      error=function(e) character()
+    )
+    case_ids <- tryCatch(
+      as.character(jsonlite::fromJSON(as.character(z$conflict_case_ids_json %||% "[]"))),
+      error=function(e) character()
+    )
+    w04_conflict_cases_for_raters(
+      outcomes=w04_blind_outcomes(),
+      rater_ids=rater_ids,
+      conflict_case_ids=case_ids,
+      analysis_id=as.character(z$analysis_id %||% ""),
+      conflict_set_id=as.character(z$conflict_set_id %||% "")
+    )
+  })
+
   w04_all_conflict_cases <- reactive({
-    blind <- w04_blind_conflict_cases()
-    if (length(blind)) return(blind)
+    generated <- w04_consistency_conflict_cases()
+    if (length(generated)) return(generated)
     w04_conflict_cases_rv() %||% list()
   })
 
@@ -853,17 +888,23 @@ server <- function(input, output, session) {
   })
 
   w04_active_conflict_queue_sha <- reactive({
-    if (length(w04_blind_conflict_cases())) return(w04_queue_sha_rv())
+    generated <- w04_active_consistency_conflict_set()
+    if (!is.null(generated)) {
+      return(as.character(generated$conflict_queue_sha256 %||% ""))
+    }
     w04_conflict_queue_sha_rv()
   })
 
   w04_active_conflict_batch_id <- reactive({
-    if (length(w04_blind_conflict_cases())) return(w04_batch_id_rv())
+    generated <- w04_active_consistency_conflict_set()
+    if (!is.null(generated)) {
+      return(as.character(generated$conflict_set_id %||% ""))
+    }
     w04_conflict_batch_id_rv()
   })
 
   w04_active_conflict_batch_status <- reactive({
-    if (length(w04_blind_conflict_cases())) return(w04_batch_status_rv())
+    if (!is.null(w04_active_consistency_conflict_set())) return("generated")
     w04_conflict_batch_status_rv()
   })
 
