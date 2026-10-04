@@ -5126,15 +5126,18 @@ server <- function(input, output, session) {
       geography_evidence_unvalidated="Geography evidence verification",
       topic_extreme_disagreement="Topic verification",
       ontology_pathology="Topic ontology verification",
-      zero_topic_eligibility_uncertain="Topic eligibility verification"
+      topic_coding_review="Topic coding review",
+      zero_topic_eligibility_uncertain="Zero-topic eligibility review"
     )
     allowed <- as.character(issue$allowed_human_outcomes %||% character())
     if (typ %in% c("geography_unresolved","geography_evidence_unvalidated")) {
       allowed <- c("accept_model","override_country_set","assign_none","exclude_record")
     } else if (identical(typ,"geography_model_failure")) {
       allowed <- c("assign_country_set","assign_none","exclude_record")
-    } else if (identical(typ,"ontology_pathology")) {
+    } else if (typ %in% c("ontology_pathology","topic_coding_review")) {
       allowed <- c("accept_retained_topics","replace_topic_set","no_code","exclude_record")
+    } else if (identical(typ,"zero_topic_eligibility_uncertain")) {
+      allowed <- c("assign_topic_set","include_uncoded","exclude_record")
     }
     labels <- c(
       assign_named_species="Assign named species",
@@ -5147,6 +5150,7 @@ server <- function(input, output, session) {
       accept_retained_topics="Accept retained topics",
       replace_topic_set="Replace topic set",
       no_code="Retain with no topic code",
+      assign_topic_set="Assign topic set",
       include_uncoded="Retain uncoded"
     )
     choice_labels <- unname(labels[allowed])
@@ -5192,7 +5196,15 @@ server <- function(input, output, session) {
           tags$ul(class="mb-2",items)
         )
       },
-      zero_topic_eligibility_uncertain = tags$p(class="mb-2","No retained topic was assigned; verify whether the record should remain included."),
+      topic_coding_review = {
+        ps <- av$pathways %||% list()
+        items <- lapply(ps,function(p)tags$li(
+          paste0(as.character(p$hierarchy_path %||% p$path_id %||% ""),
+                 if(nzchar(as.character(p$stars %||% ""))) paste0(" · ",p$stars) else "")
+        ))
+        tagList(tags$ul(class="mb-2",items))
+      },
+      zero_topic_eligibility_uncertain = tags$p(class="mb-2","No retained topic was assigned; verify eligibility and assign topics if appropriate."),
       tags$p(class="mb-2","Workflow 05 returned no eligible species assignment.")
     )
 
@@ -5302,6 +5314,58 @@ server <- function(input, output, session) {
             tags$div(
               class = "text-danger small",
               "Accepted topic ontology is unavailable for this queue. Topic replacement is disabled."
+            )
+          }
+        )
+      },
+      topic_coding_review = {
+        opts <- w08_topic_options()
+        topic_choices <- if(length(opts)) {
+          setNames(
+            vapply(opts,function(x)as.character(x$path_id %||% ""),character(1)),
+            vapply(opts,function(x)as.character(x$hierarchy_path %||% x$path_id %||% ""),character(1))
+          )
+        } else character()
+        tagList(
+          if (length(topic_choices)) {
+            selectizeInput(
+              paste0("w08_topics_",j),
+              "Replacement topic set",
+              choices = topic_choices,
+              selected = as.character(unlist(saved_value$path_ids %||% character(), use.names = FALSE)),
+              multiple = TRUE,
+              options = list(create = FALSE, persist = FALSE)
+            )
+          } else {
+            tags$div(
+              class = "text-danger small",
+              "Accepted topic ontology is unavailable for this queue. Topic replacement is disabled."
+            )
+          }
+        )
+      },
+      zero_topic_eligibility_uncertain = {
+        opts <- w08_topic_options()
+        topic_choices <- if(length(opts)) {
+          setNames(
+            vapply(opts,function(x)as.character(x$path_id %||% ""),character(1)),
+            vapply(opts,function(x)as.character(x$hierarchy_path %||% x$path_id %||% ""),character(1))
+          )
+        } else character()
+        tagList(
+          if (length(topic_choices)) {
+            selectizeInput(
+              paste0("w08_topics_",j),
+              "Topic set",
+              choices = topic_choices,
+              selected = as.character(unlist(saved_value$path_ids %||% character(), use.names = FALSE)),
+              multiple = TRUE,
+              options = list(create = FALSE, persist = FALSE)
+            )
+          } else {
+            tags$div(
+              class = "text-danger small",
+              "Accepted topic ontology is unavailable for this queue. Topic assignment is disabled."
             )
           }
         )
@@ -5425,8 +5489,10 @@ server <- function(input, output, session) {
         allowed <- c("accept_model","override_country_set","assign_none","exclude_record")
       } else if (identical(typ,"geography_model_failure")) {
         allowed <- c("assign_country_set","assign_none","exclude_record")
-      } else if (identical(typ,"ontology_pathology")) {
+      } else if (typ %in% c("ontology_pathology","topic_coding_review")) {
         allowed <- c("accept_retained_topics","replace_topic_set","no_code","exclude_record")
+      } else if (identical(typ,"zero_topic_eligibility_uncertain")) {
+        allowed <- c("assign_topic_set","include_uncoded","exclude_record")
       }
       if(!nzchar(choice) || !choice %in% allowed) {
         w08_status(sprintf("Choose a decision for %s.",typ))
@@ -5472,7 +5538,7 @@ server <- function(input, output, session) {
         } else if(choice=="exclude_record") {
           final_value <- list(included=FALSE)
         }
-      } else if(typ %in% c("topic_extreme_disagreement","ontology_pathology")) {
+      } else if(typ %in% c("topic_extreme_disagreement","ontology_pathology","topic_coding_review")) {
         retained <- av <- issue$automated_value$pathways %||% list()
         retained_ids <- vapply(Filter(function(p)isTRUE(p$retained_for_analysis),retained),function(p)as.character(p$path_id),character(1))
         if(choice=="accept_retained_topics") {
@@ -5504,8 +5570,32 @@ server <- function(input, output, session) {
           final_value <- list(included=TRUE,path_ids=character())
         }
       } else if(typ=="zero_topic_eligibility_uncertain") {
-        if(choice=="include_uncoded") final_value <- list(included=TRUE,path_ids=character())
-        if(choice=="exclude_record") final_value <- list(included=FALSE)
+        if(choice=="assign_topic_set") {
+          opts <- w08_topic_options()
+          allowed_topic_ids <- if(length(opts)) {
+            unique(vapply(opts,function(x)as.character(x$path_id %||% ""),character(1)))
+          } else character()
+          allowed_topic_ids <- allowed_topic_ids[nzchar(allowed_topic_ids)]
+          vals <- unique(as.character(input[[paste0("w08_topics_",j)]] %||% character()))
+          vals <- vals[nzchar(vals)]
+          if(!length(allowed_topic_ids)) {
+            w08_status("Accepted topic ontology is unavailable; topic assignment is disabled.")
+            return(FALSE)
+          }
+          if(!length(vals)) {
+            w08_status("Select at least one topic.")
+            return(FALSE)
+          }
+          if(any(!vals %in% allowed_topic_ids)) {
+            w08_status("Assigned topics must be selected from the accepted project ontology.")
+            return(FALSE)
+          }
+          final_value <- list(included=TRUE,path_ids=vals)
+        } else if(choice=="include_uncoded") {
+          final_value <- list(included=TRUE,path_ids=character())
+        } else if(choice=="exclude_record") {
+          final_value <- list(included=FALSE)
+        }
       }
 
       item <- list(
