@@ -1788,11 +1788,11 @@ start_fresh_test_w08_queue <- function(
   stamp <- format(Sys.time(), tz = "UTC", format = "%Y%m%d%H%M%S")
   batch_id <- paste0("w08-test-assignment-smoke-", stamp)
 
-  make_issue <- function(issue_type, outcomes) {
+  make_issue <- function(issue_type, outcomes, automated_value = list()) {
     z <- list(
       issue_type = issue_type,
       allowed_human_outcomes = outcomes,
-      automated_value = list()
+      automated_value = automated_value
     )
     z$issue_state_sha256 <- digest::digest(
       test_queue_json(z), algo = "sha256", serialize = FALSE
@@ -1803,8 +1803,11 @@ start_fresh_test_w08_queue <- function(
   cases <- list(
     list(
       record_id = paste0("test-w08-", stamp, "-001"),
-      title = "Synthetic salmon farming topic eligibility record",
-      abstract = "A synthetic record for testing Workflow 08 topic eligibility review.",
+      title = "Seasonal changes in water quality around commercial Atlantic salmon farms in northern Scotland",
+      abstract = paste(
+        "This synthetic study follows dissolved oxygen, nutrients and plankton communities around marine salmon cages over two production cycles.",
+        "Samples were collected at farm sites and reference stations to test a deliberately realistic Workflow 08 topic-eligibility record with several aquaculture terms embedded in longer prose."
+      ),
       issues = list(make_issue(
         "zero_topic_eligibility_uncertain",
         c("include_uncoded", "exclude_record")
@@ -1812,8 +1815,11 @@ start_fresh_test_w08_queue <- function(
     ),
     list(
       record_id = paste0("test-w08-", stamp, "-002"),
-      title = "Synthetic farmed salmon species annotation record",
-      abstract = "A synthetic record for testing Workflow 08 shared assignment and controlled species coding.",
+      title = "Growth and sea-lice susceptibility of farmed Atlantic salmon and rainbow trout under contrasting stocking densities",
+      abstract = paste(
+        "Atlantic salmon (Salmo salar) and rainbow trout were reared in replicated aquaculture pens under low and high stocking densities.",
+        "The experiment measured growth, fin condition and parasite burden, and is designed to verify that common and scientific salmonid names are highlighted during species adjudication."
+      ),
       issues = list(make_issue(
         "species_none",
         c("assign_named_species", "assign_unspecified_species", "exclude_record")
@@ -1821,20 +1827,34 @@ start_fresh_test_w08_queue <- function(
     ),
     list(
       record_id = paste0("test-w08-", stamp, "-003"),
-      title = "Synthetic salmon aquaculture geography record",
-      abstract = "A synthetic record for testing controlled country selection in Workflow 08.",
+      title = "Environmental monitoring of salmon aquaculture across Norway, Scotland and the Faroe Islands",
+      abstract = paste(
+        "The review discusses monitoring programmes in several North Atlantic regions, including Scotland and the Faroe Islands.",
+        "For the focal empirical study, however, samples were collected from coastal farms in western Norway during the 2024 production season.",
+        "This deliberately includes several country names so that only the model evidence phrase should receive the geography-evidence highlight."
+      ),
       issues = list(make_issue(
         "geography_unresolved",
-        c("assign_country_set", "assign_none")
+        c("assign_country_set", "assign_none"),
+        automated_value = list(
+          luna_evidence = c("samples were collected from coastal farms in western Norway"),
+          iso3c = c("NOR")
+        )
       ))
     ),
     list(
       record_id = paste0("test-w08-", stamp, "-004"),
-      title = "Synthetic salmon aquaculture topic disagreement record",
-      abstract = "A synthetic record for testing controlled topic replacement in Workflow 08.",
+      title = "Interactions between feed conversion, fish welfare and benthic deposition in intensive salmon farming",
+      abstract = paste(
+        "A multi-site study examined production growth, animal-health indicators and sediment enrichment beneath salmon cages.",
+        "The record intentionally spans several plausible coding branches so that controlled replacement of an extreme-disagreement topic set can be tested using a realistic title and abstract."
+      ),
       issues = list(make_issue(
         "topic_extreme_disagreement",
-        c("accept_retained_topics", "replace_topic_set", "exclude_record", "no_code")
+        c("accept_retained_topics", "replace_topic_set", "exclude_record", "no_code"),
+        automated_value = list(
+          retained_path_ids = c("production_growth","environment_water")
+        )
       ))
     )
   )
