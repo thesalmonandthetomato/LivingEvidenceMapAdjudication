@@ -2521,6 +2521,34 @@ server <- function(input, output, session) {
     )
   })
 
+  w04conflict_assignment_plan <- reactive({
+    req(authenticated())
+    workflow_assignment_plan(
+      "w04conflict", w04_all_conflict_cases(), w04_conflict_decisions(),
+      "04", w04_active_conflict_batch_id(), "conflict_resolution"
+    )
+  })
+  output$w04conflict_assignment_preview <- renderUI({
+    req(authenticated())
+    workflow_assignment_preview(
+      w04conflict_assignment_plan(), "w04conflict", "04", w04_active_conflict_batch_id(),
+      "conflict_resolution", w04_conflict_decisions()
+    )
+  })
+  output$w04conflict_assignment_status <- renderText(assignment_manage_status())
+  observeEvent(input$w04conflict_apply_assignments, {
+    apply_workflow_assignments(w04conflict_assignment_plan())
+  })
+  observeEvent(input$w04conflict_remove_assignments, {
+    remove_workflow_user_assignments(
+      input$w04conflict_remove_assignment_user,
+      w04_conflict_decisions(),
+      "04",
+      w04_active_conflict_batch_id(),
+      "conflict_resolution"
+    )
+  })
+
   w08_assignment_plan <- reactive({
     req(authenticated())
     workflow_assignment_plan(
