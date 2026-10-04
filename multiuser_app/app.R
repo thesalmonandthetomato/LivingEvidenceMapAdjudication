@@ -2592,6 +2592,21 @@ server <- function(input, output, session) {
       )
     } else NULL
 
+    workflow_sections_display <- list()
+    if (length(workflow_sections)) {
+      for (i in seq_along(workflow_sections)) {
+        workflow_sections_display[[length(workflow_sections_display)+1L]] <- workflow_sections[[i]]
+        meta <- group_progress[[i]]$meta
+        if (
+          identical(meta$workflow,"04") &&
+          identical(meta$task_type,"manual_screening") &&
+          !is.null(w04_results_panel)
+        ) {
+          workflow_sections_display[[length(workflow_sections_display)+1L]] <- w04_results_panel
+        }
+      }
+    }
+
     card(
       class = "assignment-summary",
       tags$details(
@@ -2649,8 +2664,7 @@ server <- function(input, output, session) {
               )
             )
           },
-          w04_results_panel,
-          workflow_sections
+          workflow_sections_display
         )
       )
     )
