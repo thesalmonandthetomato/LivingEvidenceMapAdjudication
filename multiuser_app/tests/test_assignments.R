@@ -622,4 +622,34 @@ stopifnot(
   stats$consensus_model$n==1L
 )
 
+selectable_hh <- w04_consistency_analysis(
+  stats_outcomes,
+  c("usr-a","usr-b")
+)
+stopifnot(
+  identical(selectable_hh$complete,2L),
+  identical(selectable_hh$agreement_cases,1L),
+  identical(selectable_hh$conflict_cases,1L),
+  identical(selectable_hh$metric,"Cohen's kappa"),
+  length(selectable_hh$pairwise)==1L,
+  identical(selectable_hh$pairwise[[1L]]$include_include,1L),
+  identical(selectable_hh$pairwise[[1L]]$directional$exclude_retain,1L)
+)
+
+available_consistency_raters <- w04_available_consistency_raters(stats_outcomes)
+stopifnot(
+  setequal(available_consistency_raters,c("usr-a","usr-b","model"))
+)
+selectable_hhm <- w04_consistency_analysis(
+  stats_outcomes,
+  c("usr-a","usr-b","model")
+)
+stopifnot(
+  identical(selectable_hhm$complete,2L),
+  identical(selectable_hhm$metric,"Fleiss' kappa"),
+  length(selectable_hhm$pairwise)==3L,
+  identical(selectable_hhm$agreement_cases,1L),
+  identical(selectable_hhm$conflict_cases,1L)
+)
+
 cat("PASS: W04 conflict assignment gating and agreement statistics\n")
