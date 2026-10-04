@@ -779,7 +779,27 @@ server <- function(input, output, session) {
 
   load_w04_batch <- function() {
     if (!identical(storage_backend(), "google_sheets")) return(NULL)
-    read_sheet_w04_queue()
+
+    # A real pipeline W04 queue always takes precedence over synthetic test data.
+    production <- read_sheet_w04_queue()
+    if (!is.null(production)) return(production)
+
+    # The isolated W04 test queue is reloaded on fresh reviewer sessions only
+    # when its batch has active manual-screening assignments. This allows
+    # assigned reviewers to see their synthetic records without ever allowing
+    # test data to override a real pipeline queue.
+    test_tab <- Sys.getenv("LEM_W04_TEST_QUEUE_TAB", unset="queue_w04_test_active")
+    synthetic <- read_sheet_w04_queue_from_tab(test_tab)
+    if (is.null(synthetic)) return(NULL)
+
+    active_test_assignments <- active_assignments_for_batch(
+      assignment_registry_rv(),
+      "04",
+      synthetic$batch_id,
+      "manual_screening"
+    )
+    if (!length(active_test_assignments)) return(NULL)
+    synthetic
   }
 
   w04_resolution_decision_ids <- function(ds = w04_resolution_decisions()) {
