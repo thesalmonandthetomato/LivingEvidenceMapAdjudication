@@ -9,6 +9,7 @@ on:
       - 'fixtures/**'
       - 'tests/**'
       - 'multiuser_app/**'
+      - '!multiuser_app/manifest.json'
       - 'scripts/make_manifest.R'
       - '.github/workflows/validate.yml'
   workflow_dispatch:
@@ -87,6 +88,15 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin main
+
+          # If main moved while this run was validating, do not try to rebase a
+          # generated manifest commit over newer application/manifests. The
+          # newer push has (or will have) its own validation run.
+          if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
+            echo "PASS: origin/main moved during validation; skipping stale manifest commit"
+            exit 0
+          fi
+
           root_same=false
           multi_same=false
 
@@ -112,5 +122,4 @@ jobs:
           fi
 
           git commit -m "build: update Connect Cloud manifests"
-          git pull --rebase origin main
           git push origin HEAD:main
