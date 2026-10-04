@@ -2288,6 +2288,52 @@ server <- function(input, output, session) {
 
     all_decisions <- tryCatch(active_sheet_w08_decisions(), error = function(e) list())
     batch_decisions <- w08_filter_batch_decisions(all_decisions, loaded$queue_sha256)
+
+    # Fresh synthetic W08 batches are for immediate smoke testing. Assign all
+    # new cases to the administrator who created the batch so the review screen
+    # can be opened without a second manual assignment step.
+    test_plan <- tryCatch(
+      plan_workflow_assignment(
+        cases = loaded$cases,
+        assignments = assignment_registry_rv(),
+        active_events = batch_decisions,
+        workflow = "08",
+        batch_id = loaded$batch_id,
+        task_type = "annotation",
+        user_ids = session_reviewer_id(),
+        allocation_type = "all",
+        allocation_strategy = "split"
+      ),
+      error = function(e) e
+    )
+    if (inherits(test_plan, "error") || !length(test_plan$new_assignments)) {
+      msg <- if (inherits(test_plan, "error")) {
+        paste("Fresh W08 test batch was created, but automatic assignment failed:", conditionMessage(test_plan))
+      } else {
+        "Fresh W08 test batch was created, but no test assignments could be created."
+      }
+      w08_fresh_test_status(msg)
+      return()
+    }
+
+    persisted_assignments <- tryCatch(
+      save_assignment_registry(
+        c(assignment_registry_rv(), test_plan$new_assignments),
+        assignment_path,
+        actor_user_id = session_reviewer_id(),
+        expected_current_signature = assignment_registry_signature(assignment_registry_rv())
+      ),
+      error = function(e) e
+    )
+    if (inherits(persisted_assignments, "error")) {
+      w08_fresh_test_status(paste(
+        "Fresh W08 test batch was created, but automatic assignment could not be saved:",
+        conditionMessage(persisted_assignments)
+      ))
+      return()
+    }
+    assignment_registry_rv(persisted_assignments)
+
     w08_all_cases_rv(loaded$cases)
     w08_cases_rv(cases_for_assignment_user(
       loaded$cases,
@@ -2307,7 +2353,7 @@ server <- function(input, output, session) {
     w08_topic_options(loaded$topic_options %||% list())
     w08_decisions(batch_decisions)
     w08_idx(1L)
-    w08_fresh_test_status("Fresh W08 test batch created.")
+    w08_fresh_test_status("Fresh W08 test batch created and assigned to you.")
   })
 
   output$test_queue_status <- renderText(test_queue_status())
