@@ -1837,6 +1837,10 @@ server <- function(input, output, session) {
       zero_topic_eligibility_uncertain="Topic eligibility verification"
     )
     allowed <- as.character(issue$allowed_human_outcomes %||% character())
+    if(typ %in% c("geography_unresolved","geography_evidence_unvalidated")) {
+      geography_outcomes <- c("accept_model","override_country_set","assign_none")
+      if(setequal(allowed,geography_outcomes)) allowed <- geography_outcomes
+    }
     labels <- c(
       assign_named_species="Assign named species",
       assign_unspecified_species="Assign unspecified species",
@@ -1894,8 +1898,8 @@ server <- function(input, output, session) {
         textInput(paste0("w08_country_",j),"Country names (semicolon separated)","")
       ),
       geography_unresolved = tagList(
-        textInput(paste0("w08_iso3_",j),"ISO3 codes (semicolon separated)",""),
-        textInput(paste0("w08_country_",j),"Country names (semicolon separated)","")
+        textInput(paste0("w08_iso3_",j),"Override ISO3 codes (semicolon separated)",""),
+        textInput(paste0("w08_country_",j),"Override country names (semicolon separated)","")
       ),
       geography_evidence_unvalidated = tagList(
         textInput(paste0("w08_iso3_",j),"Override ISO3 codes (semicolon separated)",""),
@@ -1997,7 +2001,9 @@ server <- function(input, output, session) {
         } else if(choice=="assign_none") {
           final_value <- list(geography_status="NONE",iso3c=character(),country_names=character())
         } else if(choice=="accept_model") {
-          # Dynamic W08 finalisation preserves the existing W06 value for accept_model.
+          # The backend materialises the Luna country set as final RESOLVED geography
+          # for geography_unresolved, and preserves the resolved Luna assignment for
+          # geography_evidence_unvalidated.
           final_value <- NULL
         }
       } else if(typ=="topic_extreme_disagreement") {
