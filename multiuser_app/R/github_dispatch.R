@@ -91,11 +91,23 @@ dispatch_w02_resume <- function(source_run_id, publish = TRUE) {
 }
 
 
-dispatch_w04_validation_finalize <- function(batch_id, queue_sha256) {
+w04_validation_dispatch_payload <- function(batch_id, queue_sha256) {
   batch_id <- as.character(batch_id)
   queue_sha256 <- tolower(as.character(queue_sha256))
   if (!nzchar(batch_id)) stop("Invalid W04 batch ID", call. = FALSE)
   if (!grepl("^[0-9a-f]{64}$", queue_sha256)) stop("Invalid W04 queue SHA-256", call. = FALSE)
+
+  list(
+    ref = "workflow01-final-architecture",
+    inputs = list(
+      batch_id = batch_id,
+      queue_sha256 = queue_sha256
+    )
+  )
+}
+
+dispatch_w04_validation_finalize <- function(batch_id, queue_sha256) {
+  payload <- w04_validation_dispatch_payload(batch_id, queue_sha256)
 
   endpoint <- sprintf(
     "https://api.github.com/repos/%s/actions/workflows/workflow_04_finalize_human_validation.yml/dispatches",
@@ -110,13 +122,7 @@ dispatch_w04_validation_finalize <- function(batch_id, queue_sha256) {
       `X-GitHub-Api-Version` = "2022-11-28",
       `User-Agent` = "LivingEvidenceMap-Adjudication"
     ) |>
-    httr2::req_body_json(list(
-      ref = "workflow01-final-architecture",
-      inputs = list(
-        batch_id = batch_id,
-        queue_sha256 = queue_sha256
-      )
-    ))
+    httr2::req_body_json(payload)
 
   resp <- httr2::req_perform(req)
   status <- httr2::resp_status(resp)
