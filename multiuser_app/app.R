@@ -1781,7 +1781,11 @@ server <- function(input, output, session) {
       remove_choices <- stats::setNames(remove_ids, remove_labels)
 
       mode <- assignment_mode_for(cfg$workflow, cfg$task_type)
-      guidance <- if (identical(mode, ASSIGNMENT_MODES[["shared_work_pool"]])) {
+      guidance <- if (
+        identical(cfg$workflow,"04") && identical(cfg$task_type,"manual_screening")
+      ) {
+        "Choose whether this batch is for reviewer-consistency testing or for building a human validation set. Consistency mode gives the same random records to every selected reviewer; validation-set mode splits random records between reviewers."
+      } else if (identical(mode, ASSIGNMENT_MODES[["shared_work_pool"]])) {
         "Choose whether to split different unresolved records between reviewers, or give the same records to all selected reviewers. In the shared option, the first substantive decision resolves the record for everyone."
       } else if (identical(mode, ASSIGNMENT_MODES[["single_reviewer"]])) {
         "Add unresolved, currently unassigned cases. Each case is assigned to one reviewer only."
@@ -1796,6 +1800,19 @@ server <- function(input, output, session) {
         div(
           class = "pt-2",
           tags$p(class = "text-secondary small mb-2", guidance),
+          if (
+            identical(cfg$workflow,"04") && identical(cfg$task_type,"manual_screening")
+          ) {
+            radioButtons(
+              "w04_review_mode",
+              "Manual screening purpose",
+              choices = c(
+                "Reviewer consistency · same random records to every selected reviewer" = "reviewer_consistency",
+                "Build validation set · split random records across selected reviewers" = "validation_set"
+              ),
+              selected = "reviewer_consistency"
+            )
+          },
           selectInput(
             paste0(cfg$prefix, "_assignment_users"),
             "Reviewers",
@@ -2613,9 +2630,22 @@ server <- function(input, output, session) {
 
   w04_assignment_plan <- reactive({
     req(authenticated())
-    workflow_assignment_plan(
-      "w04", w04_all_cases_rv(), w04_active_assignment_events(),
-      "04", w04_batch_id_rv(), "manual_screening"
+    selected <- as.character(input$w04_assignment_users %||% character())
+    type <- as.character(input$w04_assignment_type %||% "number")
+    amount <- input$w04_assignment_amount %||% NA_real_
+    review_mode <- as.character(input$w04_review_mode %||% "reviewer_consistency")
+    tryCatch(
+      plan_w04_manual_assignment(
+        cases = w04_all_cases_rv(),
+        assignments = assignment_registry_rv(),
+        active_events = w04_active_assignment_events(),
+        batch_id = w04_batch_id_rv(),
+        user_ids = selected,
+        review_mode = review_mode,
+        allocation_type = type,
+        amount = amount
+      ),
+      error=function(e) list(error=conditionMessage(e))
     )
   })
   output$w04_assignment_preview <- renderUI({
