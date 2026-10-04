@@ -588,6 +588,7 @@ ui <- page_fillable(
     .task-kpi { background:#f7f8fa; border:1px solid #e1e5e9; border-radius:8px; padding:.55rem .65rem; }
     .task-kpi strong { display:block; font-size:1.15rem; }
     .task-badge { background:#eef3f1; border-radius:999px; padding:.2rem .55rem; font-size:.78rem; }
+    .workflow-card .task-badge.workflow-complete-badge { background:#d9f2df !important; color:#145c2e !important; border:1px solid #9fd2ad; font-weight:600; }
     .decision-badge-include { background:#dff3e8 !important; color:#1f6b46 !important; border:1px solid #a8d9be; }
     .decision-badge-exclude { background:#f8e0e0 !important; color:#9d2f2f !important; border:1px solid #e4adad; }
     .decision-badge-neutral { background:#eef1f4 !important; color:#5f6973 !important; border:1px solid #d7dde2; }
@@ -1392,6 +1393,11 @@ server <- function(input, output, session) {
             if (nzchar(batch)) tags$div(class = "text-secondary small mb-1", batch),
             if (identical(lifecycle_status,"review_complete")) {
               tags$div(class="small mb-2",tags$span(class="task-badge","Human review complete"))
+            } else if (identical(lifecycle_status,"consumed")) {
+              tags$div(
+                class="small mb-2",
+                tags$span(class="task-badge workflow-complete-badge","Workflow completed")
+              )
             },
             if (!is.null(button_id) && remaining > 0L && isTRUE(can_open)) {
               actionButton(button_id, button_label, class = "btn-primary mt-auto")
