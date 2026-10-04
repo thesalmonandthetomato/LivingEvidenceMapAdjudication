@@ -635,6 +635,9 @@ server <- function(input, output, session) {
   w04_status <- reactiveVal("")
   w04_include_terms <- reactiveVal(character())
   w04_exclude_terms <- reactiveVal(character())
+  w04_consistency_analyses_rv <- reactiveVal(list())
+  w04_consistency_history_loaded <- reactiveVal(FALSE)
+  w04_consistency_status <- reactiveVal("")
 
   w04_resolution_cases_rv <- reactiveVal(NULL)
   w04_resolution_queue_sha_rv <- reactiveVal("")
@@ -2289,6 +2292,19 @@ server <- function(input, output, session) {
                   )
                 )
               },
+              div(
+                class="d-flex align-items-center gap-2 mt-2",
+                actionButton(
+                  "w04_save_consistency_analysis",
+                  "Save analysis",
+                  class="btn-primary btn-sm"
+                ),
+                tags$span(
+                  class="saved-note",
+                  textOutput("w04_consistency_status",inline=TRUE)
+                )
+              ),
+              uiOutput("w04_consistency_history"),
               tags$div(
                 class="text-secondary small mt-2",
                 sprintf(
@@ -2769,6 +2785,134 @@ server <- function(input, output, session) {
       w02_batch_id_rv(),
       "enrichment"
     )
+  })
+
+  output$w04_consistency_status <- renderText(w04_consistency_status())
+
+  observe({
+    req(authenticated())
+    if (!session_can("manage_assignments")) return()
+    if (isTRUE(w04_consistency_history_loaded())) return()
+    if (!identical(storage_backend(),"google_sheets")) {
+      w04_consistency_history_loaded(TRUE)
+      return()
+    }
+    hist <- tryCatch(read_w04_consistency_analyses(),error=function(e)e)
+    if (inherits(hist,"error")) {
+      w04_consistency_status(paste("Could not load saved analyses:",conditionMessage(hist)))
+      w04_consistency_history_loaded(TRUE)
+      return()
+    }
+    w04_consistency_analyses_rv(hist)
+    w04_consistency_history_loaded(TRUE)
+  })
+
+  output$w04_consistency_history <- renderUI({
+    req(authenticated())
+    if (!session_can("manage_assignments")) return(NULL)
+    xs <- w04_consistency_analyses_rv() %||% list()
+    if (length(xs)) {
+      xs <- Filter(
+        function(x) identical(as.character(x$batch_id %||% ""),as.character(w04_batch_id_rv())),
+        xs
+      )
+    }
+    if (!length(xs)) {
+      return(tags$div(class="text-secondary small mt-2","No saved analyses for this batch yet."))
+    }
+    xs <- rev(xs)
+    xs <- xs[seq_len(min(length(xs),5L))]
+    rows <- lapply(xs,function(x) {
+      raters <- tryCatch(
+        as.character(jsonlite::fromJSON(as.character(x$rater_ids_json %||% "[]"))),
+        error=function(e) character()
+      )
+      labels <- if(length(raters)) vapply(raters,function(uid) {
+        if(identical(uid,"model")) return("Model")
+        u <- find_user_by_id(user_registry_rv(),uid,require_active=FALSE)
+        if(is.null(u)) uid else u$display_name
+      },character(1)) else character()
+      raw <- suppressWarnings(as.numeric(as.character(x$raw_agreement %||% NA_character_)))
+      kap <- suppressWarnings(as.numeric(as.character(x$kappa %||% NA_character_)))
+      tags$tr(
+        tags$td(as.character(x$analysis_id %||% "")),
+        tags$td(paste(labels,collapse=", ")),
+        tags$td(as.character(x$complete_n %||% "0")),
+        tags$td(if(is.na(raw))"—" else sprintf("%.1f%%",100*raw)),
+        tags$td(as.character(x$metric %||% "")),
+        tags$td(if(is.na(kap))"—" else sprintf("%.3f",kap)),
+        tags$td(as.character(x$created_at_utc %||% ""))
+      )
+    })
+    tagList(
+      tags$strong("Saved analyses"),
+      div(
+        class="assignment-table-wrap mt-1",
+        tags$table(
+          class="assignment-table",
+          tags$thead(tags$tr(
+            tags$th("Analysis ID"),tags$th("Raters"),tags$th("N"),
+            tags$th("Agreement"),tags$th("Metric"),tags$th("κ"),tags$th("Saved")
+          )),
+          tags$tbody(rows)
+        )
+      )
+    )
+  })
+
+  observeEvent(input$w04_save_consistency_analysis,{
+    req(authenticated())
+    if (!session_can("manage_assignments")) {
+      w04_consistency_status("Administrator permission is required.")
+      return()
+    }
+    rater_ids <- unique(as.character(input$w04_consistency_raters %||% character()))
+    if (length(rater_ids) < 2L) {
+      w04_consistency_status("Select at least two raters before saving.")
+      return()
+    }
+    analysis <- w04_consistency_analysis(w04_blind_outcomes(),rater_ids)
+    if (analysis$complete < 1L) {
+      w04_consistency_status("There are no complete cases for the selected raters.")
+      return()
+    }
+    if (!identical(storage_backend(),"google_sheets")) {
+      w04_consistency_status("Saving consistency analyses is available with the Google Sheets backend.")
+      return()
+    }
+
+    batch_assignments <- active_assignments_for_batch(
+      assignment_registry_rv(),"04",w04_batch_id_rv(),"manual_screening"
+    )
+    groups <- unique(vapply(
+      batch_assignments,
+      function(x) normalise_assignment_row(x)$blind_group,
+      character(1)
+    ))
+    review_mode <- if ("w04-reviewer-consistency" %in% groups) {
+      "reviewer_consistency"
+    } else if ("w04-validation-set" %in% groups) {
+      "validation_set"
+    } else {
+      ""
+    }
+
+    saved <- tryCatch(
+      append_w04_consistency_analysis(
+        analysis=analysis,
+        batch_id=w04_batch_id_rv(),
+        queue_sha256=w04_queue_sha_rv(),
+        review_mode=review_mode,
+        created_by=session_reviewer_id()
+      ),
+      error=function(e)e
+    )
+    if (inherits(saved,"error")) {
+      w04_consistency_status(paste("Save failed:",conditionMessage(saved)))
+      return()
+    }
+    w04_consistency_analyses_rv(c(w04_consistency_analyses_rv(),list(saved)))
+    w04_consistency_status(paste("Saved",as.character(saved$analysis_id %||% "analysis")))
   })
 
   w04_assignment_plan <- reactive({
