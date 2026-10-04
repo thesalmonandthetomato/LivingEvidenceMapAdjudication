@@ -652,4 +652,26 @@ stopifnot(
   identical(selectable_hhm$conflict_cases,1L)
 )
 
+conflict_cases_from_analysis <- w04_conflict_cases_for_raters(
+  outcomes=stats_outcomes,
+  rater_ids=c("usr-a","usr-b","model"),
+  conflict_case_ids=selectable_hhm$conflict_case_ids,
+  analysis_id="analysis-test",
+  conflict_set_id="conflict-set-test"
+)
+stopifnot(
+  length(conflict_cases_from_analysis)==1L,
+  identical(conflict_cases_from_analysis[[1L]]$analysis_id,"analysis-test"),
+  identical(conflict_cases_from_analysis[[1L]]$conflict_set_id,"conflict-set-test"),
+  identical(conflict_cases_from_analysis[[1L]]$conflict_source,"consistency_analysis"),
+  setequal(
+    names(conflict_cases_from_analysis[[1L]]$blind_review$reviewer_decisions),
+    c("usr-a","usr-b","model")
+  ),
+  identical(
+    conflict_cases_from_analysis[[1L]]$blind_review$reviewer_decisions$model$decision,
+    "exclude"
+  )
+)
+
 cat("PASS: W04 conflict assignment gating and agreement statistics\n")
