@@ -1467,7 +1467,7 @@
   },
   "files": {
     "app.R": {
-      "checksum": "1f84cee97ffaadac6ef5332b0aa2f0f4"
+      "checksum": "50870f4546d07a267a1673dc4bcbd8e7"
     },
     "DEVELOPMENT_TODO.md": {
       "checksum": "7ee53afe9396a1ada23aee3be6b9bb64"
@@ -1517,6 +1517,9 @@
     "R/w04_blind_resolution.R": {
       "checksum": "ba6fd28afe370e10d7010181e3aff887"
     },
+    "R/w04_validation_lifecycle.R": {
+      "checksum": "10b4e29a7fdfbe10e573a0f8be96f7af"
+    },
     "tests/test_assignments.R": {
       "checksum": "56bc23194ae9612a912dbc192d373244"
     },
@@ -1530,7 +1533,7 @@
       "checksum": "5694c4b318b92fc4926c022bf68fd37c"
     },
     "tests/test_phase1c_permissions.R": {
-      "checksum": "db5fa871508f6ef3a05ab8d01dfe7239"
+      "checksum": "6cb80068b9538a109f185bb4fc248a59"
     },
     "tests/test_users.R": {
       "checksum": "3478785333151da4bc9976089d9d66b9"
@@ -1540,6 +1543,9 @@
     },
     "tests/test_w04_blind_resolution.R": {
       "checksum": "a11cf1658b0f1913ddc0d1e637cdcef4"
+    },
+    "tests/test_w04_validation_lifecycle.R": {
+      "checksum": "761e6a5604e6e5e499703003c3403ecb"
     }
   },
   "users": null
