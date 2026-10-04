@@ -1833,9 +1833,10 @@ server <- function(input, output, session) {
       geography_model_failure="Geography model failure",
       geography_unresolved="Geography verification",
       geography_evidence_unvalidated="Geography evidence verification",
-      topic_extreme_disagreement="Topic verification",
-      ontology_pathology="Topic ontology verification",
-      zero_topic_eligibility_uncertain="Topic eligibility verification"
+      topic_coding_review="Topic coding review",
+      topic_extreme_disagreement="Topic verification (legacy)",
+      ontology_pathology="Topic ontology verification (legacy)",
+      zero_topic_eligibility_uncertain="Zero-topic eligibility review"
     )
     allowed <- as.character(issue$allowed_human_outcomes %||% character())
     if(typ %in% c("geography_unresolved","geography_evidence_unvalidated")) {
@@ -1853,6 +1854,7 @@ server <- function(input, output, session) {
       accept_retained_topics="Accept retained topics",
       replace_topic_set="Replace topic set",
       no_code="Retain with no topic code",
+      assign_topic_set="Assign topic set",
       include_uncoded="Retain uncoded"
     )
     choices <- setNames(allowed,unname(labels[allowed]))
@@ -1885,6 +1887,17 @@ server <- function(input, output, session) {
           tags$ul(class="mb-2",items)
         )
       },
+      topic_coding_review = {
+        ps <- av$pathways %||% list()
+        items <- lapply(ps,function(p)tags$li(
+          paste0(as.character(p$hierarchy_path %||% p$path_id %||% ""),
+                 if(nzchar(as.character(p$stars %||% ""))) paste0(" · ",p$stars) else "")
+        ))
+        tagList(
+          tags$p(class="mb-1","Review the retained topic set and correct it if necessary."),
+          tags$ul(class="mb-2",items)
+        )
+      },
       ontology_pathology = {
         ps <- av$pathways %||% list()
         items <- lapply(ps,function(p)tags$li(
@@ -1896,7 +1909,7 @@ server <- function(input, output, session) {
           tags$ul(class="mb-2",items)
         )
       },
-      zero_topic_eligibility_uncertain = tags$p(class="mb-2","No retained topic was assigned; verify whether the record should remain included."),
+      zero_topic_eligibility_uncertain = tags$p(class="mb-2","No retained topic was assigned. Assign one or more ontology topics if appropriate, retain uncoded, or exclude the record."),
       tags$p(class="mb-2","Workflow 05 returned no eligible species assignment.")
     )
 
@@ -1927,6 +1940,16 @@ server <- function(input, output, session) {
         } else character()
         tagList(selectizeInput(paste0("w08_topics_",j),"Replacement topic set",choices=topic_choices,multiple=TRUE))
       },
+      topic_coding_review = {
+        opts <- w08_topic_options()
+        topic_choices <- if(length(opts)) {
+          setNames(
+            vapply(opts,function(x)as.character(x$path_id %||% ""),character(1)),
+            vapply(opts,function(x)as.character(x$hierarchy_path %||% x$path_id %||% ""),character(1))
+          )
+        } else character()
+        tagList(selectizeInput(paste0("w08_topics_",j),"Replacement topic set",choices=topic_choices,multiple=TRUE))
+      },
       ontology_pathology = {
         opts <- w08_topic_options()
         topic_choices <- if(length(opts)) {
@@ -1936,6 +1959,16 @@ server <- function(input, output, session) {
           )
         } else character()
         tagList(selectizeInput(paste0("w08_topics_",j),"Replacement topic set",choices=topic_choices,multiple=TRUE))
+      },
+      zero_topic_eligibility_uncertain = {
+        opts <- w08_topic_options()
+        topic_choices <- if(length(opts)) {
+          setNames(
+            vapply(opts,function(x)as.character(x$path_id %||% ""),character(1)),
+            vapply(opts,function(x)as.character(x$hierarchy_path %||% x$path_id %||% ""),character(1))
+          )
+        } else character()
+        tagList(selectizeInput(paste0("w08_topics_",j),"Topic set",choices=topic_choices,multiple=TRUE))
       },
       NULL
     )
@@ -2030,7 +2063,7 @@ server <- function(input, output, session) {
         } else if(choice=="exclude_record") {
           final_value <- list(included=FALSE)
         }
-      } else if(typ %in% c("topic_extreme_disagreement","ontology_pathology")) {
+      } else if(typ %in% c("topic_coding_review","topic_extreme_disagreement","ontology_pathology")) {
         retained <- av <- issue$automated_value$pathways %||% list()
         retained_ids <- vapply(Filter(function(p)isTRUE(p$retained_for_analysis),retained),function(p)as.character(p$path_id),character(1))
         if(choice=="accept_retained_topics") {
@@ -2046,6 +2079,12 @@ server <- function(input, output, session) {
           final_value <- list(included=TRUE,path_ids=character())
         }
       } else if(typ=="zero_topic_eligibility_uncertain") {
+        if(choice=="assign_topic_set") {
+          vals <- as.character(input[[paste0("w08_topics_",j)]] %||% character())
+          vals <- vals[nzchar(vals)]
+          if(!length(vals)) {w08_status("Select at least one topic.");return(FALSE)}
+          final_value <- list(included=TRUE,path_ids=vals)
+        }
         if(choice=="include_uncoded") final_value <- list(included=TRUE,path_ids=character())
         if(choice=="exclude_record") final_value <- list(included=FALSE)
       }
