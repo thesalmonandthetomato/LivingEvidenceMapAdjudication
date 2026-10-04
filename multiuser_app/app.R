@@ -3645,10 +3645,48 @@ server <- function(input, output, session) {
             sprintf("%s%%",pct)))
   })
 
+  w08_saved_record_decision <- function(record_id) {
+    ds <- w08_decisions() %||% list()
+    if (!length(ds)) return(NULL)
+    hits <- Filter(
+      function(x) identical(as.character(x$record_id %||% ""), as.character(record_id)),
+      ds
+    )
+    if (!length(hits)) return(NULL)
+    hits[[1L]]
+  }
+
+  w08_saved_issue_decision <- function(record_id, issue) {
+    saved <- w08_saved_record_decision(record_id)
+    if (is.null(saved)) return(NULL)
+    raw <- as.character(saved$issue_decisions_json %||% "")
+    if (!nzchar(raw)) return(NULL)
+    items <- tryCatch(
+      jsonlite::fromJSON(raw, simplifyVector = FALSE),
+      error = function(e) list()
+    )
+    if (!length(items)) return(NULL)
+
+    typ <- as.character(issue$issue_type %||% "")
+    state_sha <- as.character(issue$issue_state_sha256 %||% "")
+    hits <- Filter(function(x) {
+      same_type <- identical(as.character(x$issue_type %||% ""), typ)
+      saved_sha <- as.character(x$issue_state_sha256 %||% "")
+      same_state <- !nzchar(state_sha) || !nzchar(saved_sha) || identical(saved_sha, state_sha)
+      same_type && same_state
+    }, items)
+    if (!length(hits)) return(NULL)
+    hits[[1L]]
+  }
+
   w08_issue_panel <- function(issue,j) {
     typ <- as.character(issue$issue_type %||% "")
     av <- issue$automated_value %||% list()
     decision_id <- paste0("w08_decision_",j)
+    current_record <- w08_current_case()
+    saved_issue <- w08_saved_issue_decision(current_record$record_id, issue)
+    saved_choice <- as.character(saved_issue$decision %||% "")
+    saved_value <- saved_issue$final_value %||% list()
 
     label_map <- c(
       species_none="Species verification",
@@ -3716,6 +3754,7 @@ server <- function(input, output, session) {
               paste0("w08_species_",j),
               "Named species",
               choices = species_choices,
+              selected = as.character(unlist(saved_value$farmed_species %||% character(), use.names = FALSE)),
               multiple = TRUE,
               options = list(create = FALSE, persist = FALSE)
             )
@@ -3732,6 +3771,7 @@ server <- function(input, output, session) {
           paste0("w08_geo_",j),
           "Countries",
           choices = w08_country_choices(),
+          selected = toupper(as.character(unlist(saved_value$iso3c %||% character(), use.names = FALSE))),
           multiple = TRUE,
           options = list(create = FALSE, persist = FALSE)
         )
@@ -3741,6 +3781,7 @@ server <- function(input, output, session) {
           paste0("w08_geo_",j),
           "Countries",
           choices = w08_country_choices(),
+          selected = toupper(as.character(unlist(saved_value$iso3c %||% character(), use.names = FALSE))),
           multiple = TRUE,
           options = list(create = FALSE, persist = FALSE)
         )
@@ -3750,6 +3791,7 @@ server <- function(input, output, session) {
           paste0("w08_geo_",j),
           "Override countries",
           choices = w08_country_choices(),
+          selected = toupper(as.character(unlist(saved_value$iso3c %||% character(), use.names = FALSE))),
           multiple = TRUE,
           options = list(create = FALSE, persist = FALSE)
         )
@@ -3768,6 +3810,7 @@ server <- function(input, output, session) {
               paste0("w08_topics_",j),
               "Replacement topic set",
               choices = topic_choices,
+              selected = as.character(unlist(saved_value$path_ids %||% character(), use.names = FALSE)),
               multiple = TRUE,
               options = list(create = FALSE, persist = FALSE)
             )
@@ -3791,7 +3834,18 @@ server <- function(input, output, session) {
       div(
         class="p-3",
         detail,
-        selectInput(decision_id,"Decision",choices=c("Choose…"="",choices)),
+        selectInput(
+          decision_id,
+          "Decision",
+          choices = c("Choose…"="",choices),
+          selected = if (saved_choice %in% allowed) saved_choice else ""
+        ),
+        if (!is.null(saved_issue)) {
+          tags$div(
+            class = "saved-note small mb-2",
+            "Saved decision loaded. Change the selections and click Save record to update it."
+          )
+        },
         extras
       )
     )
