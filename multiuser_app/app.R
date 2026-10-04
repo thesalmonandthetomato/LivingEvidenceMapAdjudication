@@ -339,7 +339,8 @@ ui <- page_fillable(
     .record-card .card-body { padding:0; }
     .compact-record-body { padding:.65rem .9rem .8rem .9rem; }
     .w08-issue-card { min-height:320px; overflow:visible !important; position:relative; z-index:1; }
-    .w08-issue-card:focus-within { z-index:20; }
+    .w08-issue-card:focus-within { z-index:100; }
+    .w08-issue-card:has(.selectize-control.dropdown-active) { z-index:1000; }
     .w08-species-issue { min-height:430px; }
     .w08-issue-card .card-body,
     .w08-issue-card .selectize-control,
