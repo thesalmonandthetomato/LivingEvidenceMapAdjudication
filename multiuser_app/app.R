@@ -1508,6 +1508,20 @@ server <- function(input, output, session) {
       ASSIGNMENT_MODES[["shared_work_pool"]]
     )
 
+    if (length(group_progress) > 1L) {
+      workflow_order <- vapply(
+        group_progress,
+        function(g) suppressWarnings(as.integer(g$meta$workflow %||% "999")),
+        integer(1)
+      )
+      task_order <- vapply(
+        group_progress,
+        function(g) as.character(g$meta$task_type %||% ""),
+        character(1)
+      )
+      group_progress <- group_progress[order(workflow_order, task_order, names(group_progress))]
+    }
+
     total_assigned <- sum(vapply(group_progress, function(x) x$progress$assigned, integer(1)))
     total_completed <- sum(vapply(group_progress, function(x) x$progress$completed, integer(1)))
     total_released <- sum(vapply(group_progress, function(x) x$progress$resolved_elsewhere, integer(1)))
@@ -1726,6 +1740,9 @@ server <- function(input, output, session) {
         identical(z$workflow,"02") && identical(z$task_type,"enrichment") &&
         identical(z$batch_id,w02_batch_id_rv())
       ) w02_all_cases_rv() else if (
+        identical(z$workflow,"04") && identical(z$task_type,"manual_screening") &&
+        identical(z$batch_id,w04_batch_id_rv())
+      ) w04_all_cases_rv() else if (
         identical(z$workflow,"08") && identical(z$task_type,"annotation") &&
         identical(z$batch_id,w08_batch_id_rv())
       ) w08_all_cases_rv() else list()
