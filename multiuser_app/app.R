@@ -706,6 +706,7 @@ server <- function(input, output, session) {
   w04_conflict_sets_rv <- reactiveVal(list())
   w04_consistency_history_loaded <- reactiveVal(FALSE)
   w04_consistency_status <- reactiveVal("")
+  w04_refresh_status <- reactiveVal("")
 
   w04_resolution_cases_rv <- reactiveVal(NULL)
   w04_resolution_queue_sha_rv <- reactiveVal("")
@@ -888,43 +889,82 @@ server <- function(input, output, session) {
     }
   })
 
-  observe({
-    req(authenticated())
-    if (!session_can("manage_assignments")) return()
-    if (!identical(storage_backend(),"google_sheets")) return()
-    if (!nzchar(as.character(w04_batch_id_rv() %||% ""))) return()
+  w04_decision_signature <- function(xs) {
+    if (!length(xs)) return("")
+    keys <- vapply(xs,function(x) {
+      paste(
+        as.character(x$decision_id %||% ""),
+        as.character(x$review_case_id %||% ""),
+        decision_user_id(x),
+        as.character(x$decision %||% ""),
+        as.character(x$resolved_at_utc %||% ""),
+        sep="|"
+      )
+    },character(1))
+    digest::digest(sort(keys),algo="sha256",serialize=FALSE)
+  }
 
-    invalidateLater(15000, session)
+  refresh_w04_admin_state <- function(show_status=FALSE) {
+    if (!identical(storage_backend(),"google_sheets")) {
+      if (isTRUE(show_status)) w04_refresh_status("Refresh is available with the Google Sheets backend.")
+      return(invisible(FALSE))
+    }
+    if (!nzchar(as.character(w04_batch_id_rv() %||% ""))) {
+      if (isTRUE(show_status)) w04_refresh_status("No active W04 batch.")
+      return(invisible(FALSE))
+    }
 
-    latest <- tryCatch(
-      active_sheet_w04_decisions(),
-      error=function(e) NULL
-    )
-    if (is.null(latest)) return()
+    latest_decisions <- tryCatch(active_sheet_w04_decisions(),error=function(e)e)
+    latest_assignments <- tryCatch(read_sheet_assignments(create_if_missing=FALSE),error=function(e)e)
 
-    latest <- w04_filter_batch_decisions(latest,w04_queue_sha_rv())
+    errs <- character()
+    if (inherits(latest_decisions,"error")) errs <- c(errs,conditionMessage(latest_decisions))
+    if (inherits(latest_assignments,"error")) errs <- c(errs,conditionMessage(latest_assignments))
+    if (length(errs)) {
+      if (isTRUE(show_status)) w04_refresh_status(paste("Refresh failed:",paste(unique(errs),collapse="; ")))
+      return(invisible(FALSE))
+    }
 
-    decision_signature <- function(xs) {
-      if (!length(xs)) return("")
-      keys <- vapply(xs,function(x) {
-        paste(
-          as.character(x$decision_id %||% ""),
-          as.character(x$review_case_id %||% ""),
-          decision_user_id(x),
-          as.character(x$decision %||% ""),
-          as.character(x$resolved_at_utc %||% ""),
-          sep="|"
-        )
-      },character(1))
-      digest::digest(sort(keys),algo="sha256",serialize=FALSE)
+    latest_decisions <- w04_filter_batch_decisions(latest_decisions,w04_queue_sha_rv())
+    if (!identical(
+      w04_decision_signature(latest_decisions),
+      w04_decision_signature(w04_decisions())
+    )) {
+      w04_decisions(latest_decisions)
     }
 
     if (!identical(
-      decision_signature(latest),
-      decision_signature(w04_decisions())
+      assignment_registry_signature(latest_assignments),
+      assignment_registry_signature(assignment_registry_rv())
     )) {
-      w04_decisions(latest)
+      assignment_registry_rv(latest_assignments)
     }
+
+    if (isTRUE(show_status)) {
+      w04_refresh_status(sprintf(
+        "Refreshed at %s · %d W04 decisions loaded",
+        format(Sys.time(),"%H:%M:%S"),
+        length(latest_decisions)
+      ))
+    }
+    invisible(TRUE)
+  }
+
+  observe({
+    req(authenticated())
+    if (!session_can("manage_assignments")) return()
+    if (!nzchar(as.character(w04_batch_id_rv() %||% ""))) return()
+    invalidateLater(15000, session)
+    refresh_w04_admin_state(show_status=FALSE)
+  })
+
+  observeEvent(input$w04_refresh_status_button,{
+    req(authenticated())
+    if (!session_can("manage_assignments")) {
+      w04_refresh_status("Administrator permission is required.")
+      return()
+    }
+    refresh_w04_admin_state(show_status=TRUE)
   })
 
   w04_blind_outcomes <- reactive({
@@ -2490,8 +2530,20 @@ server <- function(input, output, session) {
             "Select any combination of human raters and the model. Statistics use complete cases for the selected raters only; no raw decisions are altered."
           ),
           tags$p(
-            class="text-secondary small fw-semibold",
+            class="text-secondary small fw-semibold mb-2",
             "Agreement statistics update automatically when the selected raters change."
+          ),
+          div(
+            class="d-flex flex-wrap align-items-center gap-2 mb-2",
+            actionButton(
+              "w04_refresh_status_button",
+              "Refresh W04 status",
+              class="btn-outline-secondary btn-sm"
+            ),
+            tags$span(
+              class="saved-note",
+              textOutput("w04_refresh_status",inline=TRUE)
+            )
           ),
           checkboxGroupInput(
             "w04_consistency_raters",
@@ -3118,6 +3170,8 @@ server <- function(input, output, session) {
     }
     w04_consistency_history_loaded(TRUE)
   })
+
+  output$w04_refresh_status <- renderText(w04_refresh_status())
 
   output$w04_consistency_history <- renderUI({
     req(authenticated())
