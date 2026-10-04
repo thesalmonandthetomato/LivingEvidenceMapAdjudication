@@ -1522,6 +1522,9 @@
     },
     "tests/test_w01_decision_events.R": {
       "checksum": "112a0e96d6ba1c604e42171bdea3cd43"
+    },
+    "tests/test_w04_blind_resolution.R": {
+      "checksum": "a11cf1658b0f1913ddc0d1e637cdcef4"
     }
   },
   "users": null
