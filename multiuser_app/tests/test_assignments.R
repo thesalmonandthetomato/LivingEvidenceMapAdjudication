@@ -674,4 +674,63 @@ stopifnot(
   )
 )
 
+# Three completed human raters should use Fleiss' kappa, preserve the exact
+# selected raters, and emit only the genuinely conflicting case.
+three_human_outcomes <- w04_blind_case_outcomes(
+  list(
+    list(review_case_id="three-human-1",record_id="th1"),
+    list(review_case_id="three-human-2",record_id="th2")
+  ),
+  list(
+    list(assignment_id="th-a1",workflow="04",task_type="manual_screening",batch_id="three-human-b",case_id="three-human-1",user_id="usr-a",blind_group="w04-reviewer-consistency",status="assigned"),
+    list(assignment_id="th-b1",workflow="04",task_type="manual_screening",batch_id="three-human-b",case_id="three-human-1",user_id="usr-b",blind_group="w04-reviewer-consistency",status="assigned"),
+    list(assignment_id="th-c1",workflow="04",task_type="manual_screening",batch_id="three-human-b",case_id="three-human-1",user_id="usr-c",blind_group="w04-reviewer-consistency",status="assigned"),
+    list(assignment_id="th-a2",workflow="04",task_type="manual_screening",batch_id="three-human-b",case_id="three-human-2",user_id="usr-a",blind_group="w04-reviewer-consistency",status="assigned"),
+    list(assignment_id="th-b2",workflow="04",task_type="manual_screening",batch_id="three-human-b",case_id="three-human-2",user_id="usr-b",blind_group="w04-reviewer-consistency",status="assigned"),
+    list(assignment_id="th-c2",workflow="04",task_type="manual_screening",batch_id="three-human-b",case_id="three-human-2",user_id="usr-c",blind_group="w04-reviewer-consistency",status="assigned")
+  ),
+  list(
+    list(review_case_id="three-human-1",reviewer="usr-a",decision="retain"),
+    list(review_case_id="three-human-1",reviewer="usr-b",decision="retain"),
+    list(review_case_id="three-human-1",reviewer="usr-c",decision="retain"),
+    list(review_case_id="three-human-2",reviewer="usr-a",decision="exclude"),
+    list(review_case_id="three-human-2",reviewer="usr-b",decision="exclude"),
+    list(review_case_id="three-human-2",reviewer="usr-c",decision="retain")
+  ),
+  "three-human-b"
+)
+
+three_human_analysis <- w04_consistency_analysis(
+  three_human_outcomes,
+  c("usr-a","usr-b","usr-c")
+)
+stopifnot(
+  identical(three_human_analysis$metric,"Fleiss' kappa"),
+  identical(three_human_analysis$complete,2L),
+  identical(three_human_analysis$agreement_cases,1L),
+  identical(three_human_analysis$conflict_cases,1L),
+  identical(three_human_analysis$conflict_case_ids,"three-human-2"),
+  identical(three_human_analysis$agreement_case_ids,"three-human-1"),
+  identical(three_human_analysis$rater_ids,c("usr-a","usr-b","usr-c")),
+  length(three_human_analysis$pairwise)==3L
+)
+
+three_human_conflict <- w04_conflict_cases_for_raters(
+  outcomes=three_human_outcomes,
+  rater_ids=three_human_analysis$rater_ids,
+  conflict_case_ids=three_human_analysis$conflict_case_ids,
+  analysis_id="analysis-three-human",
+  conflict_set_id="conflict-three-human"
+)
+stopifnot(
+  length(three_human_conflict)==1L,
+  identical(three_human_conflict[[1L]]$review_case_id,"three-human-2"),
+  identical(three_human_conflict[[1L]]$analysis_id,"analysis-three-human"),
+  identical(three_human_conflict[[1L]]$conflict_set_id,"conflict-three-human"),
+  setequal(
+    names(three_human_conflict[[1L]]$blind_review$reviewer_decisions),
+    c("usr-a","usr-b","usr-c")
+  )
+)
+
 cat("PASS: W04 conflict assignment gating and agreement statistics\n")
