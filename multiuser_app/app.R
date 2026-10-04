@@ -368,8 +368,12 @@ ui <- page_fillable(
       min-height:0;
     }
     .w08-review-decisions .selectize-control { position:relative; z-index:30; }
+    .w08-review-decisions .selectize-control.dropdown-active,
+    .w08-review-decisions .selectize-control:focus-within {
+      z-index:6000 !important;
+    }
     .w08-review-decisions .selectize-dropdown {
-      z-index:5000 !important;
+      z-index:6100 !important;
       max-height:320px;
       overflow-y:auto !important;
     }
