@@ -606,6 +606,91 @@ w04_conflict_decision_tab <- function() {
   Sys.getenv("LEM_W04_CONFLICT_DECISION_TAB", unset = "decisions_w04_conflict")
 }
 
+w04_consistency_analysis_tab <- function() {
+  Sys.getenv("LEM_W04_CONSISTENCY_TAB", unset = "w04_consistency_analyses")
+}
+
+ensure_w04_consistency_analysis_tab <- function() {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w04_consistency_analysis_tab()
+  cols <- c(
+    "analysis_id","project_id","project_name","batch_id","queue_sha256",
+    "review_mode","rater_ids_json","metric","eligible_n","complete_n",
+    "missing_n","agreement_n","conflict_n","raw_agreement","kappa",
+    "pairwise_json","patterns_json","conflict_case_ids_json",
+    "agreement_case_ids_json","created_by","created_at_utc"
+  )
+  tabs <- sheet_names_cached(ss)
+  if (!tab %in% tabs) {
+    sheet_add_cached(ss,tab)
+    empty <- as.data.frame(
+      setNames(replicate(length(cols),character(),simplify=FALSE),cols),
+      stringsAsFactors=FALSE
+    )
+    googlesheets4::sheet_write(empty,ss=ss,sheet=tab)
+  }
+  invisible(TRUE)
+}
+
+read_w04_consistency_analyses <- function() {
+  gs4_auth_from_env()
+  ensure_w04_consistency_analysis_tab()
+  ss <- sheet_id_from_env()
+  x <- googlesheets4::read_sheet(ss,sheet=w04_consistency_analysis_tab(),col_types="c")
+  if (!nrow(x)) return(list())
+  lapply(seq_len(nrow(x)),function(i)as.list(x[i,,drop=FALSE]))
+}
+
+append_w04_consistency_analysis <- function(analysis,batch_id,queue_sha256,review_mode="",created_by="") {
+  gs4_auth_from_env()
+  ensure_w04_consistency_analysis_tab()
+  ss <- sheet_id_from_env()
+  tab <- w04_consistency_analysis_tab()
+  now <- format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ")
+  payload <- paste(
+    batch_id,queue_sha256,
+    paste(analysis$rater_ids %||% character(),collapse="|"),
+    analysis$complete %||% 0L,
+    analysis$kappa %||% NA_real_,
+    now,created_by,sep="|"
+  )
+  analysis_id <- paste0(
+    "w04-analysis-",
+    substr(digest::digest(payload,algo="sha256",serialize=FALSE),1L,20L)
+  )
+  row <- data.frame(
+    analysis_id=analysis_id,
+    project_id=Sys.getenv("LEM_PROJECT_ID",unset="living-evidence-map"),
+    project_name=Sys.getenv("LEM_PROJECT_NAME",unset="Living Evidence Map"),
+    batch_id=as.character(batch_id),
+    queue_sha256=as.character(queue_sha256),
+    review_mode=as.character(review_mode),
+    rater_ids_json=jsonlite::toJSON(analysis$rater_ids %||% character(),auto_unbox=FALSE),
+    metric=as.character(analysis$metric %||% ""),
+    eligible_n=as.character(analysis$eligible %||% 0L),
+    complete_n=as.character(analysis$complete %||% 0L),
+    missing_n=as.character(analysis$missing %||% 0L),
+    agreement_n=as.character(analysis$agreement_cases %||% 0L),
+    conflict_n=as.character(analysis$conflict_cases %||% 0L),
+    raw_agreement=as.character(analysis$raw_agreement %||% NA_real_),
+    kappa=as.character(analysis$kappa %||% NA_real_),
+    pairwise_json=jsonlite::toJSON(analysis$pairwise %||% list(),auto_unbox=TRUE,null="null",na="null"),
+    patterns_json=jsonlite::toJSON(analysis$patterns %||% list(),auto_unbox=TRUE,null="null",na="null"),
+    conflict_case_ids_json=jsonlite::toJSON(analysis$conflict_case_ids %||% character(),auto_unbox=FALSE),
+    agreement_case_ids_json=jsonlite::toJSON(analysis$agreement_case_ids %||% character(),auto_unbox=FALSE),
+    created_by=as.character(created_by),
+    created_at_utc=now,
+    stringsAsFactors=FALSE
+  )
+  googlesheets4::sheet_append(ss,data=row,sheet=tab)
+  verify <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+  if(sum(as.character(verify$analysis_id)==analysis_id)!=1L) {
+    stop("W04 consistency analysis write verification failed",call.=FALSE)
+  }
+  as.list(row[1,,drop=FALSE])
+}
+
 read_sheet_w04_queue_from_tab <- function(tab) {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
