@@ -1256,6 +1256,30 @@ server <- function(input, output, session) {
     }
     grouped <- split(all_assignments, vapply(all_assignments, assignment_group_key, character(1)))
 
+    # The registry is historical and append-only, but the administration UI
+    # should show only the currently active W01/W02/W08 batch. Older batches
+    # remain in Sheets/audit history rather than appearing as duplicate panels.
+    active_batch_for <- function(workflow, task_type) {
+      if (identical(workflow, "01") && identical(task_type, "deduplication")) {
+        return(if (has_w01_batch) as.character(batch_id_rv()) else "")
+      }
+      if (identical(workflow, "02") && identical(task_type, "enrichment")) {
+        return(if (has_w02_batch) as.character(w02_batch_id_rv()) else "")
+      }
+      if (identical(workflow, "08") && identical(task_type, "annotation")) {
+        return(if (has_w08_batch) as.character(w08_batch_id_rv()) else "")
+      }
+      NA_character_
+    }
+
+    grouped <- Filter(function(a) {
+      if (!length(a)) return(FALSE)
+      z <- normalise_assignment_row(a[[1L]])
+      active_batch <- active_batch_for(z$workflow, z$task_type)
+      if (is.na(active_batch)) return(TRUE)
+      nzchar(active_batch) && identical(z$batch_id, active_batch)
+    }, grouped)
+
     events_for_group <- function(a) {
       z <- normalise_assignment_row(a[[1L]])
       if (
