@@ -275,7 +275,7 @@ w08_record_highlight_terms <- function(issues, species_options = character()) {
     vals <- sub('^["“”]+', "", vals)
     vals <- sub('["“”]+$', "", vals)
     vals[nzchar(vals)]
-  }), use.names = FALSE))
+  }), use.names = FALSE)
   geo_evidence <- unique(geo_evidence[nzchar(geo_evidence)])
   if (length(geo_evidence)) {
     terms <- c(
