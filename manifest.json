@@ -1755,7 +1755,7 @@
       "checksum": "7b3d44077c31fc6b8b97a2644d261540"
     },
     "multiuser_app/tests/test_assignments.R": {
-      "checksum": "5bbf859b3777cc2668d29d45dab6f627"
+      "checksum": "bbaf6b829166258d77d2f522d3d67b3e"
     },
     "multiuser_app/tests/test_decision_events.R": {
       "checksum": "27f6693f251666375388b6c71d038c95"
