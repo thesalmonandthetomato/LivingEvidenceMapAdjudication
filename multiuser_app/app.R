@@ -176,8 +176,8 @@ highlight_screening_text <- function(text, include_terms = character(), exclude_
 highlight_named_terms <- function(text, terms) {
   text <- normalise_display_text(text)
   if (!nzchar(text)) return("")
-  terms <- as.character(terms)
   term_classes <- names(terms)
+  terms <- as.character(terms)
   keep <- nzchar(trimws(terms)) & nzchar(term_classes %||% "")
   terms <- terms[keep]
   term_classes <- term_classes[keep]
