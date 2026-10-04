@@ -160,8 +160,51 @@ dispatch_w08_resume <- function(source_run_id, batch_id, queue_sha256) {
 
   resp <- httr2::req_perform(req)
   status <- httr2::resp_status(resp)
-  if (!identical(status, 204L)) {
+  if (identical(status, 204L)) return(invisible(TRUE))
+
+  if (!identical(status, 404L)) {
     stop(sprintf("W08 resume dispatch failed with HTTP %d", status), call. = FALSE)
+  }
+
+  stamp <- format(Sys.time(), tz = "UTC", format = "%Y%m%dT%H%M%SZ")
+  marker_path <- sprintf(
+    "docs/shiny_adjudication/w08_resume_requests/run-%s-%s.json",
+    source_run_id, stamp
+  )
+  payload <- jsonlite::toJSON(list(
+    source_run_id = source_run_id,
+    batch_id = batch_id,
+    queue_sha256 = queue_sha256,
+    requested_at_utc = format(Sys.time(), tz = "UTC", format = "%Y-%m-%dT%H:%M:%SZ"),
+    requested_by = "LivingEvidenceMapAdjudication"
+  ), auto_unbox = TRUE, pretty = TRUE)
+
+  endpoint <- sprintf(
+    "https://api.github.com/repos/%s/contents/%s",
+    github_dispatch_repo(),
+    marker_path
+  )
+  marker_req <- httr2::request(endpoint) |>
+    httr2::req_method("PUT") |>
+    httr2::req_headers(
+      Authorization = paste("Bearer", github_dispatch_token()),
+      Accept = "application/vnd.github+json",
+      `X-GitHub-Api-Version` = "2022-11-28",
+      `User-Agent` = "LivingEvidenceMap-Adjudication"
+    ) |>
+    httr2::req_body_json(list(
+      message = sprintf("Request automatic W08 resume for run %s", source_run_id),
+      content = jsonlite::base64_enc(charToRaw(payload)),
+      branch = "workflow01-final-architecture"
+    ))
+
+  marker_resp <- httr2::req_perform(marker_req)
+  marker_status <- httr2::resp_status(marker_resp)
+  if (!marker_status %in% c(200L, 201L)) {
+    stop(sprintf(
+      "GitHub W08 resume fallback failed with HTTP %d after workflow dispatch returned 404",
+      marker_status
+    ), call. = FALSE)
   }
 
   invisible(TRUE)
