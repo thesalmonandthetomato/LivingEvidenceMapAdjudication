@@ -255,3 +255,163 @@ w04_blind_agreement_stats <- function(outcomes) {
     consensus_model=consensus_model
   )
 }
+
+
+w04_available_consistency_raters <- function(outcomes) {
+  outcomes <- outcomes %||% list()
+  human_ids <- sort(unique(unlist(lapply(
+    outcomes,
+    function(x) as.character(x$completed_user_ids %||% character()),
+    use.names = FALSE
+  )))
+  human_ids <- human_ids[nzchar(human_ids)]
+  has_model <- any(vapply(
+    outcomes,
+    function(x) nzchar(w04_model_decision_from_case(x$case)),
+    logical(1)
+  ))
+  c(human_ids, if (has_model) "model" else character())
+}
+
+w04_consistency_rater_decision <- function(outcome, rater_id) {
+  rater_id <- as.character(rater_id)
+  if (identical(rater_id, "model")) {
+    return(w04_model_decision_from_case(outcome$case))
+  }
+  r <- outcome$reviewer_decisions[[rater_id]]
+  if (is.null(r) || !isTRUE(r$complete)) return("")
+  w04_normalise_screening_decision(r$decision %||% "")
+}
+
+w04_consistency_analysis <- function(outcomes, rater_ids) {
+  outcomes <- outcomes %||% list()
+  rater_ids <- unique(as.character(rater_ids))
+  rater_ids <- rater_ids[nzchar(rater_ids)]
+  if (length(rater_ids) < 2L) {
+    return(list(
+      rater_ids = rater_ids,
+      eligible = length(outcomes),
+      complete = 0L,
+      missing = length(outcomes),
+      agreement_cases = 0L,
+      conflict_cases = 0L,
+      raw_agreement = NA_real_,
+      metric = "",
+      kappa = NA_real_,
+      pairwise = list(),
+      directional = list(),
+      patterns = list(),
+      conflict_case_ids = character(),
+      agreement_case_ids = character()
+    ))
+  }
+
+  rows <- lapply(outcomes, function(x) {
+    vals <- vapply(
+      rater_ids,
+      function(rid) w04_consistency_rater_decision(x, rid),
+      character(1)
+    )
+    list(
+      case_id = as.character(x$case_id %||% ""),
+      decisions = vals
+    )
+  })
+
+  complete_rows <- Filter(
+    function(x) all(nzchar(x$decisions)),
+    rows
+  )
+  n_complete <- length(complete_rows)
+  n_missing <- length(rows) - n_complete
+
+  if (!n_complete) {
+    return(list(
+      rater_ids = rater_ids,
+      eligible = length(rows),
+      complete = 0L,
+      missing = n_missing,
+      agreement_cases = 0L,
+      conflict_cases = 0L,
+      raw_agreement = NA_real_,
+      metric = if (length(rater_ids) == 2L) "Cohen's kappa" else "Fleiss' kappa",
+      kappa = NA_real_,
+      pairwise = list(),
+      directional = list(),
+      patterns = list(),
+      conflict_case_ids = character(),
+      agreement_case_ids = character()
+    ))
+  }
+
+  decision_matrix <- do.call(rbind, lapply(complete_rows, function(x) x$decisions))
+  colnames(decision_matrix) <- rater_ids
+  agreement_mask <- apply(decision_matrix, 1L, function(x) length(unique(x)) == 1L)
+  agreement_case_ids <- vapply(complete_rows[agreement_mask], function(x)x$case_id, character(1))
+  conflict_case_ids <- vapply(complete_rows[!agreement_mask], function(x)x$case_id, character(1))
+
+  pairwise <- list()
+  pairs <- combn(rater_ids, 2L, simplify = FALSE)
+  pairwise <- lapply(pairs, function(pair) {
+    a <- decision_matrix[, pair[[1L]]]
+    b <- decision_matrix[, pair[[2L]]]
+    s <- w04_cohen_kappa(a, b)
+    include_include <- sum(a == "retain" & b == "retain")
+    exclude_exclude <- sum(a == "exclude" & b == "exclude")
+    uncertain_uncertain <- sum(a == "uncertain" & b == "uncertain")
+    directional <- list(
+      retain_exclude = sum(a == "retain" & b == "exclude"),
+      exclude_retain = sum(a == "exclude" & b == "retain"),
+      retain_uncertain = sum(a == "retain" & b == "uncertain"),
+      uncertain_retain = sum(a == "uncertain" & b == "retain"),
+      exclude_uncertain = sum(a == "exclude" & b == "uncertain"),
+      uncertain_exclude = sum(a == "uncertain" & b == "exclude")
+    )
+    c(
+      list(
+        rater_a = pair[[1L]],
+        rater_b = pair[[2L]],
+        include_include = as.integer(include_include),
+        exclude_exclude = as.integer(exclude_exclude),
+        uncertain_uncertain = as.integer(uncertain_uncertain),
+        directional = directional
+      ),
+      s
+    )
+  })
+
+  patterns_raw <- apply(decision_matrix, 1L, paste, collapse = " | ")
+  patterns_tab <- sort(table(patterns_raw), decreasing = TRUE)
+  patterns <- lapply(names(patterns_tab), function(nm) {
+    list(pattern = nm, n = as.integer(patterns_tab[[nm]]))
+  })
+
+  if (length(rater_ids) == 2L) {
+    overall <- w04_cohen_kappa(
+      decision_matrix[,1L],
+      decision_matrix[,2L]
+    )
+    metric <- "Cohen's kappa"
+    kappa <- overall$kappa
+  } else {
+    overall <- w04_fleiss_kappa(decision_matrix)
+    metric <- "Fleiss' kappa"
+    kappa <- overall$kappa
+  }
+
+  list(
+    rater_ids = rater_ids,
+    eligible = as.integer(length(rows)),
+    complete = as.integer(n_complete),
+    missing = as.integer(n_missing),
+    agreement_cases = as.integer(sum(agreement_mask)),
+    conflict_cases = as.integer(sum(!agreement_mask)),
+    raw_agreement = mean(agreement_mask),
+    metric = metric,
+    kappa = as.numeric(kappa),
+    pairwise = pairwise,
+    patterns = patterns,
+    conflict_case_ids = conflict_case_ids,
+    agreement_case_ids = agreement_case_ids
+  )
+}
