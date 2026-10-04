@@ -5129,19 +5129,9 @@ server <- function(input, output, session) {
     )
     allowed <- as.character(issue$allowed_human_outcomes %||% character())
     if (typ %in% c("geography_unresolved","geography_evidence_unvalidated")) {
-      allowed <- c("accept_model","override_country_set","assign_none")
+      allowed <- c("accept_model","override_country_set","assign_none","exclude_record")
     } else if (identical(typ,"geography_model_failure")) {
-      actual_model_iso <- unique(toupper(as.character(unlist(
-        av$luna_iso3c %||%
-        av$model_iso3c %||%
-        av$iso3c %||%
-        character(),
-        use.names=FALSE
-      ))))
-      actual_model_iso <- actual_model_iso[nzchar(actual_model_iso)]
-      if (!length(actual_model_iso)) {
-        allowed <- setdiff(allowed,"accept_model")
-      }
+      allowed <- c("assign_country_set","assign_none","exclude_record")
     }
     labels <- c(
       assign_named_species="Assign named species",
@@ -5392,20 +5382,9 @@ server <- function(input, output, session) {
       choice <- as.character(input[[paste0("w08_decision_",j)]] %||% "")
       allowed <- as.character(issue$allowed_human_outcomes %||% character())
       if (typ %in% c("geography_unresolved","geography_evidence_unvalidated")) {
-        allowed <- c("accept_model","override_country_set","assign_none")
+        allowed <- c("accept_model","override_country_set","assign_none","exclude_record")
       } else if (identical(typ,"geography_model_failure")) {
-        av <- issue$automated_value %||% list()
-        actual_model_iso <- unique(toupper(as.character(unlist(
-          av$luna_iso3c %||%
-          av$model_iso3c %||%
-          av$iso3c %||%
-          character(),
-          use.names=FALSE
-        ))))
-        actual_model_iso <- actual_model_iso[nzchar(actual_model_iso)]
-        if (!length(actual_model_iso)) {
-          allowed <- setdiff(allowed,"accept_model")
-        }
+        allowed <- c("assign_country_set","assign_none","exclude_record")
       }
       if(!nzchar(choice) || !choice %in% allowed) {
         w08_status(sprintf("Choose a decision for %s.",typ))
@@ -5448,6 +5427,8 @@ server <- function(input, output, session) {
           final_value <- list(geography_status="NONE",iso3c=character(),country_names=character())
         } else if(choice=="accept_model") {
           final_value <- NULL
+        } else if(choice=="exclude_record") {
+          final_value <- list(included=FALSE)
         }
       } else if(typ=="topic_extreme_disagreement") {
         retained <- av <- issue$automated_value$pathways %||% list()
