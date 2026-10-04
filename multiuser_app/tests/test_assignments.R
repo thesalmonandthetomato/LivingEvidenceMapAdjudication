@@ -505,3 +505,72 @@ stopifnot(
 )
 
 cat("PASS: W02 and W08 shared-pool assignment semantics\n")
+
+
+# W04 conflict resolution is a distinct explicit-assignment pool.
+conflict_cases <- list(
+  list(review_case_id="conflict-1"),
+  list(review_case_id="conflict-2")
+)
+conflict_assignments <- list(
+  list(
+    assignment_id="conflict-a1",workflow="04",task_type="conflict_resolution",
+    batch_id="conflict-batch",case_id="conflict-1",user_id="usr-a",
+    blind_group="",status="assigned"
+  )
+)
+visible_conflict_a <- cases_for_assignment_user(
+  conflict_cases,conflict_assignments,"04","conflict-batch",reviewer_a,
+  task_type="conflict_resolution",active_events=list()
+)
+visible_conflict_b <- cases_for_assignment_user(
+  conflict_cases,conflict_assignments,"04","conflict-batch",reviewer_b,
+  task_type="conflict_resolution",active_events=list()
+)
+visible_conflict_admin <- cases_for_assignment_user(
+  conflict_cases,conflict_assignments,"04","conflict-batch",admin,
+  task_type="conflict_resolution",active_events=list()
+)
+stopifnot(
+  length(visible_conflict_a)==1L,
+  identical(visible_conflict_a[[1L]]$review_case_id,"conflict-1"),
+  length(visible_conflict_b)==0L,
+  length(visible_conflict_admin)==0L,
+  length(cases_for_assignment_user(
+    conflict_cases,list(),"04","conflict-batch",reviewer_a,
+    task_type="conflict_resolution",active_events=list()
+  ))==0L
+)
+
+# Agreement statistics use jointly completed independent reviews only.
+stats_outcomes <- w04_blind_case_outcomes(
+  list(
+    list(review_case_id="stats-1",record_id="s1",screening=list(model_decision="retain")),
+    list(review_case_id="stats-2",record_id="s2",screening=list(model_decision="exclude"))
+  ),
+  list(
+    list(assignment_id="stats-a1",workflow="04",task_type="manual_screening",batch_id="stats-b",case_id="stats-1",user_id="usr-a",blind_group="b",status="assigned"),
+    list(assignment_id="stats-a2",workflow="04",task_type="manual_screening",batch_id="stats-b",case_id="stats-1",user_id="usr-b",blind_group="b",status="assigned"),
+    list(assignment_id="stats-a3",workflow="04",task_type="manual_screening",batch_id="stats-b",case_id="stats-2",user_id="usr-a",blind_group="b",status="assigned"),
+    list(assignment_id="stats-a4",workflow="04",task_type="manual_screening",batch_id="stats-b",case_id="stats-2",user_id="usr-b",blind_group="b",status="assigned")
+  ),
+  list(
+    list(review_case_id="stats-1",reviewer="usr-a",decision="retain"),
+    list(review_case_id="stats-1",reviewer="usr-b",decision="retain"),
+    list(review_case_id="stats-2",reviewer="usr-a",decision="exclude"),
+    list(review_case_id="stats-2",reviewer="usr-b",decision="retain")
+  ),
+  "stats-b"
+)
+stats <- w04_blind_agreement_stats(stats_outcomes)
+stopifnot(
+  identical(stats$complete,2L),
+  identical(stats$agreement_cases,1L),
+  identical(stats$conflict_cases,1L),
+  isTRUE(all.equal(stats$raw_agreement,0.5)),
+  length(stats$pairwise)==1L,
+  identical(stats$pairwise[[1L]]$n,2L),
+  stats$consensus_model$n==1L
+)
+
+cat("PASS: W04 conflict assignment gating and agreement statistics\n")
