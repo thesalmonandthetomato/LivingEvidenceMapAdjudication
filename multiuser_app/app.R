@@ -566,6 +566,24 @@ ui <- page_fillable(
     .task-shell { max-width:1050px; margin:4vh auto 0 auto; padding:20px; width:100%; }
     .task-card { border:1px solid #dde3e8; box-shadow:0 2px 10px rgba(22,33,43,.05); }
     .task-card .card-header strong { font-size:1.2rem; font-weight:700; line-height:1.2; }
+
+    /* Workflow colour system: muted accents shared by admin and task cards. */
+    .wf-w01 { --wf-accent:#5d7896; --wf-tint:#edf3f8; --wf-soft:#f6f9fb; }
+    .wf-w02 { --wf-accent:#4f817b; --wf-tint:#eaf3f1; --wf-soft:#f5f9f8; }
+    .wf-w04 { --wf-accent:#a47a43; --wf-tint:#f6efe5; --wf-soft:#fbf8f3; }
+    .wf-w08 { --wf-accent:#7b678d; --wf-tint:#f1edf5; --wf-soft:#f8f6fa; }
+
+    .workflow-card {
+      border-left:4px solid var(--wf-accent);
+    }
+    .workflow-card > .card-header {
+      background:var(--wf-tint);
+      border-bottom-color:color-mix(in srgb,var(--wf-accent) 22%, #e1e5e9);
+    }
+    .workflow-card .task-badge {
+      background:var(--wf-tint);
+      color:color-mix(in srgb,var(--wf-accent) 82%, #17212b);
+    }
     .task-kpis { display:grid; grid-template-columns:repeat(3,minmax(90px,1fr)); gap:.65rem; margin:.8rem 0; }
     .task-kpi { background:#f7f8fa; border:1px solid #e1e5e9; border-radius:8px; padding:.55rem .65rem; }
     .task-kpi strong { display:block; font-size:1.15rem; }
@@ -586,6 +604,30 @@ ui <- page_fillable(
     .assignment-disclosure > summary::before, .assignment-workflow > summary::before { content:'▸'; display:inline-block; width:1.1rem; color:#66727d; }
     .assignment-disclosure[open] > summary::before, .assignment-workflow[open] > summary::before { content:'▾'; }
     .assignment-workflow { border-top:1px solid #e7eaed; padding:.65rem 0 .15rem 0; }
+    .workflow-section {
+      border-left:4px solid var(--wf-accent);
+      background:var(--wf-soft);
+      border-radius:8px;
+      margin:.45rem 0;
+      padding:.55rem .75rem .45rem .75rem;
+    }
+    .workflow-section > summary {
+      background:var(--wf-tint);
+      margin:-.55rem -.75rem .3rem -.75rem;
+      padding:.55rem .75rem;
+      border-radius:8px 8px 0 0;
+    }
+    .assignment-submenu {
+      background:color-mix(in srgb,var(--wf-tint) 55%, white);
+      border:1px solid color-mix(in srgb,var(--wf-accent) 18%, #e7eaed);
+      border-left:3px solid color-mix(in srgb,var(--wf-accent) 60%, white);
+      border-radius:7px;
+      margin:.55rem 0;
+      padding:.45rem .65rem;
+    }
+    .assignment-submenu > summary {
+      font-weight:600;
+    }
     .assignment-workflow .shiny-input-container { width:100% !important; max-width:none !important; }
     .assignment-workflow .shiny-options-group { width:100%; max-width:none; }
     .assignment-workflow .form-check-label { max-width:none; }
@@ -1286,8 +1328,16 @@ server <- function(input, output, session) {
       }
 
       stage_card <- function(title, workflow, description, total, completed, remaining, button_id = NULL, button_label = NULL, batch = "", lifecycle_status = "", can_open = TRUE, idle_text = "No records awaiting review") {
+        wf_class <- switch(
+          workflow,
+          "Workflow 01"="wf-w01",
+          "Workflow 02"="wf-w02",
+          "Workflow 04"="wf-w04",
+          "Workflow 08"="wf-w08",
+          ""
+        )
         card(
-          class = "task-card h-100",
+          class = paste("task-card h-100 workflow-card", wf_class),
           card_header(
             div(
               class = "d-flex justify-content-between align-items-center",
@@ -2072,7 +2122,10 @@ server <- function(input, output, session) {
       }
 
       tags$details(
-        class = "assignment-workflow mt-2",
+        class = paste(
+          "assignment-workflow assignment-submenu mt-2",
+          paste0("wf-w",cfg$workflow)
+        ),
         `data-accordion-key` = paste0("manage-", cfg$prefix, "-", cfg$task_type),
         tags$summary(tags$strong("Manage assignments")),
         div(
@@ -2253,7 +2306,10 @@ server <- function(input, output, session) {
       }
 
       tags$details(
-        class = "assignment-workflow",
+        class = paste(
+          "assignment-workflow workflow-section",
+          paste0("wf-w",z$workflow)
+        ),
         `data-accordion-key` = paste0("workflow-", z$workflow, "-", z$task_type),
         tags$summary(
           div(
@@ -2402,7 +2458,7 @@ server <- function(input, output, session) {
 
     w04_results_panel <- if (has_w04_batch) {
       tags$details(
-        class="assignment-workflow mb-2",
+        class="assignment-workflow assignment-submenu wf-w04 mb-2",
         `data-accordion-key`="w04-consistency-checking",
         tags$summary(
           div(
