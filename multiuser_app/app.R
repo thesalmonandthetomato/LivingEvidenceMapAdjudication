@@ -586,6 +586,9 @@ ui <- page_fillable(
     .assignment-disclosure > summary::before, .assignment-workflow > summary::before { content:'▸'; display:inline-block; width:1.1rem; color:#66727d; }
     .assignment-disclosure[open] > summary::before, .assignment-workflow[open] > summary::before { content:'▾'; }
     .assignment-workflow { border-top:1px solid #e7eaed; padding:.65rem 0 .15rem 0; }
+    .assignment-workflow .shiny-input-container { width:100% !important; max-width:none !important; }
+    .assignment-workflow .shiny-options-group { width:100%; max-width:none; }
+    .assignment-workflow .form-check-label { max-width:none; }
     .assignment-mode-note { color:#66727d; font-size:.8rem; }
     @media (max-width:620px) { .assignment-kpis { grid-template-columns:repeat(2,minmax(100px,1fr)); } }
     .pipeline-summary { background:#fff; border:1px solid #dde3e8; border-radius:12px; padding:.85rem 1rem; margin-bottom:1rem; box-shadow:0 2px 10px rgba(22,33,43,.04); }
