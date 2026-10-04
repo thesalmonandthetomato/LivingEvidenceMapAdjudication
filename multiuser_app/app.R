@@ -1391,7 +1391,7 @@ server <- function(input, output, session) {
             ),
             if (nzchar(batch)) tags$div(class = "text-secondary small mb-1", batch),
             if (identical(lifecycle_status,"review_complete")) {
-              tags$div(class="small mb-2",tags$span(class="task-badge","Awaiting workflow completion"))
+              tags$div(class="small mb-2",tags$span(class="task-badge","Human review complete"))
             },
             if (!is.null(button_id) && remaining > 0L && isTRUE(can_open)) {
               actionButton(button_id, button_label, class = "btn-primary mt-auto")
