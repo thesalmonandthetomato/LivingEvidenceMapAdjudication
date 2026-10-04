@@ -288,6 +288,34 @@
         "Built": "R 4.6.0; x86_64-pc-linux-gnu; 2026-08-12 20:21:31 UTC; unix"
       }
     },
+    "countrycode": {
+      "Source": "RSPM",
+      "Repository": "https://packagemanager.posit.co/cran/latest",
+      "description": {
+        "Type": "Package",
+        "Package": "countrycode",
+        "Title": "Convert Country Names and Country Codes",
+        "Version": "1.9.0",
+        "Authors@R": "\n    c(person(given = \"Vincent\",\n             family = \"Arel-Bundock\",\n             role = c(\"aut\", \"cre\"),\n             email = \"vincent.arel-bundock@umontreal.ca\",\n             comment = c(ORCID = \"0000-0003-2042-7063\")),\n      person(given = \"CJ\",\n             family = \"Yetman\",\n             role = \"ctb\",\n             email = \"cj@cjyetman.com\",\n             comment = c(ORCID = \"0000-0001-5099-9500\")),\n      person(given = \"Nils\",\n             family = \"Enevoldsen\",\n             role = \"ctb\",\n             email = \"nils@wlonk.com\",\n             comment = c(ORCID = \"0000-0001-7195-4117\")),\n      person(\"Etienne\", \"Bacher\",\n             email = \"etienne.bacher@protonmail.com\",\n             role = \"ctb\",\n             comment = c(ORCID = \"0000-0002-9271-5075\")),\n      person(given = \"Samuel\",\n             family = \"Meichtry\",\n             role = \"ctb\",\n             email = \"samuel.meichtry@bj.admin.ch\",\n             comment = c(ORCID = \"0000-0003-2165-791X\")))",
+        "Description": "Standardize country names, convert them into one of 40\n    different coding schemes, convert between coding schemes, and assign\n    region descriptors.",
+        "License": "GPL-3",
+        "URL": "https://vincentarelbundock.github.io/countrycode/",
+        "BugReports": "https://github.com/vincentarelbundock/countrycode/issues",
+        "Depends": "R (>= 2.10)",
+        "Suggests": "pkgsite, eurostat, testthat, tibble, yaml, ISOcodes",
+        "Encoding": "UTF-8",
+        "LazyData": "yes",
+        "LazyLoad": "yes",
+        "Config/roxygen2/version": "8.0.0",
+        "NeedsCompilation": "no",
+        "Packaged": "2026-08-19 20:23:31 UTC; vincent",
+        "Author": "Vincent Arel-Bundock [aut, cre] (ORCID:\n    <https://orcid.org/0000-0003-2042-7063>),\n  CJ Yetman [ctb] (ORCID: <https://orcid.org/0000-0001-5099-9500>),\n  Nils Enevoldsen [ctb] (ORCID: <https://orcid.org/0000-0001-7195-4117>),\n  Etienne Bacher [ctb] (ORCID: <https://orcid.org/0000-0002-9271-5075>),\n  Samuel Meichtry [ctb] (ORCID: <https://orcid.org/0000-0003-2165-791X>)",
+        "Maintainer": "Vincent Arel-Bundock <vincent.arel-bundock@umontreal.ca>",
+        "Repository": "RSPM",
+        "Date/Publication": "2026-08-20 05:21:29 UTC",
+        "Built": "R 4.6.0; ; 2026-08-21 04:14:25 UTC; unix"
+      }
+    },
     "curl": {
       "Source": "RSPM",
       "Repository": "https://packagemanager.posit.co/cran/latest",
@@ -1667,7 +1695,7 @@
   },
   "files": {
     ".github/workflows/validate.yml": {
-      "checksum": "eb7849fe81a1e14eea03e8df17957e5c"
+      "checksum": "eab1cbd22b80e9f6d04fbe499309bba2"
     },
     "app.R": {
       "checksum": "54cc1809cb0782513f8bddc6295a4120"
@@ -1682,7 +1710,7 @@
       "checksum": "480a0d337e4fbf1a18baca82acdbcb23"
     },
     "multiuser_app/app.R": {
-      "checksum": "2b763caf7548084ca7b56b89b3ccbdbf"
+      "checksum": "3bf859b98a642623a965d340cf2d782f"
     },
     "multiuser_app/DEVELOPMENT_TODO.md": {
       "checksum": "7ee53afe9396a1ada23aee3be6b9bb64"
@@ -1715,7 +1743,7 @@
       "checksum": "6cfc5fa65dc8fd1020fad3ca42f2e397"
     },
     "multiuser_app/R/storage_sheets.R": {
-      "checksum": "ebb5a11719d90f0628501d6df110adaf"
+      "checksum": "70a984bedfd0f92fd8aebe77c5762eb1"
     },
     "multiuser_app/R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
