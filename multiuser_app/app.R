@@ -351,11 +351,26 @@ ui <- page_fillable(
       gap:1rem;
       align-items:start;
     }
+    .w08-record-card,
+    .w08-record-card > .card-body,
+    .w08-review-layout,
+    .w08-review-decisions,
+    .w08-review-decisions .card,
+    .w08-review-decisions .card-body {
+      overflow:visible !important;
+    }
     .w08-review-evidence,
     .w08-review-decisions { min-width:0; }
+    .w08-review-decisions { position:relative; z-index:10; }
     .w08-review-decisions .w08-issue-card,
     .w08-review-decisions .w08-species-issue {
       min-height:0;
+    }
+    .w08-review-decisions .selectize-control { position:relative; z-index:30; }
+    .w08-review-decisions .selectize-dropdown {
+      z-index:5000 !important;
+      max-height:320px;
+      overflow-y:auto !important;
     }
     .w08-review-decisions .w08-issue-card:last-child { margin-bottom:0 !important; }
     @media (max-width: 980px) {
@@ -3693,7 +3708,7 @@ server <- function(input, output, session) {
     z <- w08_current_case()
     issues <- z$issues %||% list()
     card(
-      class="record-card",
+      class="record-card w08-record-card",
       card_header(
         div(
           class="d-flex justify-content-between align-items-center",
