@@ -50,7 +50,7 @@ stopifnot(grepl(
 ))
 
 for (dispatch_call in c(
-  "dispatch_w04_validation_finalize",
+  "dispatch_w04_resolution_resume",
   "dispatch_w08_resume"
 )) {
   pos <- regexpr(dispatch_call, app, fixed = TRUE)[[1L]]
