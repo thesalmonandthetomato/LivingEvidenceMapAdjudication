@@ -5044,24 +5044,19 @@ server <- function(input, output, session) {
       zero_topic_eligibility_uncertain="Topic eligibility verification"
     )
     allowed <- as.character(issue$allowed_human_outcomes %||% character())
-    if (identical(typ,"geography_evidence_unvalidated")) {
-      model_iso <- unique(toupper(as.character(unlist(
-        av$iso3c %||%
+    if (typ %in% c("geography_unresolved","geography_evidence_unvalidated")) {
+      allowed <- c("accept_model","override_country_set","assign_none")
+    } else if (identical(typ,"geography_model_failure")) {
+      actual_model_iso <- unique(toupper(as.character(unlist(
         av$luna_iso3c %||%
-        av$luna_country_iso3c %||%
         av$model_iso3c %||%
-        av$deterministic_primary_iso3c %||%
+        av$iso3c %||%
         character(),
         use.names=FALSE
       ))))
-      model_iso <- model_iso[nzchar(model_iso)]
-      model_names <- as.character(unlist(
-        av$luna_country_names %||% av$model_country_names %||% character(),
-        use.names=FALSE
-      ))
-      model_names <- model_names[nzchar(model_names)]
-      if ((length(model_iso) || length(model_names)) && !"accept_model" %in% allowed) {
-        allowed <- c("accept_model",allowed)
+      actual_model_iso <- actual_model_iso[nzchar(actual_model_iso)]
+      if (!length(actual_model_iso)) {
+        allowed <- setdiff(allowed,"accept_model")
       }
     }
     labels <- c(
@@ -5079,9 +5074,6 @@ server <- function(input, output, session) {
     )
     choice_labels <- unname(labels[allowed])
     names(choice_labels) <- allowed
-    if (identical(typ,"geography_unresolved") && "assign_country_set" %in% allowed) {
-      choice_labels[["assign_country_set"]] <- "Accept / amend model geography"
-    }
     choices <- setNames(allowed,unname(choice_labels[allowed]))
 
     detail <- switch(
@@ -5156,7 +5148,7 @@ server <- function(input, output, session) {
         tagList(
           selectizeInput(
             paste0("w08_geo_",j),
-            "Countries",
+            "Override countries",
             choices = w08_country_choices(),
             selected = model_selected[nzchar(model_selected)],
             multiple = TRUE,
@@ -5315,6 +5307,22 @@ server <- function(input, output, session) {
       typ <- as.character(issue$issue_type %||% "")
       choice <- as.character(input[[paste0("w08_decision_",j)]] %||% "")
       allowed <- as.character(issue$allowed_human_outcomes %||% character())
+      if (typ %in% c("geography_unresolved","geography_evidence_unvalidated")) {
+        allowed <- c("accept_model","override_country_set","assign_none")
+      } else if (identical(typ,"geography_model_failure")) {
+        av <- issue$automated_value %||% list()
+        actual_model_iso <- unique(toupper(as.character(unlist(
+          av$luna_iso3c %||%
+          av$model_iso3c %||%
+          av$iso3c %||%
+          character(),
+          use.names=FALSE
+        ))))
+        actual_model_iso <- actual_model_iso[nzchar(actual_model_iso)]
+        if (!length(actual_model_iso)) {
+          allowed <- setdiff(allowed,"accept_model")
+        }
+      }
       if(!nzchar(choice) || !choice %in% allowed) {
         w08_status(sprintf("Choose a decision for %s.",typ))
         return(FALSE)
@@ -5343,7 +5351,7 @@ server <- function(input, output, session) {
           final_value <- list(included=FALSE)
         }
       } else if(typ %in% c("geography_model_failure","geography_unresolved","geography_evidence_unvalidated")) {
-        if(choice %in% c("assign_country_set","override_country_set")) {
+        if(choice=="override_country_set" || (identical(typ,"geography_model_failure") && choice=="assign_country_set")) {
           iso <- unique(toupper(as.character(input[[paste0("w08_geo_",j)]] %||% character())))
           iso <- iso[nzchar(iso)]
           country <- w08_country_names_for_iso3(iso)
@@ -5355,7 +5363,6 @@ server <- function(input, output, session) {
         } else if(choice=="assign_none") {
           final_value <- list(geography_status="NONE",iso3c=character(),country_names=character())
         } else if(choice=="accept_model") {
-          # Dynamic W08 finalisation preserves the existing W06 value for accept_model.
           final_value <- NULL
         }
       } else if(typ=="topic_extreme_disagreement") {
