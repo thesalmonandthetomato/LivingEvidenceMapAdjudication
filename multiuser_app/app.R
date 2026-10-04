@@ -950,14 +950,6 @@ server <- function(input, output, session) {
     invisible(TRUE)
   }
 
-  observe({
-    req(authenticated())
-    if (!session_can("manage_assignments")) return()
-    if (!nzchar(as.character(w04_batch_id_rv() %||% ""))) return()
-    invalidateLater(15000, session)
-    refresh_w04_admin_state(show_status=FALSE)
-  })
-
   observeEvent(input$w04_refresh_status_button,{
     req(authenticated())
     if (!session_can("manage_assignments")) {
@@ -3817,6 +3809,10 @@ server <- function(input, output, session) {
     w01_all_cases_rv(list())
     w02_all_cases_rv(list())
     w04_all_cases_rv(list())
+    w04_consistency_analyses_rv(list())
+    w04_conflict_sets_rv(list())
+    w04_consistency_history_loaded(FALSE)
+    w04_refresh_status("")
     w08_all_cases_rv(list())
     app_view("tasks")
     complete(FALSE)
@@ -3968,6 +3964,15 @@ server <- function(input, output, session) {
           ) {
             mark_review_complete("04",w04_batch_id_rv(),w04_queue_sha_rv(),w04_batch_status_rv)
           }
+        }
+
+        # Generated W04 conflict sets are reviewer work, not admin-only
+        # reporting metadata. Load them for every authenticated user so an
+        # assigned reviewer can reconstruct and open their conflict queue.
+        if (identical(storage_backend(),"google_sheets")) {
+          w04_conflict_sets_rv(read_w04_conflict_sets())
+        } else {
+          w04_conflict_sets_rv(list())
         }
 
         w04_resolution_batch <- load_w04_resolution_batch()
