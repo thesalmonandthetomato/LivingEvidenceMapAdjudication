@@ -846,6 +846,45 @@ server <- function(input, output, session) {
     }
   })
 
+  observe({
+    req(authenticated())
+    if (!session_can("manage_assignments")) return()
+    if (!identical(storage_backend(),"google_sheets")) return()
+    if (!nzchar(as.character(w04_batch_id_rv() %||% ""))) return()
+
+    invalidateLater(15000, session)
+
+    latest <- tryCatch(
+      active_sheet_w04_decisions(),
+      error=function(e) NULL
+    )
+    if (is.null(latest)) return()
+
+    latest <- w04_filter_batch_decisions(latest,w04_queue_sha_rv())
+
+    decision_signature <- function(xs) {
+      if (!length(xs)) return("")
+      keys <- vapply(xs,function(x) {
+        paste(
+          as.character(x$decision_id %||% ""),
+          as.character(x$review_case_id %||% ""),
+          decision_user_id(x),
+          as.character(x$decision %||% ""),
+          as.character(x$resolved_at_utc %||% ""),
+          sep="|"
+        )
+      },character(1))
+      digest::digest(sort(keys),algo="sha256",serialize=FALSE)
+    }
+
+    if (!identical(
+      decision_signature(latest),
+      decision_signature(w04_decisions())
+    )) {
+      w04_decisions(latest)
+    }
+  })
+
   w04_blind_outcomes <- reactive({
     if (!nzchar(as.character(w04_batch_id_rv())) || !length(w04_all_cases_rv())) return(list())
     w04_blind_case_outcomes(
