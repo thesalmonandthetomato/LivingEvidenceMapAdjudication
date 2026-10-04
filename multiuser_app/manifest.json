@@ -1512,7 +1512,7 @@
       "checksum": "ba6fd28afe370e10d7010181e3aff887"
     },
     "tests/test_assignments.R": {
-      "checksum": "048f352eba548a39d70deb3376acf6af"
+      "checksum": "56bc23194ae9612a912dbc192d373244"
     },
     "tests/test_decision_events.R": {
       "checksum": "27f6693f251666375388b6c71d038c95"
