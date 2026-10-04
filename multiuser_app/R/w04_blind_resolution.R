@@ -262,7 +262,10 @@ w04_available_consistency_raters <- function(outcomes) {
   human_ids <- sort(unique(unlist(
     lapply(
       outcomes,
-      function(x) as.character(x$completed_user_ids %||% character())
+      function(x) unique(c(
+        as.character(x$assigned_user_ids %||% character()),
+        as.character(x$completed_user_ids %||% character())
+      ))
     ),
     use.names = FALSE
   )))
