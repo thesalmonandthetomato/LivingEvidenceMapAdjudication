@@ -1664,7 +1664,7 @@ server <- function(input, output, session) {
               tags$strong("Synthetic test data"),
               tags$p(
                 class = "text-secondary small mb-2",
-                "Start a new two-record W08 smoke-test batch. Existing assignments and decisions are retained as history."
+                "Start a new four-record W08 smoke-test batch covering topic eligibility, species, geography and topic replacement. Existing assignments and decisions are retained as history."
               ),
               actionButton(
                 "w08_start_fresh_test_batch",
