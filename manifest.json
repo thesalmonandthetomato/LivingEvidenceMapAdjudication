@@ -1710,7 +1710,7 @@
       "checksum": "480a0d337e4fbf1a18baca82acdbcb23"
     },
     "multiuser_app/app.R": {
-      "checksum": "51d2905911aca6c7851ca22f61da2548"
+      "checksum": "4e093f649930a87483aa72eb34e3ece2"
     },
     "multiuser_app/DEVELOPMENT_TODO.md": {
       "checksum": "7ee53afe9396a1ada23aee3be6b9bb64"
@@ -1752,10 +1752,10 @@
       "checksum": "08a1be968420750f0593f092c2b7caab"
     },
     "multiuser_app/R/w04_blind_resolution.R": {
-      "checksum": "5e9ad273a90b77b411ea27c2d86c168f"
+      "checksum": "49715400b57edc286e546654fca2b9c2"
     },
     "multiuser_app/tests/test_assignments.R": {
-      "checksum": "f366632f6c8993a3962a32bdb49da6b1"
+      "checksum": "265aeb6a5281153d429bd22fe95b5a87"
     },
     "multiuser_app/tests/test_decision_events.R": {
       "checksum": "27f6693f251666375388b6c71d038c95"
