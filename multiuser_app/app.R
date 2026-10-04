@@ -284,7 +284,7 @@ ui <- page_fillable(
 
           const overlay = document.createElement('div');
           overlay.id = 'lem-busy-overlay';
-          overlay.innerHTML = '<div class="lem-busy-box"><div class="lem-busy-spinner"></div><span>Working…</span></div>';
+          overlay.innerHTML = '<div class=\"lem-busy-box\"><div class=\"lem-busy-spinner\"></div><span>Working…</span></div>';
           document.body.appendChild(overlay);
 
           let busyTimer = null;
