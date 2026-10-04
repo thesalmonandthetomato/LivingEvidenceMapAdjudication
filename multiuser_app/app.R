@@ -2356,15 +2356,19 @@ server <- function(input, output, session) {
       available_raters,
       vapply(available_raters, reviewer_name, character(1))
     )
-    existing_selected <- isolate(as.character(input$w04_consistency_raters %||% character()))
-    selected_raters <- intersect(existing_selected, available_raters)
-    if (length(selected_raters) < 2L) {
+    input_selection <- input$w04_consistency_raters
+    if (is.null(input_selection)) {
       human_defaults <- setdiff(available_raters,"model")
       selected_raters <- if (length(human_defaults) >= 2L) {
         human_defaults
       } else {
         available_raters
       }
+    } else {
+      selected_raters <- intersect(
+        as.character(input_selection %||% character()),
+        available_raters
+      )
     }
     w04_selected_analysis <- w04_consistency_analysis(
       w04_outcomes_now,
@@ -2407,7 +2411,11 @@ server <- function(input, output, session) {
             tags$span(class="task-badge","Administrator only"),
             tags$span(
               class="text-secondary small",
-              if (length(selected_raters) >= 2L) {
+              if (length(selected_raters) < 2L) {
+                "Select at least two raters"
+              } else if (w04_selected_analysis$complete < 1L) {
+                "No complete cases for selected raters"
+              } else {
                 sprintf(
                   "%d complete · %s agreement · %s = %s",
                   w04_selected_analysis$complete,
@@ -2415,8 +2423,6 @@ server <- function(input, output, session) {
                   w04_selected_analysis$metric,
                   fmt_kappa(w04_selected_analysis$kappa)
                 )
-              } else {
-                "Select at least two raters"
               }
             )
           )
@@ -2424,8 +2430,12 @@ server <- function(input, output, session) {
         div(
           class="pt-2",
           tags$p(
-            class="text-secondary small",
-            "Select any combination of completed human raters and the model. Statistics use complete cases for the selected raters only; no raw decisions are altered."
+            class="text-secondary small mb-1",
+            "Select any combination of human raters and the model. Statistics use complete cases for the selected raters only; no raw decisions are altered."
+          ),
+          tags$p(
+            class="text-secondary small fw-semibold",
+            "Agreement statistics update automatically when the selected raters change."
           ),
           checkboxGroupInput(
             "w04_consistency_raters",
@@ -2435,7 +2445,19 @@ server <- function(input, output, session) {
             inline=TRUE
           ),
           if (length(selected_raters) < 2L) {
-            tags$div(class="text-secondary small","At least two available raters are required.")
+            tags$div(
+              class="p-2 border rounded bg-light text-secondary small",
+              "Select at least two raters. Previous statistics are intentionally hidden until a valid comparison is selected."
+            )
+          } else if (w04_selected_analysis$complete < 1L) {
+            tags$div(
+              class="p-2 border rounded bg-light text-secondary small",
+              sprintf(
+                "No records have complete decisions for all selected raters. Eligible records: %d; missing for this comparison: %d. Agreement and kappa are not calculated.",
+                w04_selected_analysis$eligible,
+                w04_selected_analysis$missing
+              )
+            )
           } else {
             tagList(
               div(
