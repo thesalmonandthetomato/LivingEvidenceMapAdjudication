@@ -408,6 +408,15 @@ ui <- page_fillable(
     .pipeline-kpi-label { display:block; color:#6a747d; font-size:.8rem; line-height:1.2; margin-bottom:.2rem; overflow-wrap:anywhere; }
     .pipeline-kpi-value { display:block; font-size:1.12rem; line-height:1.2; font-weight:700; white-space:normal; overflow-wrap:anywhere; }
     .pipeline-kpi-sub { display:block; color:#7c858d; font-size:.74rem; line-height:1.2; margin-top:.12rem; overflow-wrap:anywhere; }
+    .pipeline-kpi.pre-update {
+      background:#fbfcfc;
+      border-color:#eceff1;
+    }
+    .pipeline-kpi.pre-update .pipeline-kpi-label,
+    .pipeline-kpi.pre-update .pipeline-kpi-value,
+    .pipeline-kpi.pre-update .pipeline-kpi-sub {
+      color:#9aa2a9;
+    }
     .workflow-line { display:grid; grid-template-columns:repeat(10,1fr); gap:.28rem; margin-top:.75rem; }
     .workflow-segment { height:7px; border-radius:999px; background:#e5e9ec; }
     .workflow-segment.done { background:#1f5d50; }
@@ -699,6 +708,9 @@ server <- function(input, output, session) {
     active <- suppressWarnings(as.integer(as.character(p$active_workflow %||% "")))
     if(is.na(completed)) completed <- 0L
 
+    status_label <- tolower(trimws(as.character(p$status_label %||% "")))
+    update_finalised <- grepl("complete|completed|final|finalised|finalized", status_label)
+
     workflow_labels <- c("W00","W01","W02","W03","W04","W05","W06","W07","W08","W10")
     segs <- lapply(seq_along(workflow_labels),function(i){
       cls <- "workflow-segment"
@@ -707,9 +719,9 @@ server <- function(input, output, session) {
       div(class=cls,title=workflow_labels[[i]])
     })
 
-    kpi <- function(label,value,sub=NULL) {
+    kpi <- function(label,value,sub=NULL,class_extra=NULL) {
       div(
-        class="pipeline-kpi",
+        class=paste(c("pipeline-kpi", class_extra), collapse=" "),
         tags$span(class="pipeline-kpi-label",label),
         tags$span(class="pipeline-kpi-value",value),
         if(!is.null(sub)) tags$span(class="pipeline-kpi-sub",sub)
@@ -770,7 +782,12 @@ server <- function(input, output, session) {
           paste0(fmt_pipeline_n(p$topic_with)," / ",fmt_pipeline_n(p$topic_without)),
           "with / without"
         ),
-        kpi("Canonical database",fmt_pipeline_n(p$canonical_existing),"pre-update")
+        kpi(
+          "Canonical database",
+          fmt_pipeline_n(p$canonical_existing),
+          if (isTRUE(update_finalised)) "current" else "pre-update",
+          if (isTRUE(update_finalised)) NULL else "pre-update"
+        )
       ),
       div(class="workflow-line",segs),
       div(
