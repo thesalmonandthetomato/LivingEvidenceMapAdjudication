@@ -417,11 +417,11 @@ ui <- page_fillable(
     .pipeline-kpi.pre-update .pipeline-kpi-sub {
       color:#9aa2a9;
     }
-    .workflow-line { display:grid; grid-template-columns:repeat(10,1fr); gap:.28rem; margin-top:.75rem; }
+    .workflow-line { display:grid; grid-template-columns:repeat(11,1fr); gap:.28rem; margin-top:.75rem; }
     .workflow-segment { height:7px; border-radius:999px; background:#e5e9ec; }
     .workflow-segment.done { background:#1f5d50; }
     .workflow-segment.active { background:#8fb7ac; box-shadow:0 0 0 1px #1f5d50 inset; }
-    .workflow-labels { display:grid; grid-template-columns:repeat(10,1fr); gap:.28rem; margin-top:.22rem; color:#7b858d; font-size:.69rem; text-align:center; }
+    .workflow-labels { display:grid; grid-template-columns:repeat(11,1fr); gap:.28rem; margin-top:.22rem; color:#7b858d; font-size:.69rem; text-align:center; }
     @media (max-width: 1000px) { .pipeline-kpis { grid-template-columns:repeat(3,minmax(135px,1fr)); } }
     @media (max-width: 620px) { .pipeline-kpis { grid-template-columns:repeat(2,minmax(120px,1fr)); } }
     @media (max-width: 390px) { .pipeline-kpis { grid-template-columns:1fr; } }
@@ -712,7 +712,7 @@ server <- function(input, output, session) {
     update_finalised <- is.na(active) &&
       grepl("(^|\\b)(complete|completed|final|finalised|finalized)(\\b|$)", status_label)
 
-    workflow_labels <- c("W00","W01","W02","W03","W04","W05","W06","W07","W08","W10")
+    workflow_labels <- c("W00","W01","W02","W03","W04","W05","W06","W07","W08","W09","W10")
     segs <- lapply(seq_along(workflow_labels),function(i){
       cls <- "workflow-segment"
       if(i <= completed) cls <- paste(cls,"done")
@@ -1692,7 +1692,7 @@ server <- function(input, output, session) {
       })
 
       mode_note <- if (identical(mode, ASSIGNMENT_MODES[["shared_work_pool"]])) {
-        "First valid decision closes the case for every assignee. Other assignments are released."
+        "For shared cases, the first valid decision resolves the case. Other reviewers assigned to that case no longer need to review it."
       } else if (identical(mode, ASSIGNMENT_MODES[["independent_blind_review"]])) {
         "Every required reviewer must complete the case independently. Decisions remain blinded until review is complete."
       } else {
@@ -1737,11 +1737,11 @@ server <- function(input, output, session) {
               tags$thead(tags$tr(
                 tags$th("Reviewer"),
                 tags$th("Role"),
-                tags$th("Total"),
+                tags$th("Assigned"),
                 tags$th("Completed"),
-                tags$th("Released"),
-                tags$th("Current"),
-                tags$th("Progress"),
+                tags$th("Closed"),
+                tags$th("Outstanding"),
+                tags$th("Resolved"),
                 tags$th("Last activity")
               )),
               tags$tbody(rows)
