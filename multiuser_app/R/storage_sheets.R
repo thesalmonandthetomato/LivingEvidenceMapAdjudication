@@ -1559,6 +1559,138 @@ create_test_w02_queue <- function(
   invisible(list(batch_id = batch_id, queue_sha256 = sha, cases = cases))
 }
 
+create_test_w04_queue <- function(
+  tab = Sys.getenv("LEM_W04_TEST_QUEUE_TAB", unset = "queue_w04_test_active")
+) {
+  cases <- list(
+    list(
+      review_case_id="test-w04-001",record_id="test-w04-record-001",random_order=1L,
+      screening=list(model_decision="retain"),
+      bibliographic=list(
+        title="Sea-cage production of Atlantic salmon and benthic impacts in a Norwegian fjord",
+        authors="Larsen A; Moen B",year="2024",journal="Aquaculture Environment Interactions",
+        volume="16",pages="101-119",doi="10.0000/test.w04.001",
+        abstract="We assessed benthic organic enrichment beneath commercial Atlantic salmon farms using sediment chemistry and infaunal indicators. Sampling was conducted around sea cages throughout a full production cycle in western Norway.",
+        keywords="Atlantic salmon; aquaculture; sea cages; benthic impact; Norway"
+      )
+    ),
+    list(
+      review_case_id="test-w04-002",record_id="test-w04-record-002",random_order=2L,
+      screening=list(model_decision="exclude"),
+      bibliographic=list(
+        title="Juvenile salmon migration through a regulated river catchment",
+        authors="Evans C; Morgan D",year="2021",journal="Freshwater Biology",
+        volume="66",pages="881-895",doi="10.0000/test.w04.002",
+        abstract="Telemetry was used to examine migration timing of wild juvenile salmon through a regulated river. The study did not investigate aquaculture, farming, cages, pens or other commercial production systems.",
+        keywords="wild salmon; migration; river; telemetry"
+      )
+    ),
+    list(
+      review_case_id="test-w04-003",record_id="test-w04-record-003",random_order=3L,
+      screening=list(model_decision="retain"),
+      bibliographic=list(
+        title="Antibiotic use and antimicrobial resistance around intensive rainbow trout farms",
+        authors="Petrov I; Silva M",year="2023",journal="Aquaculture",
+        volume="574",pages="739614",doi="10.0000/test.w04.003",
+        abstract="Water and sediment were sampled upstream and downstream of commercial rainbow trout farming sites to quantify antibiotic residues and antimicrobial resistance genes associated with intensive freshwater aquaculture.",
+        keywords="Rainbow trout; fish farm; antimicrobial resistance; aquaculture"
+      )
+    ),
+    list(
+      review_case_id="test-w04-004",record_id="test-w04-record-004",random_order=4L,
+      screening=list(model_decision="exclude"),
+      bibliographic=list(
+        title="Performance of hatchery-reared Atlantic salmon following river release",
+        authors="Nielsen J; Berg K",year="2020",journal="Fisheries Research",
+        volume="229",pages="105617",doi="10.0000/test.w04.004",
+        abstract="Survival and return rates were estimated for Atlantic salmon produced in a conservation hatchery and released as juveniles. No grow-out farming or commercial aquaculture production was studied.",
+        keywords="Atlantic salmon; hatchery; stocking; fisheries"
+      )
+    ),
+    list(
+      review_case_id="test-w04-005",record_id="test-w04-record-005",random_order=5L,
+      screening=list(model_decision="retain"),
+      bibliographic=list(
+        title="Welfare outcomes after stocking-density changes in farmed Chinook salmon",
+        authors="Chen R; Walker P",year="2025",journal="Aquaculture Reports",
+        volume="38",pages="102201",doi="10.0000/test.w04.005",
+        abstract="Farmed Chinook salmon held in marine pens were exposed to three stocking densities. Fin damage, growth, mortality and behavioural indicators were measured over twelve weeks.",
+        keywords="Chinook salmon; mariculture; stocking density; welfare"
+      )
+    ),
+    list(
+      review_case_id="test-w04-006",record_id="test-w04-record-006",random_order=6L,
+      screening=list(model_decision="exclude"),
+      bibliographic=list(
+        title="Recreational angler preferences for salmon fishing regulations",
+        authors="Jones H; Patel S",year="2019",journal="Marine Policy",
+        volume="108",pages="103626",doi="10.0000/test.w04.006",
+        abstract="A stated-preference survey examined how recreational anglers value catch limits, season length and access rules for salmon fisheries. Aquaculture and farm production were outside the scope of the study.",
+        keywords="salmon fishery; angling; recreation; regulation"
+      )
+    ),
+    list(
+      review_case_id="test-w04-007",record_id="test-w04-record-007",random_order=7L,
+      screening=list(model_decision="retain"),
+      bibliographic=list(
+        title="Escaped farmed salmon and genetic introgression near coastal aquaculture facilities",
+        authors="Olsen T; Fraser D",year="2022",journal="Conservation Genetics",
+        volume="23",pages="455-471",doi="10.0000/test.w04.007",
+        abstract="Genetic markers were used to estimate introgression in wild Atlantic salmon populations located near commercial net-pen farms. The analysis linked observed admixture to documented escape events from aquaculture facilities.",
+        keywords="farmed salmon; escapees; genetics; net pens; aquaculture"
+      )
+    ),
+    list(
+      review_case_id="test-w04-008",record_id="test-w04-record-008",random_order=8L,
+      screening=list(model_decision="uncertain"),
+      bibliographic=list(
+        title="Feed ingredients and nutrient retention in salmonid production systems",
+        authors="Garcia L; Ahmed N",year="2026",journal="Animal Feed Science and Technology",
+        volume="321",pages="116023",doi="10.0000/test.w04.008",
+        abstract="Experimental diets containing insect meal were evaluated in salmonids under controlled production conditions. The abstract refers to commercial farming applications but does not clearly state whether the study animals were reared in a farm-scale aquaculture setting.",
+        keywords="salmonid; feed; farming; insect meal; nutrient retention"
+      )
+    )
+  )
+
+  json <- vapply(cases,test_queue_json,character(1))
+  payload <- paste0(paste(json,collapse="\n"),"\n")
+  sha <- digest::digest(payload,algo="sha256",serialize=FALSE)
+  batch_id <- "w04-test-manual-screening"
+  rows <- data.frame(
+    batch_id=rep(batch_id,length(cases)),
+    queue_sha256=rep(sha,length(cases)),
+    case_index=as.character(seq_along(cases)),
+    review_case_id=vapply(cases,function(x)x$review_case_id,character(1)),
+    case_json=json,
+    highlight_include_json=rep(jsonlite::toJSON(c(
+      "farm","farmed","farming","aquaculture","mariculture","cage","cages","pen","pens"
+    ),auto_unbox=FALSE),length(cases)),
+    highlight_exclude_json=rep(jsonlite::toJSON(c(
+      "hatchery","hatcheries","recreational","angler","angling","fishery","fisheries"
+    ),auto_unbox=FALSE),length(cases)),
+    review_mode=rep("manual_screening_test",length(cases)),
+    source_run_id=rep("",length(cases)),
+    stringsAsFactors=FALSE
+  )
+
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tabs <- sheet_names_cached(ss)
+  if (tab %in% tabs) {
+    existing <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+    batches <- if(nrow(existing) && "batch_id" %in% names(existing)) unique(as.character(existing$batch_id)) else character()
+    if(length(batches)==1L && identical(batches[[1L]],batch_id)) {
+      googlesheets4::sheet_write(rows,ss=ss,sheet=tab)
+      return(invisible(list(batch_id=batch_id,queue_sha256=sha,cases=cases,tab=tab)))
+    }
+    stop("W04 test queue tab exists but is not the expected synthetic test queue",call.=FALSE)
+  }
+  sheet_add_cached(ss,tab)
+  googlesheets4::sheet_write(rows,ss=ss,sheet=tab)
+  invisible(list(batch_id=batch_id,queue_sha256=sha,cases=cases,tab=tab))
+}
+
 create_test_w08_queue <- function(
   tab = Sys.getenv("LEM_W08_QUEUE_TAB", unset = "queue_w08_active")
 ) {
