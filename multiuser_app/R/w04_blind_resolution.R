@@ -259,9 +259,11 @@ w04_blind_agreement_stats <- function(outcomes) {
 
 w04_available_consistency_raters <- function(outcomes) {
   outcomes <- outcomes %||% list()
-  human_ids <- sort(unique(unlist(lapply(
-    outcomes,
-    function(x) as.character(x$completed_user_ids %||% character()),
+  human_ids <- sort(unique(unlist(
+    lapply(
+      outcomes,
+      function(x) as.character(x$completed_user_ids %||% character())
+    ),
     use.names = FALSE
   )))
   human_ids <- human_ids[nzchar(human_ids)]
