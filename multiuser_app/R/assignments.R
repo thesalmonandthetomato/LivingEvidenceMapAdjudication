@@ -191,12 +191,17 @@ assignment_progress <- function(
   mode <- assignment_mode_for(first$workflow, first$task_type)
 
   # Count direct adjudications even when an administrator completed a case
-  # without a pre-existing formal assignment. The decision itself is the
-  # authoritative provenance record; this synthetic row is reporting-only.
+  # without a formal assignment. A previously cancelled formal assignment,
+  # however, must not be resurrected as an implicit assignment in reporting.
   resolving_events <- Filter(decision_resolves_case, events)
   if (length(resolving_events)) {
+    all_batch_assignments <- if (!is.null(workflow) && !is.null(batch_id)) {
+      assignments_for_batch(assignments, workflow, batch_id, task_type)
+    } else {
+      assignments
+    }
     existing_keys <- vapply(
-      xs,
+      all_batch_assignments,
       function(x) {
         a <- normalise_assignment_row(x)
         paste(a$case_id, a$user_id, sep = "|")
