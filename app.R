@@ -528,6 +528,45 @@ server <- function(input, output, session) {
     invisible(TRUE)
   }
 
+  refresh_w08_batch_state <- function(mark_complete_if_done = TRUE) {
+    batch <- load_w08_batch()
+    if (is.null(batch)) {
+      w08_cases_rv(NULL)
+      w08_queue_sha_rv("")
+      w08_batch_id_rv("")
+      w08_source_run_id_rv("")
+      w08_case_sha_rv(character())
+      w08_species_options(character())
+      w08_topic_options(list())
+      w08_decisions(list())
+      w08_batch_status_rv("")
+      w08_idx(1L)
+      return(NULL)
+    }
+
+    all_decisions <- active_sheet_w08_decisions()
+    w08_cases_rv(batch$cases)
+    w08_queue_sha_rv(batch$queue_sha256)
+    w08_batch_id_rv(batch$batch_id)
+    w08_source_run_id_rv(batch$source_run_id %||% "")
+    w08_batch_status_rv(batch$batch_status %||% "")
+    w08_case_sha_rv(batch$case_sha256 %||% character())
+    w08_species_options(batch$species_options %||% character())
+    w08_topic_options(batch$topic_options %||% list())
+    w08_decisions(w08_filter_batch_decisions(all_decisions,batch$queue_sha256))
+
+    unresolved <- w08_unresolved_indices()
+    w08_idx(if(length(unresolved)) unresolved[[1L]] else max(1L,length(batch$cases)))
+    if(
+      isTRUE(mark_complete_if_done) &&
+      !length(unresolved) &&
+      !identical(w08_batch_status_rv(),"review_complete")
+    ) {
+      mark_review_complete("08",w08_batch_id_rv(),w08_queue_sha_rv(),w08_batch_status_rv)
+    }
+    invisible(batch)
+  }
+
   load_batch <- function() {
     if (identical(storage_backend(), "google_sheets")) {
       return(read_sheet_w01_queue())
@@ -1133,24 +1172,7 @@ server <- function(input, output, session) {
           w04_conflict_idx(if(length(cr)) cr[[1L]] else max(1L,length(w04_conflict_batch$cases)))
         }
 
-        w08_batch <- load_w08_batch()
-        if (!is.null(w08_batch)) {
-          w08_all_decisions <- active_sheet_w08_decisions()
-          w08_cases_rv(w08_batch$cases)
-          w08_queue_sha_rv(w08_batch$queue_sha256)
-          w08_batch_id_rv(w08_batch$batch_id)
-          w08_source_run_id_rv(w08_batch$source_run_id %||% "")
-          w08_batch_status_rv(w08_batch$batch_status %||% "")
-          w08_case_sha_rv(w08_batch$case_sha256 %||% character())
-          w08_species_options(w08_batch$species_options %||% character())
-          w08_topic_options(w08_batch$topic_options %||% list())
-          w08_decisions(w08_filter_batch_decisions(w08_all_decisions,w08_batch$queue_sha256))
-          w08_unresolved <- w08_unresolved_indices()
-          w08_idx(if(length(w08_unresolved)) w08_unresolved[[1L]] else max(1L,length(w08_batch$cases)))
-          if(!length(w08_unresolved) && !identical(w08_batch_status_rv(),"review_complete")) {
-            mark_review_complete("08",w08_batch_id_rv(),w08_queue_sha_rv(),w08_batch_status_rv)
-          }
-        }
+        refresh_w08_batch_state()
 
         if (!is.null(batch)) {
           cases_rv(batch$cases)
@@ -2016,6 +2038,18 @@ server <- function(input, output, session) {
   }
 
   save_w08_record <- function() {
+    current_batch <- tryCatch(load_w08_batch(),error=function(e)e)
+    if(inherits(current_batch,"error")) {
+      w08_status(paste("Could not verify the current W08 queue:",conditionMessage(current_batch)))
+      return(FALSE)
+    }
+    current_sha <- if(is.null(current_batch)) "" else as.character(current_batch$queue_sha256 %||% "")
+    if(!identical(tolower(current_sha),tolower(as.character(w08_queue_sha_rv())))) {
+      refresh_w08_batch_state(mark_complete_if_done=FALSE)
+      w08_status("The W08 queue changed while this session was open. The current batch has been reloaded; please review the displayed record before saving.")
+      return(FALSE)
+    }
+
     z <- w08_current_case()
     rid <- as.character(z$record_id)
     issues <- z$issues %||% list()
@@ -2236,6 +2270,11 @@ server <- function(input, output, session) {
   observeEvent(input$open_w04_conflict, {app_view("w04_conflict")})
   observeEvent(input$back_to_tasks_w04_conflict, app_view("tasks"))
   observeEvent(input$open_w08, {
+    refreshed <- tryCatch(refresh_w08_batch_state(),error=function(e)e)
+    if(inherits(refreshed,"error")) {
+      w08_status(paste("Could not refresh the current W08 queue:",conditionMessage(refreshed)))
+      return()
+    }
     unresolved <- w08_unresolved_indices()
     if(length(unresolved)) w08_idx(unresolved[[1L]])
     app_view("w08")
