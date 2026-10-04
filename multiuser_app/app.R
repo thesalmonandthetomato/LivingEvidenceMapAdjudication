@@ -726,6 +726,11 @@ server <- function(input, output, session) {
     w04_conflict_batch_id_rv()
   })
 
+  w04_active_conflict_batch_status <- reactive({
+    if (length(w04_blind_conflict_cases())) return(w04_batch_status_rv())
+    w04_conflict_batch_status_rv()
+  })
+
   w04_conflict_decision_ids <- function(ds = w04_conflict_decisions()) {
     if (!length(ds)) return(character())
     unique(vapply(ds,function(x)as.character(x$review_case_id %||% ""),character(1)))
@@ -978,7 +983,7 @@ server <- function(input, output, session) {
       w04_resolution_remaining <- if (w04_resolution_total) length(w04_resolution_unresolved_indices()) else 0L
       w04_resolution_completed <- max(0L, w04_resolution_total - w04_resolution_remaining)
 
-      w04_conflict_total <- length(w04_conflict_cases_rv() %||% list())
+      w04_conflict_total <- length(w04_active_conflict_cases())
       w04_conflict_remaining <- if (w04_conflict_total) length(w04_conflict_unresolved_indices()) else 0L
       w04_conflict_completed <- max(0L, w04_conflict_total - w04_conflict_remaining)
 
@@ -1116,8 +1121,8 @@ server <- function(input, output, session) {
               w04_conflict_total, w04_conflict_completed, w04_conflict_remaining,
               if (w04_conflict_remaining > 0L) "open_w04_conflict" else NULL,
               "Resolve reviewer conflicts",
-              w04_conflict_batch_id_rv(),
-              w04_conflict_batch_status_rv()
+              w04_active_conflict_batch_id(),
+              w04_active_conflict_batch_status()
             )
           ),
           div(
@@ -2918,6 +2923,14 @@ server <- function(input, output, session) {
           w04_conflict_idx(if(length(cr)) cr[[1L]] else max(1L,length(w04_conflict_batch$cases)))
         }
 
+        if (length(w04_blind_conflict_cases())) {
+          all_blind_conf <- active_sheet_w04_conflict_decisions()
+          blind_conf_decisions <- w04_filter_batch_decisions(all_blind_conf,w04_queue_sha_rv())
+          w04_conflict_decisions(blind_conf_decisions)
+          cr <- w04_conflict_unresolved_indices()
+          w04_conflict_idx(if(length(cr)) cr[[1L]] else max(1L,length(w04_blind_conflict_cases())))
+        }
+
         w08_batch <- load_w08_batch()
         if (!is.null(w08_batch)) {
           w08_all_decisions <- active_sheet_w08_decisions()
@@ -3618,18 +3631,24 @@ server <- function(input, output, session) {
       )
       if (!all_complete) {
         w04_status("Your blinded review is complete. Waiting for the other assigned reviewer(s).")
-      } else if(session_can("control_workflows")) {
-        mark_review_complete("04",w04_batch_id_rv(),w04_queue_sha_rv(),w04_batch_status_rv)
-        dispatched <- tryCatch({
-          dispatch_w04_validation_finalize(w04_batch_id_rv(),w04_queue_sha_rv())
-          TRUE
-        }, error=function(e){
-          w04_status(paste("Review complete, but W04 finalisation dispatch failed:",conditionMessage(e)))
-          FALSE
-        })
-        if(dispatched) w04_status("All independent reviews complete. Workflow 04 finalisation dispatched.")
       } else {
-        w04_status("Your blinded review is complete. Awaiting an administrator to finalise Workflow 04 after all reviewers finish.")
+        agreements <- w04_blind_agreement_count()
+        conflicts <- length(w04_blind_conflict_cases())
+        if (conflicts > 0L) {
+          w04_status(sprintf(
+            "All independent reviews are complete: %d case%s auto-resolved by agreement; %d conflict%s require adjudication.",
+            agreements, if (agreements == 1L) "" else "s",
+            conflicts, if (conflicts == 1L) "" else "s"
+          ))
+        } else {
+          if (session_can("control_workflows") && !identical(w04_batch_status_rv(),"review_complete")) {
+            mark_review_complete("04",w04_batch_id_rv(),w04_queue_sha_rv(),w04_batch_status_rv)
+          }
+          w04_status(sprintf(
+            "All independent reviews are complete and agree. %d case%s auto-resolved. Downstream finalisation remains gated pending the independent-review finaliser.",
+            agreements, if (agreements == 1L) "" else "s"
+          ))
+        }
       }
       app_view("tasks")
       return(invisible(TRUE))
@@ -3749,6 +3768,186 @@ server <- function(input, output, session) {
     }
     later<-unresolved[unresolved>w04_resolution_idx()]
     w04_resolution_idx(if(length(later))later[[1L]]else unresolved[[1L]]);invisible(TRUE)
+  }
+
+  w04_conflict_current_case <- reactive({
+    req(authenticated())
+    cs <- w04_active_conflict_cases()
+    req(length(cs) > 0L)
+    cs[[w04_conflict_idx()]]
+  })
+
+  w04_conflict_current_saved_choice <- reactive({
+    z <- w04_conflict_current_case()
+    ds <- w04_conflict_decisions()
+    if (!length(ds)) return("")
+    hits <- Filter(
+      function(x) identical(
+        as.character(x$review_case_id %||% ""),
+        as.character(z$review_case_id %||% "")
+      ),
+      ds
+    )
+    if (!length(hits)) return("")
+    as.character(hits[[1L]]$decision %||% "")
+  })
+
+  output$w04_conflict_decision_buttons <- renderUI({
+    choice <- w04_conflict_current_saved_choice()
+    div(
+      class="decision-row d-flex flex-wrap gap-2",
+      actionButton(
+        "w04_conflict_retain","Include",
+        class=paste("btn-success",if(identical(choice,"retain"))"decision-selected" else ""),
+        `aria-pressed`=if(identical(choice,"retain"))"true" else "false"
+      ),
+      actionButton(
+        "w04_conflict_exclude","Exclude",
+        class=paste("btn-outline-danger",if(identical(choice,"exclude"))"decision-selected" else ""),
+        `aria-pressed`=if(identical(choice,"exclude"))"true" else "false"
+      )
+    )
+  })
+
+  output$w04_conflict_progress_bar <- renderUI({
+    cs <- w04_active_conflict_cases()
+    req(length(cs) > 0L)
+    remaining <- length(w04_conflict_unresolved_indices())
+    total <- length(cs)
+    pct <- round(100 * (total - remaining) / total)
+    tagList(
+      tags$div(
+        class="text-secondary small mb-2",
+        sprintf("Conflict %d of %d · %d remaining",w04_conflict_idx(),total,remaining)
+      ),
+      div(
+        class="progress mb-3",
+        div(
+          class="progress-bar",
+          role="progressbar",
+          style=sprintf("width:%s%%",pct),
+          sprintf("%s%%",pct)
+        )
+      )
+    )
+  })
+
+  output$w04_conflict_case_view <- renderUI({
+    z <- w04_conflict_current_case()
+    b <- z$bibliographic %||% list()
+    blind <- z$blind_review %||% list()
+    reviewer_decisions <- blind$reviewer_decisions %||% list()
+    reviewer_badges <- if (length(reviewer_decisions)) {
+      lapply(seq_along(reviewer_decisions), function(i) {
+        d <- as.character(reviewer_decisions[[i]]$decision %||% "")
+        label <- c(retain="Include",exclude="Exclude",uncertain="Unsure")[[d]] %||% d
+        tags$span(class="task-badge me-1",sprintf("Reviewer %d: %s",i,label))
+      })
+    } else NULL
+
+    card(
+      class="record-card",
+      card_header(
+        div(
+          class="d-flex justify-content-between align-items-center",
+          tags$strong("Resolve reviewer conflict"),
+          tags$span(class="task-badge",as.character(z$record_id %||% z$review_case_id %||% ""))
+        )
+      ),
+      div(
+        class="compact-record-body w04-text",
+        div(class="record-title",highlight_screening_text(b$title %||% "",w04_include_terms(),w04_exclude_terms())),
+        div(
+          class="w04-citation-grid",
+          div(class="w04-citation-item",span(class="w04-citation-label","Authors"),span(class="w04-citation-value",b$authors %||% "")),
+          div(class="w04-citation-item",span(class="w04-citation-label","Year"),span(class="w04-citation-value",b$year %||% "")),
+          div(class="w04-citation-item",span(class="w04-citation-label","Journal"),span(class="w04-citation-value",b$journal %||% ""))
+        ),
+        tags$h6(class="abstract-heading","Abstract"),
+        div(class="abstract-text",highlight_screening_text(b$abstract %||% "",w04_include_terms(),w04_exclude_terms())),
+        if (length(reviewer_badges)) {
+          div(
+            class="mt-3 p-2 border rounded",
+            tags$strong("Independent reviewer decisions: "),
+            tagList(reviewer_badges)
+          )
+        },
+        div(class="w04-keywords",tags$strong("Keywords: "),highlight_screening_text(b$keywords %||% "",w04_include_terms(),w04_exclude_terms()))
+      )
+    )
+  })
+
+  output$w04_conflict_save_status <- renderText(w04_conflict_status())
+
+  save_w04_conflict_choice <- function(choice) {
+    if(!session_can("adjudicate_assigned")) {
+      w04_conflict_status("You do not have permission to adjudicate conflicts.")
+      return(FALSE)
+    }
+    z <- w04_conflict_current_case()
+    current <- w04_conflict_decisions()
+    prior <- NULL
+    if(length(current)) {
+      hits <- Filter(
+        function(x) identical(
+          as.character(x$review_case_id %||% ""),
+          as.character(z$review_case_id %||% "")
+        ),
+        current
+      )
+      if(length(hits)) prior <- hits[[1L]]
+    }
+    decision <- list(
+      review_case_id=as.character(z$review_case_id),
+      record_id=as.character(z$record_id %||% ""),
+      decision=choice,
+      rationale="Final adjudication of independent Workflow 04 reviewer conflict",
+      reviewer=session_reviewer_id(),
+      resolved_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
+      queue_sha256=w04_active_conflict_queue_sha()
+    )
+    saved <- tryCatch(
+      append_sheet_w04_conflict_decision(decision,prior_decision=prior),
+      error=function(e){w04_conflict_status(paste("Save failed:",conditionMessage(e)));NULL}
+    )
+    if(is.null(saved)) return(FALSE)
+    remaining <- Filter(
+      function(x)!identical(
+        as.character(x$review_case_id %||% ""),
+        as.character(z$review_case_id %||% "")
+      ),
+      current
+    )
+    w04_conflict_decisions(c(remaining,list(saved)))
+    w04_conflict_status(sprintf("Saved %s at %s",choice,format(Sys.time(),"%H:%M:%S")))
+    TRUE
+  }
+
+  advance_w04_conflict <- function() {
+    unresolved <- w04_conflict_unresolved_indices()
+    if(!length(unresolved)) {
+      if (
+        length(w04_blind_conflict_cases()) &&
+        session_can("control_workflows") &&
+        !identical(w04_batch_status_rv(),"review_complete")
+      ) {
+        mark_review_complete("04",w04_batch_id_rv(),w04_queue_sha_rv(),w04_batch_status_rv)
+      }
+      if(length(w04_blind_conflict_cases())) {
+        w04_conflict_status(sprintf(
+          "All reviewer conflicts resolved. %d agreement case%s were auto-resolved. Downstream finalisation remains gated pending the independent-review finaliser.",
+          w04_blind_agreement_count(),
+          if(w04_blind_agreement_count()==1L)"" else "s"
+        ))
+      } else {
+        w04_conflict_status("All reviewer conflicts resolved.")
+      }
+      app_view("tasks")
+      return(invisible(TRUE))
+    }
+    later <- unresolved[unresolved>w04_conflict_idx()]
+    w04_conflict_idx(if(length(later))later[[1L]] else unresolved[[1L]])
+    invisible(TRUE)
   }
 
   w08_current_case <- reactive({
@@ -4319,8 +4518,24 @@ server <- function(input, output, session) {
   observeEvent(input$w04_resolution_exclude, {if(save_w04_resolution_choice("exclude"))advance_w04_resolution()})
   observeEvent(input$w04_resolution_previous, if(w04_resolution_idx()>1L)w04_resolution_idx(w04_resolution_idx()-1L))
   observeEvent(input$w04_resolution_next, if(w04_resolution_idx()<length(w04_resolution_cases_rv()))w04_resolution_idx(w04_resolution_idx()+1L))
-  observeEvent(input$open_w04_conflict, {app_view("w04_conflict")})
+  observeEvent(input$open_w04_conflict, {
+    unresolved <- w04_conflict_unresolved_indices()
+    if(length(unresolved)) w04_conflict_idx(unresolved[[1L]])
+    app_view("w04_conflict")
+  })
   observeEvent(input$back_to_tasks_w04_conflict, app_view("tasks"))
+  observeEvent(input$w04_conflict_retain, {
+    if(save_w04_conflict_choice("retain")) advance_w04_conflict()
+  })
+  observeEvent(input$w04_conflict_exclude, {
+    if(save_w04_conflict_choice("exclude")) advance_w04_conflict()
+  })
+  observeEvent(input$w04_conflict_previous, {
+    if(w04_conflict_idx()>1L) w04_conflict_idx(w04_conflict_idx()-1L)
+  })
+  observeEvent(input$w04_conflict_next, {
+    if(w04_conflict_idx()<length(w04_active_conflict_cases())) w04_conflict_idx(w04_conflict_idx()+1L)
+  })
   observeEvent(input$open_w08, {
     unresolved <- w08_unresolved_indices()
     if(length(unresolved)) w08_idx(unresolved[[1L]])
