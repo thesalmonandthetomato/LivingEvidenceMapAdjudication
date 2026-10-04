@@ -710,10 +710,24 @@ server <- function(input, output, session) {
     length(w04_blind_agreements(w04_blind_outcomes()))
   })
 
-  w04_active_conflict_cases <- reactive({
+  w04_all_conflict_cases <- reactive({
     blind <- w04_blind_conflict_cases()
     if (length(blind)) return(blind)
     w04_conflict_cases_rv() %||% list()
+  })
+
+  w04_active_conflict_cases <- reactive({
+    cs <- w04_all_conflict_cases()
+    if (!length(cs)) return(list())
+    cases_for_assignment_user(
+      cs,
+      assignment_registry_rv(),
+      "04",
+      w04_active_conflict_batch_id(),
+      current_user(),
+      task_type = "conflict_resolution",
+      active_events = w04_conflict_decisions()
+    )
   })
 
   w04_active_conflict_queue_sha <- reactive({
@@ -983,9 +997,22 @@ server <- function(input, output, session) {
       w04_resolution_remaining <- if (w04_resolution_total) length(w04_resolution_unresolved_indices()) else 0L
       w04_resolution_completed <- max(0L, w04_resolution_total - w04_resolution_remaining)
 
-      w04_conflict_total <- length(w04_active_conflict_cases())
-      w04_conflict_remaining <- if (w04_conflict_total) length(w04_conflict_unresolved_indices()) else 0L
-      w04_conflict_completed <- max(0L, w04_conflict_total - w04_conflict_remaining)
+      w04_conflict_user_total <- length(w04_active_conflict_cases())
+      w04_conflict_user_remaining <- if (w04_conflict_user_total) length(w04_conflict_unresolved_indices()) else 0L
+      if (session_can("manage_assignments")) {
+        w04_conflict_total <- length(w04_all_conflict_cases())
+        w04_conflict_ids <- if (w04_conflict_total) vapply(
+          w04_all_conflict_cases(),
+          function(x) as.character(x$review_case_id %||% ""),
+          character(1)
+        ) else character()
+        w04_conflict_completed <- sum(w04_conflict_ids %in% w04_conflict_decision_ids())
+        w04_conflict_remaining <- max(0L,w04_conflict_total-w04_conflict_completed)
+      } else {
+        w04_conflict_total <- w04_conflict_user_total
+        w04_conflict_remaining <- w04_conflict_user_remaining
+        w04_conflict_completed <- max(0L,w04_conflict_total-w04_conflict_remaining)
+      }
 
       w08_user_total <- length(w08_cases_rv() %||% list())
       w08_user_remaining <- if (w08_user_total) length(w08_unresolved_indices()) else 0L
@@ -1122,7 +1149,17 @@ server <- function(input, output, session) {
               if (w04_conflict_remaining > 0L) "open_w04_conflict" else NULL,
               "Resolve reviewer conflicts",
               w04_active_conflict_batch_id(),
-              w04_active_conflict_batch_status()
+              w04_active_conflict_batch_status(),
+              can_open = w04_conflict_user_remaining > 0L,
+              idle_text = if (w04_conflict_total == 0L) {
+                "No reviewer conflicts"
+              } else if (w04_conflict_user_remaining == 0L && session_can("manage_assignments")) {
+                "Conflicts exist and are awaiting assignment"
+              } else if (w04_conflict_user_remaining == 0L) {
+                "No conflicts assigned to you"
+              } else {
+                "No reviewer conflicts"
+              }
             )
           ),
           div(
