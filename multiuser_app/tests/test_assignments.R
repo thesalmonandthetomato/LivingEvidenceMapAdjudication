@@ -158,6 +158,40 @@ one_reviewer_error <- tryCatch(
 )
 stopifnot(inherits(one_reviewer_error,"error"))
 
+w04_consistency_plan <- plan_w04_manual_assignment(
+  cases = independent_cases,
+  assignments = list(),
+  active_events = list(),
+  batch_id = "w04-mode-test",
+  user_ids = c("usr-a","usr-b"),
+  review_mode = "reviewer_consistency",
+  allocation_type = "number",
+  amount = 2
+)
+stopifnot(
+  identical(w04_consistency_plan$selected_cases,2L),
+  identical(w04_consistency_plan$allocated,4L),
+  all(vapply(w04_consistency_plan$new_assignments,function(x)identical(x$blind_group,"w04-reviewer-consistency"),logical(1)))
+)
+
+w04_validation_plan <- plan_w04_manual_assignment(
+  cases = independent_cases,
+  assignments = list(),
+  active_events = list(),
+  batch_id = "w04-mode-test-validation",
+  user_ids = c("usr-a","usr-b"),
+  review_mode = "validation_set",
+  allocation_type = "all"
+)
+validation_case_ids <- vapply(w04_validation_plan$new_assignments,function(x)normalise_assignment_row(x)$case_id,character(1))
+stopifnot(
+  identical(w04_validation_plan$selected_cases,4L),
+  identical(w04_validation_plan$allocated,4L),
+  !anyDuplicated(validation_case_ids),
+  identical(unname(w04_validation_plan$by_user),c(2L,2L)),
+  all(vapply(w04_validation_plan$new_assignments,function(x)identical(x$blind_group,"w04-validation-set"),logical(1)))
+)
+
 w04_outcome_assignments <- list(
   list(assignment_id="bo-1",workflow="04",task_type="manual_screening",batch_id="blind-outcomes",case_id="bo-case-1",user_id="usr-a",blind_group="blind",status="assigned"),
   list(assignment_id="bo-2",workflow="04",task_type="manual_screening",batch_id="blind-outcomes",case_id="bo-case-1",user_id="usr-b",blind_group="blind",status="assigned"),
@@ -562,6 +596,21 @@ stats_outcomes <- w04_blind_case_outcomes(
   ),
   "stats-b"
 )
+single_outcome <- w04_blind_case_outcomes(
+  list(list(review_case_id="single-1",record_id="single-record")),
+  list(list(
+    assignment_id="single-a1",workflow="04",task_type="manual_screening",
+    batch_id="single-b",case_id="single-1",user_id="usr-a",
+    blind_group="w04-validation-set",status="assigned"
+  )),
+  list(list(review_case_id="single-1",reviewer="usr-a",decision="retain")),
+  "single-b"
+)
+stopifnot(
+  identical(single_outcome[[1L]]$status,"single_human"),
+  identical(single_outcome[[1L]]$final_decision,"retain")
+)
+
 stats <- w04_blind_agreement_stats(stats_outcomes)
 stopifnot(
   identical(stats$complete,2L),
