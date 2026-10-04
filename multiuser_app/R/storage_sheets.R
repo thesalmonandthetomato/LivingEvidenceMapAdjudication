@@ -642,6 +642,125 @@ read_w04_consistency_analyses <- function() {
   lapply(seq_len(nrow(x)),function(i)as.list(x[i,,drop=FALSE]))
 }
 
+w04_conflict_set_tab <- function() {
+  Sys.getenv("LEM_W04_CONFLICT_SET_TAB", unset = "w04_conflict_sets")
+}
+
+ensure_w04_conflict_set_tab <- function() {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w04_conflict_set_tab()
+  cols <- c(
+    "conflict_set_id","analysis_id","project_id","project_name",
+    "parent_batch_id","parent_queue_sha256","conflict_queue_sha256",
+    "comparison_type","rater_ids_json","conflict_case_ids_json",
+    "created_by","created_at_utc"
+  )
+  tabs <- sheet_names_cached(ss)
+  if (!tab %in% tabs) {
+    sheet_add_cached(ss,tab)
+    empty <- as.data.frame(
+      setNames(replicate(length(cols),character(),simplify=FALSE),cols),
+      stringsAsFactors=FALSE
+    )
+    googlesheets4::sheet_write(empty,ss=ss,sheet=tab)
+  }
+  invisible(TRUE)
+}
+
+read_w04_conflict_sets <- function() {
+  gs4_auth_from_env()
+  ensure_w04_conflict_set_tab()
+  ss <- sheet_id_from_env()
+  x <- googlesheets4::read_sheet(ss,sheet=w04_conflict_set_tab(),col_types="c")
+  if (!nrow(x)) return(list())
+  lapply(seq_len(nrow(x)),function(i)as.list(x[i,,drop=FALSE]))
+}
+
+append_w04_conflict_set <- function(analysis_row,created_by="") {
+  analysis_id <- as.character(analysis_row$analysis_id %||% "")
+  parent_batch_id <- as.character(analysis_row$batch_id %||% "")
+  parent_queue_sha256 <- as.character(analysis_row$queue_sha256 %||% "")
+  if (!nzchar(analysis_id) || !nzchar(parent_batch_id) || !nzchar(parent_queue_sha256)) {
+    stop("Saved analysis is missing provenance required for conflict-set creation",call.=FALSE)
+  }
+
+  rater_ids <- tryCatch(
+    as.character(jsonlite::fromJSON(as.character(analysis_row$rater_ids_json %||% "[]"))),
+    error=function(e) character()
+  )
+  conflict_case_ids <- tryCatch(
+    as.character(jsonlite::fromJSON(as.character(analysis_row$conflict_case_ids_json %||% "[]"))),
+    error=function(e) character()
+  )
+  rater_ids <- unique(rater_ids[nzchar(rater_ids)])
+  conflict_case_ids <- unique(conflict_case_ids[nzchar(conflict_case_ids)])
+  if (length(rater_ids) < 2L) stop("Conflict set requires at least two raters",call.=FALSE)
+  if (!length(conflict_case_ids)) stop("This analysis has no conflicts to resolve",call.=FALSE)
+
+  has_model <- "model" %in% rater_ids
+  human_n <- sum(rater_ids != "model")
+  comparison_type <- if (has_model && human_n > 1L) {
+    "human_human_model"
+  } else if (has_model) {
+    "human_model"
+  } else {
+    "human_human"
+  }
+
+  payload <- jsonlite::toJSON(
+    list(
+      analysis_id=analysis_id,
+      parent_batch_id=parent_batch_id,
+      parent_queue_sha256=parent_queue_sha256,
+      rater_ids=rater_ids,
+      conflict_case_ids=sort(conflict_case_ids)
+    ),
+    auto_unbox=TRUE,null="null",na="null"
+  )
+  conflict_queue_sha256 <- digest::digest(payload,algo="sha256",serialize=FALSE)
+  conflict_set_id <- paste0(
+    "w04-conflict-",
+    substr(digest::digest(
+      paste(analysis_id,conflict_queue_sha256,sep="|"),
+      algo="sha256",serialize=FALSE
+    ),1L,20L)
+  )
+
+  gs4_auth_from_env()
+  ensure_w04_conflict_set_tab()
+  ss <- sheet_id_from_env()
+  tab <- w04_conflict_set_tab()
+  existing <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+  if (nrow(existing) && conflict_set_id %in% as.character(existing$conflict_set_id)) {
+    hit <- existing[as.character(existing$conflict_set_id)==conflict_set_id,,drop=FALSE]
+    return(as.list(hit[1,,drop=FALSE]))
+  }
+
+  now <- format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ")
+  row <- data.frame(
+    conflict_set_id=conflict_set_id,
+    analysis_id=analysis_id,
+    project_id=as.character(analysis_row$project_id %||% Sys.getenv("LEM_PROJECT_ID",unset="living-evidence-map")),
+    project_name=as.character(analysis_row$project_name %||% Sys.getenv("LEM_PROJECT_NAME",unset="Living Evidence Map")),
+    parent_batch_id=parent_batch_id,
+    parent_queue_sha256=parent_queue_sha256,
+    conflict_queue_sha256=conflict_queue_sha256,
+    comparison_type=comparison_type,
+    rater_ids_json=jsonlite::toJSON(rater_ids,auto_unbox=FALSE),
+    conflict_case_ids_json=jsonlite::toJSON(conflict_case_ids,auto_unbox=FALSE),
+    created_by=as.character(created_by),
+    created_at_utc=now,
+    stringsAsFactors=FALSE
+  )
+  googlesheets4::sheet_append(ss,data=row,sheet=tab)
+  verify <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+  if(sum(as.character(verify$conflict_set_id)==conflict_set_id)!=1L) {
+    stop("W04 conflict-set write verification failed",call.=FALSE)
+  }
+  as.list(row[1,,drop=FALSE])
+}
+
 append_w04_consistency_analysis <- function(analysis,batch_id,queue_sha256,review_mode="",created_by="") {
   gs4_auth_from_env()
   ensure_w04_consistency_analysis_tab()
