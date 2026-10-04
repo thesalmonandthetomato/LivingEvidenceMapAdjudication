@@ -1467,7 +1467,7 @@
   },
   "files": {
     "app.R": {
-      "checksum": "e0853ff84ee4a228448f49a7b2fbd814"
+      "checksum": "2b3a3a4915eb28e9e4dab3cd833d3690"
     },
     "DEVELOPMENT_TODO.md": {
       "checksum": "7ee53afe9396a1ada23aee3be6b9bb64"
@@ -1512,7 +1512,7 @@
       "checksum": "5752167b55ccd0d5189b2524fa681b33"
     },
     "tests/test_assignments.R": {
-      "checksum": "bbaf6b829166258d77d2f522d3d67b3e"
+      "checksum": "07b580d09cf03e1fb0d210284d650825"
     },
     "tests/test_decision_events.R": {
       "checksum": "27f6693f251666375388b6c71d038c95"
