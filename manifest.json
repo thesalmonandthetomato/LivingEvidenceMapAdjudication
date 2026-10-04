@@ -1710,7 +1710,7 @@
       "checksum": "480a0d337e4fbf1a18baca82acdbcb23"
     },
     "multiuser_app/app.R": {
-      "checksum": "08232c5cc7b62696b0b012c7e9fed217"
+      "checksum": "9d36b98bce5794f24d866857c8e12f8c"
     },
     "multiuser_app/DEVELOPMENT_TODO.md": {
       "checksum": "7ee53afe9396a1ada23aee3be6b9bb64"
@@ -1743,7 +1743,7 @@
       "checksum": "6cfc5fa65dc8fd1020fad3ca42f2e397"
     },
     "multiuser_app/R/storage_sheets.R": {
-      "checksum": "2e84df532f45beadeceaac66e1aae187"
+      "checksum": "a3d2f94b56d525204a1f87b2efecf0b3"
     },
     "multiuser_app/R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
