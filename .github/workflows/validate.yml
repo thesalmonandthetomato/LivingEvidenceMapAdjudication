@@ -69,6 +69,9 @@ jobs:
           source("tests/test_decision_events.R")
           source("tests/test_local_assignments.R")
           source("tests/test_w01_decision_events.R")
+          source("tests/test_users.R")
+          source("tests/test_auth.R")
+          source("tests/test_phase1c_permissions.R")
           cat("PASS: multi-user adjudication core tests\n")
 
 
