@@ -1670,7 +1670,7 @@
       "checksum": "20d13bbd9b004db228881d352910513d"
     },
     "app.R": {
-      "checksum": "167d332f67b66128be9679e9f5faf06b"
+      "checksum": "54cc1809cb0782513f8bddc6295a4120"
     },
     "docs/workflow02_adjudication_contract.md": {
       "checksum": "70e8056f8d6149f52ed939221645e1f9"
@@ -1682,34 +1682,40 @@
       "checksum": "480a0d337e4fbf1a18baca82acdbcb23"
     },
     "multiuser_app/app.R": {
-      "checksum": "a065c3bf2c31a294c09288c0ca5a6ac1"
+      "checksum": "9f471023896f99b4650aff3db3b5292d"
     },
     "multiuser_app/DEVELOPMENT_TODO.md": {
       "checksum": "7ee53afe9396a1ada23aee3be6b9bb64"
+    },
+    "multiuser_app/fixtures/assignments_w01_local.jsonl": {
+      "checksum": "33e36050d471ebd693858c5747f1fab3"
     },
     "multiuser_app/fixtures/w01_real_sample_2.jsonl": {
       "checksum": "b95ff9acc42004e0c32e0bbeec3d93a9"
     },
     "multiuser_app/R/adjudication_schema.R": {
-      "checksum": "2ff06f7ff1af518a1026070f6963beb3"
+      "checksum": "cd12bcd15240403163354e7a89ac7f40"
+    },
+    "multiuser_app/R/assignments.R": {
+      "checksum": "f9540dbb29e7f796425a828f7cd1f6fc"
     },
     "multiuser_app/R/auth.R": {
       "checksum": "cadec0238e5356811bd8495088892a66"
     },
     "multiuser_app/R/decision_events.R": {
-      "checksum": "92a0474af543efcecd66fa86bfba6c0e"
+      "checksum": "544d137b964d270470ecfe99197ddee1"
     },
     "multiuser_app/R/github_dispatch.R": {
       "checksum": "adb11735d6d8a97e7bdc4b70aecd59a9"
     },
     "multiuser_app/R/storage_backend.R": {
-      "checksum": "6260fc9b86ef54c9db5af9ef604c6a0b"
+      "checksum": "f6febf54e12c9a4a486e36f05ecd62e1"
     },
     "multiuser_app/R/storage_local.R": {
-      "checksum": "55f4eb147890cd079ff9558b2b39cf60"
+      "checksum": "6cfc5fa65dc8fd1020fad3ca42f2e397"
     },
     "multiuser_app/R/storage_sheets.R": {
-      "checksum": "70a718a65a59fb40244195c0057f067d"
+      "checksum": "ebb5a11719d90f0628501d6df110adaf"
     },
     "multiuser_app/R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
@@ -1717,11 +1723,17 @@
     "multiuser_app/R/w01_contract.R": {
       "checksum": "08a1be968420750f0593f092c2b7caab"
     },
+    "multiuser_app/tests/test_assignments.R": {
+      "checksum": "226598c57709fcde39be0df1ef8fa92a"
+    },
     "multiuser_app/tests/test_decision_events.R": {
-      "checksum": "903fc30207a8dd807b827f39cb0f1b3e"
+      "checksum": "27f6693f251666375388b6c71d038c95"
+    },
+    "multiuser_app/tests/test_local_assignments.R": {
+      "checksum": "5694c4b318b92fc4926c022bf68fd37c"
     },
     "multiuser_app/tests/test_w01_decision_events.R": {
-      "checksum": "ea168f5ad54ab29e7c51b8408a267068"
+      "checksum": "112a0e96d6ba1c604e42171bdea3cd43"
     },
     "R/auth.R": {
       "checksum": "386d3f17d2856f50d104d87761906e16"
