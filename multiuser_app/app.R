@@ -281,6 +281,23 @@ ui <- page_fillable(
           restoreDetails(document);
           const observer = new MutationObserver(function() { restoreDetails(document); });
           observer.observe(document.body, { childList: true, subtree: true });
+
+          const overlay = document.createElement('div');
+          overlay.id = 'lem-busy-overlay';
+          overlay.innerHTML = '<div class="lem-busy-box"><div class="lem-busy-spinner"></div><span>Working…</span></div>';
+          document.body.appendChild(overlay);
+
+          let busyTimer = null;
+          $(document).on('shiny:busy', function() {
+            clearTimeout(busyTimer);
+            busyTimer = setTimeout(function() {
+              overlay.classList.add('is-visible');
+            }, 180);
+          });
+          $(document).on('shiny:idle', function() {
+            clearTimeout(busyTimer);
+            overlay.classList.remove('is-visible');
+          });
         });
       })();
     ")),
@@ -291,11 +308,45 @@ ui <- page_fillable(
     .record-card { border:1px solid #dde3e8; box-shadow:0 2px 10px rgba(22,33,43,.05); }
     .record-card .card-body { padding:0; }
     .compact-record-body { padding:.65rem .9rem .8rem .9rem; }
-    .w08-species-issue { min-height:430px; overflow:visible !important; }
-    .w08-species-issue .card-body,
-    .w08-species-issue .selectize-control,
-    .w08-species-issue .selectize-input { overflow:visible !important; }
-    .w08-species-issue .selectize-dropdown { z-index:2000; max-height:240px; overflow-y:auto; }
+    .w08-issue-card { min-height:320px; overflow:visible !important; position:relative; z-index:1; }
+    .w08-issue-card:focus-within { z-index:20; }
+    .w08-species-issue { min-height:430px; }
+    .w08-issue-card .card-body,
+    .w08-issue-card .selectize-control,
+    .w08-issue-card .selectize-input { overflow:visible !important; }
+    .w08-issue-card .selectize-dropdown { z-index:3000; max-height:240px; overflow-y:auto; }
+    #lem-busy-overlay {
+      display:none;
+      position:fixed;
+      inset:0;
+      z-index:10000;
+      background:rgba(247,248,250,.72);
+      align-items:center;
+      justify-content:center;
+      pointer-events:all;
+    }
+    #lem-busy-overlay.is-visible { display:flex; }
+    .lem-busy-box {
+      display:flex;
+      align-items:center;
+      gap:.7rem;
+      background:#fff;
+      border:1px solid #dde3e8;
+      border-radius:10px;
+      padding:.8rem 1rem;
+      box-shadow:0 4px 18px rgba(22,33,43,.12);
+      font-weight:600;
+      color:#2f3943;
+    }
+    .lem-busy-spinner {
+      width:22px;
+      height:22px;
+      border:3px solid #d7dfdc;
+      border-top-color:#1f5d50;
+      border-radius:50%;
+      animation:lem-spin .8s linear infinite;
+    }
+    @keyframes lem-spin { to { transform:rotate(360deg); } }
     .record-title { font-size:1.05rem; font-weight:700; line-height:1.25; margin-bottom:.45rem; }
     .record-meta { display:grid; grid-template-columns:78px 1fr; gap:.08rem .55rem; margin:0; line-height:1.28; }
     .record-meta dt { color:#66727d; font-weight:600; }
@@ -3440,7 +3491,10 @@ server <- function(input, output, session) {
     )
 
     card(
-      class=paste("mb-3", if (identical(typ, "species_none")) "w08-species-issue" else ""),
+      class=paste(
+        "mb-3 w08-issue-card",
+        if (identical(typ, "species_none")) "w08-species-issue" else ""
+      ),
       card_header(tags$strong(unname(label_map[[typ]] %||% typ))),
       div(
         class="p-3",
