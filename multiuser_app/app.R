@@ -521,6 +521,7 @@ server <- function(input, output, session) {
   w02_batch_status_rv <- reactiveVal("")
   w02_status <- reactiveVal("")
 
+  w04_all_cases_rv <- reactiveVal(list())
   w04_cases_rv <- reactiveVal(NULL)
   w04_queue_sha_rv <- reactiveVal("")
   w04_batch_id_rv <- reactiveVal("")
@@ -626,9 +627,14 @@ server <- function(input, output, session) {
     ds[keep]
   }
 
-  w04_decision_ids <- function(ds = w04_decisions()) {
+  w04_decision_ids <- function(ds = w04_decisions(), user_id = session_reviewer_id()) {
     if (!length(ds)) return(character())
-    unique(vapply(ds,function(x)as.character(x$review_case_id %||% ""),character(1)))
+    mine <- Filter(
+      function(x) identical(decision_user_id(x), as.character(user_id)),
+      ds
+    )
+    if (!length(mine)) return(character())
+    unique(vapply(mine,function(x)as.character(x$review_case_id %||% ""),character(1)))
   }
 
   w04_unresolved_indices <- function() {
@@ -1332,6 +1338,10 @@ server <- function(input, output, session) {
     w02_decisions() %||% list()
   }
 
+  w04_active_assignment_events <- function() {
+    w04_decisions() %||% list()
+  }
+
   w08_active_assignment_events <- function() {
     w08_decisions() %||% list()
   }
@@ -1359,6 +1369,7 @@ server <- function(input, output, session) {
     all_assignments <- assignment_registry_rv()
     has_w01_batch <- nzchar(as.character(batch_id_rv())) && length(w01_all_cases_rv()) > 0L
     has_w02_batch <- nzchar(as.character(w02_batch_id_rv())) && length(w02_all_cases_rv()) > 0L
+    has_w04_batch <- nzchar(as.character(w04_batch_id_rv())) && length(w04_all_cases_rv()) > 0L
     has_w08_batch <- nzchar(as.character(w08_batch_id_rv())) && length(w08_all_cases_rv()) > 0L
     task_labels <- c(
       deduplication = "Deduplication",
@@ -1387,7 +1398,7 @@ server <- function(input, output, session) {
     grouped <- split(all_assignments, vapply(all_assignments, assignment_group_key, character(1)))
 
     # The registry is historical and append-only, but the administration UI
-    # should show only the currently active W01/W02/W08 batch. Older batches
+    # should show only the currently active W01/W02/W04/W08 batch. Older batches
     # remain in Sheets/audit history rather than appearing as duplicate panels.
     active_batch_for <- function(workflow, task_type) {
       if (identical(workflow, "01") && identical(task_type, "deduplication")) {
@@ -1395,6 +1406,9 @@ server <- function(input, output, session) {
       }
       if (identical(workflow, "02") && identical(task_type, "enrichment")) {
         return(if (has_w02_batch) as.character(w02_batch_id_rv()) else "")
+      }
+      if (identical(workflow, "04") && identical(task_type, "manual_screening")) {
+        return(if (has_w04_batch) as.character(w04_batch_id_rv()) else "")
       }
       if (identical(workflow, "08") && identical(task_type, "annotation")) {
         return(if (has_w08_batch) as.character(w08_batch_id_rv()) else "")
@@ -1422,6 +1436,11 @@ server <- function(input, output, session) {
         identical(z$task_type, "enrichment") &&
         identical(z$batch_id, w02_batch_id_rv())
       ) return(w02_active_assignment_events())
+      if (
+        identical(z$workflow, "04") &&
+        identical(z$task_type, "manual_screening") &&
+        identical(z$batch_id, w04_batch_id_rv())
+      ) return(w04_active_assignment_events())
       if (
         identical(z$workflow, "08") &&
         identical(z$task_type, "annotation") &&
@@ -1473,6 +1492,11 @@ server <- function(input, output, session) {
       ASSIGNMENT_MODES[["shared_work_pool"]]
     )
     add_empty_group(
+      "04","manual_screening",
+      if (has_w04_batch) w04_batch_id_rv() else "no-active-queue",
+      ASSIGNMENT_MODES[["independent_blind_review"]]
+    )
+    add_empty_group(
       "08","annotation",
       if (has_w08_batch) w08_batch_id_rv() else "no-active-queue",
       ASSIGNMENT_MODES[["shared_work_pool"]]
@@ -1498,6 +1522,13 @@ server <- function(input, output, session) {
       ) {
         list(prefix="w02", workflow="02", task_type="enrichment", batch_id=w02_batch_id_rv(),
              events=w02_active_assignment_events(), label="W02")
+      } else if (
+        identical(z$workflow, "04") &&
+        identical(z$task_type, "manual_screening") &&
+        identical(z$batch_id, w04_batch_id_rv())
+      ) {
+        list(prefix="w04", workflow="04", task_type="manual_screening", batch_id=w04_batch_id_rv(),
+             events=w04_active_assignment_events(), label="W04")
       } else if (
         identical(z$workflow, "08") &&
         identical(z$task_type, "annotation") &&
@@ -2292,6 +2323,34 @@ server <- function(input, output, session) {
     )
   })
 
+  w04_assignment_plan <- reactive({
+    req(authenticated())
+    workflow_assignment_plan(
+      "w04", w04_all_cases_rv(), w04_active_assignment_events(),
+      "04", w04_batch_id_rv(), "manual_screening"
+    )
+  })
+  output$w04_assignment_preview <- renderUI({
+    req(authenticated())
+    workflow_assignment_preview(
+      w04_assignment_plan(), "w04", "04", w04_batch_id_rv(),
+      "manual_screening", w04_active_assignment_events()
+    )
+  })
+  output$w04_assignment_status <- renderText(assignment_manage_status())
+  observeEvent(input$w04_apply_assignments, {
+    apply_workflow_assignments(w04_assignment_plan())
+  })
+  observeEvent(input$w04_remove_assignments, {
+    remove_workflow_user_assignments(
+      input$w04_remove_assignment_user,
+      w04_active_assignment_events(),
+      "04",
+      w04_batch_id_rv(),
+      "manual_screening"
+    )
+  })
+
   w08_assignment_plan <- reactive({
     req(authenticated())
     workflow_assignment_plan(
@@ -2584,6 +2643,7 @@ server <- function(input, output, session) {
     test_queue_status("")
     w01_all_cases_rv(list())
     w02_all_cases_rv(list())
+    w04_all_cases_rv(list())
     w08_all_cases_rv(list())
     app_view("tasks")
     complete(FALSE)
@@ -2706,17 +2766,33 @@ server <- function(input, output, session) {
         }
         if (!is.null(w04_batch)) {
           w04_all_decisions <- active_sheet_w04_decisions()
-          w04_cases_rv(w04_batch$cases)
+          w04_batch_decisions <- w04_filter_batch_decisions(w04_all_decisions, w04_batch$queue_sha256)
+          w04_all_cases_rv(w04_batch$cases)
+          w04_visible_cases <- cases_for_assignment_user(
+            w04_batch$cases,
+            assignment_registry_rv(),
+            "04",
+            w04_batch$batch_id,
+            login_user,
+            task_type = "manual_screening",
+            active_events = w04_batch_decisions
+          )
+          w04_cases_rv(w04_visible_cases)
           w04_queue_sha_rv(w04_batch$queue_sha256)
           w04_batch_id_rv(w04_batch$batch_id)
           w04_batch_status_rv(w04_batch$batch_status %||% "")
           w04_include_terms(w04_batch$highlight_include %||% character())
           w04_exclude_terms(w04_batch$highlight_exclude %||% character())
-          w04_decisions(w04_filter_batch_decisions(w04_all_decisions, w04_batch$queue_sha256))
+          w04_decisions(w04_batch_decisions)
           w04_unresolved <- w04_unresolved_indices()
-          w04_idx(if (length(w04_unresolved)) w04_unresolved[[1L]] else max(1L,length(w04_batch$cases)))
-          if(!length(w04_unresolved) && !identical(w04_batch_status_rv(),"review_complete") &&
-             user_can(login_user,"control_workflows")) {
+          w04_idx(if (length(w04_unresolved)) w04_unresolved[[1L]] else max(1L,length(w04_visible_cases)))
+          if(
+            workflow_all_assignments_complete(
+              "04", w04_batch_id_rv(), "manual_screening", w04_batch_decisions
+            ) &&
+            !identical(w04_batch_status_rv(),"review_complete") &&
+            user_can(login_user,"control_workflows")
+          ) {
             mark_review_complete("04",w04_batch_id_rv(),w04_queue_sha_rv(),w04_batch_status_rv)
           }
         }
@@ -3258,7 +3334,10 @@ server <- function(input, output, session) {
     ds <- w04_decisions()
     if (!length(ds)) return("")
     hit <- Filter(
-      function(x) identical(as.character(x$review_case_id %||% ""), as.character(z$review_case_id)),
+      function(x) {
+        identical(as.character(x$review_case_id %||% ""), as.character(z$review_case_id)) &&
+          identical(decision_user_id(x), session_reviewer_id())
+      },
       ds
     )
     if (!length(hit)) return("")
@@ -3359,7 +3438,13 @@ server <- function(input, output, session) {
     current <- w04_decisions()
     prior <- NULL
     if(length(current)) {
-      hits <- Filter(function(x)identical(as.character(x$review_case_id %||% ""),as.character(z$review_case_id)),current)
+      hits <- Filter(
+        function(x) {
+          identical(as.character(x$review_case_id %||% ""),as.character(z$review_case_id)) &&
+            identical(decision_user_id(x), session_reviewer_id())
+        },
+        current
+      )
       if(length(hits)) prior <- hits[[1L]]
     }
 
@@ -3380,7 +3465,10 @@ server <- function(input, output, session) {
     if(is.null(saved)) return(FALSE)
 
     remaining <- Filter(
-      function(x)!identical(as.character(x$review_case_id %||% ""),as.character(z$review_case_id)),
+      function(x) !(
+        identical(as.character(x$review_case_id %||% ""),as.character(z$review_case_id)) &&
+        identical(decision_user_id(x), session_reviewer_id())
+      ),
       current
     )
     w04_decisions(c(remaining,list(saved)))
@@ -3391,7 +3479,12 @@ server <- function(input, output, session) {
   advance_w04 <- function() {
     unresolved <- w04_unresolved_indices()
     if(!length(unresolved)) {
-      if(session_can("control_workflows")) {
+      all_complete <- workflow_all_assignments_complete(
+        "04", w04_batch_id_rv(), "manual_screening", w04_active_assignment_events()
+      )
+      if (!all_complete) {
+        w04_status("Your blinded review is complete. Waiting for the other assigned reviewer(s).")
+      } else if(session_can("control_workflows")) {
         mark_review_complete("04",w04_batch_id_rv(),w04_queue_sha_rv(),w04_batch_status_rv)
         dispatched <- tryCatch({
           dispatch_w04_validation_finalize(w04_batch_id_rv(),w04_queue_sha_rv())
@@ -3400,9 +3493,9 @@ server <- function(input, output, session) {
           w04_status(paste("Review complete, but W04 finalisation dispatch failed:",conditionMessage(e)))
           FALSE
         })
-        if(dispatched) w04_status("Review complete. Workflow 04 finalisation dispatched.")
+        if(dispatched) w04_status("All independent reviews complete. Workflow 04 finalisation dispatched.")
       } else {
-        w04_status("Review complete. Awaiting an administrator to finalise Workflow 04.")
+        w04_status("Your blinded review is complete. Awaiting an administrator to finalise Workflow 04 after all reviewers finish.")
       }
       app_view("tasks")
       return(invisible(TRUE))
