@@ -131,15 +131,21 @@ cases_for_assignment_user <- function(
   active_events = list()
 ) {
   if (!length(cases)) return(list())
+  mode <- assignment_mode_for(workflow, task_type %||% "")
   batch_assignments <- active_assignments_for_batch(assignments, workflow, batch_id, task_type)
-  if (!length(batch_assignments)) return(cases)
+  if (!length(batch_assignments)) {
+    if (identical(mode, ASSIGNMENT_MODES[["independent_blind_review"]])) return(list())
+    return(cases)
+  }
 
-  if (user_can(user, "manage_assignments")) return(cases)
+  if (
+    user_can(user, "manage_assignments") &&
+    !identical(mode, ASSIGNMENT_MODES[["independent_blind_review"]])
+  ) return(cases)
 
   user_id <- as.character(normalise_user_row(user)$user_id)
   assigned <- assignments_for_user(assignments, workflow, batch_id, user_id, task_type)
   allowed <- unique(vapply(assigned, function(x) normalise_assignment_row(x)$case_id, character(1)))
-  mode <- assignment_mode_for(workflow, task_type %||% normalise_assignment_row(batch_assignments[[1L]])$task_type)
 
   Filter(
     function(x) {
@@ -667,6 +673,151 @@ cancel_user_assignments <- function(
 }
 
 
+plan_independent_blind_assignment <- function(
+  cases,
+  assignments,
+  active_events,
+  workflow,
+  batch_id,
+  task_type,
+  user_ids,
+  allocation_type = c("number", "percentage", "all"),
+  amount = NA_real_
+) {
+  allocation_type <- match.arg(allocation_type)
+  user_ids <- unique(as.character(user_ids))
+  user_ids <- user_ids[nzchar(user_ids)]
+  if (length(user_ids) < 2L) {
+    stop("Independent blind review requires at least two reviewers", call. = FALSE)
+  }
+
+  if (!identical(allocation_type, "all")) {
+    amount <- suppressWarnings(as.numeric(amount))
+    if (is.na(amount) || amount <= 0) {
+      stop("Assignment amount must be greater than zero", call. = FALSE)
+    }
+    if (identical(allocation_type, "percentage") && amount > 100) {
+      stop("Percentage cannot exceed 100", call. = FALSE)
+    }
+  }
+
+  case_ids <- unique(vapply(
+    cases,
+    function(x) as.character(x$review_case_id %||% x$case_id %||% x$record_id %||% ""),
+    character(1)
+  ))
+  case_ids <- case_ids[nzchar(case_ids)]
+
+  batch_assignments <- active_assignments_for_batch(
+    assignments, workflow, batch_id, task_type
+  )
+  completed_keys <- if (length(active_events)) {
+    unique(vapply(active_events, function(e) {
+      paste(decision_case_id(e), decision_user_id(e), sep = "|")
+    }, character(1)))
+  } else character()
+
+  missing_users_for_case <- function(cid) {
+    assigned_users <- unique(vapply(
+      Filter(
+        function(x) identical(normalise_assignment_row(x)$case_id, cid),
+        batch_assignments
+      ),
+      function(x) normalise_assignment_row(x)$user_id,
+      character(1)
+    ))
+    completed_users <- user_ids[
+      paste(cid, user_ids, sep = "|") %in% completed_keys
+    ]
+    setdiff(user_ids, union(assigned_users, completed_users))
+  }
+
+  eligible <- case_ids[vapply(
+    case_ids,
+    function(cid) length(missing_users_for_case(cid)) > 0L,
+    logical(1)
+  )]
+  n_available <- length(eligible)
+  if (!n_available) {
+    return(list(
+      new_assignments = list(),
+      available = 0L,
+      requested = 0L,
+      selected_cases = 0L,
+      allocated = 0L,
+      by_user = setNames(integer(length(user_ids)), user_ids),
+      case_ids = character(),
+      allocation_type = allocation_type
+    ))
+  }
+
+  requested <- if (identical(allocation_type, "all")) {
+    n_available
+  } else if (identical(allocation_type, "percentage")) {
+    n <- floor(n_available * amount / 100 + 0.5)
+    if (amount > 0 && n_available > 0) max(1L, n) else 0L
+  } else {
+    as.integer(floor(amount))
+  }
+  requested <- max(0L, min(as.integer(requested), n_available))
+  chosen <- if (requested) eligible[seq_len(requested)] else character()
+
+  rows <- list()
+  by_user <- setNames(integer(length(user_ids)), user_ids)
+  for (cid in chosen) {
+    missing_users <- missing_users_for_case(cid)
+    for (uid in missing_users) {
+      prior_same_key <- Filter(
+        function(x) {
+          a <- normalise_assignment_row(x)
+          identical(a$workflow, as.character(workflow)) &&
+            identical(a$task_type, as.character(task_type)) &&
+            identical(a$batch_id, as.character(batch_id)) &&
+            identical(a$case_id, cid) &&
+            identical(a$user_id, uid)
+        },
+        assignments %||% list()
+      )
+      generation <- length(prior_same_key) + 1L
+      assignment_id <- paste0(
+        "asg-",
+        substr(
+          digest::digest(
+            paste(workflow, task_type, batch_id, cid, uid, generation, sep = "|"),
+            algo = "sha256",
+            serialize = FALSE
+          ),
+          1L, 24L
+        )
+      )
+      rows[[length(rows) + 1L]] <- list(
+        assignment_id = assignment_id,
+        workflow = as.character(workflow),
+        task_type = as.character(task_type),
+        batch_id = as.character(batch_id),
+        case_id = cid,
+        user_id = uid,
+        blind_group = paste0("blind-", workflow, "-", task_type),
+        status = "assigned"
+      )
+      by_user[[uid]] <- by_user[[uid]] + 1L
+    }
+  }
+
+  validate_assignment_registry(c(assignments, rows))
+  list(
+    new_assignments = rows,
+    available = n_available,
+    requested = requested,
+    selected_cases = length(chosen),
+    allocated = length(rows),
+    by_user = by_user,
+    case_ids = chosen,
+    allocation_type = allocation_type
+  )
+}
+
+
 plan_single_reviewer_assignment <- function(
   cases,
   assignments,
@@ -785,6 +936,20 @@ plan_workflow_assignment <- function(
       allocation_type = allocation_type,
       amount = amount,
       allocation_strategy = allocation_strategy
+    ))
+  }
+
+  if (identical(mode, ASSIGNMENT_MODES[["independent_blind_review"]])) {
+    return(plan_independent_blind_assignment(
+      cases = cases,
+      assignments = assignments,
+      active_events = active_events,
+      workflow = workflow,
+      batch_id = batch_id,
+      task_type = task_type,
+      user_ids = user_ids,
+      allocation_type = allocation_type,
+      amount = amount
     ))
   }
 
