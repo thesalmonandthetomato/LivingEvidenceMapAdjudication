@@ -1450,8 +1450,8 @@ start_fresh_test_w08_queue <- function(
   cases <- list(
     list(
       record_id = paste0("test-w08-", stamp, "-001"),
-      title = "Synthetic salmon farming topic annotation record",
-      abstract = "A synthetic record for testing Workflow 08 reviewer assignment and completion.",
+      title = "Synthetic salmon farming topic eligibility record",
+      abstract = "A synthetic record for testing Workflow 08 topic eligibility review.",
       issues = list(make_issue(
         "zero_topic_eligibility_uncertain",
         c("include_uncoded", "exclude_record")
@@ -1464,6 +1464,24 @@ start_fresh_test_w08_queue <- function(
       issues = list(make_issue(
         "species_none",
         c("assign_named_species", "assign_unspecified_species", "exclude_record")
+      ))
+    ),
+    list(
+      record_id = paste0("test-w08-", stamp, "-003"),
+      title = "Synthetic salmon aquaculture geography record",
+      abstract = "A synthetic record for testing controlled country selection in Workflow 08.",
+      issues = list(make_issue(
+        "geography_unresolved",
+        c("assign_country_set", "assign_none")
+      ))
+    ),
+    list(
+      record_id = paste0("test-w08-", stamp, "-004"),
+      title = "Synthetic salmon aquaculture topic disagreement record",
+      abstract = "A synthetic record for testing controlled topic replacement in Workflow 08.",
+      issues = list(make_issue(
+        "topic_extreme_disagreement",
+        c("accept_retained_topics", "replace_topic_set", "exclude_record", "no_code")
       ))
     )
   )
@@ -1487,7 +1505,17 @@ start_fresh_test_w08_queue <- function(
       jsonlite::toJSON(species, auto_unbox = FALSE),
       rep("", max(0L, length(cases) - 1L))
     ),
-    topic_options_json = rep("[]", length(cases)),
+    topic_options_json = c(
+      jsonlite::toJSON(
+        list(
+          list(path_id="production_growth", hierarchy_path="Production > Growth"),
+          list(path_id="animal_health", hierarchy_path="Animal health"),
+          list(path_id="environment_water", hierarchy_path="Environment > Water")
+        ),
+        auto_unbox = TRUE
+      ),
+      rep("", max(0L, length(cases) - 1L))
+    ),
     stringsAsFactors = FALSE
   )
 
