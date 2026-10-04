@@ -3418,6 +3418,7 @@ server <- function(input, output, session) {
 
     label_map <- c(
       species_none="Species verification",
+      geography_model_failure="Geography model failure",
       geography_unresolved="Geography verification",
       geography_evidence_unvalidated="Geography evidence verification",
       topic_extreme_disagreement="Topic verification",
@@ -3441,6 +3442,11 @@ server <- function(input, output, session) {
 
     detail <- switch(
       typ,
+      geography_model_failure = tagList(
+        tags$p(class="mb-1",tags$strong("Deterministic countries: "),as.character(av$deterministic_primary_countries %||% "")),
+        tags$p(class="mb-1",tags$strong("Deterministic ISO3: "),as.character(av$deterministic_primary_iso3c %||% "")),
+        tags$p(class="mb-2",tags$strong("Model error: "),as.character(av$llm_error %||% ""))
+      ),
       geography_unresolved = tagList(
         tags$p(class="mb-1",tags$strong("Model countries: "),as.character(av$luna_country_names %||% "")),
         tags$p(class="mb-1",tags$strong("Evidence: "),as.character(av$luna_evidence %||% "")),
@@ -3487,6 +3493,10 @@ server <- function(input, output, session) {
           }
         )
       },
+      geography_model_failure = tagList(
+        textInput(paste0("w08_iso3_",j),"ISO3 codes (semicolon separated)",""),
+        textInput(paste0("w08_country_",j),"Country names (semicolon separated)","")
+      ),
       geography_unresolved = tagList(
         textInput(paste0("w08_iso3_",j),"ISO3 codes (semicolon separated)",""),
         textInput(paste0("w08_country_",j),"Country names (semicolon separated)","")
@@ -3621,7 +3631,7 @@ server <- function(input, output, session) {
         } else if(choice=="exclude_record") {
           final_value <- list(included=FALSE)
         }
-      } else if(typ %in% c("geography_unresolved","geography_evidence_unvalidated")) {
+      } else if(typ %in% c("geography_model_failure","geography_unresolved","geography_evidence_unvalidated")) {
         if(choice %in% c("assign_country_set","override_country_set")) {
           iso <- toupper(split_semicolon(input[[paste0("w08_iso3_",j)]]))
           country <- split_semicolon(input[[paste0("w08_country_",j)]])
