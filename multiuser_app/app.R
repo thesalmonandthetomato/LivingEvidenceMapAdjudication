@@ -238,36 +238,58 @@ w08_record_highlight_terms <- function(issues, species_options = character()) {
 
   has_species <- any(vapply(
     issues,
-    function(x) identical(as.character(x$issue_type %||% ""),"species_none"),
+    function(x) identical(as.character(x$issue_type %||% ""), "species_none"),
     logical(1)
   ))
   if (has_species) {
     species_terms <- unique(c(
       as.character(species_options %||% character()),
-      "salmon","salmonid","salmonids","salmonidae","Salmo","Oncorhynchus","trout"
+      "salmon", "salmonid", "salmonids", "salmonidae",
+      "Salmo", "Oncorhynchus", "trout"
     ))
     species_terms <- species_terms[
       nzchar(trimws(species_terms)) &
-      !tolower(trimws(species_terms)) %in% c("unspecified species")
+        !tolower(trimws(species_terms)) %in% c("unspecified species")
     ]
     terms <- c(
       terms,
-      stats::setNames(species_terms,rep("screen-include",length(species_terms)))
+      stats::setNames(
+        species_terms,
+        rep("screen-include", length(species_terms))
+      )
     )
   }
 
-  geo_evidence <- unlist(lapply(issues,function(issue) {
+  geo_evidence <- unlist(lapply(issues, function(issue) {
     typ <- as.character(issue$issue_type %||% "")
-    if (!typ %in% c("geography_unresolved","geography_evidence_unvalidated")) {
+    if (!typ %in% c("geography_unresolved", "geography_evidence_unvalidated")) {
       return(character())
     }
     av <- issue$automated_value %||% list()
     vals <- as.character(unlist(
       av$luna_evidence %||% av$model_evidence %||% character(),
-      use.names=FALSE
+      use.names = FALSE
     ))
-    vals <- normalise_display_text(vals)
-    vals <- gsub('^["“”]+|["“”]+
+    vals <- vapply(vals, normalise_display_text, character(1))
+    vals <- trimws(vals)
+    vals <- sub('^["“”]+', "", vals)
+    vals <- sub('["“”]+$', "", vals)
+    vals[nzchar(vals)]
+  }), use.names = FALSE))
+  geo_evidence <- unique(geo_evidence[nzchar(geo_evidence)])
+  if (length(geo_evidence)) {
+    terms <- c(
+      terms,
+      stats::setNames(
+        geo_evidence,
+        rep("w08-geo-evidence", length(geo_evidence))
+      )
+    )
+  }
+
+  terms
+}
+
 token_lcs_matches <- function(a, b, char_level = FALSE) {
   a <- as.character(a %||% "")
   b <- as.character(b %||% "")
