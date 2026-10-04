@@ -1617,7 +1617,8 @@ server <- function(input, output, session) {
           selectInput(
             paste0(cfg$prefix, "_remove_assignment_user"),
             "Reviewer",
-            choices = remove_choices
+            choices = remove_choices,
+            selectize = FALSE
           ),
           actionButton(
             paste0(cfg$prefix, "_remove_assignments"),
