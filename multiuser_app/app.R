@@ -1489,6 +1489,7 @@ server <- function(input, output, session) {
     has_w01_batch <- nzchar(as.character(batch_id_rv())) && length(w01_all_cases_rv()) > 0L
     has_w02_batch <- nzchar(as.character(w02_batch_id_rv())) && length(w02_all_cases_rv()) > 0L
     has_w04_batch <- nzchar(as.character(w04_batch_id_rv())) && length(w04_all_cases_rv()) > 0L
+    has_w04_conflict_batch <- nzchar(as.character(w04_active_conflict_batch_id())) && length(w04_all_conflict_cases()) > 0L
     has_w08_batch <- nzchar(as.character(w08_batch_id_rv())) && length(w08_all_cases_rv()) > 0L
     task_labels <- c(
       deduplication = "Deduplication",
@@ -1529,6 +1530,9 @@ server <- function(input, output, session) {
       if (identical(workflow, "04") && identical(task_type, "manual_screening")) {
         return(if (has_w04_batch) as.character(w04_batch_id_rv()) else "")
       }
+      if (identical(workflow, "04") && identical(task_type, "conflict_resolution")) {
+        return(if (has_w04_conflict_batch) as.character(w04_active_conflict_batch_id()) else "")
+      }
       if (identical(workflow, "08") && identical(task_type, "annotation")) {
         return(if (has_w08_batch) as.character(w08_batch_id_rv()) else "")
       }
@@ -1560,6 +1564,11 @@ server <- function(input, output, session) {
         identical(z$task_type, "manual_screening") &&
         identical(z$batch_id, w04_batch_id_rv())
       ) return(w04_active_assignment_events())
+      if (
+        identical(z$workflow, "04") &&
+        identical(z$task_type, "conflict_resolution") &&
+        identical(z$batch_id, w04_active_conflict_batch_id())
+      ) return(w04_conflict_decisions())
       if (
         identical(z$workflow, "08") &&
         identical(z$task_type, "annotation") &&
@@ -1615,6 +1624,13 @@ server <- function(input, output, session) {
       if (has_w04_batch) w04_batch_id_rv() else "no-active-queue",
       ASSIGNMENT_MODES[["independent_blind_review"]]
     )
+    if (has_w04_conflict_batch) {
+      add_empty_group(
+        "04","conflict_resolution",
+        w04_active_conflict_batch_id(),
+        ASSIGNMENT_MODES[["single_reviewer"]]
+      )
+    }
     add_empty_group(
       "08","annotation",
       if (has_w08_batch) w08_batch_id_rv() else "no-active-queue",
@@ -1627,10 +1643,18 @@ server <- function(input, output, session) {
         function(g) suppressWarnings(as.integer(g$meta$workflow %||% "999")),
         integer(1)
       )
+      task_rank <- c(
+        deduplication=1L,
+        enrichment=1L,
+        manual_screening=1L,
+        model_uncertainty=2L,
+        conflict_resolution=3L,
+        annotation=1L
+      )
       task_order <- vapply(
         group_progress,
-        function(g) as.character(g$meta$task_type %||% ""),
-        character(1)
+        function(g) as.integer(task_rank[[as.character(g$meta$task_type %||% "")]] %||% 99L),
+        integer(1)
       )
       group_progress <- group_progress[order(workflow_order, task_order, names(group_progress))]
     }
@@ -1662,6 +1686,13 @@ server <- function(input, output, session) {
       ) {
         list(prefix="w04", workflow="04", task_type="manual_screening", batch_id=w04_batch_id_rv(),
              events=w04_active_assignment_events(), label="W04")
+      } else if (
+        identical(z$workflow, "04") &&
+        identical(z$task_type, "conflict_resolution") &&
+        identical(z$batch_id, w04_active_conflict_batch_id())
+      ) {
+        list(prefix="w04conflict", workflow="04", task_type="conflict_resolution", batch_id=w04_active_conflict_batch_id(),
+             events=w04_conflict_decisions(), label="W04 conflict")
       } else if (
         identical(z$workflow, "08") &&
         identical(z$task_type, "annotation") &&
@@ -1856,6 +1887,9 @@ server <- function(input, output, session) {
         identical(z$workflow,"04") && identical(z$task_type,"manual_screening") &&
         identical(z$batch_id,w04_batch_id_rv())
       ) w04_all_cases_rv() else if (
+        identical(z$workflow,"04") && identical(z$task_type,"conflict_resolution") &&
+        identical(z$batch_id,w04_active_conflict_batch_id())
+      ) w04_all_conflict_cases() else if (
         identical(z$workflow,"08") && identical(z$task_type,"annotation") &&
         identical(z$batch_id,w08_batch_id_rv())
       ) w08_all_cases_rv() else list()
@@ -1901,7 +1935,7 @@ server <- function(input, output, session) {
       mode_note <- if (identical(mode, ASSIGNMENT_MODES[["shared_work_pool"]])) {
         "For shared cases, the first valid decision resolves the case. Other reviewers assigned to that case no longer need to review it."
       } else if (identical(mode, ASSIGNMENT_MODES[["independent_blind_review"]])) {
-        "Every required reviewer must complete the case independently. Decisions remain blinded until review is complete."
+        "Every required reviewer completes the case independently. Manual screeners never see one another's decisions; comparison occurs only in administrator reporting and assigned conflict adjudication after independent screening is complete."
       } else {
         "A single completed review resolves the assigned case."
       }
