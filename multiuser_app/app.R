@@ -12,6 +12,7 @@ source("R/users.R", local = TRUE)
 source("R/assignments.R", local = TRUE)
 source("R/decision_events.R", local = TRUE)
 source("R/w04_blind_resolution.R", local = TRUE)
+source("R/w04_validation_lifecycle.R", local = TRUE)
 source("R/storage_local.R", local = TRUE)
 source("R/storage_sheets.R", local = TRUE)
 source("R/storage_backend.R", local = TRUE)
@@ -1810,6 +1811,16 @@ server <- function(input, output, session) {
     w08_decisions() %||% list()
   }
 
+  w04_validation_state <- reactive({
+    w04_validation_lifecycle(
+      cases = w04_all_cases_rv(),
+      assignments = assignment_registry_rv(),
+      decisions = w04_active_assignment_events(),
+      batch_id = w04_batch_id_rv(),
+      queue_sha256 = w04_queue_sha_rv()
+    )
+  })
+
   workflow_all_assignments_complete <- function(workflow, batch_id, task_type, events) {
     assignments <- active_assignments_for_batch(
       assignment_registry_rv(), workflow, batch_id, task_type
@@ -2430,6 +2441,28 @@ server <- function(input, output, session) {
             )
           ),
           tags$div(class = "assignment-mode-note mt-2", mode_note),
+          if (
+            identical(z$workflow, "04") &&
+            identical(z$task_type, "manual_screening") &&
+            isTRUE(w04_validation_state()$ready) &&
+            session_can("control_workflows")
+          ) {
+            tags$div(
+              class = "d-flex flex-wrap align-items-center gap-2 mt-3 p-2 border rounded bg-light",
+              tags$div(
+                tags$strong("Validation batch ready"),
+                tags$div(
+                  class = "text-secondary small",
+                  "Every queue case has exactly one assignment and one valid decision with the expected queue SHA."
+                )
+              ),
+              actionButton(
+                "w04_finalize_validation",
+                "Finalise validation batch",
+                class = "btn-primary btn-sm"
+              )
+            )
+          },
           assignment_manager_ui(z)
         )
       )
@@ -3964,10 +3997,9 @@ server <- function(input, output, session) {
           w04_decisions(w04_batch_decisions)
           w04_unresolved <- w04_unresolved_indices()
           w04_idx(if (length(w04_unresolved)) w04_unresolved[[1L]] else max(1L,length(w04_visible_cases)))
+          validation_state <- w04_validation_state()
           if(
-            workflow_all_assignments_complete(
-              "04", w04_batch_id_rv(), "manual_screening", w04_batch_decisions
-            ) &&
+            isTRUE(validation_state$ready) &&
             !identical(w04_batch_status_rv(),"review_complete") &&
             user_can(login_user,"control_workflows")
           ) {
@@ -4664,6 +4696,51 @@ server <- function(input, output, session) {
 
   output$w04_save_status <- renderText(w04_status())
 
+  dispatch_completed_w04_validation <- function() {
+    if (!session_can("control_workflows")) {
+      w04_status("Only an administrator can finalise a W04 validation batch.")
+      return(FALSE)
+    }
+
+    state <- w04_validation_state()
+    if (!isTRUE(state$ready)) {
+      w04_status(paste0(
+        "W04 validation batch is not ready to finalise (",
+        as.character(state$reason %||% "incomplete"),
+        ")."
+      ))
+      return(FALSE)
+    }
+
+    mark_review_complete(
+      "04",
+      w04_batch_id_rv(),
+      w04_queue_sha_rv(),
+      w04_batch_status_rv
+    )
+    dispatched <- tryCatch({
+      dispatch_w04_validation_finalize(
+        w04_batch_id_rv(),
+        w04_queue_sha_rv()
+      )
+      TRUE
+    }, error = function(e) {
+      w04_status(paste(
+        "Validation is complete, but W04 finalisation dispatch failed:",
+        conditionMessage(e)
+      ))
+      FALSE
+    })
+    if (dispatched) {
+      w04_status("Validation complete. Workflow 04 finalisation dispatched.")
+    }
+    dispatched
+  }
+
+  observeEvent(input$w04_finalize_validation, {
+    dispatch_completed_w04_validation()
+  })
+
   save_w04_choice <- function(choice) {
     if(!session_can("adjudicate_assigned")) {
       w04_status("You do not have permission to adjudicate records.")
@@ -4717,8 +4794,19 @@ server <- function(input, output, session) {
       all_complete <- workflow_all_assignments_complete(
         "04", w04_batch_id_rv(), "manual_screening", w04_active_assignment_events()
       )
+      validation_state <- w04_validation_state()
       if (!all_complete) {
         w04_status("Your blinded review is complete. Waiting for the other assigned reviewer(s).")
+      } else if (identical(validation_state$mode, "validation_set")) {
+        if (isTRUE(validation_state$ready) && session_can("control_workflows")) {
+          w04_status("Validation set complete. Use Finalise validation batch in Administration & assignments.")
+        } else if (isTRUE(validation_state$ready)) {
+          w04_status("Validation set complete. Awaiting an administrator to finalise Workflow 04.")
+        } else if (session_can("manage_assignments")) {
+          w04_status("Assigned validation screening is complete, but the batch is not yet fully covered for finalisation.")
+        } else {
+          w04_status("Your assigned validation screening is complete.")
+        }
       } else if (session_can("manage_assignments")) {
         w04_status(
           "All assigned manual screening is complete. Use Consistency checking to compare selected raters, save the analysis, and create any conflict set that should be adjudicated."
