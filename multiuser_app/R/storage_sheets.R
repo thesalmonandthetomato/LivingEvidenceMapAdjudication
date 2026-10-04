@@ -1835,7 +1835,7 @@ start_fresh_test_w08_queue <- function(
       ),
       issues = list(make_issue(
         "geography_unresolved",
-        c("accept_model", "assign_country_set", "assign_none"),
+        c("assign_country_set", "assign_none"),
         automated_value = list(
           luna_evidence = c("samples were collected from coastal farms in western Norway"),
           iso3c = c("NOR")
