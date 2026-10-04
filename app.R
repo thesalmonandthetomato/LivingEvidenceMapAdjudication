@@ -1838,7 +1838,7 @@ server <- function(input, output, session) {
     )
     allowed <- as.character(issue$allowed_human_outcomes %||% character())
     if(typ %in% c("geography_unresolved","geography_evidence_unvalidated")) {
-      geography_outcomes <- c("accept_model","override_country_set","assign_none")
+      geography_outcomes <- c("accept_model","override_country_set","assign_none","exclude_record")
       if(setequal(allowed,geography_outcomes)) allowed <- geography_outcomes
     }
     labels <- c(
@@ -2005,6 +2005,8 @@ server <- function(input, output, session) {
           # for geography_unresolved, and preserves the resolved Luna assignment for
           # geography_evidence_unvalidated.
           final_value <- NULL
+        } else if(choice=="exclude_record") {
+          final_value <- list(included=FALSE)
         }
       } else if(typ=="topic_extreme_disagreement") {
         retained <- av <- issue$automated_value$pathways %||% list()
