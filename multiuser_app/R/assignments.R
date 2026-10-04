@@ -913,6 +913,97 @@ plan_single_reviewer_assignment <- function(
 }
 
 
+plan_w04_manual_assignment <- function(
+  cases,
+  assignments,
+  active_events,
+  batch_id,
+  user_ids,
+  review_mode = c("reviewer_consistency", "validation_set"),
+  allocation_type = c("number", "percentage", "all"),
+  amount = NA_real_
+) {
+  review_mode <- match.arg(review_mode)
+  allocation_type <- match.arg(allocation_type)
+  user_ids <- unique(as.character(user_ids))
+  user_ids <- user_ids[nzchar(user_ids)]
+  if (!length(user_ids)) stop("Select at least one reviewer", call. = FALSE)
+
+  if (identical(review_mode, "reviewer_consistency")) {
+    if (length(user_ids) < 2L) {
+      stop("Reviewer consistency requires at least two reviewers", call. = FALSE)
+    }
+    plan <- plan_independent_blind_assignment(
+      cases = cases,
+      assignments = assignments,
+      active_events = active_events,
+      workflow = "04",
+      batch_id = batch_id,
+      task_type = "manual_screening",
+      user_ids = user_ids,
+      allocation_type = allocation_type,
+      amount = amount
+    )
+    if (length(plan$new_assignments)) {
+      plan$new_assignments <- lapply(plan$new_assignments, function(x) {
+        x$blind_group <- "w04-reviewer-consistency"
+        x
+      })
+    }
+    plan$review_mode <- review_mode
+    validate_assignment_registry(c(assignments, plan$new_assignments))
+    return(plan)
+  }
+
+  eligible <- unresolved_unassigned_case_ids(
+    cases, assignments, active_events,
+    "04", batch_id, "manual_screening"
+  )
+  requested_amount <- amount
+  requested_type <- allocation_type
+  if (identical(allocation_type, "all")) {
+    requested_amount <- length(eligible)
+    requested_type <- "number"
+  }
+  if (!length(eligible)) {
+    return(list(
+      new_assignments = list(),
+      available = 0L,
+      requested = 0L,
+      selected_cases = 0L,
+      allocated = 0L,
+      by_user = setNames(integer(length(user_ids)), user_ids),
+      case_ids = character(),
+      allocation_type = allocation_type,
+      review_mode = review_mode
+    ))
+  }
+
+  plan <- plan_single_reviewer_assignment(
+    cases = cases,
+    assignments = assignments,
+    active_events = active_events,
+    workflow = "04",
+    batch_id = batch_id,
+    task_type = "manual_screening",
+    user_ids = user_ids,
+    allocation_type = requested_type,
+    amount = requested_amount
+  )
+  if (length(plan$new_assignments)) {
+    plan$new_assignments <- lapply(plan$new_assignments, function(x) {
+      x$blind_group <- "w04-validation-set"
+      x
+    })
+  }
+  plan$selected_cases <- length(plan$case_ids %||% character())
+  plan$allocation_type <- allocation_type
+  plan$review_mode <- review_mode
+  validate_assignment_registry(c(assignments, plan$new_assignments))
+  plan
+}
+
+
 plan_workflow_assignment <- function(
   cases,
   assignments,
