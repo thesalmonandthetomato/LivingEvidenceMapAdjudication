@@ -1670,29 +1670,6 @@ server <- function(input, output, session) {
             "Remove reviewer's unfinished assignments",
             class = "btn-outline-danger btn-sm"
           ),
-          if (
-            identical(cfg$workflow, "08") &&
-            grepl("^w08-test-assignment-smoke", cfg$batch_id) &&
-            length(cancellable) > 0L
-          ) {
-            tagList(
-              tags$hr(),
-              tags$strong("Synthetic test data"),
-              tags$p(
-                class = "text-secondary small mb-2",
-                "Start a new four-record W08 smoke-test batch covering topic eligibility, species, geography and topic replacement. Existing assignments and decisions are retained as history."
-              ),
-              actionButton(
-                "w08_start_fresh_test_batch",
-                "Start fresh W08 test batch",
-                class = "btn-outline-secondary btn-sm"
-              ),
-              tags$span(
-                class = "saved-note ms-2",
-                textOutput("w08_fresh_test_status", inline = TRUE)
-              )
-            )
-          }
         )
       )
     }
@@ -1804,7 +1781,7 @@ server <- function(input, output, session) {
                   actionButton(
                     "w08_start_fresh_test_batch",
                     "Start fresh W08 test batch",
-                    class = "btn-outline-secondary btn-sm"
+                    class = "btn-primary btn-sm"
                   ),
                   tags$span(
                     class = "saved-note",
@@ -2412,8 +2389,15 @@ server <- function(input, output, session) {
     }
     assignment_registry_rv(persisted_assignments)
 
-    w08_all_cases_rv(loaded$cases)
-    w08_cases_rv(cases_for_assignment_user(
+    if (length(loaded$cases) != 4L) {
+      w08_fresh_test_status(sprintf(
+        "Fresh W08 test batch was created, but %d records were loaded instead of 4.",
+        length(loaded$cases)
+      ))
+      return()
+    }
+
+    visible_test_cases <- cases_for_assignment_user(
       loaded$cases,
       assignment_registry_rv(),
       "08",
@@ -2421,7 +2405,17 @@ server <- function(input, output, session) {
       current_user(),
       task_type = "annotation",
       active_events = batch_decisions
-    ))
+    )
+    if (length(visible_test_cases) != 4L) {
+      w08_fresh_test_status(sprintf(
+        "Fresh W08 test batch was created, but only %d of 4 records are reviewable by the current administrator.",
+        length(visible_test_cases)
+      ))
+      return()
+    }
+
+    w08_all_cases_rv(loaded$cases)
+    w08_cases_rv(visible_test_cases)
     w08_queue_sha_rv(loaded$queue_sha256)
     w08_batch_id_rv(loaded$batch_id)
     w08_source_run_id_rv(loaded$source_run_id %||% "")
@@ -2431,7 +2425,8 @@ server <- function(input, output, session) {
     w08_topic_options(loaded$topic_options %||% list())
     w08_decisions(batch_decisions)
     w08_idx(1L)
-    w08_fresh_test_status("Fresh W08 test batch created and assigned to you.")
+    w08_fresh_test_status("Fresh W08 test batch created; all 4 records are assigned to you and ready for review.")
+    app_view("w08")
   })
 
   output$test_queue_status <- renderText(test_queue_status())
