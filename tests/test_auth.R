@@ -84,6 +84,11 @@ stopifnot(is.null(authenticate_registered_user(registry, "reviewer@example.org",
 stopifnot(is.null(authenticate_registered_user(registry, "unknown@example.org", reviewer_key)))
 stopifnot(is.null(authenticate_registered_user(registry, "inactive@example.org", inactive_key)))
 
+stopifnot(identical(registered_user_auth_diagnostic(registry, "admin@example.org", admin_key), "ok"))
+stopifnot(identical(registered_user_auth_diagnostic(registry, "unknown@example.org", admin_key), "email_not_found_or_inactive"))
+stopifnot(identical(registered_user_auth_diagnostic(registry, "inactive@example.org", inactive_key), "email_not_found_or_inactive"))
+stopifnot(identical(registered_user_auth_diagnostic(registry, "admin@example.org", "wrong-key"), "access_key_mismatch"))
+
 Sys.setenv(
   LEM_ACCESS_KEY_SHA256 = hash_access_key("legacy-key"),
   LEM_REVIEWER = "legacy-reviewer"
