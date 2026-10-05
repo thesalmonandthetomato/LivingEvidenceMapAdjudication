@@ -392,6 +392,10 @@ normalise_doi_value <- function(x) {
   trimws(z)
 }
 
+normalise_source_id_value <- function(x) {
+  gsub("[[:space:]]+", "", as.character(x %||% ""))
+}
+
 doi_link <- function(x, label = NULL) {
   doi <- normalise_doi_value(x)
   if (!nzchar(doi)) return("")
@@ -4720,7 +4724,11 @@ server <- function(input, output, session) {
       year = field_pair(z$record_i$year, z$record_j$year),
       journal = field_pair(z$record_i$journal, z$record_j$journal),
       doi = field_pair(normalise_doi_value(z$record_i$doi), normalise_doi_value(z$record_j$doi), char_level = TRUE),
-      source_record_id = field_pair(z$record_i$source_record_id, z$record_j$source_record_id, char_level = TRUE),
+      source_record_id = field_pair(
+        normalise_source_id_value(z$record_i$source_record_id),
+        normalise_source_id_value(z$record_j$source_record_id),
+        char_level = TRUE
+      ),
       abstract = field_pair(abstract_i, abstract_j)
     )
     fields$source$a <- tags$span(class = "source-badge", fields$source$a)
