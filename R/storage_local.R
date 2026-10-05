@@ -151,8 +151,9 @@ read_local_w01_repairs <- function(path, queue_sha256 = "") {
 
 write_local_w01_repair <- function(path, repair, prior_repair = NULL) {
   if (is.null(path) || !nzchar(as.character(path))) stop("Local W01 repair path is missing", call.=FALSE)
-  if (!identical(as.character(repair$action %||% ""), "replace_abstract")) stop("Unsupported local W01 repair action", call.=FALSE)
-  if (!nzchar(trimws(as.character(repair$value %||% "")))) stop("Corrected abstract must not be empty", call.=FALSE)
+  action <- as.character(repair$action %||% "")
+  if (!(action %in% c("replace_abstract","strip_abstract"))) stop("Unsupported local W01 repair action", call.=FALSE)
+  if (identical(action,"replace_abstract") && !nzchar(trimws(as.character(repair$value %||% "")))) stop("Replacement abstract must not be empty", call.=FALSE)
   saved_at <- as.character(repair$saved_at_utc %||% format(Sys.time(), tz="UTC", format="%Y-%m-%dT%H:%M:%SZ"))
   event <- repair
   event$saved_at_utc <- saved_at
