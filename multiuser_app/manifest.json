@@ -1467,7 +1467,7 @@
   },
   "files": {
     "app.R": {
-      "checksum": "96c9add4c9e576ca3ce702807b8b2e73"
+      "checksum": "b749e9ec84abd9b39e1eb02afa3f39e8"
     },
     "DEVELOPMENT_TODO.md": {
       "checksum": "f63e7dfdacaac0e88610aa7b8e059d70"
@@ -1555,6 +1555,9 @@
     },
     "tests/test_w04_validation_lifecycle.R": {
       "checksum": "8711ce8a4c4eefc92e61781498c81e7d"
+    },
+    "tests/test_w08_canonical_kpi.R": {
+      "checksum": "cd4e195e71abbeb42f7801fdaae27f0f"
     }
   },
   "users": null

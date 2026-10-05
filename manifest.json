@@ -1695,7 +1695,7 @@
   },
   "files": {
     ".github/workflows/validate.yml": {
-      "checksum": "61f84ef56f781bfc4b2396322a3a2d90"
+      "checksum": "858de72d9cb5c85bc9be9a689fbc77b3"
     },
     "app.R": {
       "checksum": "b7341682ff87daeffc66113b0e00ff96"
@@ -1710,7 +1710,7 @@
       "checksum": "480a0d337e4fbf1a18baca82acdbcb23"
     },
     "multiuser_app/app.R": {
-      "checksum": "96c9add4c9e576ca3ce702807b8b2e73"
+      "checksum": "b749e9ec84abd9b39e1eb02afa3f39e8"
     },
     "multiuser_app/DEVELOPMENT_TODO.md": {
       "checksum": "f63e7dfdacaac0e88610aa7b8e059d70"
@@ -1798,6 +1798,9 @@
     },
     "multiuser_app/tests/test_w04_validation_lifecycle.R": {
       "checksum": "8711ce8a4c4eefc92e61781498c81e7d"
+    },
+    "multiuser_app/tests/test_w08_canonical_kpi.R": {
+      "checksum": "cd4e195e71abbeb42f7801fdaae27f0f"
     },
     "R/auth.R": {
       "checksum": "386d3f17d2856f50d104d87761906e16"
