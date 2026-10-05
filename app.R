@@ -3937,8 +3937,7 @@ server <- function(input, output, session) {
       login_status("Too many failed attempts. Try again shortly.")
       return()
     }
-    auth_status <- "diagnostic_error"
-    login_user <- tryCatch({
+    auth_attempt <- tryCatch({
       if (!individual_auth_configured()) {
         stop(
           "Individual authentication is not configured. Check LEM_INITIAL_USERS_JSON and LEM_USER_ACCESS_KEY_HASHES_JSON in Connect Cloud.",
@@ -3951,13 +3950,20 @@ server <- function(input, output, session) {
         input$login_email,
         input$access_key
       )
-      auth_status <- as.character(auth_result$status %||% "diagnostic_error")
-      auth_result$user
+      list(
+        user = auth_result$user,
+        status = as.character(auth_result$status %||% "diagnostic_error"),
+        configuration_error = ""
+      )
     }, error = function(e) {
-      login_status(paste("Login configuration error:", conditionMessage(e)))
-      auth_status <- "configuration_error"
-      NULL
+      list(
+        user = NULL,
+        status = "configuration_error",
+        configuration_error = conditionMessage(e)
+      )
     })
+    login_user <- auth_attempt$user
+    auth_status <- auth_attempt$status
 
     if (!is.null(login_user)) {
       loaded <- tryCatch({
@@ -4251,16 +4257,20 @@ server <- function(input, output, session) {
         failed_attempts(0L)
         login_status("Too many failed attempts. Try again in one minute.")
       } else {
-        login_status(switch(
-          auth_status,
-          email_missing = "Email is blank.",
-          email_not_found_or_inactive = "Email was not found in the active user registry.",
-          hash_missing_for_user = "Email was recognised, but no access-key hash is configured for this user ID.",
-          access_key_missing = "Access key is blank.",
-          access_key_mismatch = "Email was recognised, but the access key does not match the configured hash.",
-          diagnostic_error = "Authentication failed and the diagnostic check could not be completed.",
-          "Invalid email or access key."
-        ))
+        login_status(if (identical(auth_status, "configuration_error")) {
+          paste("Login configuration error:", auth_attempt$configuration_error)
+        } else {
+          switch(
+            auth_status,
+            email_missing = "Email is blank.",
+            email_not_found_or_inactive = "Email was not found in the active user registry.",
+            hash_missing_for_user = "Email was recognised, but no access-key hash is configured for this user ID.",
+            access_key_missing = "Access key is blank.",
+            access_key_mismatch = "Email was recognised, but the access key does not match the configured hash.",
+            diagnostic_error = "Authentication failed and the diagnostic check could not be completed.",
+            "Invalid email or access key."
+          )
+        })
       }
     }
   })
