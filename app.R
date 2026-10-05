@@ -2439,7 +2439,7 @@ server <- function(input, output, session) {
             tags$span(
               class = "text-secondary small",
               if (identical(z$batch_id, "no-active-queue")) {
-                "No active queue"
+                "No records awaiting review"
               } else {
                 sprintf("%d cases · %d remaining assignments", p$cases, p$remaining)
               }
