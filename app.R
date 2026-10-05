@@ -1977,6 +1977,16 @@ server <- function(input, output, session) {
     identical(progress$remaining, 0L)
   }
 
+  w01_resolution_ready <- reactive({
+    cs <- w01_all_cases_rv()
+    if (!length(cs) || !nzchar(batch_id_rv()) || !nzchar(queue_sha_rv())) return(FALSE)
+    ids <- vapply(cs,function(x)as.character(x$review_case_id %||% ""),character(1))
+    ds <- decisions() %||% list()
+    final <- Filter(function(x)as.character(x$decision %||% "") %in% c("duplicate","not_duplicate"),ds)
+    dids <- unique(vapply(final,function(x)as.character(x$review_case_id %||% ""),character(1)))
+    setequal(ids,dids) && w01_all_assignments_complete()
+  })
+
 
   w02_active_assignment_events <- function() {
     w02_decisions() %||% list()
@@ -2616,6 +2626,29 @@ server <- function(input, output, session) {
               actionButton(
                 "w04_finalize_validation",
                 "Send validation set to GitHub",
+                class = "btn-primary btn-sm"
+              )
+            )
+          },
+          if (
+            identical(z$workflow, "01") &&
+            identical(z$task_type, "deduplication") &&
+            isTRUE(w01_resolution_ready()) &&
+            !identical(batch_status_rv(), "review_complete") &&
+            session_can("control_workflows")
+          ) {
+            tags$div(
+              class = "d-flex flex-wrap align-items-center gap-2 mt-3 p-2 border rounded bg-light",
+              tags$div(
+                tags$strong("W01 review complete"),
+                tags$div(
+                  class = "text-secondary small",
+                  "All deduplication cases have final decisions. Marking W01 as resolved will send the reviewed batch back to GitHub for integrity checks and resume."
+                )
+              ),
+              actionButton(
+                "w01_mark_resolved",
+                "Mark W01 as resolved",
                 class = "btn-primary btn-sm"
               )
             )
@@ -4994,6 +5027,27 @@ server <- function(input, output, session) {
     TRUE
   }
 
+  observeEvent(input$w01_mark_resolved, {
+    req(authenticated())
+    if(!session_can("control_workflows")) {
+      status("You do not have permission to resolve Workflow 01.")
+      return()
+    }
+    if(!isTRUE(w01_resolution_ready())) {
+      status("Workflow 01 cannot be resolved because one or more cases or assignments are incomplete.")
+      return()
+    }
+    dispatched <- tryCatch({
+      mark_review_complete("01",batch_id_rv(),queue_sha_rv(),batch_status_rv)
+      dispatch_w01_export(batch_id_rv(),queue_sha_rv())
+      TRUE
+    },error=function(e){
+      status(paste("W01 resolution failed:",conditionMessage(e)))
+      FALSE
+    })
+    if(dispatched) status("W01 marked as resolved. Export to GitHub has been requested.")
+  })
+
   dispatch_completed_w02 <- function() {
     if(!session_can("control_workflows")) {
       w02_status("Review complete. Awaiting an administrator to resume Workflow 02.")
@@ -6427,9 +6481,9 @@ server <- function(input, output, session) {
       if (assignments_active && !w01_all_assignments_complete()) {
         status("Your assigned review is complete. Waiting for other assigned reviewers.")
       } else if(session_can("control_workflows")) {
-        mark_review_complete("01",batch_id_rv(),queue_sha_rv(),batch_status_rv)
+        status("All W01 assignments are complete. Use Mark W01 as resolved in Administration & assignments.")
       } else {
-        status("Review complete. Awaiting an administrator to continue Workflow 01.")
+        status("Review complete. Awaiting an administrator to mark Workflow 01 as resolved.")
       }
       complete(TRUE)
       return(invisible(TRUE))
