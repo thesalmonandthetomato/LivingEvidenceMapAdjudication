@@ -647,10 +647,12 @@ read_github_w04_kappa_registry <- function() {
     resp <- httr2::req_perform(req)
     if(httr2::resp_status(resp)!=200L) stop("GitHub API HTTP ",httr2::resp_status(resp))
     meta <- jsonlite::fromJSON(httr2::resp_body_string(resp),simplifyVector=FALSE)
-    if(!identical(as.character(meta$encoding %||% ""),"base64") || !nzchar(as.character(meta$content %||% ""))) {
+    encoding <- if(is.null(meta$encoding)) "" else as.character(meta$encoding)
+    content <- if(is.null(meta$content)) "" else as.character(meta$content)
+    if(!identical(encoding,"base64") || !nzchar(content)) {
       stop("GitHub registry response is missing base64 content")
     }
-    txt <- rawToChar(jsonlite::base64_dec(gsub("[[:space:]]+","",as.character(meta$content))))
+    txt <- rawToChar(jsonlite::base64_dec(gsub("[[:space:]]+","",content)))
     utils::read.csv(
       text=txt,
       stringsAsFactors=FALSE,
