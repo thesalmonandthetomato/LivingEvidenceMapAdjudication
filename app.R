@@ -794,6 +794,8 @@ server <- function(input, output, session) {
   w01_repairs_rv <- reactiveVal(list())
   w01_abstract_edit_rv <- reactiveVal(NULL)
   w01_abstract_delete_rv <- reactiveVal(NULL)
+  w01_export_requested_rv <- reactiveVal(FALSE)
+  w01_export_status_rv <- reactiveVal("")
   app_view <- reactiveVal("tasks")
   failed_attempts <- reactiveVal(0L)
   lock_until <- reactiveVal(as.POSIXct(NA))
@@ -2649,11 +2651,23 @@ server <- function(input, output, session) {
                   }
                 )
               ),
-              actionButton(
-                "w01_mark_resolved",
-                if (identical(batch_status_rv(),"review_complete")) "Send W01 to GitHub" else "Mark W01 as resolved",
-                class = "btn-primary btn-sm"
-              )
+              if (isTRUE(w01_export_requested_rv())) {
+                tagList(
+                  actionButton(
+                    "w01_mark_resolved",
+                    "Sent to GitHub",
+                    class = "btn-secondary btn-sm",
+                    disabled = "disabled"
+                  ),
+                  tags$span(class="text-success small", w01_export_status_rv())
+                )
+              } else {
+                actionButton(
+                  "w01_mark_resolved",
+                  if (identical(batch_status_rv(),"review_complete")) "Send W01 to GitHub" else "Mark W01 as resolved",
+                  class = "btn-primary btn-sm"
+                )
+              }
             )
           },
           assignment_manager_ui(z)
@@ -4600,6 +4614,11 @@ server <- function(input, output, session) {
           queue_sha_rv(batch$queue_sha256)
           batch_id_rv(batch$batch_id)
           decisions(current_decisions)
+          requested <- if (identical(storage_backend(),"google_sheets")) {
+            w01_export_request_exists(batch$queue_sha256,batch$batch_id)
+          } else FALSE
+          w01_export_requested_rv(isTRUE(requested))
+          w01_export_status_rv(if(isTRUE(requested)) "Sent to GitHub." else "")
 
           ids <- vapply(visible_cases, function(x) as.character(x$review_case_id), character(1))
           done_ids <- if (length(current_decisions)) {
@@ -4613,10 +4632,8 @@ server <- function(input, output, session) {
           } else {
             idx(max(1L,length(visible_cases)))
             complete(TRUE)
-            if(!identical(batch_status_rv(),"review_complete") &&
-               user_can(login_user,"control_workflows") &&
-               w01_all_assignments_complete()) {
-              mark_review_complete("01",batch_id_rv(),queue_sha_rv(),batch_status_rv)
+            if(user_can(login_user,"control_workflows") && w01_all_assignments_complete()) {
+              status("All W01 assignments are complete. An administrator can mark W01 as resolved.")
             }
           }
         } else {
@@ -4626,6 +4643,8 @@ server <- function(input, output, session) {
           batch_id_rv("")
           batch_status_rv("")
           decisions(list())
+          w01_export_requested_rv(FALSE)
+          w01_export_status_rv("")
           idx(1L)
           complete(FALSE)
         }
@@ -5040,17 +5059,38 @@ server <- function(input, output, session) {
       status("Workflow 01 cannot be resolved because one or more cases or assignments are incomplete.")
       return()
     }
+    if (isTRUE(w01_export_requested_rv()) ||
+        (identical(storage_backend(),"google_sheets") &&
+         w01_export_request_exists(queue_sha_rv(),batch_id_rv()))) {
+      w01_export_requested_rv(TRUE)
+      w01_export_status_rv("Sent to GitHub.")
+      status("W01 export has already been requested.")
+      return()
+    }
     dispatched <- tryCatch({
       if (!identical(batch_status_rv(),"review_complete")) {
         mark_review_complete("01",batch_id_rv(),queue_sha_rv(),batch_status_rv)
       }
+      if (identical(storage_backend(),"google_sheets")) {
+        append_w01_export_request(queue_sha_rv(),batch_id_rv(),"dispatching")
+      }
       dispatch_w01_export(batch_id_rv(),queue_sha_rv())
+      if (identical(storage_backend(),"google_sheets")) {
+        append_w01_export_request(queue_sha_rv(),batch_id_rv(),"dispatched")
+      }
       TRUE
     },error=function(e){
+      if (identical(storage_backend(),"google_sheets")) {
+        try(append_w01_export_request(queue_sha_rv(),batch_id_rv(),"failed",conditionMessage(e)),silent=TRUE)
+      }
       status(paste("W01 resolution failed:",conditionMessage(e)))
       FALSE
     })
-    if(dispatched) status("W01 marked as resolved. Export to GitHub has been requested.")
+    if(dispatched) {
+      w01_export_requested_rv(TRUE)
+      w01_export_status_rv("Sent to GitHub. The reviewed batch is queued for integrity checks and resume.")
+      status("W01 sent to GitHub.")
+    }
   })
 
   dispatch_completed_w02 <- function() {
