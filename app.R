@@ -457,6 +457,11 @@ record_card <- function(rec, label, fields, side = c("a","b"), abstract_editing 
               "Edit abstract",
               class = "btn-outline-secondary btn-sm"
             ),
+            actionButton(
+              paste0("delete_w01_abstract_", side),
+              "Delete abstract",
+              class = "btn-outline-danger btn-sm"
+            ),
             if (isTRUE(rec$abstract_repair_saved)) {
               tags$span(class = "text-success small", "Corrected abstract saved.")
             }
@@ -784,6 +789,7 @@ server <- function(input, output, session) {
   w01_all_cases_rv <- reactiveVal(list())
   w01_repairs_rv <- reactiveVal(list())
   w01_abstract_edit_rv <- reactiveVal(NULL)
+  w01_abstract_delete_rv <- reactiveVal(NULL)
   app_view <- reactiveVal("tasks")
   failed_attempts <- reactiveVal(0L)
   lock_until <- reactiveVal(as.POSIXct(NA))
@@ -6209,7 +6215,7 @@ server <- function(input, output, session) {
     invisible(TRUE)
   }
 
-  save_w01_abstract_repair <- function(side = c("a","b")) {
+  save_w01_abstract_repair <- function(side = c("a","b"), explicit_action = NULL, explicit_value = NULL) {
     side <- match.arg(side)
     req(authenticated())
     if(!session_can("adjudicate_assigned")) {
@@ -6218,8 +6224,13 @@ server <- function(input, output, session) {
     }
     z <- current_case()
     rec <- if (identical(side,"a")) z$record_i else z$record_j
-    value <- trimws(as.character(if (identical(side,"a")) input$w01_abstract_a else input$w01_abstract_b))
-    action <- if (nzchar(value)) "replace_abstract" else "strip_abstract"
+    if (is.null(explicit_action)) {
+      value <- trimws(as.character(if (identical(side,"a")) input$w01_abstract_a else input$w01_abstract_b))
+      action <- if (nzchar(value)) "replace_abstract" else "strip_abstract"
+    } else {
+      action <- as.character(explicit_action)
+      value <- as.character(explicit_value %||% "")
+    }
     original <- trimws(as.character(rec$abstract %||% ""))
     active <- w01_repairs_rv() %||% list()
     hits <- Filter(function(x) {
@@ -6279,7 +6290,56 @@ server <- function(input, output, session) {
     w01_abstract_edit_rv(NULL)
   })
 
-  observeEvent(input$save_w01_abstract_a, {
+  request_w01_abstract_delete <- function(side = c("a","b")) {
+    side <- match.arg(side)
+    z <- current_case()
+    rec <- if (identical(side,"a")) z$record_i else z$record_j
+    w01_abstract_delete_rv(list(
+      review_case_id=as.character(z$review_case_id),
+      side=side,
+      source=as.character(rec$source %||% ""),
+      source_record_id=as.character(rec$source_record_id %||% "")
+    ))
+    showModal(modalDialog(
+      title = paste0("Delete abstract from Record ", toupper(side), "?"),
+      "This will remove the abstract from this source record and save the change as an audited data-quality repair.",
+      footer = tagList(
+        modalButton("Cancel"),
+        actionButton("confirm_w01_delete_abstract", "Delete abstract", class="btn-danger")
+      ),
+      easyClose = TRUE
+    ))
+  }
+
+  observeEvent(input$delete_w01_abstract_a, {
+    request_w01_abstract_delete("a")
+  })
+  observeEvent(input$delete_w01_abstract_b, {
+    request_w01_abstract_delete("b")
+  })
+
+  observeEvent(input$confirm_w01_delete_abstract, {
+    pending <- w01_abstract_delete_rv()
+    req(pending)
+    z <- current_case()
+    if (!identical(as.character(pending$review_case_id), as.character(z$review_case_id))) {
+      removeModal()
+      w01_abstract_delete_rv(NULL)
+      status("Delete cancelled because the active W01 case changed.")
+      return()
+    }
+    side <- as.character(pending$side)
+    ok <- save_w01_abstract_repair(
+      side,
+      explicit_action="strip_abstract",
+      explicit_value=""
+    )
+    removeModal()
+    w01_abstract_delete_rv(NULL)
+    if (isTRUE(ok)) w01_abstract_edit_rv(NULL)
+  })
+
+    observeEvent(input$save_w01_abstract_a, {
     save_w01_abstract_repair("a")
   })
   observeEvent(input$save_w01_abstract_b, {
@@ -6472,10 +6532,12 @@ server <- function(input, output, session) {
 
   observeEvent(input$duplicate, {
     w01_abstract_edit_rv(NULL)
+    w01_abstract_delete_rv(NULL)
     if (save_choice("duplicate")) advance_after_save()
   })
   observeEvent(input$not_duplicate, {
     w01_abstract_edit_rv(NULL)
+    w01_abstract_delete_rv(NULL)
     if (save_choice("not_duplicate")) advance_after_save()
   })
   observeEvent(input$uncertain, {
