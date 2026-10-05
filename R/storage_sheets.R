@@ -1902,3 +1902,233 @@ test_queue_tab_exists <- function(tab) {
   ss <- sheet_id_from_env()
   tab %in% sheet_names_cached(ss)
 }
+
+
+backend_reset_operational_tabs <- function() {
+  unique(c(
+    "queue_w01_active",
+    "queue_w01_legacy_730",
+    sheet_decision_tab(),
+    Sys.getenv("LEM_W02_QUEUE_TAB", unset = "queue_w02_active"),
+    w02_decision_tab(),
+    Sys.getenv("LEM_W02_RESUME_REQUEST_TAB", unset = "w02_resume_requests"),
+    Sys.getenv("LEM_W04_QUEUE_TAB", unset = "queue_w04_validation_active"),
+    w04_decision_tab(),
+    Sys.getenv("LEM_W04_RESOLUTION_QUEUE_TAB", unset = "queue_w04_resolution_active"),
+    w04_resolution_decision_tab(),
+    Sys.getenv("LEM_W04_CONFLICT_QUEUE_TAB", unset = "queue_w04_conflict_active"),
+    w04_conflict_decision_tab(),
+    Sys.getenv("LEM_W04_TEST_QUEUE_TAB", unset = "queue_w04_test_active"),
+    w04_consistency_analysis_tab(),
+    w04_conflict_set_tab(),
+    Sys.getenv("LEM_W08_QUEUE_TAB", unset = "queue_w08_active"),
+    w08_decision_tab(),
+    assignment_registry_tab(),
+    assignment_audit_tab(),
+    batch_status_tab(),
+    pipeline_status_tab()
+  ))
+}
+
+backend_reset_queue_specs <- function() {
+  list(
+    list(stage = "01", tab = "queue_w01_active"),
+    list(stage = "01", tab = "queue_w01_legacy_730"),
+    list(stage = "02", tab = Sys.getenv("LEM_W02_QUEUE_TAB", unset = "queue_w02_active")),
+    list(stage = "04", tab = Sys.getenv("LEM_W04_QUEUE_TAB", unset = "queue_w04_validation_active")),
+    list(stage = "04", tab = Sys.getenv("LEM_W04_RESOLUTION_QUEUE_TAB", unset = "queue_w04_resolution_active")),
+    list(stage = "04", tab = Sys.getenv("LEM_W04_CONFLICT_QUEUE_TAB", unset = "queue_w04_conflict_active")),
+    list(stage = "04", tab = Sys.getenv("LEM_W04_TEST_QUEUE_TAB", unset = "queue_w04_test_active")),
+    list(stage = "08", tab = Sys.getenv("LEM_W08_QUEUE_TAB", unset = "queue_w08_active"))
+  )
+}
+
+backend_reset_is_synthetic_batch <- function(batch_id) {
+  z <- tolower(trimws(as.character(batch_id %||% "")))
+  nzchar(z) && (
+    grepl("^test[-_]", z) ||
+    grepl("^w0[1248]-test", z) ||
+    grepl("synthetic", z, fixed = TRUE)
+  )
+}
+
+backend_reset_blockers <- function() {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tabs <- sheet_names_cached(ss)
+  blockers <- character()
+
+  for (spec in backend_reset_queue_specs()) {
+    tab <- as.character(spec$tab)
+    if (!nzchar(tab) || !tab %in% tabs) next
+    x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
+    if (!nrow(x)) next
+    if (!all(c("batch_id", "queue_sha256") %in% names(x))) {
+      blockers <- c(blockers, paste0(tab, ": queue schema is not recognised"))
+      next
+    }
+    batches <- unique(trimws(as.character(x$batch_id)))
+    hashes <- unique(tolower(trimws(as.character(x$queue_sha256))))
+    batches <- batches[nzchar(batches)]
+    hashes <- hashes[nzchar(hashes)]
+    if (length(batches) != 1L || length(hashes) != 1L) {
+      blockers <- c(blockers, paste0(tab, ": ambiguous batch/SHA state"))
+      next
+    }
+    if (backend_reset_is_synthetic_batch(batches[[1L]])) next
+    status <- latest_batch_status(spec$stage, batches[[1L]], hashes[[1L]])
+    if (!identical(status, "consumed")) {
+      blockers <- c(
+        blockers,
+        sprintf("%s: production batch %s is %s", tab, batches[[1L]], if(nzchar(status)) status else "not marked consumed")
+      )
+    }
+  }
+  unique(blockers)
+}
+
+archive_backend_queue_to_zenodo <- function(created_by = "") {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  token <- Sys.getenv("ZENODO_ACCESS_TOKEN", unset = "")
+  if (!nzchar(token)) stop("ZENODO_ACCESS_TOKEN is not configured; backend reset refused", call. = FALSE)
+
+  tabs <- sheet_names_cached(ss)
+  archive_tabs <- intersect(backend_reset_operational_tabs(), tabs)
+  td <- tempfile("lem-shiny-backend-archive-")
+  dir.create(td, recursive = TRUE)
+  data_dir <- file.path(td, "tabs")
+  dir.create(data_dir)
+
+  manifest_tabs <- list()
+  for (tab in archive_tabs) {
+    x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
+    safe_name <- gsub("[^A-Za-z0-9._-]+", "_", tab)
+    p <- file.path(data_dir, paste0(safe_name, ".csv"))
+    utils::write.csv(x, p, row.names = FALSE, na = "")
+    manifest_tabs[[tab]] <- list(
+      rows = nrow(x),
+      columns = ncol(x),
+      csv = basename(p),
+      sha256 = digest::digest(file = p, algo = "sha256", serialize = FALSE)
+    )
+  }
+
+  archived_at <- format(Sys.time(), tz = "UTC", format = "%Y-%m-%dT%H:%M:%SZ")
+  manifest <- list(
+    schema = "living-evidence-map-shiny-backend-archive-v1",
+    archived_at_utc = archived_at,
+    created_by = as.character(created_by),
+    sheet_id_sha256 = digest::digest(as.character(ss), algo = "sha256", serialize = FALSE),
+    excluded_tabs = intersect(c(user_registry_tab()), tabs),
+    tabs = manifest_tabs
+  )
+  manifest_path <- file.path(td, "manifest.json")
+  writeLines(jsonlite::toJSON(manifest, auto_unbox = TRUE, pretty = TRUE, null = "null"), manifest_path, useBytes = TRUE)
+
+  archive_path <- file.path(td, paste0("living-evidence-map-shiny-backend-", format(Sys.time(), tz="UTC", format="%Y%m%dT%H%M%SZ"), ".tar.gz"))
+  oldwd <- getwd()
+  on.exit(setwd(oldwd), add = TRUE)
+  setwd(td)
+  utils::tar(basename(archive_path), files = c("manifest.json", "tabs"), compression = "gzip", tar = "internal")
+  setwd(oldwd)
+  if (!file.exists(archive_path) || file.info(archive_path)$size <= 0) stop("Backend archive bundle was not created", call. = FALSE)
+
+  api <- "https://zenodo.org/api/deposit/depositions"
+  auth <- function(req) req |> httr2::req_headers(Authorization = paste("Bearer", token))
+  perform <- function(req, expected, label, timeout = 120) {
+    resp <- req |> httr2::req_timeout(timeout) |> httr2::req_error(is_error = function(resp) FALSE) |> httr2::req_perform()
+    status <- httr2::resp_status(resp)
+    if (!status %in% expected) {
+      body <- tryCatch(httr2::resp_body_string(resp), error = function(e) "")
+      stop(sprintf("Zenodo %s HTTP %d: %s", label, status, body), call. = FALSE)
+    }
+    resp
+  }
+
+  created <- perform(
+    httr2::request(api) |>
+      httr2::req_method("POST") |>
+      auth() |>
+      httr2::req_headers("Content-Type" = "application/json") |>
+      httr2::req_body_raw(charToRaw("{}"), type = "application/json"),
+    201L, "draft creation"
+  ) |> httr2::resp_body_json(simplifyVector = FALSE)
+
+  dep_id <- as.character(created$id)
+  bucket <- as.character(created$links$bucket)
+  metadata <- list(metadata = list(
+    title = paste0("Living Evidence Map Shiny adjudication backend archive | ", substr(archived_at, 1L, 10L)),
+    upload_type = "dataset",
+    publication_date = format(Sys.Date(), "%Y-%m-%d"),
+    description = "<p>Restricted operational archive of the Living Evidence Map Shiny adjudication backend immediately before an administrator reset. User registry data are excluded.</p>",
+    creators = list(list(name = "Haddaway, Neal")),
+    access_right = "restricted",
+    access_conditions = "Operational adjudication provenance archive. Access is restricted.",
+    keywords = list("Living Evidence Map", "Shiny", "adjudication", "backend archive")
+  ))
+
+  perform(
+    httr2::request(paste0(api, "/", dep_id)) |>
+      httr2::req_method("PUT") |>
+      auth() |>
+      httr2::req_headers("Content-Type" = "application/json") |>
+      httr2::req_body_json(metadata, auto_unbox = TRUE),
+    200L, "metadata update"
+  )
+
+  uploaded <- perform(
+    httr2::request(paste0(bucket, "/", URLencode(basename(archive_path), reserved = TRUE))) |>
+      httr2::req_method("PUT") |>
+      auth() |>
+      httr2::req_headers(Expect = "") |>
+      httr2::req_body_file(archive_path),
+    c(200L, 201L), "archive upload", timeout = 600
+  ) |> httr2::resp_body_json(simplifyVector = FALSE)
+
+  published <- perform(
+    httr2::request(paste0(api, "/", dep_id, "/actions/publish")) |>
+      httr2::req_method("POST") |>
+      auth(),
+    c(200L, 201L, 202L), "publish"
+  ) |> httr2::resp_body_json(simplifyVector = FALSE)
+
+  record_id <- as.character(published$record_id %||% published$id %||% dep_id)
+  list(
+    record_id = record_id,
+    doi = as.character(published$doi %||% ""),
+    archive_sha256 = digest::digest(file = archive_path, algo = "sha256", serialize = FALSE),
+    archived_at_utc = archived_at,
+    tabs = archive_tabs
+  )
+}
+
+reset_backend_queue_state <- function(created_by = "") {
+  if (!identical(storage_backend(), "google_sheets")) {
+    stop("Backend reset is only available with the Google Sheets backend", call. = FALSE)
+  }
+  blockers <- backend_reset_blockers()
+  if (length(blockers)) {
+    stop(
+      paste(c("Backend reset refused because live production queue state remains:", blockers), collapse = "\n"),
+      call. = FALSE
+    )
+  }
+
+  receipt <- archive_backend_queue_to_zenodo(created_by = created_by)
+
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tabs <- sheet_names_cached(ss)
+  targets <- intersect(backend_reset_operational_tabs(), tabs)
+  for (tab in targets) {
+    googlesheets4::sheet_delete(ss, sheet = tab)
+    invalidate_sheet_names_cache(ss)
+  }
+
+  list(
+    archived = receipt,
+    deleted_tabs = targets,
+    preserved_tabs = intersect(c(user_registry_tab()), sheet_names_cached(ss))
+  )
+}
