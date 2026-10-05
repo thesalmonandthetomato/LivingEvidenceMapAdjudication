@@ -115,10 +115,7 @@ sheet_add_cached <- function(ss, sheet) {
 sheet_decision_tab <- function() Sys.getenv("LEM_GOOGLE_DECISIONS_TAB", unset = "decisions")
 
 sheet_id_from_env <- function() {
-  Sys.getenv(
-    "LEM_GOOGLE_SHEET_ID",
-    unset = "1e9-V67-8lwPO6YBqeGJWn-SFanWSze5Gi2ToKR4bXvA"
-  )
+  "1e9-V67-8lwPO6YBqeGJWn-SFanWSze5Gi2ToKR4bXvA"
 }
 
 
