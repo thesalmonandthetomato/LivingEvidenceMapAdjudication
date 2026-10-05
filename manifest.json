@@ -1695,10 +1695,10 @@
   },
   "files": {
     ".github/workflows/validate.yml": {
-      "checksum": "1e52e7d2baa0146e5d13e350aa6eb3d6"
+      "checksum": "1bf54114f52c98b210a8aa977965a21b"
     },
     "app.R": {
-      "checksum": "5652ba99c4f6c109f2d2ae01bf647c69"
+      "checksum": "fbb8a047efabe87390a1bf63d9c974db"
     },
     "docs/production_multiuser_cutover_20261005.md": {
       "checksum": "0c8abb9a02a372eec4f35bb66812bce6"
@@ -1830,7 +1830,7 @@
       "checksum": "6cfc5fa65dc8fd1020fad3ca42f2e397"
     },
     "R/storage_sheets.R": {
-      "checksum": "3852ccb844a2c38af19d53c05b22d911"
+      "checksum": "86bcd8eb8ffa6a384aea1c10aa823502"
     },
     "R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
@@ -1840,6 +1840,9 @@
     },
     "R/w04_blind_resolution.R": {
       "checksum": "ba6fd28afe370e10d7010181e3aff887"
+    },
+    "R/w04_human_kappa_registry.R": {
+      "checksum": "108d9b0aedd6fe5ec693264b68dfe3d5"
     },
     "R/w04_kappa_registry.R": {
       "checksum": "d578ba9d982bb42da09da0face770fec"
@@ -1885,6 +1888,9 @@
     },
     "tests/test_w04_blind_resolution.R": {
       "checksum": "a11cf1658b0f1913ddc0d1e637cdcef4"
+    },
+    "tests/test_w04_human_kappa_registry.R": {
+      "checksum": "4d54299f9568c7ac4c7805ab423b52d6"
     },
     "tests/test_w04_kappa_registry.R": {
       "checksum": "9d9ad1bb4c81ce4f65268f3843c5e429"
