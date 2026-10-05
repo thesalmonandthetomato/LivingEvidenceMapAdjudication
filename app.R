@@ -4687,14 +4687,20 @@ server <- function(input, output, session) {
       hits <- Filter(function(x) {
         identical(as.character(x$source %||% ""), as.character(rec$source %||% "")) &&
           identical(as.character(x$source_record_id %||% ""), as.character(rec$source_record_id %||% "")) &&
-          identical(as.character(x$action %||% ""), "replace_abstract")
+          as.character(x$action %||% "") %in% c("replace_abstract","strip_abstract")
       }, w01_repairs_rv() %||% list())
       if (length(hits)) hits[[1L]] else NULL
     }
+    effective_abstract <- function(rec, repair) {
+      if (is.null(repair)) return(normalise_display_text(rec$abstract))
+      action <- as.character(repair$action %||% "")
+      if (identical(action, "strip_abstract")) return("")
+      normalise_display_text(repair$value)
+    }
     repair_i <- repair_for(z$record_i)
     repair_j <- repair_for(z$record_j)
-    abstract_i <- if (is.null(repair_i)) normalise_display_text(z$record_i$abstract) else normalise_display_text(repair_i$value)
-    abstract_j <- if (is.null(repair_j)) normalise_display_text(z$record_j$abstract) else normalise_display_text(repair_j$value)
+    abstract_i <- effective_abstract(z$record_i, repair_i)
+    abstract_j <- effective_abstract(z$record_j, repair_j)
     record_i_view <- z$record_i
     record_j_view <- z$record_j
     record_i_view$display_abstract <- abstract_i
