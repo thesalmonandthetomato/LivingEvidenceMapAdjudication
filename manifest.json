@@ -1698,7 +1698,7 @@
       "checksum": "95fa075f408f8d8e15c058c3f2380aee"
     },
     "app.R": {
-      "checksum": "7d4568060f4491464bd6acbd742a316a"
+      "checksum": "9db9023ed3c9df0220c0c8515a09e3ff"
     },
     "docs/production_multiuser_cutover_20261005.md": {
       "checksum": "0c8abb9a02a372eec4f35bb66812bce6"
@@ -1815,7 +1815,7 @@
       "checksum": "67d1d4345f1982faf86c0fa6bd74fd7a"
     },
     "R/auth.R": {
-      "checksum": "c62c15a501f6f9863a64cebfdf518cd1"
+      "checksum": "d4f1a3ef2bb48d5c04ed98f882fd5626"
     },
     "R/decision_events.R": {
       "checksum": "544d137b964d270470ecfe99197ddee1"
@@ -1854,7 +1854,7 @@
       "checksum": "56bc23194ae9612a912dbc192d373244"
     },
     "tests/test_auth.R": {
-      "checksum": "596ff6c57bad9a02f599e30720d63926"
+      "checksum": "d65a43092b52c64f389c4f77226e7022"
     },
     "tests/test_decision_events.R": {
       "checksum": "27f6693f251666375388b6c71d038c95"
