@@ -3435,15 +3435,8 @@ server <- function(input, output, session) {
       v <- suppressWarnings(as.numeric(as.character(z)))
       if (is.na(v)) "—" else sprintf("%.3f",v)
     }
-    rows <- list(
-      tags$tr(
-        tags$td(tags$strong("Cumulative")),
-        tags$td(tags$strong(format(summary$manually_screened,big.mark=","))),
-        tags$td(tags$strong(if(is.na(summary$kappa))"—" else sprintf("%.3f",summary$kappa))),
-        tags$td("—")
-      )
-    )
-    ord <- order(as.character(x$date),as.character(x$created_at_utc),decreasing=TRUE)
+    rows <- list()
+    ord <- order(as.character(x$date),as.character(x$created_at_utc),decreasing=FALSE)
     for (i in ord) {
       rows[[length(rows)+1L]] <- tags$tr(
         tags$td(fmt_date(x$date[[i]])),
@@ -3452,6 +3445,12 @@ server <- function(input, output, session) {
         tags$td(fmt_num(x$humans_model_fleiss_kappa[[i]]))
       )
     }
+    rows[[length(rows)+1L]] <- tags$tr(
+      tags$td(tags$em("Cumulative")),
+      tags$td(tags$em(format(summary$manually_screened,big.mark=","))),
+      tags$td(tags$em(if(is.na(summary$kappa))"—" else sprintf("%.3f",summary$kappa))),
+      tags$td(tags$em("—"))
+    )
     tagList(
       tags$strong("Kappa history"),
       tags$p(
