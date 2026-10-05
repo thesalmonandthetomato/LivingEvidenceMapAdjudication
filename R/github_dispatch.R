@@ -10,6 +10,75 @@ github_dispatch_repo <- function() {
   Sys.getenv("LEM_GITHUB_DISPATCH_REPO", unset = "thesalmonandthetomato/LivingEvidenceMap")
 }
 
+
+dispatch_w01_export <- function(batch_id, queue_sha256) {
+  batch_id <- as.character(batch_id)
+  queue_sha256 <- tolower(as.character(queue_sha256))
+  if (!nzchar(batch_id)) stop("Invalid W01 batch ID", call.=FALSE)
+  if (!grepl("^[0-9a-f]{64}$", queue_sha256)) stop("Invalid W01 queue SHA-256", call.=FALSE)
+
+  endpoint <- sprintf(
+    "https://api.github.com/repos/%s/actions/workflows/shiny-adjudication-dry-run-export-w01.yml/dispatches",
+    github_dispatch_repo()
+  )
+
+  req <- httr2::request(endpoint) |>
+    httr2::req_method("POST") |>
+    httr2::req_headers(
+      Authorization = paste("Bearer", github_dispatch_token()),
+      Accept = "application/vnd.github+json",
+      `X-GitHub-Api-Version` = "2022-11-28",
+      `User-Agent` = "LivingEvidenceMap-Adjudication"
+    ) |>
+    httr2::req_body_json(list(
+      ref = "workflow01-final-architecture"
+    ))
+
+  resp <- httr2::req_perform(req)
+  status <- httr2::resp_status(resp)
+  if (identical(status, 204L)) return(invisible(TRUE))
+  if (!identical(status, 404L)) {
+    stop(sprintf("W01 export workflow dispatch failed with HTTP %d", status), call.=FALSE)
+  }
+
+  stamp <- format(Sys.time(), tz="UTC", format="%Y%m%dT%H%M%SZ")
+  marker_path <- sprintf(
+    "docs/deduplication/w01_export_requests/%s-%s.json",
+    batch_id, stamp
+  )
+  payload <- jsonlite::toJSON(list(
+    batch_id=batch_id,
+    queue_sha256=queue_sha256,
+    requested_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
+    requested_by="LivingEvidenceMapAdjudication"
+  ),auto_unbox=TRUE,pretty=TRUE)
+
+  endpoint <- sprintf(
+    "https://api.github.com/repos/%s/contents/%s",
+    github_dispatch_repo(), marker_path
+  )
+  marker_req <- httr2::request(endpoint) |>
+    httr2::req_method("PUT") |>
+    httr2::req_headers(
+      Authorization = paste("Bearer", github_dispatch_token()),
+      Accept = "application/vnd.github+json",
+      `X-GitHub-Api-Version` = "2022-11-28",
+      `User-Agent` = "LivingEvidenceMap-Adjudication"
+    ) |>
+    httr2::req_body_json(list(
+      message=sprintf("Request W01 export for %s",batch_id),
+      content=jsonlite::base64_enc(charToRaw(payload)),
+      branch="workflow01-final-architecture"
+    ))
+
+  marker_resp <- httr2::req_perform(marker_req)
+  marker_status <- httr2::resp_status(marker_resp)
+  if (!marker_status %in% c(200L,201L)) {
+    stop(sprintf("W01 export request fallback failed with HTTP %d",marker_status),call.=FALSE)
+  }
+  invisible(TRUE)
+}
+
 dispatch_w02_resume <- function(source_run_id, publish = TRUE) {
   source_run_id <- as.character(source_run_id)
   if (!grepl("^[0-9]+$", source_run_id)) stop("Invalid W02 source run ID", call. = FALSE)
