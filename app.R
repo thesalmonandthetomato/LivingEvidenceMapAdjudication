@@ -23,6 +23,7 @@ source("R/github_dispatch.R", local = TRUE)
 
 queue_path <- Sys.getenv("LEM_W01_QUEUE", unset = "fixtures/w01_real_sample_2.jsonl")
 decision_path <- Sys.getenv("LEM_W01_DECISIONS", unset = "local_state/w01_decisions.jsonl")
+w01_repair_path <- Sys.getenv("LEM_W01_REPAIRS", unset = "local_state/w01_repairs.jsonl")
 assignment_path <- Sys.getenv("LEM_ASSIGNMENTS", unset = "fixtures/assignments_w01_local.jsonl")
 reviewer <- Sys.getenv("LEM_REVIEWER", unset = "prototype-reviewer")
 
@@ -384,6 +385,25 @@ field_pair <- function(a, b, char_level = FALSE) {
   token_lcs_matches(a, b, char_level = char_level)
 }
 
+normalise_doi_value <- function(x) {
+  z <- gsub("[[:space:]]+", "", as.character(x %||% ""))
+  z <- sub("^https?://(dx\\.)?doi\\.org/", "", z, ignore.case=TRUE)
+  z <- sub("^doi:", "", z, ignore.case=TRUE)
+  trimws(z)
+}
+
+doi_link <- function(x, label = NULL) {
+  doi <- normalise_doi_value(x)
+  if (!nzchar(doi)) return("")
+  shown <- if (is.null(label)) doi else label
+  tags$a(
+    href = paste0("https://doi.org/", doi),
+    target = "_blank",
+    rel = "noopener noreferrer",
+    shown
+  )
+}
+
 record_card <- function(rec, label, fields, side = c("a","b")) {
   side <- match.arg(side)
   card(
@@ -399,12 +419,31 @@ record_card <- function(rec, label, fields, side = c("a","b")) {
         tags$dt("Authors"), tags$dd(fields$authors[[side]]),
         tags$dt("Year"), tags$dd(fields$year[[side]]),
         tags$dt("Journal"), tags$dd(fields$journal[[side]]),
-        tags$dt("DOI"), tags$dd(fields$doi[[side]]),
+        tags$dt("DOI"), tags$dd(doi_link(rec$doi, fields$doi[[side]])),
         tags$dt("Source ID"), tags$dd(fields$source_record_id[[side]])
       ),
       tags$hr(class = "record-divider"),
       tags$h6(class = "abstract-heading", "Abstract"),
-      div(class = "abstract-text", fields$abstract[[side]])
+      div(class = "abstract-text", fields$abstract[[side]]),
+      tags$hr(class = "record-divider"),
+      textAreaInput(
+        paste0("w01_abstract_", side),
+        "Corrected abstract",
+        value = as.character(rec$display_abstract %||% rec$abstract %||% ""),
+        rows = 5,
+        width = "100%"
+      ),
+      div(
+        class = "d-flex align-items-center gap-2 flex-wrap",
+        actionButton(
+          paste0("save_w01_abstract_", side),
+          paste0("Save corrected abstract ", toupper(side)),
+          class = "btn-outline-primary btn-sm"
+        ),
+        if (isTRUE(rec$abstract_repair_saved)) {
+          tags$span(class = "text-success small", "Saved correction will be applied to the source record.")
+        }
+      )
     )
   )
 }
@@ -724,6 +763,7 @@ server <- function(input, output, session) {
   test_queue_status <- reactiveVal("")
   w08_fresh_test_status <- reactiveVal("")
   w01_all_cases_rv <- reactiveVal(list())
+  w01_repairs_rv <- reactiveVal(list())
   app_view <- reactiveVal("tasks")
   failed_attempts <- reactiveVal(0L)
   lock_until <- reactiveVal(as.POSIXct(NA))
@@ -4210,6 +4250,7 @@ server <- function(input, output, session) {
     assignment_manage_status("")
     test_queue_status("")
     w01_all_cases_rv(list())
+    w01_repairs_rv(list())
     w02_all_cases_rv(list())
     w04_all_cases_rv(list())
     w04_consistency_analyses_rv(list())
@@ -4263,6 +4304,9 @@ server <- function(input, output, session) {
         if (!is.null(batch)) {
           all_decisions <- read_active_decisions(decision_path)
           current_decisions <- filter_batch_decisions(all_decisions, batch$queue_sha256)
+          w01_repairs_rv(read_active_w01_repairs(w01_repair_path, batch$queue_sha256))
+        } else {
+          w01_repairs_rv(list())
         }
         w02_batch <- load_w02_batch()
 
@@ -4619,18 +4663,33 @@ server <- function(input, output, session) {
         list(label="Classifier", value=ev$classifier_decision %||% ""),
         list(label="Classifier rule", value=ev$classifier_rule %||% "")
       ))
+    repair_for <- function(rec) {
+      hits <- Filter(function(x) {
+        identical(as.character(x$source %||% ""), as.character(rec$source %||% "")) &&
+          identical(as.character(x$source_record_id %||% ""), as.character(rec$source_record_id %||% "")) &&
+          identical(as.character(x$action %||% ""), "replace_abstract")
+      }, w01_repairs_rv() %||% list())
+      if (length(hits)) hits[[1L]] else NULL
+    }
+    repair_i <- repair_for(z$record_i)
+    repair_j <- repair_for(z$record_j)
+    abstract_i <- if (is.null(repair_i)) normalise_display_text(z$record_i$abstract) else normalise_display_text(repair_i$value)
+    abstract_j <- if (is.null(repair_j)) normalise_display_text(z$record_j$abstract) else normalise_display_text(repair_j$value)
+    record_i_view <- z$record_i
+    record_j_view <- z$record_j
+    record_i_view$display_abstract <- abstract_i
+    record_j_view$display_abstract <- abstract_j
+    record_i_view$abstract_repair_saved <- !is.null(repair_i)
+    record_j_view$abstract_repair_saved <- !is.null(repair_j)
     fields <- list(
       source = field_pair(z$record_i$source, z$record_j$source),
       title = field_pair(z$record_i$title, z$record_j$title),
       authors = field_pair(z$record_i$authors, z$record_j$authors),
       year = field_pair(z$record_i$year, z$record_j$year),
       journal = field_pair(z$record_i$journal, z$record_j$journal),
-      doi = field_pair(z$record_i$doi, z$record_j$doi, char_level = TRUE),
+      doi = field_pair(normalise_doi_value(z$record_i$doi), normalise_doi_value(z$record_j$doi), char_level = TRUE),
       source_record_id = field_pair(z$record_i$source_record_id, z$record_j$source_record_id, char_level = TRUE),
-      abstract = field_pair(
-        normalise_display_text(z$record_i$abstract),
-        normalise_display_text(z$record_j$abstract)
-      )
+      abstract = field_pair(abstract_i, abstract_j)
     )
     fields$source$a <- tags$span(class = "source-badge", fields$source$a)
     fields$source$b <- tags$span(class = "source-badge", fields$source$b)
@@ -4638,8 +4697,8 @@ server <- function(input, output, session) {
     tagList(
       layout_columns(
         col_widths = c(6,6),
-        record_card(z$record_i, "Record A", fields, "a"),
-        record_card(z$record_j, "Record B", fields, "b")
+        record_card(record_i_view, "Record A", fields, "a"),
+        record_card(record_j_view, "Record B", fields, "b")
       ),
       card(
         class="mt-3",
@@ -4794,7 +4853,7 @@ server <- function(input, output, session) {
             div(class="record-title",title_pair$a),
             tags$dl(
               class="record-meta",
-              tags$dt("DOI"),tags$dd(doi_pair$a)
+              tags$dt("DOI"),tags$dd(doi_link(can_doi, doi_pair$a))
             ),
             tags$hr(class="record-divider"),
             tags$h6(class="abstract-heading","Abstract"),
@@ -4809,7 +4868,7 @@ server <- function(input, output, session) {
             div(class="record-title",title_pair$b),
             tags$dl(
               class="record-meta",
-              tags$dt("Returned DOI"),tags$dd(doi_pair$b),
+              tags$dt("Returned DOI"),tags$dd(doi_link(returned_doi, doi_pair$b)),
               tags$dt("EID"),tags$dd(pr$eid %||% z$conflict$eid %||% ""),
               tags$dt("Keywords"),tags$dd(provider_keywords)
             ),
@@ -5042,7 +5101,7 @@ server <- function(input, output, session) {
           div(class="w04-citation-item",span(class="w04-citation-label","Volume"),span(class="w04-citation-value",b$volume %||% "")),
           div(class="w04-citation-item",span(class="w04-citation-label","Pages"),span(class="w04-citation-value",b$pages %||% ""))
         ),
-        div(class="w04-doi",tags$strong("DOI: "),b$doi %||% ""),
+        div(class="w04-doi",tags$strong("DOI: "),doi_link(b$doi %||% "")),
         tags$h6(class="abstract-heading","Abstract"),
         div(
           class="abstract-text",
@@ -5251,7 +5310,7 @@ server <- function(input, output, session) {
           div(class="w04-citation-item",span(class="w04-citation-label","Volume"),span(class="w04-citation-value",b$volume %||% "")),
           div(class="w04-citation-item",span(class="w04-citation-label","Pages"),span(class="w04-citation-value",b$pages %||% ""))
         ),
-        div(class="w04-doi",tags$strong("DOI: "),b$doi %||% ""),
+        div(class="w04-doi",tags$strong("DOI: "),doi_link(b$doi %||% "")),
         tags$h6(class="abstract-heading","Abstract"),
         div(class="abstract-text",highlight_screening_text(b$abstract %||% "",w04_resolution_include_terms(),w04_resolution_exclude_terms())),
         div(class="mt-3 p-2 border rounded",
@@ -6115,6 +6174,66 @@ server <- function(input, output, session) {
     w08_idx(if(length(later)) later[[1L]] else unresolved[[1L]])
     invisible(TRUE)
   }
+
+  save_w01_abstract_repair <- function(side = c("a","b")) {
+    side <- match.arg(side)
+    req(authenticated())
+    if(!session_can("adjudicate_assigned")) {
+      status("You do not have permission to edit W01 record metadata.")
+      return(invisible(FALSE))
+    }
+    z <- current_case()
+    rec <- if (identical(side,"a")) z$record_i else z$record_j
+    value <- trimws(as.character(if (identical(side,"a")) input$w01_abstract_a else input$w01_abstract_b))
+    if (!nzchar(value)) {
+      status("Corrected abstract cannot be blank.")
+      return(invisible(FALSE))
+    }
+    original <- trimws(as.character(rec$abstract %||% ""))
+    active <- w01_repairs_rv() %||% list()
+    hits <- Filter(function(x) {
+      identical(as.character(x$source %||% ""), as.character(rec$source %||% "")) &&
+        identical(as.character(x$source_record_id %||% ""), as.character(rec$source_record_id %||% ""))
+    }, active)
+    prior <- if (length(hits)) hits[[1L]] else NULL
+    if (identical(value, original) && is.null(prior)) {
+      status("No abstract change to save.")
+      return(invisible(FALSE))
+    }
+    repair <- list(
+      review_case_id=as.character(z$review_case_id),
+      source=as.character(rec$source),
+      source_record_id=as.character(rec$source_record_id),
+      action="replace_abstract",
+      value=value,
+      reason="human_abstract_correction_during_deduplication",
+      reviewer=session_reviewer_id(),
+      saved_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
+      queue_sha256=queue_sha_rv()
+    )
+    saved <- tryCatch(
+      save_active_w01_repair(repair, w01_repair_path, prior_repair=prior),
+      error=function(e) {
+        status(paste("Abstract correction save failed:", conditionMessage(e)))
+        NULL
+      }
+    )
+    if (is.null(saved)) return(invisible(FALSE))
+    remaining <- Filter(function(x) !(
+      identical(as.character(x$source %||% ""), as.character(rec$source %||% "")) &&
+      identical(as.character(x$source_record_id %||% ""), as.character(rec$source_record_id %||% ""))
+    ), active)
+    w01_repairs_rv(c(remaining,list(saved)))
+    status(sprintf("Saved corrected abstract for Record %s.", toupper(side)))
+    invisible(TRUE)
+  }
+
+  observeEvent(input$save_w01_abstract_a, {
+    save_w01_abstract_repair("a")
+  })
+  observeEvent(input$save_w01_abstract_b, {
+    save_w01_abstract_repair("b")
+  })
 
   save_choice <- function(choice) {
     req(authenticated())
