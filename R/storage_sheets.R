@@ -346,19 +346,20 @@ read_sheet_w01_queue <- function(
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
 
-  if (!nzchar(tab)) {
-    tabs <- sheet_names_cached(ss)
-    if ("queue_w01_active" %in% tabs) {
-      tab <- "queue_w01_active"
-    } else if ("queue_w01_legacy_730" %in% tabs) {
-      tab <- "queue_w01_legacy_730"
-    } else {
-      return(NULL)
-    }
-  }
-
+  # Production W01 always publishes to queue_w01_active. Prefer that canonical
+  # tab even if an old deployment still carries a stale LEM_W01_QUEUE_TAB
+  # override. Retain the configured/legacy tab only as a fallback when the
+  # canonical active tab genuinely does not exist.
   tabs <- sheet_names_cached(ss)
-  if (!tab %in% tabs) return(NULL)
+  if ("queue_w01_active" %in% tabs) {
+    tab <- "queue_w01_active"
+  } else if (nzchar(tab) && tab %in% tabs) {
+    tab <- tab
+  } else if ("queue_w01_legacy_730" %in% tabs) {
+    tab <- "queue_w01_legacy_730"
+  } else {
+    return(NULL)
+  }
 
   x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
   required <- c("batch_id","queue_sha256","case_index","review_case_id","case_json")
