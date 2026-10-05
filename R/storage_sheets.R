@@ -1333,17 +1333,18 @@ pipeline_status_tab <- function() {
 }
 
 read_latest_pipeline_status <- function() {
-  repo_url <- Sys.getenv(
-    "LEM_CURRENT_RUN_STATUS_URL",
-    unset = "https://raw.githubusercontent.com/thesalmonandthetomato/LivingEvidenceMap/workflow01-final-architecture/docs/current_run/current_run_status.json"
-  )
-  current <- tryCatch(
-    jsonlite::fromJSON(repo_url, simplifyVector = FALSE),
-    error = function(e) NULL
-  )
-  if (!is.null(current) && identical(as.character(current$schema), "living-evidence-map-current-run-status-v1")) {
-    val <- function(x) if (is.null(x) || !length(x)) "" else as.character(x[[1L]])
-    return(list(
+  val <- function(x) if (is.null(x) || !length(x)) "" else as.character(x[[1L]])
+
+  repo_status <- tryCatch({
+    repo_url <- Sys.getenv(
+      "LEM_CURRENT_RUN_STATUS_URL",
+      unset = "https://raw.githubusercontent.com/thesalmonandthetomato/LivingEvidenceMap/workflow01-final-architecture/docs/current_run/current_run_status.json"
+    )
+    current <- jsonlite::fromJSON(repo_url, simplifyVector = FALSE)
+    if (!identical(as.character(current$schema), "living-evidence-map-current-run-status-v1")) {
+      stop("Unexpected current-run status schema", call. = FALSE)
+    }
+    list(
       update_id = val(current$update_id),
       event_at_utc = val(current$last_updated_at_utc),
       stage = val(current$progress$current_stage),
@@ -1363,42 +1364,57 @@ read_latest_pipeline_status <- function() {
       completed_through = val(current$progress$completed_through),
       active_workflow = val(current$progress$active_position),
       status_label = val(current$progress$status_label)
-    ))
+    )
+  }, error = function(e) NULL)
+
+  sheet_status <- tryCatch({
+    gs4_auth_from_env()
+    ss <- sheet_id_from_env()
+    tab <- pipeline_status_tab()
+    tabs <- sheet_names_cached(ss)
+    if(!tab %in% tabs) return(NULL)
+    x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+    if(!nrow(x)) return(NULL)
+
+    base <- c(
+      "event_id","update_id","event_at_utc","stage","workflow_run_id",
+      "last_search_date","canonical_existing","search_results_total",
+      "deduplicated_records","enriched_records","retracted_records",
+      "screened_include","screened_exclude",
+      "completed_through","active_workflow","status_label"
+    )
+    miss <- setdiff(base,names(x))
+    if(length(miss)) stop("pipeline_run_status missing field(s): ",paste(miss,collapse=", "),call.=FALSE)
+
+    if(all(c("geography_with","geography_without","topic_with","topic_without") %in% names(x))) {
+      cols <- c(base[1:13],"geography_with","geography_without","topic_with","topic_without",base[14:16])
+      return(x[nrow(x),cols,drop=FALSE] |> as.list())
+    }
+
+    if(all(c("geography_coded","topic_coded") %in% names(x))) {
+      z <- x[nrow(x),base,drop=FALSE] |> as.list()
+      z$geography_with <- as.character(x$geography_coded[[nrow(x)]])
+      z$geography_without <- ""
+      z$topic_with <- as.character(x$topic_coded[[nrow(x)]])
+      z$topic_without <- ""
+      return(z)
+    }
+
+    NULL
+  }, error = function(e) NULL)
+
+  if (is.null(repo_status)) return(sheet_status)
+  if (is.null(sheet_status)) return(repo_status)
+
+  event_time <- function(z) {
+    raw <- as.character(z$event_at_utc %||% "")
+    parsed <- suppressWarnings(as.POSIXct(raw, format="%Y-%m-%dT%H:%M:%SZ", tz="UTC"))
+    if (is.na(parsed)) as.POSIXct("1970-01-01", tz="UTC") else parsed
   }
 
-  gs4_auth_from_env()
-  ss <- sheet_id_from_env()
-  tab <- pipeline_status_tab()
-  tabs <- sheet_names_cached(ss)
-  if(!tab %in% tabs) return(NULL)
-  x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
-  if(!nrow(x)) return(NULL)
-
-  base <- c(
-    "event_id","update_id","event_at_utc","stage","workflow_run_id",
-    "last_search_date","canonical_existing","search_results_total",
-    "deduplicated_records","enriched_records","retracted_records",
-    "screened_include","screened_exclude",
-    "completed_through","active_workflow","status_label"
-  )
-  miss <- setdiff(base,names(x))
-  if(length(miss)) stop("pipeline_run_status missing field(s): ",paste(miss,collapse=", "),call.=FALSE)
-
-  if(all(c("geography_with","geography_without","topic_with","topic_without") %in% names(x))) {
-    cols <- c(base[1:13],"geography_with","geography_without","topic_with","topic_without",base[14:16])
-    return(x[nrow(x),cols,drop=FALSE] |> as.list())
-  }
-
-  if(all(c("geography_coded","topic_coded") %in% names(x))) {
-    z <- x[nrow(x),base,drop=FALSE] |> as.list()
-    z$geography_with <- as.character(x$geography_coded[[nrow(x)]])
-    z$geography_without <- ""
-    z$topic_with <- as.character(x$topic_coded[[nrow(x)]])
-    z$topic_without <- ""
-    return(z)
-  }
-
-  NULL
+  # The Sheet is written before the branch status commit. Prefer it only when
+  # it is strictly newer; otherwise GitHub remains the canonical tie-breaker.
+  if (event_time(sheet_status) > event_time(repo_status)) sheet_status else repo_status
 }
 
 
