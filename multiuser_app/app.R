@@ -667,6 +667,52 @@ ui <- page_fillable(
   uiOutput("root_ui")
 )
 
+
+read_authoritative_w08_metrics <- function(
+  registry_url = Sys.getenv(
+    "LEM_W08_REGISTRY_URL",
+    unset = "https://raw.githubusercontent.com/thesalmonandthetomato/LivingEvidenceMap/workflow01-final-architecture/docs/workflow08/zenodo_registry.csv"
+  ),
+  pointer_base = Sys.getenv(
+    "LEM_W08_POINTER_BASE",
+    unset = "https://raw.githubusercontent.com/thesalmonandthetomato/LivingEvidenceMap/workflow01-final-architecture/docs/workflow08/zenodo"
+  )
+) {
+  reg <- utils::read.csv(registry_url, stringsAsFactors = FALSE, check.names = FALSE)
+  required <- c("source_run_id", "status")
+  if (!all(required %in% names(reg))) stop("W08 registry contract mismatch", call. = FALSE)
+
+  hit <- reg[tolower(trimws(as.character(reg$status))) == "authoritative", , drop = FALSE]
+  if (nrow(hit) != 1L) stop("Expected exactly one authoritative W08 registry row", call. = FALSE)
+
+  run_id <- trimws(as.character(hit$source_run_id[[1L]]))
+  if (!grepl("^[0-9]+$", run_id)) stop("Invalid authoritative W08 source run ID", call. = FALSE)
+
+  pointer_name <- paste0("run-", run_id, ".json")
+  pointer <- if (grepl("^https?://", pointer_base)) {
+    paste0(sub("/$", "", pointer_base), "/", pointer_name)
+  } else {
+    file.path(pointer_base, pointer_name)
+  }
+
+  x <- jsonlite::fromJSON(pointer, simplifyVector = FALSE)
+  pointer_run <- as.character(x$source_github_run_id %||% "")
+  n <- suppressWarnings(as.integer(x$canonical_records %||% NA_integer_))
+  if (!identical(pointer_run, run_id)) stop("Authoritative W08 pointer/run mismatch", call. = FALSE)
+  if (is.na(n) || n < 1L) stop("Authoritative W08 canonical count is invalid", call. = FALSE)
+
+  list(
+    canonical_records = n,
+    source_run_id = run_id,
+    doi = as.character(x$doi %||% "")
+  )
+}
+
+w08_status_is_final <- function(p) {
+  done <- suppressWarnings(as.integer(as.character((p %||% list())$completed_through %||% "")))
+  !is.na(done) && done >= 9L
+}
+
 server <- function(input, output, session) {
   authenticated <- reactiveVal(FALSE)
   current_user <- reactiveVal(NULL)
@@ -746,6 +792,7 @@ server <- function(input, output, session) {
   w08_status <- reactiveVal("")
   pipeline_status_rv <- reactiveVal(NULL)
   manual_screening_rv <- reactiveVal(NULL)
+  authoritative_w08_rv <- reactiveVal(NULL)
 
   observe({
     req(authenticated())
@@ -754,7 +801,17 @@ server <- function(input, output, session) {
       if(identical(storage_backend(),"google_sheets")) read_latest_pipeline_status() else NULL,
       error=function(e) NULL
     )
-    if(!is.null(refreshed)) pipeline_status_rv(refreshed)
+    if(!is.null(refreshed)) {
+      pipeline_status_rv(refreshed)
+      if (w08_status_is_final(refreshed)) {
+        authoritative_w08_rv(tryCatch(
+          read_authoritative_w08_metrics(),
+          error = function(e) NULL
+        ))
+      } else {
+        authoritative_w08_rv(NULL)
+      }
+    }
   })
 
   decision_ids <- function(ds = decisions()) {
@@ -1192,6 +1249,16 @@ server <- function(input, output, session) {
     status_label <- tolower(trimws(as.character(p$status_label %||% "")))
     update_finalised <- is.na(active) &&
       grepl("(^|\\b)(complete|completed|final|finalised|finalized)(\\b|$)", status_label)
+    w08_finalised <- w08_status_is_final(p)
+    w08_authoritative <- authoritative_w08_rv()
+    canonical_current <- w08_finalised &&
+      !is.null(w08_authoritative) &&
+      !is.na(suppressWarnings(as.integer(w08_authoritative$canonical_records %||% NA_integer_)))
+    canonical_value <- if (isTRUE(canonical_current)) {
+      w08_authoritative$canonical_records
+    } else {
+      p$canonical_existing
+    }
 
     workflow_labels <- c("0. Search","1. Dedup","2. Repair","3. Retract","4. Screen","5. Code","6. Country","7. Topics","8. Review","9. Report","10. Dashboard")
     segs <- lapply(seq_along(workflow_labels),function(i){
@@ -1266,9 +1333,9 @@ server <- function(input, output, session) {
         ),
         kpi(
           "Canonical database",
-          fmt_pipeline_n(p$canonical_existing),
-          if (isTRUE(update_finalised)) "current" else "pre-update",
-          if (isTRUE(update_finalised)) NULL else "pre-update"
+          fmt_pipeline_n(canonical_value),
+          if (isTRUE(canonical_current)) "current" else "pre-update",
+          if (isTRUE(canonical_current)) NULL else "pre-update"
         )
       ),
       div(class="workflow-line",segs),
