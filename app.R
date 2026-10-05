@@ -2634,21 +2634,24 @@ server <- function(input, output, session) {
             identical(z$workflow, "01") &&
             identical(z$task_type, "deduplication") &&
             isTRUE(w01_resolution_ready()) &&
-            !identical(batch_status_rv(), "review_complete") &&
             session_can("control_workflows")
           ) {
             tags$div(
               class = "d-flex flex-wrap align-items-center gap-2 mt-3 p-2 border rounded bg-light",
               tags$div(
-                tags$strong("W01 review complete"),
+                tags$strong(if (identical(batch_status_rv(),"review_complete")) "W01 ready to send" else "W01 review complete"),
                 tags$div(
                   class = "text-secondary small",
-                  "All deduplication cases have final decisions. Marking W01 as resolved will send the reviewed batch back to GitHub for integrity checks and resume."
+                  if (identical(batch_status_rv(),"review_complete")) {
+                    "All deduplication cases are complete. Send the reviewed batch back to GitHub for integrity checks and resume."
+                  } else {
+                    "All deduplication cases have final decisions. Marking W01 as resolved will send the reviewed batch back to GitHub for integrity checks and resume."
+                  }
                 )
               ),
               actionButton(
                 "w01_mark_resolved",
-                "Mark W01 as resolved",
+                if (identical(batch_status_rv(),"review_complete")) "Send W01 to GitHub" else "Mark W01 as resolved",
                 class = "btn-primary btn-sm"
               )
             )
@@ -5038,7 +5041,9 @@ server <- function(input, output, session) {
       return()
     }
     dispatched <- tryCatch({
-      mark_review_complete("01",batch_id_rv(),queue_sha_rv(),batch_status_rv)
+      if (!identical(batch_status_rv(),"review_complete")) {
+        mark_review_complete("01",batch_id_rv(),queue_sha_rv(),batch_status_rv)
+      }
       dispatch_w01_export(batch_id_rv(),queue_sha_rv())
       TRUE
     },error=function(e){
