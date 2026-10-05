@@ -49,3 +49,11 @@ stopifnot(all(file.exists(required_files)))
 stopifnot(file.exists("manifest.json"))
 
 cat("PASS: multi-user pre-production contract\n")
+
+
+app_src <- paste(readLines("app.R", warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+stopifnot(
+  grepl('idle_text = "No records awaiting review"', app_src, fixed = TRUE),
+  !grepl('"No active queue"', app_src, fixed = TRUE),
+  !grepl('"No reviewer conflicts"', app_src, fixed = TRUE)
+)
