@@ -14,6 +14,7 @@ source("R/decision_events.R", local = TRUE)
 source("R/w04_blind_resolution.R", local = TRUE)
 source("R/w04_validation_lifecycle.R", local = TRUE)
 source("R/w04_kappa_registry.R", local = TRUE)
+source("R/w04_human_kappa_registry.R", local = TRUE)
 source("R/storage_local.R", local = TRUE)
 source("R/storage_sheets.R", local = TRUE)
 source("R/storage_backend.R", local = TRUE)
@@ -757,6 +758,8 @@ server <- function(input, output, session) {
   w04_consistency_analyses_rv <- reactiveVal(list())
   w04_conflict_sets_rv <- reactiveVal(list())
   w04_kappa_registry_rv <- reactiveVal(w04_empty_kappa_registry())
+  w04_human_kappa_registry_rv <- reactiveVal(w04_empty_human_kappa_registry())
+  w04_pending_human_kappa_delete <- reactiveVal("")
   w04_consistency_history_loaded <- reactiveVal(FALSE)
   w04_consistency_status <- reactiveVal("")
   w04_refresh_status <- reactiveVal("")
@@ -1045,6 +1048,21 @@ server <- function(input, output, session) {
       decisions = w04_decisions(),
       batch_id = w04_batch_id_rv(),
       task_type = "manual_screening"
+    )
+  })
+
+  w04_selected_human_consistency_scope <- reactive({
+    rater_ids <- unique(as.character(input$w04_consistency_raters %||% character()))
+    if (length(rater_ids) < 2L || "model" %in% rater_ids) return(NULL)
+    scope_type <- as.character(input$w04_consistency_scope %||% "partial")
+    if (!scope_type %in% c("partial","full")) scope_type <- "partial"
+    w04_human_consistency_scope(
+      outcomes=w04_blind_outcomes(),
+      assignments=assignment_registry_rv(),
+      batch_id=w04_batch_id_rv(),
+      rater_ids=rater_ids,
+      registry=w04_human_kappa_registry_rv(),
+      scope_type=scope_type
     )
   })
 
@@ -2580,10 +2598,15 @@ server <- function(input, output, session) {
         available_raters
       )
     }
-    w04_selected_analysis <- w04_consistency_analysis(
-      w04_outcomes_now,
-      selected_raters
-    )
+    human_scope_now <- if (
+      length(selected_raters) >= 2L &&
+      !"model" %in% selected_raters
+    ) w04_selected_human_consistency_scope() else NULL
+    w04_selected_analysis <- if (!is.null(human_scope_now)) {
+      human_scope_now$analysis
+    } else {
+      w04_consistency_analysis(w04_outcomes_now,selected_raters)
+    }
 
     pairwise_rows <- lapply(w04_selected_analysis$pairwise,function(x) {
       directional <- x$directional %||% list()
@@ -2612,7 +2635,7 @@ server <- function(input, output, session) {
 
     w04_results_panel <- if (
       session_can("manage_assignments") &&
-      (has_w04_batch || nrow(w04_kappa_registry_rv()) > 0L)
+      (has_w04_batch || nrow(w04_kappa_registry_rv()) > 0L || nrow(w04_human_kappa_registry_rv()) > 0L)
     ) {
       tags$details(
         class="assignment-workflow assignment-submenu wf-w04 mb-2",
@@ -2645,6 +2668,8 @@ server <- function(input, output, session) {
         div(
           class="pt-2",
           uiOutput("w04_kappa_history"),
+          tags$hr(),
+          uiOutput("w04_human_kappa_history"),
           if (!has_w04_batch) {
             tags$div(
               class="text-secondary small",
@@ -2679,6 +2704,43 @@ server <- function(input, output, session) {
             selected=selected_raters,
             inline=TRUE
           ),
+          if (
+            length(selected_raters) >= 2L &&
+            !"model" %in% selected_raters
+          ) {
+            tagList(
+              radioButtons(
+                "w04_consistency_scope",
+                "Consistency set",
+                choices=c(
+                  "Since last saved check (Partial)"="partial",
+                  "Entire assignment (Full)"="full"
+                ),
+                selected=as.character(input$w04_consistency_scope %||% "partial"),
+                inline=TRUE
+              ),
+              if (!is.null(human_scope_now)) {
+                tags$div(
+                  class="text-secondary small mb-2",
+                  if (identical(human_scope_now$scope_type,"partial")) {
+                    sprintf(
+                      "%d jointly assigned · %d complete · %d previously saved · %d new records in this Partial check.",
+                      human_scope_now$assigned_n %||% 0L,
+                      human_scope_now$complete_n %||% 0L,
+                      human_scope_now$previously_saved_n %||% 0L,
+                      length(human_scope_now$target_case_ids %||% character())
+                    )
+                  } else {
+                    sprintf(
+                      "%d jointly assigned · %d complete. A Full result can be saved only when all jointly assigned records are complete.",
+                      human_scope_now$assigned_n %||% 0L,
+                      human_scope_now$complete_n %||% 0L
+                    )
+                  }
+                )
+              }
+            )
+          },
           if (length(selected_raters) < 2L) {
             tags$div(
               class="p-2 border rounded bg-light text-secondary small",
@@ -2748,8 +2810,12 @@ server <- function(input, output, session) {
                 class="d-flex align-items-center gap-2 mt-2",
                 actionButton(
                   "w04_save_consistency_analysis",
-                  "Save analysis",
-                  class="btn-primary btn-sm"
+                  if (
+                    length(selected_raters) >= 2L &&
+                    !"model" %in% selected_raters
+                  ) "Save consistency result" else "Save analysis",
+                  class="btn-primary btn-sm",
+                  disabled=if (!is.null(human_scope_now)) !isTRUE(human_scope_now$save_ready) else FALSE
                 ),
                 tags$span(
                   class="saved-note",
@@ -3384,6 +3450,7 @@ server <- function(input, output, session) {
     loaded <- tryCatch(
       list(
         analyses=read_w04_consistency_analyses(),
+        human_kappa=read_w04_human_kappa_registry(),
         conflict_sets=read_w04_conflict_sets()
       ),
       error=function(e)e
@@ -3394,6 +3461,7 @@ server <- function(input, output, session) {
       return()
     }
     w04_consistency_analyses_rv(loaded$analyses)
+    w04_human_kappa_registry_rv(loaded$human_kappa)
     w04_conflict_sets_rv(loaded$conflict_sets)
 
     current_sets <- Filter(
@@ -3452,7 +3520,7 @@ server <- function(input, output, session) {
       tags$td(tags$em("—"))
     )
     tagList(
-      tags$strong("Kappa history"),
+      tags$strong("Model validation history"),
       tags$p(
         class="text-secondary small mb-1",
         "The cumulative human–model kappa is recalculated from the stored contingency counts; archived individual decisions are not loaded."
@@ -3471,117 +3539,162 @@ server <- function(input, output, session) {
     )
   })
 
-  output$w04_consistency_history <- renderUI({
+  output$w04_human_kappa_history <- renderUI({
     req(authenticated())
     if (!session_can("manage_assignments")) return(NULL)
-    xs <- w04_consistency_analyses_rv() %||% list()
-    if (length(xs)) {
-      xs <- Filter(
-        function(x) identical(as.character(x$batch_id %||% ""),as.character(w04_batch_id_rv())),
-        xs
-      )
+    x <- tryCatch(
+      w04_normalise_human_kappa_registry(w04_human_kappa_registry_rv()),
+      error=function(e)w04_empty_human_kappa_registry()
+    )
+    fmt_date <- function(z) {
+      d <- suppressWarnings(as.Date(as.character(z)))
+      if (is.na(d)) as.character(z) else format(d,"%d-%m-%Y")
     }
-    if (!length(xs)) {
-      return(tags$div(class="text-secondary small mt-2","No saved analyses for this batch yet."))
+    fmt_num <- function(z) {
+      v <- suppressWarnings(as.numeric(as.character(z)))
+      if (is.na(v)) "—" else sprintf("%.3f",v)
     }
-    xs <- rev(xs)
-    xs <- xs[seq_len(min(length(xs),5L))]
-    rows <- lapply(xs,function(x) {
-      raters <- tryCatch(
-        as.character(jsonlite::fromJSON(as.character(x$rater_ids_json %||% "[]"))),
-        error=function(e) character()
-      )
-      labels <- if(length(raters)) vapply(raters,function(uid) {
-        if(identical(uid,"model")) return("Model")
-        u <- find_user_by_id(user_registry_rv(),uid,require_active=FALSE)
-        if(is.null(u)) uid else u$display_name
-      },character(1)) else character()
-      raw <- suppressWarnings(as.numeric(as.character(x$raw_agreement %||% NA_character_)))
-      kap <- suppressWarnings(as.numeric(as.character(x$kappa %||% NA_character_)))
+    fmt_pct <- function(z) {
+      v <- suppressWarnings(as.numeric(as.character(z)))
+      if (is.na(v)) "—" else sprintf("%.1f%%",100*v)
+    }
+    if (!nrow(x)) {
+      return(tagList(
+        tags$strong("Human consistency history"),
+        tags$div(class="text-secondary small mb-2","No saved human–human consistency results yet.")
+      ))
+    }
+    ord <- order(as.character(x$date),as.character(x$created_at_utc),decreasing=FALSE)
+    rows <- lapply(ord,function(i) {
+      labels <- w04_human_registry_json_chars(x$rater_labels_json[[i]])
+      if(!length(labels)) labels <- w04_human_registry_json_chars(x$rater_ids_json[[i]])
+      id <- as.character(x$consistency_id[[i]])
       tags$tr(
-        tags$td(as.character(x$analysis_id %||% "")),
+        tags$td(fmt_date(x$date[[i]])),
         tags$td(paste(labels,collapse=", ")),
-        tags$td(as.character(x$complete_n %||% "0")),
-        tags$td(if(is.na(raw))"—" else sprintf("%.1f%%",100*raw)),
-        tags$td(as.character(x$metric %||% "")),
-        tags$td(if(is.na(kap))"—" else sprintf("%.3f",kap)),
-        tags$td(as.character(x$created_at_utc %||% ""))
+        tags$td(if(identical(x$scope_type[[i]],"full"))"Full" else "Partial"),
+        tags$td(format(suppressWarnings(as.integer(x$records_n[[i]])),big.mark=",")),
+        tags$td(fmt_pct(x$raw_agreement[[i]])),
+        tags$td(as.character(x$metric[[i]])),
+        tags$td(fmt_num(x$kappa[[i]])),
+        tags$td(
+          tags$button(
+            type="button",
+            class="btn btn-link btn-sm p-0 text-secondary",
+            title="Delete saved consistency result",
+            `aria-label`="Delete saved consistency result",
+            onclick=sprintf(
+              "Shiny.setInputValue('w04_delete_human_kappa','%s',{priority:'event'})",
+              id
+            ),
+            HTML("&#128465;")
+          )
+        )
       )
     })
+    cumulatives <- w04_human_registry_cumulative_all(x)
+    cumulative_rows <- lapply(cumulatives,function(z) {
+      labels <- z$rater_labels %||% z$rater_ids %||% character()
+      tags$tr(
+        tags$td(tags$em("Cumulative")),
+        tags$td(tags$em(paste(labels,collapse=", "))),
+        tags$td(tags$em("—")),
+        tags$td(tags$em(if(isTRUE(z$valid))format(z$n,big.mark=",") else "—")),
+        tags$td(tags$em(if(isTRUE(z$valid))fmt_pct(z$raw_agreement) else "—")),
+        tags$td(tags$em(if(isTRUE(z$valid))z$metric else "—")),
+        tags$td(tags$em(if(isTRUE(z$valid))fmt_num(z$kappa) else "—")),
+        tags$td("")
+      )
+    })
+    errors <- unique(vapply(
+      Filter(function(z)!isTRUE(z$valid),cumulatives),
+      function(z)as.character(z$error %||% ""),
+      character(1)
+    ))
     tagList(
-      tags$strong("Saved analyses"),
+      tags$strong("Human consistency history"),
+      tags$p(
+        class="text-secondary small mb-1",
+        "Partial rows are non-overlapping saved tranches. A Full row supersedes contained Partial rows in the cumulative calculation, while the earlier rows remain visible."
+      ),
       div(
-        class="assignment-table-wrap mt-1",
+        class="assignment-table-wrap mb-2",
         tags$table(
           class="assignment-table",
           tags$thead(tags$tr(
-            tags$th("Analysis ID"),tags$th("Raters"),tags$th("N"),
-            tags$th("Agreement"),tags$th("Metric"),tags$th("κ"),tags$th("Saved")
+            tags$th("Date"),tags$th("Reviewers"),tags$th("Scope"),tags$th("Records"),
+            tags$th("Agreement"),tags$th("Metric"),tags$th("κ"),tags$th("")
           )),
-          tags$tbody(rows)
+          tags$tbody(c(rows,cumulative_rows))
         )
       ),
+      if(length(errors)) tags$div(
+        class="text-danger small mb-2",
+        paste(errors,collapse=" ")
+      )
+    )
+  })
+
+  output$w04_consistency_history <- renderUI({
+    req(authenticated())
+    if (!session_can("manage_assignments")) return(NULL)
+    all_saved <- Filter(
+      function(x) identical(
+        as.character(x$batch_id %||% ""),
+        as.character(w04_batch_id_rv())
+      ),
+      w04_consistency_analyses_rv() %||% list()
+    )
+    conflict_ready <- Filter(
+      function(x) {
+        n <- suppressWarnings(as.integer(as.character(x$conflict_n %||% "0")))
+        !is.na(n) && n > 0L
+      },
+      all_saved
+    )
+    if (!length(conflict_ready)) {
+      return(tags$div(
+        class="text-secondary small mt-2",
+        "No saved consistency result currently contains conflicts."
+      ))
+    }
+    ids <- vapply(conflict_ready,function(x)as.character(x$analysis_id %||% ""),character(1))
+    labels <- vapply(conflict_ready,function(x) {
+      sprintf(
+        "%s · %s conflict%s",
+        as.character(x$analysis_id %||% ""),
+        as.character(x$conflict_n %||% "0"),
+        if (identical(as.character(x$conflict_n %||% "0"),"1")) "" else "s"
+      )
+    },character(1))
+    tagList(
+      tags$hr(),
+      tags$strong("Conflict resolution"),
+      tags$p(
+        class="text-secondary small mb-2",
+        "Create a conflict set from one saved consistency result. The exact raters and conflicting records are preserved as provenance."
+      ),
+      selectInput(
+        "w04_conflict_analysis_id",
+        "Saved consistency result",
+        choices=stats::setNames(ids,labels),
+        selected=ids[[length(ids)]]
+      ),
+      actionButton(
+        "w04_create_conflict_set",
+        "Create conflict set",
+        class="btn-outline-primary btn-sm"
+      ),
       {
-        all_saved <- Filter(
-          function(x) identical(
-            as.character(x$batch_id %||% ""),
-            as.character(w04_batch_id_rv())
-          ),
-          w04_consistency_analyses_rv() %||% list()
-        )
-        conflict_ready <- Filter(
-          function(x) {
-            n <- suppressWarnings(as.integer(as.character(x$conflict_n %||% "0")))
-            !is.na(n) && n > 0L
-          },
-          all_saved
-        )
-        if (length(conflict_ready)) {
-          ids <- vapply(conflict_ready,function(x)as.character(x$analysis_id %||% ""),character(1))
-          labels <- vapply(conflict_ready,function(x) {
-            sprintf(
-              "%s · %s conflict%s",
-              as.character(x$analysis_id %||% ""),
-              as.character(x$conflict_n %||% "0"),
-              if (identical(as.character(x$conflict_n %||% "0"),"1")) "" else "s"
-            )
-          },character(1))
-          tagList(
-            tags$hr(),
-            tags$strong("Conflict resolution"),
-            tags$p(
-              class="text-secondary small mb-2",
-              "Create a conflict set from one saved analysis. The exact raters and conflicting records are preserved as provenance."
-            ),
-            selectInput(
-              "w04_conflict_analysis_id",
-              "Saved analysis",
-              choices=stats::setNames(ids,labels),
-              selected=ids[[length(ids)]]
-            ),
-            actionButton(
-              "w04_create_conflict_set",
-              "Create conflict set",
-              class="btn-outline-primary btn-sm"
-            ),
-            {
-              active_set <- w04_active_consistency_conflict_set()
-              if (!is.null(active_set)) {
-                tags$div(
-                  class="text-secondary small mt-2",
-                  sprintf(
-                    "Current conflict set: %s · source analysis: %s",
-                    as.character(active_set$conflict_set_id %||% ""),
-                    as.character(active_set$analysis_id %||% "")
-                  )
-                )
-              }
-            }
-          )
-        } else {
+        active_set <- w04_active_consistency_conflict_set()
+        if (!is.null(active_set)) {
           tags$div(
             class="text-secondary small mt-2",
-            "No saved analysis currently contains conflicts."
+            sprintf(
+              "Current conflict set: %s · source analysis: %s",
+              as.character(active_set$conflict_set_id %||% ""),
+              as.character(active_set$analysis_id %||% "")
+            )
           )
         }
       }
@@ -3599,11 +3712,6 @@ server <- function(input, output, session) {
       w04_consistency_status("Select at least two raters before saving.")
       return()
     }
-    analysis <- w04_consistency_analysis(w04_blind_outcomes(),rater_ids)
-    if (analysis$complete < 1L) {
-      w04_consistency_status("There are no complete cases for the selected raters.")
-      return()
-    }
     if (!identical(storage_backend(),"google_sheets")) {
       w04_consistency_status("Saving consistency analyses is available with the Google Sheets backend.")
       return()
@@ -3617,7 +3725,7 @@ server <- function(input, output, session) {
       function(x) normalise_assignment_row(x)$blind_group,
       character(1)
     ))
-    review_mode <- if ("w04-reviewer-consistency" %in% groups) {
+    review_mode <- if (any(startsWith(groups,"w04-reviewer-consistency"))) {
       "reviewer_consistency"
     } else if ("w04-validation-set" %in% groups) {
       "validation_set"
@@ -3625,6 +3733,99 @@ server <- function(input, output, session) {
       ""
     }
 
+    human_only <- !"model" %in% rater_ids
+    if (human_only) {
+      scope <- w04_selected_human_consistency_scope()
+      if (is.null(scope) || !isTRUE(scope$valid)) {
+        w04_consistency_status(if(is.null(scope))"Human consistency scope is unavailable." else scope$reason)
+        return()
+      }
+      if (!isTRUE(scope$save_ready)) {
+        w04_consistency_status(scope$reason %||% "This consistency set is not ready to save.")
+        return()
+      }
+      analysis <- scope$analysis
+      if (analysis$complete < 1L) {
+        w04_consistency_status("There are no complete cases for the selected reviewers.")
+        return()
+      }
+      labels <- vapply(scope$rater_ids,function(uid) {
+        u <- find_user_by_id(user_registry_rv(),uid,require_active=FALSE)
+        if(is.null(u)) uid else u$display_name
+      },character(1))
+
+      row <- tryCatch(
+        w04_human_registry_row(
+          analysis=analysis,
+          record_ids=scope$target_case_ids,
+          batch_id=w04_batch_id_rv(),
+          queue_sha256=w04_queue_sha_rv(),
+          assignment_scope_id=scope$assignment_scope_id,
+          scope_type=scope$scope_type,
+          rater_labels=labels,
+          created_by=session_reviewer_id()
+        ),
+        error=function(e)e
+      )
+      if (inherits(row,"error")) {
+        w04_consistency_status(paste("Save failed:",conditionMessage(row)))
+        return()
+      }
+      analysis_id <- as.character(row$consistency_id[[1L]])
+      row$analysis_id <- analysis_id
+
+      saved_analysis <- tryCatch(
+        append_w04_consistency_analysis(
+          analysis=analysis,
+          batch_id=w04_batch_id_rv(),
+          queue_sha256=w04_queue_sha_rv(),
+          review_mode=review_mode,
+          created_by=session_reviewer_id(),
+          analysis_id_override=analysis_id
+        ),
+        error=function(e)e
+      )
+      if (inherits(saved_analysis,"error")) {
+        w04_consistency_status(paste("Save failed:",conditionMessage(saved_analysis)))
+        return()
+      }
+
+      saved_row <- tryCatch(
+        append_w04_human_kappa_registry(row),
+        error=function(e)e
+      )
+      if (inherits(saved_row,"error")) {
+        w04_consistency_status(paste("Save failed:",conditionMessage(saved_row)))
+        return()
+      }
+
+      existing_human <- w04_human_kappa_registry_rv()
+      existing_ids <- as.character(existing_human$consistency_id %||% character())
+      if (!analysis_id %in% existing_ids) {
+        w04_human_kappa_registry_rv(rbind(existing_human,saved_row))
+      }
+      existing_analyses <- w04_consistency_analyses_rv() %||% list()
+      analysis_ids <- vapply(
+        existing_analyses,
+        function(x)as.character(x$analysis_id %||% ""),
+        character(1)
+      )
+      if (!analysis_id %in% analysis_ids) {
+        w04_consistency_analyses_rv(c(existing_analyses,list(saved_analysis)))
+      }
+      w04_consistency_status(sprintf(
+        "Saved %s human consistency result for %d records.",
+        if(identical(scope$scope_type,"full"))"Full" else "Partial",
+        length(scope$target_case_ids)
+      ))
+      return()
+    }
+
+    analysis <- w04_consistency_analysis(w04_blind_outcomes(),rater_ids)
+    if (analysis$complete < 1L) {
+      w04_consistency_status("There are no complete cases for the selected raters.")
+      return()
+    }
     saved <- tryCatch(
       append_w04_consistency_analysis(
         analysis=analysis,
@@ -3641,6 +3842,87 @@ server <- function(input, output, session) {
     }
     w04_consistency_analyses_rv(c(w04_consistency_analyses_rv(),list(saved)))
     w04_consistency_status(paste("Saved",as.character(saved$analysis_id %||% "analysis")))
+  })
+
+  observeEvent(input$w04_delete_human_kappa,{
+    req(authenticated())
+    if (!session_can("manage_assignments")) return()
+    id <- as.character(input$w04_delete_human_kappa %||% "")
+    if (!grepl("^w04-human-kappa-[0-9a-f]{24}$",id)) return()
+    x <- w04_human_kappa_registry_rv()
+    hit <- x[x$consistency_id==id,,drop=FALSE]
+    if (nrow(hit)!=1L) {
+      w04_consistency_status("Saved human consistency result could not be found.")
+      return()
+    }
+    conflict_refs <- vapply(
+      w04_conflict_sets_rv() %||% list(),
+      function(z)as.character(z$analysis_id %||% ""),
+      character(1)
+    )
+    if (id %in% conflict_refs) {
+      w04_consistency_status("This saved result has already been used to create a conflict set and cannot be deleted.")
+      return()
+    }
+    labels <- w04_human_registry_json_chars(hit$rater_labels_json[[1L]])
+    w04_pending_human_kappa_delete(id)
+    showModal(modalDialog(
+      title="Delete saved consistency result?",
+      tags$p(sprintf(
+        "%s · %s · %s records · %s.",
+        format(as.Date(hit$date[[1L]]),"%d-%m-%Y"),
+        paste(labels,collapse=", "),
+        as.character(hit$records_n[[1L]]),
+        if(identical(hit$scope_type[[1L]],"full"))"Full" else "Partial"
+      )),
+      tags$p(
+        class="text-secondary small",
+        "This removes the saved milestone from the human consistency registry and from cumulative reporting. Screening decisions are not changed."
+      ),
+      footer=tagList(
+        modalButton("Cancel"),
+        actionButton(
+          "w04_confirm_delete_human_kappa",
+          "Delete result",
+          class="btn-danger"
+        )
+      ),
+      easyClose=TRUE
+    ))
+  })
+
+  observeEvent(input$w04_confirm_delete_human_kappa,{
+    req(authenticated())
+    if (!session_can("manage_assignments")) return()
+    id <- as.character(w04_pending_human_kappa_delete() %||% "")
+    if (!grepl("^w04-human-kappa-[0-9a-f]{24}$",id)) return()
+    conflict_refs <- vapply(
+      w04_conflict_sets_rv() %||% list(),
+      function(z)as.character(z$analysis_id %||% ""),
+      character(1)
+    )
+    if (id %in% conflict_refs) {
+      removeModal()
+      w04_consistency_status("Deletion refused because this result is linked to a conflict set.")
+      return()
+    }
+    deleted <- tryCatch({
+      delete_w04_consistency_analysis_row(id)
+      delete_w04_human_kappa_registry_row(id)
+    },error=function(e)e)
+    if (inherits(deleted,"error")) {
+      removeModal()
+      w04_consistency_status(paste("Delete failed:",conditionMessage(deleted)))
+      return()
+    }
+    w04_human_kappa_registry_rv(deleted)
+    w04_consistency_analyses_rv(Filter(
+      function(x)!identical(as.character(x$analysis_id %||% ""),id),
+      w04_consistency_analyses_rv() %||% list()
+    ))
+    w04_pending_human_kappa_delete("")
+    removeModal()
+    w04_consistency_status("Saved human consistency result deleted; cumulative statistics recalculated.")
   })
 
   observeEvent(input$w04_create_conflict_set,{
@@ -4118,6 +4400,8 @@ server <- function(input, output, session) {
     w04_consistency_analyses_rv(list())
     w04_conflict_sets_rv(list())
     w04_kappa_registry_rv(w04_empty_kappa_registry())
+    w04_human_kappa_registry_rv(w04_empty_human_kappa_registry())
+    w04_pending_human_kappa_delete("")
     w04_consistency_history_loaded(FALSE)
     w04_refresh_status("")
     w08_all_cases_rv(list())

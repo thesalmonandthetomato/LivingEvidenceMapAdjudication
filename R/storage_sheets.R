@@ -614,6 +614,76 @@ w04_kappa_registry_tab <- function() {
   Sys.getenv("LEM_W04_KAPPA_REGISTRY_TAB", unset = "w04_kappa_registry")
 }
 
+w04_human_kappa_registry_tab <- function() {
+  Sys.getenv("LEM_W04_HUMAN_KAPPA_REGISTRY_TAB", unset = "w04_human_kappa_registry")
+}
+
+ensure_w04_human_kappa_registry_tab <- function() {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w04_human_kappa_registry_tab()
+  cols <- w04_human_kappa_registry_columns()
+  tabs <- sheet_names_cached(ss)
+  if (!tab %in% tabs) {
+    sheet_add_cached(ss,tab)
+    googlesheets4::sheet_write(w04_empty_human_kappa_registry(),ss=ss,sheet=tab)
+    return(invisible(TRUE))
+  }
+  x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+  if (!nrow(x) && !all(cols %in% names(x))) {
+    googlesheets4::sheet_write(w04_empty_human_kappa_registry(),ss=ss,sheet=tab)
+  } else if (nrow(x)) {
+    w04_normalise_human_kappa_registry(x)
+  }
+  invisible(TRUE)
+}
+
+read_w04_human_kappa_registry <- function() {
+  gs4_auth_from_env()
+  ensure_w04_human_kappa_registry_tab()
+  ss <- sheet_id_from_env()
+  x <- googlesheets4::read_sheet(ss,sheet=w04_human_kappa_registry_tab(),col_types="c")
+  w04_normalise_human_kappa_registry(x)
+}
+
+append_w04_human_kappa_registry <- function(row) {
+  gs4_auth_from_env()
+  ensure_w04_human_kappa_registry_tab()
+  ss <- sheet_id_from_env()
+  tab <- w04_human_kappa_registry_tab()
+  row <- w04_normalise_human_kappa_registry(row)
+  if (nrow(row) != 1L) stop("Exactly one human consistency row must be appended",call.=FALSE)
+  existing <- read_w04_human_kappa_registry()
+  id <- as.character(row$consistency_id[[1L]])
+  if (id %in% existing$consistency_id) {
+    return(existing[existing$consistency_id==id,,drop=FALSE][1,,drop=FALSE])
+  }
+  googlesheets4::sheet_append(ss,data=row,sheet=tab)
+  verify <- read_w04_human_kappa_registry()
+  if (sum(verify$consistency_id==id) != 1L) {
+    stop("Human consistency registry append verification failed",call.=FALSE)
+  }
+  verify[verify$consistency_id==id,,drop=FALSE]
+}
+
+delete_w04_human_kappa_registry_row <- function(consistency_id) {
+  gs4_auth_from_env()
+  ensure_w04_human_kappa_registry_tab()
+  ss <- sheet_id_from_env()
+  tab <- w04_human_kappa_registry_tab()
+  id <- as.character(consistency_id)
+  if (!nzchar(id)) stop("Missing human consistency ID",call.=FALSE)
+  x <- read_w04_human_kappa_registry()
+  hits <- which(x$consistency_id==id)
+  if (length(hits) != 1L) stop("Human consistency row was not found uniquely",call.=FALSE)
+  keep <- x[-hits,,drop=FALSE]
+  if (!nrow(keep)) keep <- w04_empty_human_kappa_registry()
+  googlesheets4::sheet_write(keep,ss=ss,sheet=tab)
+  verify <- read_w04_human_kappa_registry()
+  if (id %in% verify$consistency_id) stop("Human consistency row deletion verification failed",call.=FALSE)
+  invisible(verify)
+}
+
 read_github_w04_kappa_registry <- function() {
   repo <- Sys.getenv(
     "LEM_W04_KAPPA_REGISTRY_REPO",
@@ -857,7 +927,7 @@ append_w04_conflict_set <- function(analysis_row,created_by="") {
   as.list(row[1,,drop=FALSE])
 }
 
-append_w04_consistency_analysis <- function(analysis,batch_id,queue_sha256,review_mode="",created_by="") {
+append_w04_consistency_analysis <- function(analysis,batch_id,queue_sha256,review_mode="",created_by="",analysis_id_override="") {
   gs4_auth_from_env()
   ensure_w04_consistency_analysis_tab()
   ss <- sheet_id_from_env()
@@ -870,10 +940,18 @@ append_w04_consistency_analysis <- function(analysis,batch_id,queue_sha256,revie
     analysis$kappa %||% NA_real_,
     now,created_by,sep="|"
   )
-  analysis_id <- paste0(
-    "w04-analysis-",
-    substr(digest::digest(payload,algo="sha256",serialize=FALSE),1L,20L)
-  )
+  analysis_id <- as.character(analysis_id_override %||% "")
+  if (!nzchar(analysis_id)) {
+    analysis_id <- paste0(
+      "w04-analysis-",
+      substr(digest::digest(payload,algo="sha256",serialize=FALSE),1L,20L)
+    )
+  }
+  existing <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+  if (nrow(existing) && analysis_id %in% as.character(existing$analysis_id)) {
+    hit <- existing[as.character(existing$analysis_id)==analysis_id,,drop=FALSE]
+    return(as.list(hit[1,,drop=FALSE]))
+  }
   row <- data.frame(
     analysis_id=analysis_id,
     project_id=Sys.getenv("LEM_PROJECT_ID",unset="living-evidence-map"),
@@ -904,6 +982,37 @@ append_w04_consistency_analysis <- function(analysis,batch_id,queue_sha256,revie
     stop("W04 consistency analysis write verification failed",call.=FALSE)
   }
   as.list(row[1,,drop=FALSE])
+}
+
+delete_w04_consistency_analysis_row <- function(analysis_id) {
+  gs4_auth_from_env()
+  ensure_w04_consistency_analysis_tab()
+  ss <- sheet_id_from_env()
+  tab <- w04_consistency_analysis_tab()
+  id <- as.character(analysis_id)
+  if (!nzchar(id)) stop("Missing W04 consistency analysis ID",call.=FALSE)
+  x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+  if (!nrow(x)) return(invisible(TRUE))
+  hits <- which(as.character(x$analysis_id)==id)
+  if (!length(hits)) return(invisible(TRUE))
+  if (length(hits)>1L) stop("W04 consistency analysis ID is not unique",call.=FALSE)
+  keep <- x[-hits,,drop=FALSE]
+  if (!nrow(keep)) {
+    cols <- c(
+      "analysis_id","project_id","project_name","batch_id","queue_sha256",
+      "review_mode","rater_ids_json","metric","eligible_n","complete_n",
+      "missing_n","agreement_n","conflict_n","raw_agreement","kappa",
+      "pairwise_json","patterns_json","conflict_case_ids_json",
+      "agreement_case_ids_json","created_by","created_at_utc"
+    )
+    keep <- as.data.frame(setNames(replicate(length(cols),character(),simplify=FALSE),cols),stringsAsFactors=FALSE)
+  }
+  googlesheets4::sheet_write(keep,ss=ss,sheet=tab)
+  verify <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+  if (nrow(verify) && id %in% as.character(verify$analysis_id)) {
+    stop("W04 consistency analysis deletion verification failed",call.=FALSE)
+  }
+  invisible(TRUE)
 }
 
 read_sheet_w04_queue_from_tab <- function(tab) {
@@ -2016,6 +2125,7 @@ backend_reset_operational_tabs <- function() {
     w04_conflict_decision_tab(),
     Sys.getenv("LEM_W04_TEST_QUEUE_TAB", unset = "queue_w04_test_active"),
     w04_consistency_analysis_tab(),
+    w04_human_kappa_registry_tab(),
     w04_conflict_set_tab(),
     Sys.getenv("LEM_W08_QUEUE_TAB", unset = "queue_w08_active"),
     w08_decision_tab(),
