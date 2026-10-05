@@ -2652,14 +2652,9 @@ server <- function(input, output, session) {
                 )
               ),
               if (isTRUE(w01_export_requested_rv())) {
-                tagList(
-                  actionButton(
-                    "w01_mark_resolved",
-                    "Sent to GitHub",
-                    class = "btn-secondary btn-sm",
-                    disabled = "disabled"
-                  ),
-                  tags$span(class="text-success small", w01_export_status_rv())
+                tags$div(
+                  class = "text-success small fw-semibold",
+                  w01_export_status_rv()
                 )
               } else {
                 actionButton(
