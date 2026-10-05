@@ -610,6 +610,68 @@ w04_consistency_analysis_tab <- function() {
   Sys.getenv("LEM_W04_CONSISTENCY_TAB", unset = "w04_consistency_analyses")
 }
 
+w04_kappa_registry_tab <- function() {
+  Sys.getenv("LEM_W04_KAPPA_REGISTRY_TAB", unset = "w04_kappa_registry")
+}
+
+read_github_w04_kappa_registry <- function() {
+  url <- Sys.getenv(
+    "LEM_W04_KAPPA_REGISTRY_URL",
+    unset = "https://raw.githubusercontent.com/thesalmonandthetomato/LivingEvidenceMap/workflow01-final-architecture/docs/workflow04/kappa_registry.csv"
+  )
+  x <- tryCatch(
+    utils::read.csv(
+      url,
+      stringsAsFactors=FALSE,
+      check.names=FALSE,
+      colClasses="character",
+      na.strings=NULL
+    ),
+    error=function(e) stop("Could not read authoritative GitHub W04 kappa registry: ",conditionMessage(e),call.=FALSE)
+  )
+  w04_normalise_kappa_registry(x)
+}
+
+read_sheet_w04_kappa_registry <- function() {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w04_kappa_registry_tab()
+  if (!tab %in% sheet_names_cached(ss)) return(w04_empty_kappa_registry())
+  x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+  w04_normalise_kappa_registry(x)
+}
+
+write_sheet_w04_kappa_registry <- function(x) {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w04_kappa_registry_tab()
+  x <- w04_normalise_kappa_registry(x)
+  if (!tab %in% sheet_names_cached(ss)) sheet_add_cached(ss,tab)
+  googlesheets4::sheet_write(x,ss=ss,sheet=tab)
+  verify <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+  verify <- w04_normalise_kappa_registry(verify)
+  if (!identical(
+    unname(w04_kappa_registry_row_signatures(verify)),
+    unname(w04_kappa_registry_row_signatures(x))
+  ) || !identical(
+    names(w04_kappa_registry_row_signatures(verify)),
+    names(w04_kappa_registry_row_signatures(x))
+  )) {
+    stop("W04 kappa Google mirror write verification failed",call.=FALSE)
+  }
+  invisible(x)
+}
+
+sync_w04_kappa_registry_from_github <- function() {
+  github <- read_github_w04_kappa_registry()
+  google <- read_sheet_w04_kappa_registry()
+  relation <- w04_kappa_registry_relation(github,google)
+  if (relation %in% c("google_empty","google_subset")) {
+    write_sheet_w04_kappa_registry(github)
+  }
+  github
+}
+
 ensure_w04_consistency_analysis_tab <- function() {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()

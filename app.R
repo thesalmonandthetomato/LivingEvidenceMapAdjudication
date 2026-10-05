@@ -13,6 +13,7 @@ source("R/assignments.R", local = TRUE)
 source("R/decision_events.R", local = TRUE)
 source("R/w04_blind_resolution.R", local = TRUE)
 source("R/w04_validation_lifecycle.R", local = TRUE)
+source("R/w04_kappa_registry.R", local = TRUE)
 source("R/storage_local.R", local = TRUE)
 source("R/storage_sheets.R", local = TRUE)
 source("R/storage_backend.R", local = TRUE)
@@ -755,6 +756,7 @@ server <- function(input, output, session) {
   w04_exclude_terms <- reactiveVal(character())
   w04_consistency_analyses_rv <- reactiveVal(list())
   w04_conflict_sets_rv <- reactiveVal(list())
+  w04_kappa_registry_rv <- reactiveVal(w04_empty_kappa_registry())
   w04_consistency_history_loaded <- reactiveVal(FALSE)
   w04_consistency_status <- reactiveVal("")
   w04_refresh_status <- reactiveVal("")
@@ -854,6 +856,19 @@ server <- function(input, output, session) {
     ids <- vapply(cs, function(x) as.character(x$review_case_id), character(1))
     which(!ids %in% w02_resolved_ids())
   }
+
+  observe({
+    req(authenticated())
+    invalidateLater(300000, session)
+    refreshed <- tryCatch(read_manual_screening_metrics(),error=function(e)e)
+    if (inherits(refreshed,"error")) {
+      if (session_can("manage_assignments")) {
+        w04_consistency_status(paste("Kappa registry integrity error:",conditionMessage(refreshed)))
+      }
+    } else {
+      manual_screening_rv(refreshed)
+    }
+  })
 
   load_w02_batch <- function() {
     if (!identical(storage_backend(), "google_sheets")) return(NULL)
@@ -1222,16 +1237,13 @@ server <- function(input, output, session) {
   }
 
   read_manual_screening_metrics <- function() {
-    url <- Sys.getenv(
-      "LEM_W04_AGREEMENT_URL",
-      unset = "https://raw.githubusercontent.com/thesalmonandthetomato/LivingEvidenceMap/workflow01-final-architecture/docs/workflow04/workflow04_agreement_summary.json"
-    )
-    x <- jsonlite::fromJSON(url, simplifyVector = FALSE)
-    list(
-      manually_screened = as.integer(x$historical_comparator_records),
-      kappa = as.numeric(x$consensus_vs_historical$substantive_binary$cohen_kappa),
-      kappa_n = as.integer(x$consensus_vs_historical$substantive_binary$n)
-    )
+    registry <- if (identical(storage_backend(),"google_sheets")) {
+      sync_w04_kappa_registry_from_github()
+    } else {
+      read_github_w04_kappa_registry()
+    }
+    w04_kappa_registry_rv(registry)
+    w04_kappa_registry_summary(registry)
   }
 
   pipeline_summary_ui <- function() {
@@ -2627,6 +2639,8 @@ server <- function(input, output, session) {
         ),
         div(
           class="pt-2",
+          uiOutput("w04_kappa_history"),
+          tags$hr(),
           tags$p(
             class="text-secondary small mb-1",
             "Select any combination of human raters and the model. Statistics use complete cases for the selected raters only; no raw decisions are altered."
@@ -3392,6 +3406,60 @@ server <- function(input, output, session) {
 
   output$w04_refresh_status <- renderText(w04_refresh_status())
 
+  output$w04_kappa_history <- renderUI({
+    req(authenticated())
+    if (!session_can("manage_assignments")) return(NULL)
+    x <- w04_kappa_registry_rv()
+    x <- tryCatch(w04_normalise_kappa_registry(x),error=function(e)w04_empty_kappa_registry())
+    if (!nrow(x)) {
+      return(tags$div(class="text-secondary small mb-2","No W04 kappa history yet."))
+    }
+    summary <- w04_kappa_registry_summary(x)
+    fmt_date <- function(z) {
+      d <- suppressWarnings(as.Date(as.character(z)))
+      if (is.na(d)) as.character(z) else format(d,"%d-%m-%Y")
+    }
+    fmt_num <- function(z) {
+      v <- suppressWarnings(as.numeric(as.character(z)))
+      if (is.na(v)) "—" else sprintf("%.3f",v)
+    }
+    rows <- list(
+      tags$tr(
+        tags$td(tags$strong("Cumulative")),
+        tags$td(tags$strong(format(summary$manually_screened,big.mark=","))),
+        tags$td(tags$strong(if(is.na(summary$kappa))"—" else sprintf("%.3f",summary$kappa))),
+        tags$td("—")
+      )
+    )
+    ord <- order(as.character(x$date),as.character(x$created_at_utc),decreasing=TRUE)
+    for (i in ord) {
+      rows[[length(rows)+1L]] <- tags$tr(
+        tags$td(fmt_date(x$date[[i]])),
+        tags$td(format(suppressWarnings(as.integer(x$records_reviewed[[i]])),big.mark=",")),
+        tags$td(fmt_num(x$human_model_kappa[[i]])),
+        tags$td(fmt_num(x$humans_model_fleiss_kappa[[i]]))
+      )
+    }
+    tagList(
+      tags$strong("Kappa history"),
+      tags$p(
+        class="text-secondary small mb-1",
+        "The cumulative human–model kappa is recalculated from the stored contingency counts; archived individual decisions are not loaded."
+      ),
+      div(
+        class="assignment-table-wrap mb-2",
+        tags$table(
+          class="assignment-table",
+          tags$thead(tags$tr(
+            tags$th("Date"),tags$th("Records"),tags$th("Human–model κ"),
+            tags$th("Humans–model Fleiss κ")
+          )),
+          tags$tbody(rows)
+        )
+      )
+    )
+  })
+
   output$w04_consistency_history <- renderUI({
     req(authenticated())
     if (!session_can("manage_assignments")) return(NULL)
@@ -4038,6 +4106,7 @@ server <- function(input, output, session) {
     w04_all_cases_rv(list())
     w04_consistency_analyses_rv(list())
     w04_conflict_sets_rv(list())
+    w04_kappa_registry_rv(w04_empty_kappa_registry())
     w04_consistency_history_loaded(FALSE)
     w04_refresh_status("")
     w08_all_cases_rv(list())
@@ -4078,7 +4147,7 @@ server <- function(input, output, session) {
         }
         assignment_registry_rv(loaded_assignments)
         pipeline_status_rv(if(identical(storage_backend(),"google_sheets")) read_latest_pipeline_status() else NULL)
-        manual_screening_rv(tryCatch(read_manual_screening_metrics(),error=function(e)NULL))
+        manual_screening_rv(read_manual_screening_metrics())
         batch <- load_batch()
         current_decisions <- list()
         if (!is.null(batch)) {

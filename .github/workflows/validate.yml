@@ -57,6 +57,7 @@ jobs:
           source("tests/test_w04_validation_lifecycle.R")
           source("tests/test_w04_blind_resolution.R")
           source("tests/test_w04_validation_dispatch.R")
+          source("tests/test_w04_kappa_registry.R")
           source("tests/test_preproduction_contract.R")
           source("tests/test_w08_canonical_kpi.R")
           source("tests/test_backend_reset_contract.R")
