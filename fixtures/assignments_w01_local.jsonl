@@ -1,0 +1,2 @@
+{"assignment_id":"asg-w01-001-neal","workflow":"01","batch_id":"w01_real_sample_2.jsonl","case_id":"hr-f66acbf328538aa54bcf","user_id":"fixture:administrator","blind_group":"w01-local-a","status":"assigned","task_type":"deduplication"}
+{"assignment_id":"asg-w01-001-sini","workflow":"01","batch_id":"w01_real_sample_2.jsonl","case_id":"hr-f66acbf328538aa54bcf","user_id":"fixture:reviewer:1","blind_group":"w01-local-a","status":"assigned","task_type":"deduplication"}

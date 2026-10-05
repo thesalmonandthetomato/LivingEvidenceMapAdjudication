@@ -1,4 +1,4 @@
-name: Validate and build Connect Cloud manifest
+name: Validate production Shiny app and build Connect Cloud manifest
 
 on:
   push:
@@ -8,8 +8,7 @@ on:
       - 'R/**'
       - 'fixtures/**'
       - 'tests/**'
-      - 'multiuser_app/**'
-      - '!multiuser_app/manifest.json'
+      - '!manifest.json'
       - 'scripts/make_manifest.R'
       - '.github/workflows/validate.yml'
   workflow_dispatch:
@@ -37,34 +36,17 @@ jobs:
         shell: Rscript {0}
         run: install.packages(c("rsconnect","shiny","bslib","jsonlite","digest","googlesheets4","httr2","countrycode"))
 
-      - name: Parse application files
+      - name: Parse production application files
         shell: Rscript {0}
-        run: |
-          parse(file="app.R")
-          parse(file="R/auth.R")
-          parse(file="R/github_dispatch.R")
-          parse(file="R/storage_backend.R")
-          parse(file="R/storage_local.R")
-          parse(file="R/storage_sheets.R")
-          parse(file="R/w01_contract.R")
-          cat("PASS: R files parse\n")
-
-      - name: Test W01 contract
-        shell: Rscript {0}
-        run: source("tests/test_w01_contract.R")
-
-      - name: Parse multi-user application files
-        shell: Rscript {0}
-        working-directory: multiuser_app
         run: |
           parse(file="app.R")
           for (f in list.files("R", pattern="\\.R$", full.names=TRUE)) parse(file=f)
-          cat("PASS: multi-user R files parse\n")
+          cat("PASS: production R files parse\n")
 
-      - name: Test multi-user adjudication core
+      - name: Run production regression suite
         shell: Rscript {0}
-        working-directory: multiuser_app
         run: |
+          source("tests/test_w01_contract.R")
           source("tests/test_assignments.R")
           source("tests/test_decision_events.R")
           source("tests/test_local_assignments.R")
@@ -77,19 +59,16 @@ jobs:
           source("tests/test_w04_validation_dispatch.R")
           source("tests/test_preproduction_contract.R")
           source("tests/test_w08_canonical_kpi.R")
-          cat("PASS: multi-user adjudication core tests\n")
+          cat("PASS: production multi-user adjudication regression suite\n")
 
-
-      - name: Generate Connect Cloud manifests
+      - name: Generate production Connect Cloud manifest
         shell: Rscript {0}
         run: |
           rsconnect::writeManifest(appDir=".")
-          rsconnect::writeManifest(appDir="multiuser_app")
           stopifnot(file.exists("manifest.json"))
-          stopifnot(file.exists("multiuser_app/manifest.json"))
-          cat("PASS: root and multi-user manifests generated\n")
+          cat("PASS: root production manifest generated\n")
 
-      - name: Commit manifest if changed
+      - name: Commit production manifest if changed
         shell: bash
         run: |
           set -euo pipefail
@@ -97,37 +76,22 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin main
 
-          # If main moved while this run was validating, do not try to rebase a
-          # generated manifest commit over newer application/manifests. The
-          # newer push has (or will have) its own validation run.
           if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
             echo "PASS: origin/main moved during validation; skipping stale manifest commit"
             exit 0
           fi
 
-          root_same=false
-          multi_same=false
-
           if git show origin/main:manifest.json > "$RUNNER_TEMP/remote-root-manifest.json" 2>/dev/null &&
              cmp -s manifest.json "$RUNNER_TEMP/remote-root-manifest.json"; then
-            root_same=true
-          fi
-
-          if git show origin/main:multiuser_app/manifest.json > "$RUNNER_TEMP/remote-multi-manifest.json" 2>/dev/null &&
-             cmp -s multiuser_app/manifest.json "$RUNNER_TEMP/remote-multi-manifest.json"; then
-            multi_same=true
-          fi
-
-          if [ "$root_same" = true ] && [ "$multi_same" = true ]; then
-            echo "PASS: root and multi-user manifests already current on origin/main"
+            echo "PASS: root production manifest already current on origin/main"
             exit 0
           fi
 
-          git add manifest.json multiuser_app/manifest.json
+          git add manifest.json
           if git diff --cached --quiet; then
-            echo "PASS: manifests already current"
+            echo "PASS: manifest already current"
             exit 0
           fi
 
-          git commit -m "build: update Connect Cloud manifests"
+          git commit -m "build: update production Connect Cloud manifest"
           git push origin HEAD:main
