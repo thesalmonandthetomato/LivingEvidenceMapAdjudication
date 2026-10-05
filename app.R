@@ -1517,7 +1517,7 @@ server <- function(input, output, session) {
               w02_batch_status_rv(),
               can_open = w02_user_remaining > 0L,
               idle_text = if (!nzchar(w02_batch_id_rv())) {
-                "No active queue"
+                "No records awaiting review"
               } else if (
                 w02_remaining > 0L && session_can("manage_assignments") && w02_user_remaining == 0L
               ) {
@@ -1566,13 +1566,13 @@ server <- function(input, output, session) {
               w04_active_conflict_batch_status(),
               can_open = w04_conflict_user_remaining > 0L,
               idle_text = if (w04_conflict_total == 0L) {
-                "No reviewer conflicts"
+                "No records awaiting review"
               } else if (w04_conflict_user_remaining == 0L && session_can("manage_assignments")) {
                 "Conflicts exist and are awaiting assignment"
               } else if (w04_conflict_user_remaining == 0L) {
                 "No conflicts assigned to you"
               } else {
-                "No reviewer conflicts"
+                "No records awaiting review"
               }
             )
           ),
@@ -1589,7 +1589,7 @@ server <- function(input, output, session) {
               w08_batch_status_rv(),
               can_open = w08_user_remaining > 0L,
               idle_text = if (!nzchar(w08_batch_id_rv())) {
-                "No active queue"
+                "No records awaiting review"
               } else if (
                 annotation_remaining > 0L && session_can("manage_assignments") && w08_user_remaining == 0L
               ) {
