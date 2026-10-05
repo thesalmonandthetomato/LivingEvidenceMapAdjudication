@@ -1,4 +1,5 @@
 suppressPackageStartupMessages({library(jsonlite);library(digest)})
+source("R/decision_events.R")
 source("R/storage_local.R")
 source("R/w01_contract.R")
 
