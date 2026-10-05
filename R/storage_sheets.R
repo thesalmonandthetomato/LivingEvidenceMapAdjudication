@@ -377,11 +377,12 @@ active_sheet_w01_repairs <- function(queue_sha256 = "") {
 
 append_sheet_w01_repair <- function(repair, prior_repair = NULL) {
   ensure_w01_repair_tab()
-  if (!identical(as.character(repair$action %||% ""), "replace_abstract")) {
-    stop("Only replace_abstract is supported by the W01 Shiny repair editor", call.=FALSE)
+  action <- as.character(repair$action %||% "")
+  if (!(action %in% c("replace_abstract","strip_abstract"))) {
+    stop("Unsupported W01 Shiny abstract repair action", call.=FALSE)
   }
-  if (!nzchar(trimws(as.character(repair$value %||% "")))) {
-    stop("Corrected abstract must not be empty", call.=FALSE)
+  if (identical(action,"replace_abstract") && !nzchar(trimws(as.character(repair$value %||% "")))) {
+    stop("Replacement abstract must not be empty", call.=FALSE)
   }
   ss <- sheet_id_from_env()
   tab <- w01_repair_tab()
@@ -399,8 +400,8 @@ append_sheet_w01_repair <- function(repair, prior_repair = NULL) {
     review_case_id=as.character(repair$review_case_id),
     source=as.character(repair$source),
     source_record_id=as.character(repair$source_record_id),
-    action="replace_abstract",
-    value=as.character(repair$value),
+    action=action,
+    value=as.character(repair$value %||% ""),
     reason=as.character(repair$reason %||% "human_abstract_correction_during_deduplication"),
     reviewer=as.character(repair$reviewer),
     saved_at_utc=saved_at,
