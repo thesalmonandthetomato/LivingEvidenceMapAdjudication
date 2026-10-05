@@ -1299,9 +1299,14 @@ server <- function(input, output, session) {
       div(class=cls,title=workflow_labels[[i]])
     })
 
-    kpi <- function(label,value,sub=NULL,class_extra=NULL) {
+    stage_complete <- function(position) {
+      !is.na(completed) && completed >= as.integer(position)
+    }
+
+    kpi <- function(label,value,sub=NULL,stage_position=NULL,class_extra=NULL) {
+      stale_class <- if(!is.null(stage_position) && !stage_complete(stage_position)) "pre-update" else NULL
       div(
-        class=paste(c("pipeline-kpi", class_extra), collapse=" "),
+        class=paste(c("pipeline-kpi", stale_class, class_extra), collapse=" "),
         tags$span(class="pipeline-kpi-label",label),
         tags$span(class="pipeline-kpi-value",value),
         if(!is.null(sub)) tags$span(class="pipeline-kpi-sub",sub)
@@ -1330,43 +1335,49 @@ server <- function(input, output, session) {
       ),
       div(
         class="pipeline-kpis",
-        kpi("Database searching",fmt_pipeline_n(p$search_results_total),"records"),
-        kpi("After dedup.",fmt_pipeline_n(p$deduplicated_records),"records"),
-        kpi("Enriched",fmt_pipeline_n(p$enriched_records),"records"),
-        kpi("Retracted",fmt_pipeline_n(p$retracted_records),"records"),
+        kpi("Database searching",fmt_pipeline_n(p$search_results_total),"records",stage_position=1L),
+        kpi("After dedup.",fmt_pipeline_n(p$deduplicated_records),"records",stage_position=2L),
+        kpi("Enriched",fmt_pipeline_n(p$enriched_records),"records",stage_position=3L),
+        kpi("Retracted",fmt_pipeline_n(p$retracted_records),"records",stage_position=4L),
         {
           m <- manual_screening_rv()
           kpi(
             "Manually screened",
             if(is.null(m)) "—" else fmt_pipeline_n(m$manually_screened),
-            if(is.null(m) || is.na(m$kappa)) NULL else paste0("κ ",sprintf("%.3f",m$kappa))
+            if(is.null(m) || is.na(m$kappa)) NULL else paste0("κ ",sprintf("%.3f",m$kappa)),
+            stage_position=5L
           )
         },
         kpi(
           "Screened",
           paste0(fmt_pipeline_n(p$screened_include)," / ",fmt_pipeline_n(p$screened_exclude)),
-          "include / exclude"
+          "include / exclude",
+          stage_position=5L
         ),
         kpi(
           "Species",
           fmt_pipeline_n(p$screened_include),
-          "records processed"
+          "records processed",
+          stage_position=6L
         ),
         kpi(
           "Geography",
           paste0(fmt_pipeline_n(p$geography_with)," / ",fmt_pipeline_n(p$geography_without)),
-          "with / without"
+          "with / without",
+          stage_position=7L
         ),
         kpi(
           "Topics",
           paste0(fmt_pipeline_n(p$topic_with)," / ",fmt_pipeline_n(p$topic_without)),
-          "with / without"
+          "with / without",
+          stage_position=8L
         ),
         kpi(
           "Canonical database",
           fmt_pipeline_n(canonical_value),
           if (isTRUE(canonical_current)) "current" else "pre-update",
-          if (isTRUE(canonical_current)) NULL else "pre-update"
+          stage_position=9L,
+          class_extra=if (isTRUE(canonical_current)) NULL else "pre-update"
         )
       ),
       div(class="workflow-line",segs),
