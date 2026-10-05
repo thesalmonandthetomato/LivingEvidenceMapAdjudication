@@ -1698,7 +1698,7 @@
       "checksum": "1bf54114f52c98b210a8aa977965a21b"
     },
     "app.R": {
-      "checksum": "db7f2ecad0e450f04d382f94c15d5c6e"
+      "checksum": "8ae7e96180d0827fc60400e6c7136cba"
     },
     "docs/production_multiuser_cutover_20261005.md": {
       "checksum": "0c8abb9a02a372eec4f35bb66812bce6"
@@ -1758,7 +1758,7 @@
       "checksum": "6cfc5fa65dc8fd1020fad3ca42f2e397"
     },
     "multiuser_app/R/storage_sheets.R": {
-      "checksum": "3f60764691eca36ecd3ccbccef4b54ff"
+      "checksum": "d27cb046cf907646edd546d966ef4482"
     },
     "multiuser_app/R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
@@ -1824,13 +1824,13 @@
       "checksum": "7aff66141a1756109b0dccde20670e67"
     },
     "R/storage_backend.R": {
-      "checksum": "f6febf54e12c9a4a486e36f05ecd62e1"
+      "checksum": "e6e395bca1f55e20a9aedf7c647904e4"
     },
     "R/storage_local.R": {
-      "checksum": "6cfc5fa65dc8fd1020fad3ca42f2e397"
+      "checksum": "07cb2d495a2a2d841243051159ff4269"
     },
     "R/storage_sheets.R": {
-      "checksum": "893a87f20bc65325f993a2e1800cdb09"
+      "checksum": "9c38e1356a37ad2f3e50d5e92b7bbca9"
     },
     "R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
