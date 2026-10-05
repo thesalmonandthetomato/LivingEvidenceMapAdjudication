@@ -404,7 +404,7 @@ doi_link <- function(x, label = NULL) {
   )
 }
 
-record_card <- function(rec, label, fields, side = c("a","b")) {
+record_card <- function(rec, label, fields, side = c("a","b"), abstract_editing = FALSE) {
   side <- match.arg(side)
   card(
     class = "h-100 record-card",
@@ -424,26 +424,45 @@ record_card <- function(rec, label, fields, side = c("a","b")) {
       ),
       tags$hr(class = "record-divider"),
       tags$h6(class = "abstract-heading", "Abstract"),
-      div(class = "abstract-text", fields$abstract[[side]]),
-      tags$hr(class = "record-divider"),
-      textAreaInput(
-        paste0("w01_abstract_", side),
-        "Corrected abstract",
-        value = as.character(rec$display_abstract %||% rec$abstract %||% ""),
-        rows = 5,
-        width = "100%"
-      ),
-      div(
-        class = "d-flex align-items-center gap-2 flex-wrap",
-        actionButton(
-          paste0("save_w01_abstract_", side),
-          paste0("Save corrected abstract ", toupper(side)),
-          class = "btn-outline-primary btn-sm"
-        ),
-        if (isTRUE(rec$abstract_repair_saved)) {
-          tags$span(class = "text-success small", "Saved correction will be applied to the source record.")
-        }
-      )
+      if (isTRUE(abstract_editing)) {
+        tagList(
+          textAreaInput(
+            paste0("w01_abstract_", side),
+            NULL,
+            value = as.character(rec$display_abstract %||% rec$abstract %||% ""),
+            rows = 6,
+            width = "100%"
+          ),
+          div(
+            class = "d-flex align-items-center gap-2 flex-wrap",
+            actionButton(
+              paste0("save_w01_abstract_", side),
+              "Save abstract",
+              class = "btn-primary btn-sm"
+            ),
+            actionButton(
+              paste0("cancel_w01_abstract_", side),
+              "Cancel",
+              class = "btn-outline-secondary btn-sm"
+            )
+          )
+        )
+      } else {
+        tagList(
+          div(class = "abstract-text", fields$abstract[[side]]),
+          div(
+            class = "d-flex align-items-center gap-2 flex-wrap mt-2",
+            actionButton(
+              paste0("edit_w01_abstract_", side),
+              "Edit abstract",
+              class = "btn-outline-secondary btn-sm"
+            ),
+            if (isTRUE(rec$abstract_repair_saved)) {
+              tags$span(class = "text-success small", "Corrected abstract saved.")
+            }
+          )
+        )
+      }
     )
   )
 }
@@ -764,6 +783,7 @@ server <- function(input, output, session) {
   w08_fresh_test_status <- reactiveVal("")
   w01_all_cases_rv <- reactiveVal(list())
   w01_repairs_rv <- reactiveVal(list())
+  w01_abstract_edit_rv <- reactiveVal(NULL)
   app_view <- reactiveVal("tasks")
   failed_attempts <- reactiveVal(0L)
   lock_until <- reactiveVal(as.POSIXct(NA))
@@ -4694,11 +4714,19 @@ server <- function(input, output, session) {
     fields$source$a <- tags$span(class = "source-badge", fields$source$a)
     fields$source$b <- tags$span(class = "source-badge", fields$source$b)
 
+    edit_state <- w01_abstract_edit_rv()
+    editing_a <- !is.null(edit_state) &&
+      identical(as.character(edit_state$review_case_id), as.character(z$review_case_id)) &&
+      identical(as.character(edit_state$side), "a")
+    editing_b <- !is.null(edit_state) &&
+      identical(as.character(edit_state$review_case_id), as.character(z$review_case_id)) &&
+      identical(as.character(edit_state$side), "b")
+
     tagList(
       layout_columns(
         col_widths = c(6,6),
-        record_card(record_i_view, "Record A", fields, "a"),
-        record_card(record_j_view, "Record B", fields, "b")
+        record_card(record_i_view, "Record A", fields, "a", abstract_editing = editing_a),
+        record_card(record_j_view, "Record B", fields, "b", abstract_editing = editing_b)
       ),
       card(
         class="mt-3",
@@ -6224,9 +6252,25 @@ server <- function(input, output, session) {
       identical(as.character(x$source_record_id %||% ""), as.character(rec$source_record_id %||% ""))
     ), active)
     w01_repairs_rv(c(remaining,list(saved)))
+    w01_abstract_edit_rv(NULL)
     status(sprintf("Saved corrected abstract for Record %s.", toupper(side)))
     invisible(TRUE)
   }
+
+  observeEvent(input$edit_w01_abstract_a, {
+    z <- current_case()
+    w01_abstract_edit_rv(list(review_case_id=as.character(z$review_case_id),side="a"))
+  })
+  observeEvent(input$edit_w01_abstract_b, {
+    z <- current_case()
+    w01_abstract_edit_rv(list(review_case_id=as.character(z$review_case_id),side="b"))
+  })
+  observeEvent(input$cancel_w01_abstract_a, {
+    w01_abstract_edit_rv(NULL)
+  })
+  observeEvent(input$cancel_w01_abstract_b, {
+    w01_abstract_edit_rv(NULL)
+  })
 
   observeEvent(input$save_w01_abstract_a, {
     save_w01_abstract_repair("a")
@@ -6420,9 +6464,11 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$duplicate, {
+    w01_abstract_edit_rv(NULL)
     if (save_choice("duplicate")) advance_after_save()
   })
   observeEvent(input$not_duplicate, {
+    w01_abstract_edit_rv(NULL)
     if (save_choice("not_duplicate")) advance_after_save()
   })
   observeEvent(input$uncertain, {
