@@ -1330,10 +1330,10 @@ server <- function(input, output, session) {
       ),
       div(
         class="pipeline-kpis",
-        kpi("Search results",fmt_pipeline_n(p$search_results_total),"W00"),
-        kpi("After dedup.",fmt_pipeline_n(p$deduplicated_records),"W01"),
-        kpi("Enriched",fmt_pipeline_n(p$enriched_records),"W02"),
-        kpi("Retracted",fmt_pipeline_n(p$retracted_records),"W03"),
+        kpi("Database searching",fmt_pipeline_n(p$search_results_total),"records"),
+        kpi("After dedup.",fmt_pipeline_n(p$deduplicated_records),"records"),
+        kpi("Enriched",fmt_pipeline_n(p$enriched_records),"records"),
+        kpi("Retracted",fmt_pipeline_n(p$retracted_records),"records"),
         {
           m <- manual_screening_rv()
           kpi(
@@ -1512,8 +1512,8 @@ server <- function(input, output, session) {
         div(
           class = "d-flex justify-content-between align-items-end mb-3",
           div(
-            tags$h2("Human verification", class = "mb-1"),
-            tags$div("Records remaining at each verification stage.", class = "text-secondary")
+            tags$h2("Living Evidence Map", class = "mb-1"),
+            tags$div("Project management for computer-driven/computer-assisted living evidence maps", class = "text-secondary")
           ),
           uiOutput("session_identity")
         ),
@@ -2067,7 +2067,11 @@ server <- function(input, output, session) {
       }
     }
 
-    if (has_w01_batch) add_empty_group("01","deduplication",batch_id_rv(),ASSIGNMENT_MODES[["shared_work_pool"]])
+    add_empty_group(
+      "01","deduplication",
+      if (has_w01_batch) batch_id_rv() else "no-active-queue",
+      ASSIGNMENT_MODES[["shared_work_pool"]]
+    )
     add_empty_group(
       "02","enrichment",
       if (has_w02_batch) w02_batch_id_rv() else "no-active-queue",
@@ -2158,24 +2162,23 @@ server <- function(input, output, session) {
 
       if (is.null(cfg)) {
         if (
+          identical(z$workflow, "01") &&
+          identical(z$task_type, "deduplication") &&
+          identical(z$batch_id, "no-active-queue")
+        ) {
+          return(tags$div(
+            class = "mt-2",
+            tags$div(class = "text-secondary small mb-2", "No active W01 deduplication queue is loaded.")
+          ))
+        }
+        if (
           identical(z$workflow, "02") &&
           identical(z$task_type, "enrichment") &&
           identical(z$batch_id, "no-active-queue")
         ) {
           return(tags$div(
             class = "mt-2",
-            tags$div(class = "text-secondary small mb-2", "No active W02 queue is loaded."),
-            tagList(
-              actionButton(
-                "create_test_w02_queue_inline",
-                "Create W02 test queue",
-                class = "btn-outline-secondary btn-sm"
-              ),
-              tags$div(
-                class = "saved-note mt-2",
-                textOutput("test_queue_status_w02", inline = TRUE)
-              )
-            )
+            tags$div(class = "text-secondary small mb-2", "No active W02 queue is loaded.")
           ))
         }
         if (
@@ -2185,21 +2188,7 @@ server <- function(input, output, session) {
         ) {
           return(tags$div(
             class = "mt-2",
-            tags$div(
-              class = "text-secondary small mb-2",
-              "No active W04 manual-screening queue is loaded. Create an isolated synthetic W04 batch to test reviewer-consistency and validation-set assignment modes."
-            ),
-            tagList(
-              actionButton(
-                "create_test_w04_queue_inline",
-                "Create W04 test queue",
-                class = "btn-outline-secondary btn-sm"
-              ),
-              tags$div(
-                class = "saved-note mt-2",
-                textOutput("test_queue_status_w04", inline = TRUE)
-              )
-            )
+            tags$div(class = "text-secondary small mb-2", "No active W04 manual-screening queue is loaded.")
           ))
         }
         if (
@@ -2209,18 +2198,7 @@ server <- function(input, output, session) {
         ) {
           return(tags$div(
             class = "mt-2",
-            tags$div(class = "text-secondary small mb-2", "No active W08 queue is loaded."),
-            tagList(
-              actionButton(
-                "create_test_w08_queue_inline",
-                "Create W08 test queue",
-                class = "btn-outline-secondary btn-sm"
-              ),
-              tags$div(
-                class = "saved-note mt-2",
-                textOutput("test_queue_status_w08", inline = TRUE)
-              )
-            )
+            tags$div(class = "text-secondary small mb-2", "No active W08 queue is loaded.")
           ))
         }
         return(NULL)
@@ -2879,37 +2857,6 @@ server <- function(input, output, session) {
             div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(total_remaining)),
             div(class = "assignment-kpi", tags$span("Conflicts"), tags$strong(length(w04_all_conflict_cases())))
           ),
-          if (!has_w02_batch || !has_w08_batch) {
-            tags$details(
-              class = "assignment-workflow mb-2",
-              `data-accordion-key` = "test-queue-setup",
-              tags$summary(tags$strong("Test queue setup")),
-              div(
-                class = "pt-2",
-                tags$p(
-                  class = "text-secondary small mb-2",
-                  "Create small synthetic W02/W08 queues in this isolated Google Sheet for assignment smoke testing. Existing queue tabs are never overwritten."
-                ),
-                div(
-                  class = "d-flex flex-wrap gap-2",
-                  if (!has_w02_batch) actionButton(
-                    "create_test_w02_queue",
-                    "Create W02 test queue",
-                    class = "btn-outline-secondary btn-sm"
-                  ),
-                  if (!has_w08_batch) actionButton(
-                    "create_test_w08_queue",
-                    "Create W08 test queue",
-                    class = "btn-outline-secondary btn-sm"
-                  )
-                ),
-                tags$div(
-                  class = "saved-note mt-2",
-                  textOutput("test_queue_status", inline = TRUE)
-                )
-              )
-            )
-          },
           workflow_sections_display,
           tags$hr(class = "my-3"),
           tags$details(
@@ -3032,177 +2979,6 @@ server <- function(input, output, session) {
       )
     )
   })
-
-  w01_assignment_plan <- reactive({
-    req(authenticated())
-    if (!session_can("manage_assignments")) {
-      return(list(error = "Administrator permission is required."))
-    }
-    selected <- as.character(input$w01_assignment_users %||% character())
-    strategy <- as.character(input$w01_assignment_strategy %||% "split")
-    type <- as.character(input$w01_assignment_type %||% "number")
-    amount <- input$w01_assignment_amount %||% NA_real_
-
-    tryCatch(
-      plan_shared_pool_assignment(
-        cases = w01_all_cases_rv(),
-        assignments = assignment_registry_rv(),
-        active_events = w01_active_assignment_events(),
-        workflow = "01",
-        batch_id = batch_id_rv(),
-        task_type = "deduplication",
-        user_ids = selected,
-        allocation_type = type,
-        amount = amount,
-        allocation_strategy = strategy
-      ),
-      error = function(e) list(error = conditionMessage(e))
-    )
-  })
-
-  output$w01_assignment_preview <- renderUI({
-    req(authenticated())
-    plan <- w01_assignment_plan()
-    if (!is.null(plan$error)) {
-      return(tags$div(class = "text-secondary small", plan$error))
-    }
-
-    selected <- as.character(input$w01_assignment_users %||% character())
-    registry <- user_registry_rv()
-    current_assignments <- active_assignments_for_batch(
-      assignment_registry_rv(),
-      "01",
-      batch_id_rv(),
-      "deduplication"
-    )
-    reviewer_lines <- lapply(selected, function(uid) {
-      u <- find_user_by_id(registry, uid, require_active = FALSE)
-      label <- if (is.null(u)) uid else u$display_name
-      n_new <- as.integer(plan$by_user[[uid]] %||% 0L)
-      current_for_user <- Filter(
-        function(x) identical(normalise_assignment_row(x)$user_id, uid),
-        current_assignments
-      )
-      current_unresolved <- sum(vapply(
-        current_for_user,
-        function(x) is.null(case_authoritative_event(w01_active_assignment_events(), normalise_assignment_row(x)$case_id)),
-        logical(1)
-      ))
-      tags$li(sprintf(
-        "%s: %d current + %d new = %d active case%s",
-        label,
-        current_unresolved,
-        n_new,
-        current_unresolved + n_new,
-        if ((current_unresolved + n_new) == 1L) "" else "s"
-      ))
-    })
-
-    div(
-      class = "p-2 border rounded bg-light",
-      tags$strong("Preview"),
-      tags$div(
-        class = "small",
-        sprintf(
-          "%d unresolved case%s available; %d case%s selected, creating %d assignment%s.",
-          plan$available,
-          if (plan$available == 1L) "" else "s",
-          plan$selected_cases %||% length(plan$case_ids %||% character()),
-          if ((plan$selected_cases %||% length(plan$case_ids %||% character())) == 1L) "" else "s",
-          plan$allocated,
-          if (plan$allocated == 1L) "" else "s"
-        )
-      ),
-      if (length(reviewer_lines)) tags$ul(class = "small mb-0 mt-1", reviewer_lines)
-    )
-  })
-
-  output$w01_assignment_status <- renderText(assignment_manage_status())
-
-  observeEvent(input$w01_apply_assignments, {
-    req(authenticated())
-    if (!session_can("manage_assignments")) {
-      assignment_manage_status("You do not have permission to manage assignments.")
-      return()
-    }
-    plan <- w01_assignment_plan()
-    if (!is.null(plan$error)) {
-      assignment_manage_status(plan$error)
-      return()
-    }
-    if (!length(plan$new_assignments)) {
-      assignment_manage_status("No eligible cases to assign.")
-      return()
-    }
-
-    updated <- c(assignment_registry_rv(), plan$new_assignments)
-    persisted <- tryCatch(
-      save_assignment_registry(
-        updated,
-        assignment_path,
-        actor_user_id = session_reviewer_id(),
-        expected_current_signature = assignment_registry_signature(assignment_registry_rv())
-      ),
-      error = function(e) {
-        assignment_manage_status(paste("Assignment save failed:", conditionMessage(e)))
-        NULL
-      }
-    )
-    if (is.null(persisted)) return()
-
-    assignment_registry_rv(persisted)
-    assignment_manage_status(sprintf(
-      "Added %d new case%s.",
-      plan$allocated,
-      if (plan$allocated == 1L) "" else "s"
-    ))
-  })
-
-  observeEvent(input$w01_remove_assignments, {
-    req(authenticated())
-    if (!session_can("manage_assignments")) {
-      assignment_manage_status("You do not have permission to manage assignments.")
-      return()
-    }
-    selected_user <- as.character(input$w01_remove_assignment_user %||% "")
-    result <- tryCatch(
-      cancel_user_assignments(
-        assignment_registry_rv(),
-        selected_user,
-        w01_active_assignment_events(),
-        "01",
-        batch_id_rv(),
-        "deduplication"
-      ),
-      error = function(e) e
-    )
-    if (inherits(result, "error")) {
-      assignment_manage_status(conditionMessage(result))
-      return()
-    }
-
-    persisted <- tryCatch(
-      save_assignment_registry(
-        result$assignments,
-        assignment_path,
-        actor_user_id = session_reviewer_id(),
-        expected_current_signature = assignment_registry_signature(assignment_registry_rv())
-      ),
-      error = function(e) {
-        assignment_manage_status(paste("Assignment removal failed:", conditionMessage(e)))
-        NULL
-      }
-    )
-    if (is.null(persisted)) return()
-
-    assignment_registry_rv(persisted)
-    assignment_manage_status(sprintf(
-      "Removed %d unfinished assignment%s.",
-      result$cancelled,
-      if (result$cancelled == 1L) "" else "s"
-    ))
-  })
-
 
   workflow_assignment_plan <- function(prefix, cases, events, workflow, batch_id, task_type) {
     selected <- as.character(input[[paste0(prefix, "_assignment_users")]] %||% character())
@@ -3408,6 +3184,34 @@ server <- function(input, output, session) {
     assignment_registry_rv(persisted)
     invisible(TRUE)
   }
+
+  w01_assignment_plan <- reactive({
+    req(authenticated())
+    workflow_assignment_plan(
+      "w01", w01_all_cases_rv(), w01_active_assignment_events(),
+      "01", batch_id_rv(), "deduplication"
+    )
+  })
+  output$w01_assignment_preview <- renderUI({
+    req(authenticated())
+    workflow_assignment_preview(
+      w01_assignment_plan(), "w01", "01", batch_id_rv(),
+      "deduplication", w01_active_assignment_events()
+    )
+  })
+  output$w01_assignment_status <- renderText(assignment_manage_status())
+  observeEvent(input$w01_apply_assignments, {
+    apply_workflow_assignments(w01_assignment_plan())
+  })
+  observeEvent(input$w01_remove_assignments, {
+    remove_workflow_user_assignments(
+      input$w01_remove_assignment_user,
+      w01_active_assignment_events(),
+      "01",
+      batch_id_rv(),
+      "deduplication"
+    )
+  })
 
   w02_assignment_plan <- reactive({
     req(authenticated())
