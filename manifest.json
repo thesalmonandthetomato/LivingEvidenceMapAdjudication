@@ -1695,13 +1695,16 @@
   },
   "files": {
     ".github/workflows/validate.yml": {
-      "checksum": "858de72d9cb5c85bc9be9a689fbc77b3"
+      "checksum": "95fa075f408f8d8e15c058c3f2380aee"
     },
     "app.R": {
-      "checksum": "b7341682ff87daeffc66113b0e00ff96"
+      "checksum": "b749e9ec84abd9b39e1eb02afa3f39e8"
     },
     "docs/workflow02_adjudication_contract.md": {
       "checksum": "70e8056f8d6149f52ed939221645e1f9"
+    },
+    "fixtures/assignments_w01_local.jsonl": {
+      "checksum": "33e36050d471ebd693858c5747f1fab3"
     },
     "fixtures/w01_real_sample_2.jsonl": {
       "checksum": "b95ff9acc42004e0c32e0bbeec3d93a9"
@@ -1802,23 +1805,41 @@
     "multiuser_app/tests/test_w08_canonical_kpi.R": {
       "checksum": "cd4e195e71abbeb42f7801fdaae27f0f"
     },
+    "R/adjudication_schema.R": {
+      "checksum": "cd12bcd15240403163354e7a89ac7f40"
+    },
+    "R/assignments.R": {
+      "checksum": "67d1d4345f1982faf86c0fa6bd74fd7a"
+    },
     "R/auth.R": {
-      "checksum": "386d3f17d2856f50d104d87761906e16"
+      "checksum": "cadec0238e5356811bd8495088892a66"
+    },
+    "R/decision_events.R": {
+      "checksum": "544d137b964d270470ecfe99197ddee1"
     },
     "R/github_dispatch.R": {
-      "checksum": "045fbd5596d677624939939cab282e34"
+      "checksum": "7aff66141a1756109b0dccde20670e67"
     },
     "R/storage_backend.R": {
-      "checksum": "fdc863ed451e450d5416662148f4f63a"
+      "checksum": "f6febf54e12c9a4a486e36f05ecd62e1"
     },
     "R/storage_local.R": {
-      "checksum": "04242516ce13f82c81a551f4c1784928"
+      "checksum": "6cfc5fa65dc8fd1020fad3ca42f2e397"
     },
     "R/storage_sheets.R": {
-      "checksum": "cfadb745ae3b7dc2d57f5c2a6d42ccb8"
+      "checksum": "3f60764691eca36ecd3ccbccef4b54ff"
+    },
+    "R/users.R": {
+      "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
     },
     "R/w01_contract.R": {
       "checksum": "08a1be968420750f0593f092c2b7caab"
+    },
+    "R/w04_blind_resolution.R": {
+      "checksum": "ba6fd28afe370e10d7010181e3aff887"
+    },
+    "R/w04_validation_lifecycle.R": {
+      "checksum": "0793acf1d57562d687b254fcc633bfb2"
     },
     "README.md": {
       "checksum": "7deb1ebf297595011e635b3c6e943a06"
@@ -1826,8 +1847,44 @@
     "scripts/make_manifest.R": {
       "checksum": "830f4fe98acd7bfe7139617f6a5cbfa8"
     },
+    "tests/test_assignments.R": {
+      "checksum": "56bc23194ae9612a912dbc192d373244"
+    },
+    "tests/test_auth.R": {
+      "checksum": "71a83aecde7c9af7e37a90d8dfc13b63"
+    },
+    "tests/test_decision_events.R": {
+      "checksum": "27f6693f251666375388b6c71d038c95"
+    },
+    "tests/test_local_assignments.R": {
+      "checksum": "5694c4b318b92fc4926c022bf68fd37c"
+    },
+    "tests/test_phase1c_permissions.R": {
+      "checksum": "6cb80068b9538a109f185bb4fc248a59"
+    },
+    "tests/test_preproduction_contract.R": {
+      "checksum": "3971a9a86cf5afe6ed978a9da179a4a5"
+    },
+    "tests/test_users.R": {
+      "checksum": "3478785333151da4bc9976089d9d66b9"
+    },
     "tests/test_w01_contract.R": {
-      "checksum": "351b37375b7e30c5d6058325091b7526"
+      "checksum": "88b93cc773c655b9f543465148cfff75"
+    },
+    "tests/test_w01_decision_events.R": {
+      "checksum": "112a0e96d6ba1c604e42171bdea3cd43"
+    },
+    "tests/test_w04_blind_resolution.R": {
+      "checksum": "a11cf1658b0f1913ddc0d1e637cdcef4"
+    },
+    "tests/test_w04_validation_dispatch.R": {
+      "checksum": "bac8a6f0b75122533384cca72f498516"
+    },
+    "tests/test_w04_validation_lifecycle.R": {
+      "checksum": "8711ce8a4c4eefc92e61781498c81e7d"
+    },
+    "tests/test_w08_canonical_kpi.R": {
+      "checksum": "cd4e195e71abbeb42f7801fdaae27f0f"
     }
   },
   "users": null
