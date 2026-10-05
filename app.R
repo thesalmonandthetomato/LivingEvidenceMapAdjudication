@@ -793,6 +793,7 @@ server <- function(input, output, session) {
   pipeline_status_rv <- reactiveVal(NULL)
   manual_screening_rv <- reactiveVal(NULL)
   authoritative_w08_rv <- reactiveVal(NULL)
+  backend_reset_status <- reactiveVal("")
 
   observe({
     req(authenticated())
@@ -2817,8 +2818,115 @@ server <- function(input, output, session) {
               )
             )
           },
-          workflow_sections_display
+          workflow_sections_display,
+          tags$hr(class = "my-3"),
+          div(
+            class = "border rounded p-3",
+            tags$strong("Backend maintenance"),
+            tags$p(
+              class = "text-secondary small mt-1 mb-2",
+              "Archive the transient adjudication backend to restricted Zenodo and reset all operational queue, decision, assignment and status tabs for the next update. Production queues that are not marked consumed block the reset."
+            ),
+            actionButton(
+              "reset_backend_queue",
+              "Reset backend queue",
+              class = "btn-outline-danger btn-sm"
+            ),
+            tags$div(
+              class = "saved-note mt-2",
+              textOutput("backend_reset_status", inline = TRUE)
+            )
+          )
         )
+      )
+    )
+  })
+
+  output$backend_reset_status <- renderText(backend_reset_status())
+
+  observeEvent(input$reset_backend_queue, {
+    req(authenticated())
+    if (!session_can("control_workflows")) {
+      backend_reset_status("Administrator permission is required.")
+      return()
+    }
+    showModal(modalDialog(
+      title = "Reset backend queue",
+      tags$p(
+        "This will first archive the operational Google Sheets backend to a restricted Zenodo record, then delete the transient operational tabs."
+      ),
+      tags$p(
+        class = "text-danger",
+        tags$strong("Any non-test production queue that is not marked consumed will block the reset.")
+      ),
+      textInput(
+        "backend_reset_confirmation",
+        'Type "RESET" to confirm',
+        value = ""
+      ),
+      footer = tagList(
+        modalButton("Cancel"),
+        actionButton("confirm_backend_reset", "Archive and reset", class = "btn-danger")
+      ),
+      easyClose = FALSE
+    ))
+  })
+
+  observeEvent(input$confirm_backend_reset, {
+    req(authenticated())
+    if (!session_can("control_workflows")) {
+      backend_reset_status("Administrator permission is required.")
+      removeModal()
+      return()
+    }
+    if (!identical(trimws(as.character(input$backend_reset_confirmation %||% "")), "RESET")) {
+      backend_reset_status('Reset cancelled: type "RESET" exactly to confirm.')
+      return()
+    }
+
+    p <- pipeline_status_rv()
+    active <- suppressWarnings(as.integer(as.character((p %||% list())$active_workflow %||% "")))
+    completed <- suppressWarnings(as.integer(as.character((p %||% list())$completed_through %||% "")))
+    status_label <- tolower(trimws(as.character((p %||% list())$status_label %||% "")))
+    update_complete <- !is.null(p) &&
+      is.na(active) &&
+      !is.na(completed) && completed >= 11L &&
+      grepl("complete|final", status_label)
+
+    if (!isTRUE(update_complete)) {
+      backend_reset_status("Reset refused: the current update is not recorded as complete.")
+      return()
+    }
+
+    backend_reset_status("Archiving backend to Zenodo before reset…")
+    result <- tryCatch(
+      reset_backend_queue_state(created_by = session_reviewer_id()),
+      error = function(e) e
+    )
+    if (inherits(result, "error")) {
+      backend_reset_status(paste("Reset refused:", conditionMessage(result)))
+      return()
+    }
+
+    removeModal()
+    assignment_registry_rv(list())
+    w01_all_cases_rv(list()); cases_rv(NULL); decisions(list()); batch_id_rv(""); queue_sha_rv(""); batch_status_rv("")
+    w02_all_cases_rv(list()); w02_cases_rv(NULL); w02_decisions(list()); w02_batch_id_rv(""); w02_queue_sha_rv(""); w02_batch_status_rv("")
+    w04_all_cases_rv(list()); w04_cases_rv(NULL); w04_decisions(list()); w04_batch_id_rv(""); w04_queue_sha_rv(""); w04_batch_status_rv("")
+    w04_resolution_cases_rv(NULL); w04_resolution_decisions(list()); w04_resolution_batch_id_rv(""); w04_resolution_queue_sha_rv("")
+    w04_conflict_cases_rv(NULL); w04_conflict_decisions(list()); w04_conflict_batch_id_rv(""); w04_conflict_queue_sha_rv("")
+    w04_consistency_analyses_rv(list()); w04_conflict_sets_rv(list()); w04_consistency_history_loaded(FALSE)
+    w08_all_cases_rv(list()); w08_cases_rv(NULL); w08_decisions(list()); w08_batch_id_rv(""); w08_queue_sha_rv(""); w08_batch_status_rv("")
+
+    doi <- as.character(result$archived$doi %||% "")
+    record_id <- as.character(result$archived$record_id %||% "")
+    archive_label <- if (nzchar(doi)) doi else paste0("Zenodo record ", record_id)
+    backend_reset_status(
+      sprintf(
+        "Backend reset complete. Archived %d operational tab(s) as %s; deleted %d transient tab(s).",
+        length(result$archived$tabs %||% character()),
+        archive_label,
+        length(result$deleted_tabs %||% character())
       )
     )
   })
