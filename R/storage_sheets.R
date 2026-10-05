@@ -633,6 +633,63 @@ append_sheet_w02_decision <- function(decision, prior_decision = NULL) {
 }
 
 
+w01_export_request_tab <- function() {
+  Sys.getenv("LEM_W01_EXPORT_REQUEST_TAB", unset = "w01_export_requests")
+}
+
+w01_export_request_exists <- function(queue_sha256, batch_id) {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w01_export_request_tab()
+  tabs <- sheet_names_cached(ss)
+  if (!tab %in% tabs) return(FALSE)
+
+  x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
+  if (!nrow(x)) return(FALSE)
+  required <- c("queue_sha256","batch_id","status")
+  if (!all(required %in% names(x))) stop("W01 export-request tab is malformed", call.=FALSE)
+
+  any(
+    as.character(x$queue_sha256) == as.character(queue_sha256) &
+    as.character(x$batch_id) == as.character(batch_id) &
+    as.character(x$status) %in% c("dispatching","dispatched")
+  )
+}
+
+append_w01_export_request <- function(queue_sha256, batch_id, status, message = "") {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w01_export_request_tab()
+  tabs <- sheet_names_cached(ss)
+
+  required_cols <- c(
+    "request_id","queue_sha256","batch_id","status",
+    "requested_at_utc","message"
+  )
+
+  if (!tab %in% tabs) {
+    sheet_add_cached(ss, tab)
+    empty <- as.data.frame(setNames(replicate(length(required_cols), character(), simplify=FALSE), required_cols))
+    googlesheets4::sheet_write(empty, ss=ss, sheet=tab)
+  }
+
+  row <- data.frame(
+    request_id=paste0("w01-export-",digest::digest(
+      paste(queue_sha256,batch_id,status,format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%OS6Z"),sep="|"),
+      algo="sha256",serialize=FALSE
+    )),
+    queue_sha256=as.character(queue_sha256),
+    batch_id=as.character(batch_id),
+    status=as.character(status),
+    requested_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
+    message=as.character(message),
+    stringsAsFactors=FALSE
+  )
+  googlesheets4::sheet_append(ss,data=row,sheet=tab)
+  invisible(row)
+}
+
+
 w02_resume_request_tab <- function() {
   Sys.getenv("LEM_W02_RESUME_REQUEST_TAB", unset = "w02_resume_requests")
 }
