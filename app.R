@@ -2820,21 +2820,31 @@ server <- function(input, output, session) {
           },
           workflow_sections_display,
           tags$hr(class = "my-3"),
-          div(
-            class = "border rounded p-3",
-            tags$strong("Backend maintenance"),
-            tags$p(
-              class = "text-secondary small mt-1 mb-2",
-              "Archive the transient adjudication backend to restricted Zenodo and reset all operational queue, decision, assignment and status tabs for the next update. Production queues that are not marked consumed block the reset."
+          tags$details(
+            class = "assignment-workflow border rounded",
+            `data-accordion-key` = "backend-maintenance",
+            tags$summary(
+              div(
+                class = "d-inline-flex flex-wrap align-items-center gap-2",
+                tags$strong("Backend maintenance"),
+                tags$span(class = "task-badge", "Administrator only")
+              )
             ),
-            actionButton(
-              "reset_backend_queue",
-              "Reset backend queue",
-              class = "btn-outline-danger btn-sm"
-            ),
-            tags$div(
-              class = "saved-note mt-2",
-              textOutput("backend_reset_status", inline = TRUE)
+            div(
+              class = "pt-2 px-3 pb-3",
+              tags$p(
+                class = "text-secondary small mb-2",
+                "Archive the transient adjudication backend to restricted Zenodo and reset all operational queue, decision, assignment and status tabs for the next update. Production queues that are not marked consumed block the reset."
+              ),
+              actionButton(
+                "reset_backend_queue",
+                "Reset backend queue",
+                class = "btn-outline-danger btn-sm"
+              ),
+              tags$div(
+                class = "saved-note mt-2",
+                textOutput("backend_reset_status", inline = TRUE)
+              )
             )
           )
         )
