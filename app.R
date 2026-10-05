@@ -4617,8 +4617,18 @@ server <- function(input, output, session) {
           requested <- if (identical(storage_backend(),"google_sheets")) {
             w01_export_request_exists(batch$queue_sha256,batch$batch_id)
           } else FALSE
+          # Compatibility for the live W01 batch that was dispatched immediately
+          # before persistent export-request logging was introduced.
+          legacy_dispatched_batch <- identical(
+            as.character(batch$batch_id %||% ""),
+            "w01-run-37347666369"
+          ) && identical(
+            tolower(as.character(batch$queue_sha256 %||% "")),
+            "6a7bcd415f8fd9fc4b3c4eaf36776c898702cd590303c12f39d68bdab90c6778"
+          ) && identical(as.character(batch$batch_status %||% ""), "review_complete")
+          requested <- isTRUE(requested) || isTRUE(legacy_dispatched_batch)
           w01_export_requested_rv(isTRUE(requested))
-          w01_export_status_rv(if(isTRUE(requested)) "Sent to GitHub." else "")
+          w01_export_status_rv(if(isTRUE(requested)) "Sent to GitHub. The reviewed batch is queued for integrity checks and resume." else "")
 
           ids <- vapply(visible_cases, function(x) as.character(x$review_case_id), character(1))
           done_ids <- if (length(current_decisions)) {
