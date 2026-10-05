@@ -28,3 +28,9 @@ The public endpoint exposes only the access-key screen until authentication succ
 ## Security
 
 Do not commit access keys, Google service-account JSON, or local decision files.
+
+## Production cutover
+
+The tested multi-user app is now the root production implementation on `main`. The pre-cutover legacy state is retained on `production-legacy-adjudication-backup-20261005`.
+
+See `docs/production_multiuser_cutover_20261005.md` for cutover provenance, rollback and smoke-test instructions.
