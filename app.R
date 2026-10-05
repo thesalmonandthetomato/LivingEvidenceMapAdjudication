@@ -3937,6 +3937,7 @@ server <- function(input, output, session) {
       login_status("Too many failed attempts. Try again shortly.")
       return()
     }
+    auth_status <- "diagnostic_error"
     login_user <- tryCatch({
       if (!individual_auth_configured()) {
         stop(
@@ -3945,9 +3946,16 @@ server <- function(input, output, session) {
         )
       }
       registry <- read_user_registry()
-      authenticate_registered_user(registry, input$login_email, input$access_key)
+      auth_result <- authenticate_registered_user_result(
+        registry,
+        input$login_email,
+        input$access_key
+      )
+      auth_status <- as.character(auth_result$status %||% "diagnostic_error")
+      auth_result$user
     }, error = function(e) {
       login_status(paste("Login configuration error:", conditionMessage(e)))
+      auth_status <- "configuration_error"
       NULL
     })
 
@@ -4243,16 +4251,8 @@ server <- function(input, output, session) {
         failed_attempts(0L)
         login_status("Too many failed attempts. Try again in one minute.")
       } else {
-        diagnostic <- tryCatch(
-          registered_user_auth_diagnostic(
-            if (exists("registry", inherits = FALSE)) registry else read_user_registry(),
-            input$login_email,
-            input$access_key
-          ),
-          error = function(e) "diagnostic_error"
-        )
         login_status(switch(
-          diagnostic,
+          auth_status,
           email_missing = "Email is blank.",
           email_not_found_or_inactive = "Email was not found in the active user registry.",
           hash_missing_for_user = "Email was recognised, but no access-key hash is configured for this user ID.",
