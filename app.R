@@ -4243,7 +4243,24 @@ server <- function(input, output, session) {
         failed_attempts(0L)
         login_status("Too many failed attempts. Try again in one minute.")
       } else {
-        login_status("Invalid email or access key.")
+        diagnostic <- tryCatch(
+          registered_user_auth_diagnostic(
+            if (exists("registry", inherits = FALSE)) registry else read_user_registry(),
+            input$login_email,
+            input$access_key
+          ),
+          error = function(e) "diagnostic_error"
+        )
+        login_status(switch(
+          diagnostic,
+          email_missing = "Email is blank.",
+          email_not_found_or_inactive = "Email was not found in the active user registry.",
+          hash_missing_for_user = "Email was recognised, but no access-key hash is configured for this user ID.",
+          access_key_missing = "Access key is blank.",
+          access_key_mismatch = "Email was recognised, but the access key does not match the configured hash.",
+          diagnostic_error = "Authentication failed and the diagnostic check could not be completed.",
+          "Invalid email or access key."
+        ))
       }
     }
   })
