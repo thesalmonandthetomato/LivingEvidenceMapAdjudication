@@ -42,6 +42,21 @@ user_access_key_hashes <- function() {
   vals
 }
 
+registered_user_auth_diagnostic <- function(users, email, access_key) {
+  if (is.null(email) || !nzchar(trimws(as.character(email)))) return("email_missing")
+  user <- find_user_by_email(users, email, require_active = TRUE)
+  if (is.null(user)) return("email_not_found_or_inactive")
+
+  hashes <- user_access_key_hashes()
+  expected <- hashes[[user$user_id]]
+  if (is.null(expected) || !nzchar(expected)) return("hash_missing_for_user")
+
+  if (is.null(access_key) || !nzchar(as.character(access_key))) return("access_key_missing")
+  actual <- tolower(hash_access_key(access_key))
+  if (!identical(actual, expected)) return("access_key_mismatch")
+  "ok"
+}
+
 authenticate_registered_user <- function(users, email, access_key) {
   if (is.null(email) || !nzchar(trimws(as.character(email)))) return(NULL)
   if (is.null(access_key) || !nzchar(as.character(access_key))) return(NULL)
