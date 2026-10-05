@@ -615,20 +615,52 @@ w04_kappa_registry_tab <- function() {
 }
 
 read_github_w04_kappa_registry <- function() {
-  url <- Sys.getenv(
-    "LEM_W04_KAPPA_REGISTRY_URL",
-    unset = "https://raw.githubusercontent.com/thesalmonandthetomato/LivingEvidenceMap/workflow01-final-architecture/docs/workflow04/kappa_registry.csv"
+  repo <- Sys.getenv(
+    "LEM_W04_KAPPA_REGISTRY_REPO",
+    unset = "thesalmonandthetomato/LivingEvidenceMap"
   )
-  x <- tryCatch(
+  ref <- Sys.getenv(
+    "LEM_W04_KAPPA_REGISTRY_REF",
+    unset = "workflow01-final-architecture"
+  )
+  path <- Sys.getenv(
+    "LEM_W04_KAPPA_REGISTRY_PATH",
+    unset = "docs/workflow04/kappa_registry.csv"
+  )
+  endpoint <- sprintf(
+    "https://api.github.com/repos/%s/contents/%s",
+    repo,
+    paste(vapply(strsplit(path,"/",fixed=TRUE)[[1L]],URLencode,character(1),reserved=TRUE),collapse="/")
+  )
+  req <- httr2::request(endpoint) |>
+    httr2::req_url_query(ref=ref) |>
+    httr2::req_headers(
+      Accept="application/vnd.github+json",
+      `X-GitHub-Api-Version`="2022-11-28",
+      `User-Agent`="LivingEvidenceMap-Adjudication"
+    )
+  token <- Sys.getenv("LEM_GITHUB_DISPATCH_TOKEN",unset="")
+  if(nzchar(token)) {
+    req <- httr2::req_headers(req,Authorization=paste("Bearer",token))
+  }
+  x <- tryCatch({
+    resp <- httr2::req_perform(req)
+    if(httr2::resp_status(resp)!=200L) stop("GitHub API HTTP ",httr2::resp_status(resp))
+    meta <- jsonlite::fromJSON(httr2::resp_body_string(resp),simplifyVector=FALSE)
+    if(!identical(as.character(meta$encoding %||% ""),"base64") || !nzchar(as.character(meta$content %||% ""))) {
+      stop("GitHub registry response is missing base64 content")
+    }
+    txt <- rawToChar(jsonlite::base64_dec(gsub("[[:space:]]+","",as.character(meta$content))))
     utils::read.csv(
-      url,
+      text=txt,
       stringsAsFactors=FALSE,
       check.names=FALSE,
       colClasses="character",
       na.strings=NULL
-    ),
-    error=function(e) stop("Could not read authoritative GitHub W04 kappa registry: ",conditionMessage(e),call.=FALSE)
-  )
+    )
+  },error=function(e) {
+    stop("Could not read authoritative GitHub W04 kappa registry: ",conditionMessage(e),call.=FALSE)
+  })
   w04_normalise_kappa_registry(x)
 }
 
