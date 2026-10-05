@@ -6213,10 +6213,7 @@ server <- function(input, output, session) {
     z <- current_case()
     rec <- if (identical(side,"a")) z$record_i else z$record_j
     value <- trimws(as.character(if (identical(side,"a")) input$w01_abstract_a else input$w01_abstract_b))
-    if (!nzchar(value)) {
-      status("Corrected abstract cannot be blank.")
-      return(invisible(FALSE))
-    }
+    action <- if (nzchar(value)) "replace_abstract" else "strip_abstract"
     original <- trimws(as.character(rec$abstract %||% ""))
     active <- w01_repairs_rv() %||% list()
     hits <- Filter(function(x) {
@@ -6232,9 +6229,9 @@ server <- function(input, output, session) {
       review_case_id=as.character(z$review_case_id),
       source=as.character(rec$source),
       source_record_id=as.character(rec$source_record_id),
-      action="replace_abstract",
+      action=action,
       value=value,
-      reason="human_abstract_correction_during_deduplication",
+      reason=if (identical(action,"strip_abstract")) "human_abstract_removal_during_deduplication" else "human_abstract_correction_during_deduplication",
       reviewer=session_reviewer_id(),
       saved_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
       queue_sha256=queue_sha_rv()
@@ -6253,7 +6250,11 @@ server <- function(input, output, session) {
     ), active)
     w01_repairs_rv(c(remaining,list(saved)))
     w01_abstract_edit_rv(NULL)
-    status(sprintf("Saved corrected abstract for Record %s.", toupper(side)))
+    status(sprintf(
+      "%s abstract for Record %s.",
+      if (identical(action,"strip_abstract")) "Removed" else "Saved corrected",
+      toupper(side)
+    ))
     invisible(TRUE)
   }
 
