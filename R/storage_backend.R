@@ -17,6 +17,21 @@ save_active_decision <- function(decision, local_path = NULL, prior_decision = N
 }
 
 
+read_active_w01_repairs <- function(local_path = NULL, queue_sha256 = "") {
+  b <- storage_backend()
+  if (identical(b, "google_sheets")) return(active_sheet_w01_repairs(queue_sha256))
+  if (!identical(b, "local")) stop("Unsupported LEM_STORAGE_BACKEND: ", b, call.=FALSE)
+  read_local_w01_repairs(local_path, queue_sha256)
+}
+
+save_active_w01_repair <- function(repair, local_path = NULL, prior_repair = NULL) {
+  b <- storage_backend()
+  if (identical(b, "google_sheets")) return(append_sheet_w01_repair(repair, prior_repair=prior_repair))
+  if (!identical(b, "local")) stop("Unsupported LEM_STORAGE_BACKEND: ", b, call.=FALSE)
+  write_local_w01_repair(local_path, repair, prior_repair=prior_repair)
+}
+
+
 read_user_registry <- function(local_path = NULL) {
   b <- storage_backend()
   users <- if (identical(b, "google_sheets")) {
