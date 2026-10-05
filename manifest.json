@@ -1695,10 +1695,10 @@
   },
   "files": {
     ".github/workflows/validate.yml": {
-      "checksum": "95fa075f408f8d8e15c058c3f2380aee"
+      "checksum": "1c9648c41f89d8546f59a25178dd1042"
     },
     "app.R": {
-      "checksum": "b749e9ec84abd9b39e1eb02afa3f39e8"
+      "checksum": "7ad02e4f422378d961641ad6b365e853"
     },
     "docs/production_multiuser_cutover_20261005.md": {
       "checksum": "0c8abb9a02a372eec4f35bb66812bce6"
@@ -1830,7 +1830,7 @@
       "checksum": "6cfc5fa65dc8fd1020fad3ca42f2e397"
     },
     "R/storage_sheets.R": {
-      "checksum": "3f60764691eca36ecd3ccbccef4b54ff"
+      "checksum": "ac1613c46fd02b74b1761de8cdfe301e"
     },
     "R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
@@ -1855,6 +1855,9 @@
     },
     "tests/test_auth.R": {
       "checksum": "71a83aecde7c9af7e37a90d8dfc13b63"
+    },
+    "tests/test_backend_reset_contract.R": {
+      "checksum": "209c48127072cb047959b1b1b04f32b4"
     },
     "tests/test_decision_events.R": {
       "checksum": "27f6693f251666375388b6c71d038c95"
