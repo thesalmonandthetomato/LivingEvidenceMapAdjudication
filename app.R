@@ -2610,7 +2610,10 @@ server <- function(input, output, session) {
       tags$tr(tags$td(x$pattern),tags$td(x$n))
     })
 
-    w04_results_panel <- if (has_w04_batch) {
+    w04_results_panel <- if (
+      session_can("manage_assignments") &&
+      (has_w04_batch || nrow(w04_kappa_registry_rv()) > 0L)
+    ) {
       tags$details(
         class="assignment-workflow assignment-submenu wf-w04 mb-2",
         `data-accordion-key`="w04-consistency-checking",
@@ -2621,7 +2624,9 @@ server <- function(input, output, session) {
             tags$span(class="task-badge","Administrator only"),
             tags$span(
               class="text-secondary small",
-              if (length(selected_raters) < 2L) {
+              if (!has_w04_batch) {
+                "Historical validation agreement"
+              } else if (length(selected_raters) < 2L) {
                 "Select at least two raters"
               } else if (w04_selected_analysis$complete < 1L) {
                 "No complete cases for selected raters"
@@ -2640,6 +2645,12 @@ server <- function(input, output, session) {
         div(
           class="pt-2",
           uiOutput("w04_kappa_history"),
+          if (!has_w04_batch) {
+            tags$div(
+              class="text-secondary small",
+              "No active W04 manual-screening batch. Historical kappa data remain available above."
+            )
+          } else tagList(
           tags$hr(),
           tags$p(
             class="text-secondary small mb-1",
@@ -2756,6 +2767,7 @@ server <- function(input, output, session) {
               )
             )
           }
+          )
         )
       )
     } else NULL
