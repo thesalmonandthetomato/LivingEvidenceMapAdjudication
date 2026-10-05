@@ -319,6 +319,103 @@ append_sheet_decision <- function(decision, prior_decision = NULL) {
   ))
 }
 
+w01_repair_tab <- function() {
+  Sys.getenv("LEM_W01_REPAIR_TAB", unset = "w01_data_quality_repairs")
+}
+
+ensure_w01_repair_tab <- function() {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w01_repair_tab()
+  cols <- c(
+    "repair_id","review_case_id","source","source_record_id","action","value",
+    "reason","reviewer","saved_at_utc","queue_sha256","supersedes_repair_id"
+  )
+  tabs <- sheet_names_cached(ss)
+  if (!tab %in% tabs) {
+    sheet_add_cached(ss, tab)
+    empty <- as.data.frame(setNames(replicate(length(cols), character(), simplify=FALSE), cols), stringsAsFactors=FALSE)
+    googlesheets4::sheet_write(empty, ss=ss, sheet=tab)
+  }
+  invisible(TRUE)
+}
+
+read_sheet_w01_repair_log <- function() {
+  ensure_w01_repair_tab()
+  ss <- sheet_id_from_env()
+  tab <- w01_repair_tab()
+  x <- googlesheets4::read_sheet(ss, sheet=tab, col_types="c")
+  if (!nrow(x)) return(list())
+  required <- c(
+    "repair_id","review_case_id","source","source_record_id","action","value",
+    "reason","reviewer","saved_at_utc","queue_sha256","supersedes_repair_id"
+  )
+  missing <- setdiff(required, names(x))
+  if (length(missing)) stop("W01 repair tab missing field(s): ", paste(missing, collapse=", "), call.=FALSE)
+  lapply(seq_len(nrow(x)), function(i) as.list(x[i, required, drop=FALSE]))
+}
+
+active_sheet_w01_repairs <- function(queue_sha256 = "") {
+  rows <- read_sheet_w01_repair_log()
+  if (nzchar(as.character(queue_sha256))) {
+    rows <- Filter(function(x) identical(
+      tolower(as.character(x$queue_sha256 %||% "")),
+      tolower(as.character(queue_sha256))
+    ), rows)
+  }
+  if (!length(rows)) return(list())
+  key <- vapply(rows, function(x) paste(
+    as.character(x$source %||% ""),
+    as.character(x$source_record_id %||% ""),
+    sep="::"
+  ), character(1))
+  tm <- vapply(rows, function(x) as.character(x$saved_at_utc %||% ""), character(1))
+  ord <- order(tm, seq_along(rows), decreasing=TRUE)
+  rows <- rows[ord]; key <- key[ord]
+  rows[!duplicated(key)]
+}
+
+append_sheet_w01_repair <- function(repair, prior_repair = NULL) {
+  ensure_w01_repair_tab()
+  if (!identical(as.character(repair$action %||% ""), "replace_abstract")) {
+    stop("Only replace_abstract is supported by the W01 Shiny repair editor", call.=FALSE)
+  }
+  if (!nzchar(trimws(as.character(repair$value %||% "")))) {
+    stop("Corrected abstract must not be empty", call.=FALSE)
+  }
+  ss <- sheet_id_from_env()
+  tab <- w01_repair_tab()
+  saved_at <- as.character(repair$saved_at_utc %||% format(Sys.time(), tz="UTC", format="%Y-%m-%dT%H:%M:%SZ"))
+  supersedes <- if (is.null(prior_repair)) "" else as.character(prior_repair$repair_id %||% "")
+  repair_id <- paste0("w01-repair-", substr(digest::digest(
+    paste(
+      repair$review_case_id, repair$source, repair$source_record_id,
+      repair$action, repair$value, repair$reviewer, saved_at, sep="|"
+    ),
+    algo="sha256", serialize=FALSE
+  ), 1L, 24L))
+  row <- data.frame(
+    repair_id=repair_id,
+    review_case_id=as.character(repair$review_case_id),
+    source=as.character(repair$source),
+    source_record_id=as.character(repair$source_record_id),
+    action="replace_abstract",
+    value=as.character(repair$value),
+    reason=as.character(repair$reason %||% "human_abstract_correction_during_deduplication"),
+    reviewer=as.character(repair$reviewer),
+    saved_at_utc=saved_at,
+    queue_sha256=tolower(as.character(repair$queue_sha256)),
+    supersedes_repair_id=supersedes,
+    stringsAsFactors=FALSE
+  )
+  googlesheets4::sheet_append(ss, data=row, sheet=tab)
+  verify <- googlesheets4::read_sheet(ss, sheet=tab, col_types="c")
+  hit <- verify[as.character(verify$repair_id)==repair_id,,drop=FALSE]
+  if (nrow(hit)!=1L) stop("W01 abstract repair write could not be verified", call.=FALSE)
+  as.list(hit[1,,drop=FALSE])
+}
+
+
 export_active_sheet_w01_decisions <- function(output_path) {
   active <- active_sheet_decisions()
   if (!length(active)) stop("No Google Sheets decisions found", call.=FALSE)
