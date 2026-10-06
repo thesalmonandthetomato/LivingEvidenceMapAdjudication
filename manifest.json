@@ -1695,10 +1695,10 @@
   },
   "files": {
     ".github/workflows/validate.yml": {
-      "checksum": "1bf54114f52c98b210a8aa977965a21b"
+      "checksum": "924c35b65e436a2123c2243983b0f5b2"
     },
     "app.R": {
-      "checksum": "e8f4b53231fe4a171e88afe5bbacc3d3"
+      "checksum": "71e65e24ca0ac826bc58f205c27f9b12"
     },
     "docs/production_multiuser_cutover_20261005.md": {
       "checksum": "0c8abb9a02a372eec4f35bb66812bce6"
@@ -1876,6 +1876,9 @@
     },
     "tests/test_preproduction_contract.R": {
       "checksum": "e443660c618fa0845f6602c2aca18f30"
+    },
+    "tests/test_record_table_contract.R": {
+      "checksum": "c3230d48d1f3907abf333ad6a0f621ee"
     },
     "tests/test_users.R": {
       "checksum": "3478785333151da4bc9976089d9d66b9"
