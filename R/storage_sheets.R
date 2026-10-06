@@ -1577,35 +1577,12 @@ read_latest_pipeline_status <- function() {
     NULL
   }, error = function(e) NULL)
 
-  if (is.null(repo_status)) return(sheet_status)
-  if (is.null(sheet_status)) return(repo_status)
-
-  event_time <- function(z) {
-    raw <- as.character(z$event_at_utc %||% "")
-    parsed <- suppressWarnings(as.POSIXct(raw, format="%Y-%m-%dT%H:%M:%SZ", tz="UTC"))
-    if (is.na(parsed)) as.POSIXct("1970-01-01", tz="UTC") else parsed
-  }
-
-  # The Sheet is written before the branch status commit. Prefer it only when
-  # it is strictly newer; otherwise GitHub remains the canonical tie-breaker.
-  chosen <- if (event_time(sheet_status) > event_time(repo_status)) sheet_status else repo_status
-  if (!is.null(repo_status)) {
-    supplemental <- c(
-      "search_results_update",
-      "deduplicated_update","enriched_update","retracted_update",
-      "screened_include_update","screened_exclude_update",
-      "species_records","species_update",
-      "geography_with_update","geography_without_update",
-      "topic_with_update","topic_without_update"
-    )
-    for (nm in supplemental) {
-      if (!nzchar(as.character(chosen[[nm]] %||% "")) &&
-          nzchar(as.character(repo_status[[nm]] %||% ""))) {
-        chosen[[nm]] <- repo_status[[nm]]
-      }
-    }
-  }
-  chosen
+  # The branch JSON is the canonical KPI contract. The Sheet is only a
+  # resilience fallback if GitHub cannot be read. Mixing a newer Sheet row
+  # with branch-derived fields is unsafe across schema migrations because a
+  # positional Sheet append can transiently shift values under new headers.
+  if (!is.null(repo_status)) return(repo_status)
+  sheet_status
 }
 
 
