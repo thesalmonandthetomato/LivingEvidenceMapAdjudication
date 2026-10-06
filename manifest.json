@@ -1261,7 +1261,7 @@
         "Maintainer": "Kevin Ushey <kevin@rstudio.com>",
         "Repository": "CRAN",
         "Date/Publication": "2026-10-06 10:40:02 UTC",
-        "Built": "R 4.6.0; ; 2026-10-06 18:35:48 UTC; unix"
+        "Built": "R 4.6.0; ; 2026-10-06 19:42:46 UTC; unix"
       }
     },
     "rlang": {
@@ -1821,7 +1821,7 @@
       "checksum": "544d137b964d270470ecfe99197ddee1"
     },
     "R/github_dispatch.R": {
-      "checksum": "7537b855c2c5ca35971336fb6e1698bf"
+      "checksum": "8fd245155f4276dc465fbda35078457f"
     },
     "R/storage_backend.R": {
       "checksum": "e6e395bca1f55e20a9aedf7c647904e4"
