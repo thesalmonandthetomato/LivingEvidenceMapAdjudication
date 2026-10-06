@@ -63,14 +63,25 @@ stopifnot(w04_finalize_start > 0L, w04_finalize_call > w04_finalize_start)
 w04_finalize_block <- substr(app, w04_finalize_start, w04_finalize_call)
 stopifnot(grepl('session_can\\("control_workflows"\\)', w04_finalize_block, perl = TRUE))
 
-for (dispatch_call in c(
-  "dispatch_w04_resolution_resume",
-  "dispatch_w08_resume"
+for (helper in c(
+  "dispatch_completed_w04_resolution <- function()",
+  "dispatch_completed_w08 <- function()"
 )) {
-  pos <- regexpr(dispatch_call, app, fixed = TRUE)[[1L]]
-  stopifnot(pos > 0L)
-  before <- substr(app, max(1L, pos - 500L), pos)
-  stopifnot(grepl('session_can\\("control_workflows"\\)', before, perl = TRUE))
+  start <- regexpr(helper, app, fixed = TRUE)[[1L]]
+  stopifnot(start > 0L)
+  tail <- substr(app, start, nchar(app))
+  next_fn <- regexpr("\n\n  [A-Za-z0-9_]+ <- function\\(", tail, perl = TRUE)[[1L]]
+  block <- if (next_fn > 1L) substr(tail, 1L, next_fn - 1L) else tail
+  stopifnot(grepl('session_can\\("control_workflows"\\)', block, perl = TRUE))
 }
+
+stopifnot(grepl(
+  "dispatch_w04_resolution_resume\\(",
+  app, perl = TRUE
+))
+stopifnot(grepl(
+  "dispatch_w08_resume\\(",
+  app, perl = TRUE
+))
 
 cat("PASS: Phase 1C role enforcement\n")
