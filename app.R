@@ -1625,6 +1625,313 @@ server <- function(input, output, session) {
     )
   }
 
+
+  record_table_user_label <- function(user_id) {
+    uid <- as.character(user_id %||% "")
+    if (!nzchar(uid)) return("")
+    u <- find_user_by_id(user_registry_rv(),uid,require_active=FALSE)
+    if (is.null(u)) uid else as.character(u$display_name %||% uid)
+  }
+
+  record_table_decision_label <- function(x) {
+    d <- tolower(trimws(as.character(x$decision %||% "")))
+    if (nzchar(d)) {
+      return(c(
+        duplicate="Duplicate",
+        not_duplicate="Not duplicate",
+        retain="Include",
+        exclude="Exclude",
+        uncertain="Unsure",
+        accept_provider_field="Accept provider field",
+        reject_provider_field="Reject provider field",
+        reject_provider_match="Reject provider match"
+      )[[d]] %||% gsub("_"," ",d,fixed=TRUE))
+    }
+    if (nzchar(trimws(as.character(x$issue_decisions_json %||% "")))) return("Annotation saved")
+    ""
+  }
+
+  record_table_case_id <- function(z) {
+    as.character(z$review_case_id %||% z$case_id %||% z$record_id %||% "")
+  }
+
+  record_table_source_list <- function() {
+    out <- list()
+    add <- function(workflow,task_type,batch_id,cases,events) {
+      bid <- as.character(batch_id %||% "")
+      if (!nzchar(bid) || !length(cases %||% list())) return()
+      key <- paste(workflow,task_type,bid,sep="|")
+      out[[key]] <<- list(
+        workflow=as.character(workflow),
+        task_type=as.character(task_type),
+        batch_id=bid,
+        cases=cases %||% list(),
+        events=events %||% list(),
+        assignments=active_assignments_for_batch(
+          assignment_registry_rv(),workflow,bid,task_type
+        )
+      )
+    }
+    add("01","deduplication",batch_id_rv(),w01_all_cases_rv(),decisions())
+    add("02","enrichment",w02_batch_id_rv(),w02_all_cases_rv(),w02_decisions())
+    add("04","manual_screening",w04_batch_id_rv(),w04_all_cases_rv(),w04_decisions())
+    add("04","conflict_resolution",w04_active_conflict_batch_id(),w04_all_conflict_cases(),w04_conflict_decisions())
+    add("04","model_uncertainty",w04_resolution_batch_id_rv(),w04_resolution_all_cases_rv(),w04_resolution_decisions())
+    add("08","annotation",w08_batch_id_rv(),w08_all_cases_rv(),w08_decisions())
+    out
+  }
+
+  record_table_source <- function(workflow,task_type,batch_id="") {
+    xs <- record_table_source_list()
+    if (identical(as.character(workflow),"all")) return(xs)
+    hits <- Filter(function(x) {
+      identical(x$workflow,as.character(workflow)) &&
+        identical(x$task_type,as.character(task_type)) &&
+        (!nzchar(as.character(batch_id %||% "")) || identical(x$batch_id,as.character(batch_id)))
+    },xs)
+    hits
+  }
+
+  record_table_case_fields <- function(z,workflow,task_type) {
+    work_id <- as.character(z$work_id %||% z$record_id %||% z$review_case_id %||% z$case_id %||% "")
+    title <- ""
+    year <- ""
+    doi <- ""
+    abstract <- ""
+
+    if (identical(workflow,"01")) {
+      a <- z$record_i %||% list()
+      b <- z$record_j %||% list()
+      one <- function(rec,label) {
+        rid <- as.character(rec$work_id %||% rec$record_id %||% rec$source_record_id %||% "")
+        yr <- as.character(rec$year %||% "")
+        ttl <- display_sentence_case_if_all_caps(rec$title %||% "")
+        sprintf("%s: %s%s%s",label,rid,if(nzchar(yr)) paste0(" (",yr,")") else "",if(nzchar(ttl)) paste0(" ",ttl) else "")
+      }
+      title <- paste(one(a,"A"),one(b,"B"),sep=" / ")
+      year <- ""
+      dois <- unique(Filter(nzchar,c(normalise_doi_value(a$doi %||% ""),normalise_doi_value(b$doi %||% ""))))
+      doi <- paste(dois,collapse="; ")
+      abstract <- paste(
+        if(nzchar(normalise_display_text(a$abstract %||% ""))) paste0("Record A: ",normalise_display_text(a$abstract)) else "",
+        if(nzchar(normalise_display_text(b$abstract %||% ""))) paste0("Record B: ",normalise_display_text(b$abstract)) else "",
+        sep=if(nzchar(normalise_display_text(a$abstract %||% "")) && nzchar(normalise_display_text(b$abstract %||% ""))) "\n\n" else ""
+      )
+    } else if (identical(workflow,"02")) {
+      b <- z$canonical %||% list()
+      work_id <- as.character(b$work_id %||% b$record_id %||% z$record_id %||% work_id)
+      title <- display_sentence_case_if_all_caps(b$title %||% "")
+      year <- as.character(b$year %||% "")
+      doi <- normalise_doi_value(b$doi %||% z$doi %||% "")
+      abstract <- display_sentence_case_if_all_caps(b$abstract %||% "")
+    } else if (identical(workflow,"04")) {
+      b <- z$bibliographic %||% list()
+      work_id <- as.character(z$work_id %||% z$record_id %||% b$work_id %||% work_id)
+      title <- display_sentence_case_if_all_caps(b$title %||% z$title %||% "")
+      year <- as.character(b$year %||% z$year %||% "")
+      doi <- normalise_doi_value(b$doi %||% z$doi %||% "")
+      abstract <- display_sentence_case_if_all_caps(b$abstract %||% z$abstract %||% "")
+    } else if (identical(workflow,"08")) {
+      work_id <- as.character(z$work_id %||% z$record_id %||% work_id)
+      title <- display_sentence_case_if_all_caps(z$title %||% "")
+      year <- as.character(z$year %||% "")
+      doi <- normalise_doi_value(z$doi %||% "")
+      abstract <- display_sentence_case_if_all_caps(z$abstract %||% "")
+    }
+
+    list(work_id=work_id,title=title,year=year,doi=doi,abstract=abstract)
+  }
+
+  record_table_effective_assignments <- function(src) {
+    xs <- src$assignments %||% list()
+    events <- src$events %||% list()
+    if (!length(xs)) return(list())
+    mode <- assignment_mode_for(src$workflow,src$task_type)
+    lapply(xs,function(raw) {
+      a <- normalise_assignment_row(raw)
+      if (identical(mode,ASSIGNMENT_MODES[["independent_blind_review"]])) {
+        hit <- Filter(function(e) {
+          identical(decision_case_id(e),a$case_id) &&
+            identical(decision_user_id(e),a$user_id) &&
+            decision_resolves_case(e)
+        },events)
+        a$effective_status <- if(length(hit)) "complete" else "assigned"
+      } else {
+        resolved <- case_authoritative_event(events,a$case_id)
+        a$effective_status <- if(is.null(resolved)) {
+          "assigned"
+        } else if(identical(decision_user_id(resolved),a$user_id)) {
+          "complete"
+        } else {
+          "resolved_elsewhere"
+        }
+      }
+      a
+    })
+  }
+
+  record_table_notes_for <- function(case_id,workflow,task_type) {
+    if (!identical(workflow,"04") || identical(task_type,"model_uncertainty")) return(list())
+    Filter(function(n) {
+      identical(as.character(n$review_case_id %||% ""),as.character(case_id)) &&
+        nzchar(trimws(as.character(n$note %||% "")))
+    },w04_screening_notes_rv() %||% list())
+  }
+
+  record_table_rows_for_source <- function(src,metric="cases",user_id="") {
+    cases <- src$cases %||% list()
+    events <- src$events %||% list()
+    eff <- record_table_effective_assignments(src)
+    metric <- as.character(metric %||% "cases")
+    uid <- as.character(user_id %||% "")
+
+    relevant_assignments <- if (nzchar(uid)) {
+      Filter(function(a) identical(a$user_id,uid),eff)
+    } else eff
+
+    status_case_ids <- function(status) {
+      unique(vapply(
+        Filter(function(a) identical(a$effective_status,status),relevant_assignments),
+        function(a)a$case_id,
+        character(1)
+      ))
+    }
+    assigned_ids <- unique(vapply(relevant_assignments,function(a)a$case_id,character(1)))
+    all_ids <- vapply(cases,record_table_case_id,character(1))
+    keep_ids <- switch(
+      metric,
+      cases=all_ids,
+      assignments=assigned_ids,
+      completed=status_case_ids("complete"),
+      closed=status_case_ids("resolved_elsewhere"),
+      outstanding=status_case_ids("assigned"),
+      unassigned=setdiff(all_ids,unique(vapply(eff,function(a)a$case_id,character(1)))),
+      all_ids
+    )
+    keep_ids <- unique(keep_ids[nzchar(keep_ids)])
+    selected <- Filter(function(z) record_table_case_id(z) %in% keep_ids,cases)
+
+    rows <- lapply(selected,function(z) {
+      cid <- record_table_case_id(z)
+      fields <- record_table_case_fields(z,src$workflow,src$task_type)
+      ca <- Filter(function(a) identical(a$case_id,cid),eff)
+      ce <- Filter(function(e) identical(decision_case_id(e),cid),events)
+      if (nzchar(uid)) {
+        ca_view <- Filter(function(a) identical(a$user_id,uid),ca)
+        ce_view <- Filter(function(e) identical(decision_user_id(e),uid),ce)
+      } else {
+        ca_view <- ca
+        ce_view <- ce
+      }
+      assigned_users <- unique(vapply(ca_view,function(a)a$user_id,character(1)))
+      assigned_names <- vapply(assigned_users,record_table_user_label,character(1))
+      decision_text <- if(length(ce_view)) {
+        paste(vapply(ce_view,function(e) {
+          who <- record_table_user_label(decision_user_id(e))
+          lab <- record_table_decision_label(e)
+          if(nzchar(who)) paste0(who,": ",lab) else lab
+        },character(1)),collapse="; ")
+      } else ""
+      statuses <- unique(vapply(ca_view,function(a)a$effective_status,character(1)))
+      status <- if(!length(ca_view)) {
+        "Unassigned"
+      } else if(length(statuses)==1L) {
+        c(complete="Completed",assigned="Outstanding",resolved_elsewhere="Closed")[[statuses[[1L]]]] %||% statuses[[1L]]
+      } else {
+        paste(
+          sum(vapply(ca_view,function(a)identical(a$effective_status,"complete"),logical(1))),"completed ·",
+          sum(vapply(ca_view,function(a)identical(a$effective_status,"assigned"),logical(1))),"outstanding ·",
+          sum(vapply(ca_view,function(a)identical(a$effective_status,"resolved_elsewhere"),logical(1))),"closed"
+        )
+      }
+      last_activity <- ""
+      if(length(ce)) {
+        times <- vapply(ce,function(e)as.character(e$event_at_utc %||% e$resolved_at_utc %||% ""),character(1))
+        times <- times[nzchar(times)]
+        if(length(times)) last_activity <- max(times)
+      }
+      notes <- record_table_notes_for(cid,src$workflow,src$task_type)
+      list(
+        case_id=cid,
+        workflow=src$workflow,
+        task_type=src$task_type,
+        work_id=fields$work_id,
+        year=fields$year,
+        title=fields$title,
+        doi=fields$doi,
+        abstract=fields$abstract,
+        status=status,
+        assigned=paste(assigned_names[nzchar(assigned_names)],collapse=", "),
+        decisions=decision_text,
+        notes=notes,
+        last_activity=last_activity
+      )
+    })
+    list(
+      rows=rows,
+      matched_assignments=length(Filter(function(a) {
+        a$case_id %in% keep_ids &&
+          (!nzchar(uid) || identical(a$user_id,uid)) &&
+          (
+            metric %in% c("cases","assignments","unassigned") ||
+            identical(
+              a$effective_status,
+              c(completed="complete",closed="resolved_elsewhere",outstanding="assigned")[[metric]] %||% ""
+            )
+          )
+      },eff))
+    )
+  }
+
+  record_table_data <- reactive({
+    ctx <- record_table_context()
+    if (is.null(ctx)) return(list(rows=list(),matched_assignments=0L))
+    sources <- record_table_source(ctx$workflow,ctx$task_type,ctx$batch_id)
+    parts <- lapply(sources,function(src) {
+      record_table_rows_for_source(src,ctx$metric,ctx$user_id)
+    })
+    list(
+      rows=unlist(lapply(parts,`[[`,"rows"),recursive=FALSE),
+      matched_assignments=sum(vapply(parts,function(x)as.integer(x$matched_assignments),integer(1)))
+    )
+  })
+
+  record_table_filtered_rows <- reactive({
+    rows <- record_table_data()$rows %||% list()
+    q <- tolower(trimws(as.character(input$record_table_search %||% "")))
+    if (!nzchar(q) || !length(rows)) return(rows)
+    Filter(function(r) {
+      hay <- tolower(paste(
+        r$work_id,r$year,r$title,r$doi,r$status,r$assigned,r$decisions,
+        paste(vapply(r$notes %||% list(),function(n)as.character(n$note %||% ""),character(1)),collapse=" "),
+        sep=" "
+      ))
+      grepl(q,hay,fixed=TRUE)
+    },rows)
+  })
+
+  record_table_link <- function(value,workflow,task_type,batch_id,metric,user_id="",label="") {
+    tags$button(
+      type="button",
+      class="lem-drill-number",
+      `data-workflow`=as.character(workflow),
+      `data-task-type`=as.character(task_type),
+      `data-batch-id`=as.character(batch_id),
+      `data-metric`=as.character(metric),
+      `data-user-id`=as.character(user_id),
+      `data-label`=as.character(label),
+      title="View records",
+      as.character(value)
+    )
+  }
+
+  record_table_preview <- function(text,n=5L) {
+    x <- strsplit(normalise_display_text(text),"[[:space:]]+",perl=TRUE)[[1L]]
+    x <- x[nzchar(x)]
+    if(!length(x)) return("")
+    paste(head(x,n),collapse=" ")
+  }
+
   output$root_ui <- renderUI({
     if (!authenticated()) {
       return(div(
@@ -1643,6 +1950,31 @@ server <- function(input, output, session) {
           actionButton("login", "Continue", class = "btn-primary"),
           tags$div(class = "mt-2 text-danger", textOutput("login_status"))
         )
+      ))
+    }
+
+    if (identical(app_view(), "record_table")) {
+      return(div(
+        class="app-shell",
+        div(
+          class="d-flex justify-content-between align-items-center mb-3 gap-3 flex-wrap",
+          div(
+            tags$h2("Record table",class="mb-0"),
+            tags$div(class="text-secondary",uiOutput("record_table_context_label"))
+          ),
+          div(
+            class="d-flex align-items-center gap-2",
+            uiOutput("session_identity"),
+            actionButton("record_table_back","Back to main page",class="btn-outline-secondary btn-sm")
+          )
+        ),
+        div(
+          class="lem-table-toolbar",
+          textInput("record_table_search","Search",value="",placeholder="Search citation, ID, reviewer, decision or note"),
+          selectInput("record_table_page_size","Rows per page",choices=c("25"=25,"50"=50,"100"=100),selected=50,width="150px")
+        ),
+        uiOutput("record_table_body"),
+        uiOutput("record_table_pager")
       ))
     }
 
