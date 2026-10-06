@@ -2884,14 +2884,7 @@ server <- function(input, output, session) {
           ),
           uiOutput("search_scope_progress"),
           uiOutput("search_scope_table"),
-          conditionalPanel(
-            condition="output.search_scope_report_ready",
-            downloadButton(
-              "download_search_scope_report",
-              "Download scoping report",
-              class="btn-outline-secondary btn-sm mt-3"
-            )
-          )
+          uiOutput("search_scope_report_download")
         )
       )
     )
@@ -2926,11 +2919,16 @@ server <- function(input, output, session) {
     )
   })
 
-  output$search_scope_report_ready <- reactive({
+  output$search_scope_report_download <- renderUI({
     rows <- search_scope_rows_rv()
-    !is.null(rows) && nrow(rows) > 0L && !nzchar(as.character(search_scope_request_id_rv() %||% ""))
+    if (is.null(rows) || nrow(rows) < 1L) return(NULL)
+    if (nzchar(as.character(search_scope_request_id_rv() %||% ""))) return(NULL)
+    downloadButton(
+      "download_search_scope_report",
+      "Download scoping report",
+      class="btn-outline-secondary btn-sm mt-3"
+    )
   })
-  outputOptions(output,"search_scope_report_ready",suspendWhenHidden=FALSE)
 
   output$download_search_scope_report <- downloadHandler(
     filename=function() sprintf("search-scoping-report-%s.md",format(Sys.Date(),"%Y-%m-%d")),
