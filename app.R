@@ -547,6 +547,30 @@ ui <- page_fillable(
             clearTimeout(busyTimer);
             overlay.classList.remove('is-visible');
           });
+
+          document.addEventListener('click', function(ev) {
+            const drill = ev.target.closest('.lem-drill-number');
+            if (drill) {
+              ev.preventDefault();
+              Shiny.setInputValue('record_table_open', {
+                workflow: drill.dataset.workflow || '',
+                task_type: drill.dataset.taskType || '',
+                batch_id: drill.dataset.batchId || '',
+                metric: drill.dataset.metric || 'cases',
+                user_id: drill.dataset.userId || '',
+                label: drill.dataset.label || ''
+              }, {priority:'event'});
+              return;
+            }
+            const toggle = ev.target.closest('.lem-detail-toggle');
+            if (toggle) {
+              ev.preventDefault();
+              Shiny.setInputValue('record_table_toggle', {
+                case_id: toggle.dataset.caseId || '',
+                detail: toggle.dataset.detail || ''
+              }, {priority:'event'});
+            }
+          });
         });
       })();
     ")),
@@ -632,7 +656,29 @@ ui <- page_fillable(
       animation:lem-spin .8s linear infinite;
     }
     @keyframes lem-spin { to { transform:rotate(360deg); } }
-    .record-title { font-size:1.05rem; font-weight:700; line-height:1.25; margin-bottom:.45rem; }
+    .lem-drill-number {
+      appearance:none; border:0; background:transparent; padding:0; margin:0;
+      font:inherit; font-weight:inherit; color:inherit; line-height:inherit;
+      cursor:pointer;
+    }
+    .lem-drill-number:hover, .lem-drill-number:focus-visible { text-decoration:underline; }
+    .lem-record-table-wrap { overflow-x:auto; border:1px solid #dde3e8; border-radius:8px; background:#fff; }
+    .lem-record-table { width:100%; border-collapse:collapse; font-size:.92rem; }
+    .lem-record-table th, .lem-record-table td { padding:.55rem .65rem; border-bottom:1px solid #e8ecef; vertical-align:top; text-align:left; }
+    .lem-record-table th { background:#f7f8fa; white-space:nowrap; }
+    .lem-record-table tr:last-child td { border-bottom:0; }
+    .lem-record-cell { min-width:360px; max-width:620px; }
+    .lem-detail-toggle {
+      appearance:none; border:0; background:transparent; padding:0; margin:0;
+      color:inherit; cursor:pointer; text-align:left; font:inherit;
+    }
+    .lem-detail-toggle:hover, .lem-detail-toggle:focus-visible { text-decoration:underline; }
+    .lem-detail-row td { background:#fbfcfd; padding:.8rem 1rem 1rem 1rem; }
+    .lem-detail-text { max-width:1050px; line-height:1.45; white-space:normal; }
+    .lem-note-entry + .lem-note-entry { margin-top:.75rem; padding-top:.75rem; border-top:1px solid #e6eaed; }
+    .lem-table-toolbar { display:flex; gap:.75rem; align-items:end; flex-wrap:wrap; margin-bottom:.8rem; }
+    .lem-table-toolbar .form-group { margin-bottom:0; }
+        .record-title { font-size:1.05rem; font-weight:700; line-height:1.25; margin-bottom:.45rem; }
     .record-meta { display:grid; grid-template-columns:78px 1fr; gap:.08rem .55rem; margin:0; line-height:1.28; }
     .record-meta dt { color:#66727d; font-weight:600; }
     .record-meta dd { margin:0; overflow-wrap:anywhere; }
@@ -830,6 +876,10 @@ server <- function(input, output, session) {
   w01_export_requested_rv <- reactiveVal(FALSE)
   w01_export_status_rv <- reactiveVal("")
   app_view <- reactiveVal("tasks")
+  record_table_context <- reactiveVal(NULL)
+  record_table_page <- reactiveVal(1L)
+  record_table_abstract_open <- reactiveVal(character())
+  record_table_notes_open <- reactiveVal(character())
   failed_attempts <- reactiveVal(0L)
   lock_until <- reactiveVal(as.POSIXct(NA))
   idx <- reactiveVal(1L)
