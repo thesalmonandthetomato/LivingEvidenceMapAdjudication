@@ -1021,7 +1021,7 @@ server <- function(input, output, session) {
   search_scope_seen_artifacts_rv <- reactiveVal(character())
   search_scope_job_sources_rv <- reactiveVal(character())
   search_scope_catalogue_rv <- reactiveVal(NULL)
-  search_scope_progress_rv <- reactiveVal(list(completed=0L,total=0L,pct=0L))
+  search_scope_progress_rv <- reactiveVal(list(completed=0L,total=0L,pct=0L,label=""))
 
   observe({
     req(authenticated())
@@ -2900,15 +2900,18 @@ server <- function(input, output, session) {
   })
 
   output$search_scope_progress <- renderUI({
-    p <- search_scope_progress_rv() %||% list(completed=0L,total=0L,pct=0L)
+    p <- search_scope_progress_rv() %||% list(completed=0L,total=0L,pct=0L,label="")
     total <- as.integer(p$total %||% 0L)
     completed <- as.integer(p$completed %||% 0L)
     pct <- as.integer(p$pct %||% 0L)
-    if (total < 1L && !nzchar(search_scope_run_id_rv())) return(NULL)
-    label <- if (total > 0L) {
-      sprintf("Scoping search progress: %d of %d databases complete",completed,total)
-    } else {
-      "Preparing scoping search…"
+    if (pct < 1L && total < 1L && !nzchar(search_scope_run_id_rv())) return(NULL)
+    label <- as.character(p$label %||% "")
+    if (!nzchar(label)) {
+      label <- if (total > 0L) {
+        sprintf("Searching databases: %d of %d complete",completed,total)
+      } else {
+        "Preparing scoping search…"
+      }
     }
     div(
       class="mt-3 mb-3",
@@ -3063,11 +3066,11 @@ server <- function(input, output, session) {
         status="Queued",
         stringsAsFactors=FALSE
       ))
-      search_scope_progress_rv(list(completed=0L,total=nrow(catalogue),pct=0L))
+      search_scope_progress_rv(list(completed=0L,total=nrow(catalogue),pct=2L,label="Preparing scoping search…"))
     } else {
       search_scope_rows_rv(NULL)
       search_scope_job_sources_rv(character())
-      search_scope_progress_rv(list(completed=0L,total=0L,pct=0L))
+      search_scope_progress_rv(list(completed=0L,total=0L,pct=2L,label="Preparing scoping search…"))
     }
     search_scope_seen_artifacts_rv(character())
     search_scope_run_id_rv("")
@@ -3098,6 +3101,12 @@ server <- function(input, output, session) {
       return()
     }
     if (is.null(run)) {
+      search_scope_progress_rv(list(
+        completed=0L,
+        total=as.integer((search_scope_progress_rv() %||% list(total=0L))$total %||% 0L),
+        pct=4L,
+        label="Preparing scoping search…"
+      ))
       search_scope_status_rv("Waiting for GitHub Actions to create the scoping run…")
       return()
     }
@@ -3117,8 +3126,26 @@ server <- function(input, output, session) {
     completed <- sum(vapply(count_jobs,function(j) identical(as.character(j$status %||% ""),"completed"),logical(1)))
     catalogue <- search_scope_catalogue_rv()
     total <- if (!is.null(catalogue) && nrow(catalogue)) nrow(catalogue) else length(count_jobs)
-    pct <- if (total > 0L) round(100*completed/total) else 0L
-    search_scope_progress_rv(list(completed=completed,total=total,pct=pct))
+
+    prepare_jobs <- Filter(function(j) identical(as.character(j$name %||% ""),"prepare"), jobs)
+    merge_jobs <- Filter(function(j) identical(as.character(j$name %||% ""),"merge"), jobs)
+    prepare_status <- if (length(prepare_jobs)) as.character(prepare_jobs[[1L]]$status %||% "") else ""
+    merge_status <- if (length(merge_jobs)) as.character(merge_jobs[[1L]]$status %||% "") else ""
+
+    if (!length(count_jobs)) {
+      pct <- if (identical(prepare_status,"in_progress")) 7L else if (identical(prepare_status,"completed")) 10L else 5L
+      progress_label <- "Preparing scoping search…"
+    } else if (total > 0L && completed < total) {
+      pct <- 10L + round(80L * completed / total)
+      progress_label <- sprintf("Searching databases: %d of %d complete",completed,total)
+    } else if (total > 0L && completed >= total) {
+      pct <- if (identical(merge_status,"in_progress")) 96L else 92L
+      progress_label <- "Finalising scoping report…"
+    } else {
+      pct <- 10L
+      progress_label <- "Preparing scoping search…"
+    }
+    search_scope_progress_rv(list(completed=completed,total=total,pct=pct,label=progress_label))
 
     current <- search_scope_rows_rv()
     if (is.null(current) && length(sources)) {
@@ -3204,7 +3231,7 @@ server <- function(input, output, session) {
           rownames(final_rows) <- NULL
           search_scope_rows_rv(final_rows)
           failed_n <- sum(final_rows$status=="Failed")
-          search_scope_progress_rv(list(completed=nrow(final_rows),total=nrow(final_rows),pct=100L))
+          search_scope_progress_rv(list(completed=nrow(final_rows),total=nrow(final_rows),pct=100L,label="Scoping search complete"))
           search_scope_status_rv(if (failed_n) {
             sprintf("Scoping search complete with %d failed database%s.",failed_n,if(failed_n==1L)"" else "s")
           } else "Scoping search complete.")
