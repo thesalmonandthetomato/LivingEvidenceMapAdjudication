@@ -1261,7 +1261,7 @@
         "Maintainer": "Kevin Ushey <kevin@rstudio.com>",
         "Repository": "CRAN",
         "Date/Publication": "2026-10-06 10:40:02 UTC",
-        "Built": "R 4.6.0; ; 2026-10-06 19:42:46 UTC; unix"
+        "Built": "R 4.6.0; ; 2026-10-06 19:46:06 UTC; unix"
       }
     },
     "rlang": {
@@ -1695,10 +1695,10 @@
   },
   "files": {
     ".github/workflows/validate.yml": {
-      "checksum": "ba4d83159e2ac230f18ce641c5a0ae54"
+      "checksum": "ba5a7c5278c11e933fd729da5e0e5711"
     },
     "app.R": {
-      "checksum": "5776bacd0086260874c548a9bbd20300"
+      "checksum": "1eef2fc70397073774ba8898f5f0adcf"
     },
     "docs/production_multiuser_cutover_20261005.md": {
       "checksum": "0c8abb9a02a372eec4f35bb66812bce6"
@@ -1879,6 +1879,9 @@
     },
     "tests/test_record_table_contract.R": {
       "checksum": "c3230d48d1f3907abf333ad6a0f621ee"
+    },
+    "tests/test_search_scoping_ui.R": {
+      "checksum": "1af895860771cdb4636a617627c194d1"
     },
     "tests/test_users.R": {
       "checksum": "3478785333151da4bc9976089d9d66b9"
