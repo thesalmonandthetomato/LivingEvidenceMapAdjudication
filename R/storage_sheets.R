@@ -1488,103 +1488,65 @@ pipeline_status_tab <- function() {
 read_latest_pipeline_status <- function() {
   val <- function(x) if (is.null(x) || !length(x)) "" else as.character(x[[1L]])
 
-  repo_status <- tryCatch({
-    repo_url <- Sys.getenv(
-      "LEM_CURRENT_RUN_STATUS_URL",
-      unset = "https://raw.githubusercontent.com/thesalmonandthetomato/LivingEvidenceMap/workflow01-final-architecture/docs/current_run/current_run_status.json"
-    )
-    current <- jsonlite::fromJSON(repo_url, simplifyVector = FALSE)
-    if (!identical(as.character(current$schema), "living-evidence-map-current-run-status-v1")) {
-      stop("Unexpected current-run status schema", call. = FALSE)
-    }
-    delta_value <- function(cur, prev) {
-      a <- suppressWarnings(as.numeric(val(cur)))
-      b <- suppressWarnings(as.numeric(val(prev)))
-      if (is.na(a) || is.na(b)) "" else as.character(a - b)
-    }
-    prev <- current$baseline$previous_counts %||% list()
-    list(
-      update_id = val(current$update_id),
-      event_at_utc = val(current$last_updated_at_utc),
-      stage = val(current$progress$current_stage),
-      workflow_run_id = val(current$workflow_runs[[val(current$progress$current_stage)]]),
-      last_search_date = val(current$search$search_date),
-      canonical_existing = val(current$baseline$canonical_records),
-      search_results_total = val(current$counts$search_results),
-      search_results_update = val(current$search$search_results),
-      deduplicated_records = val(current$counts$deduplicated_records),
-      deduplicated_update = delta_value(current$counts$deduplicated_records, prev$deduplicated_records),
-      enriched_records = val(current$counts$enriched_records),
-      enriched_update = delta_value(current$counts$enriched_records, prev$enriched_records),
-      retracted_records = val(current$counts$retraction_exclusions),
-      retracted_update = delta_value(current$counts$retraction_exclusions, prev$retraction_exclusions),
-      screened_include = val(current$counts$screened_include),
-      screened_exclude = val(current$counts$screened_exclude),
-      screened_include_update = delta_value(current$counts$screened_include, prev$screened_include),
-      screened_exclude_update = delta_value(current$counts$screened_exclude, prev$screened_exclude),
-      species_records = val(current$counts$species_records),
-      species_update = delta_value(current$counts$species_records, prev$species_records),
-      geography_with = val(current$counts$geography$with),
-      geography_without = val(current$counts$geography$without),
-      geography_with_update = delta_value(current$counts$geography$with, (prev$geography %||% list())$with),
-      geography_without_update = delta_value(current$counts$geography$without, (prev$geography %||% list())$without),
-      topic_with = val(current$counts$topics$with),
-      topic_without = val(current$counts$topics$without),
-      topic_with_update = delta_value(current$counts$topics$with, (prev$topics %||% list())$with),
-      topic_without_update = delta_value(current$counts$topics$without, (prev$topics %||% list())$without),
-      completed_through = val(current$progress$completed_through),
-      active_workflow = val(current$progress$active_position),
-      status_label = val(current$progress$status_label)
-    )
-  }, error = function(e) NULL)
+  # Production KPI values must come from the canonical current-run status on
+  # workflow01-final-architecture. Do not fall back to pipeline_run_status:
+  # that Sheet is an operational event log and historical schema migrations
+  # can leave older rows positionally incompatible with current KPI columns.
+  repo_url <- paste0(
+    "https://raw.githubusercontent.com/thesalmonandthetomato/",
+    "LivingEvidenceMap/workflow01-final-architecture/",
+    "docs/current_run/current_run_status.json"
+  )
+  current <- tryCatch(
+    jsonlite::fromJSON(repo_url, simplifyVector = FALSE),
+    error = function(e) NULL
+  )
+  if (is.null(current)) return(NULL)
+  if (!identical(as.character(current$schema), "living-evidence-map-current-run-status-v1")) {
+    return(NULL)
+  }
 
-  sheet_status <- tryCatch({
-    gs4_auth_from_env()
-    ss <- sheet_id_from_env()
-    tab <- pipeline_status_tab()
-    tabs <- sheet_names_cached(ss)
-    if(!tab %in% tabs) return(NULL)
-    x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
-    if(!nrow(x)) return(NULL)
+  delta_value <- function(cur, prev) {
+    a <- suppressWarnings(as.numeric(val(cur)))
+    b <- suppressWarnings(as.numeric(val(prev)))
+    if (is.na(a) || is.na(b)) "" else as.character(a - b)
+  }
+  prev <- current$baseline$previous_counts %||% list()
 
-    base <- c(
-      "event_id","update_id","event_at_utc","stage","workflow_run_id",
-      "last_search_date","canonical_existing","search_results_total",
-      "deduplicated_records","enriched_records","retracted_records",
-      "screened_include","screened_exclude",
-      "completed_through","active_workflow","status_label"
-    )
-    miss <- setdiff(base,names(x))
-    if(length(miss)) stop("pipeline_run_status missing field(s): ",paste(miss,collapse=", "),call.=FALSE)
-
-    if(all(c("geography_with","geography_without","topic_with","topic_without") %in% names(x))) {
-      cols <- c(base[1:13],"geography_with","geography_without","topic_with","topic_without",base[14:16])
-      z <- x[nrow(x),cols,drop=FALSE] |> as.list()
-      z$search_results_update <- if("search_results_update" %in% names(x)) as.character(x$search_results_update[[nrow(x)]]) else ""
-      return(z)
-    }
-
-    if(all(c("geography_coded","topic_coded") %in% names(x))) {
-      z <- x[nrow(x),base,drop=FALSE] |> as.list()
-      z$geography_with <- as.character(x$geography_coded[[nrow(x)]])
-      z$geography_without <- ""
-      z$topic_with <- as.character(x$topic_coded[[nrow(x)]])
-      z$topic_without <- ""
-      z$search_results_update <- if("search_results_update" %in% names(x)) as.character(x$search_results_update[[nrow(x)]]) else ""
-      return(z)
-    }
-
-    NULL
-  }, error = function(e) NULL)
-
-  # The branch JSON is the canonical KPI contract. The Sheet is only a
-  # resilience fallback if GitHub cannot be read. Mixing a newer Sheet row
-  # with branch-derived fields is unsafe across schema migrations because a
-  # positional Sheet append can transiently shift values under new headers.
-  if (!is.null(repo_status)) return(repo_status)
-  sheet_status
+  list(
+    update_id = val(current$update_id),
+    event_at_utc = val(current$last_updated_at_utc),
+    stage = val(current$progress$current_stage),
+    workflow_run_id = val(current$workflow_runs[[val(current$progress$current_stage)]]),
+    last_search_date = val(current$search$search_date),
+    canonical_existing = val(current$baseline$canonical_records),
+    search_results_total = val(current$counts$search_results),
+    search_results_update = val(current$search$search_results),
+    deduplicated_records = val(current$counts$deduplicated_records),
+    deduplicated_update = delta_value(current$counts$deduplicated_records, prev$deduplicated_records),
+    enriched_records = val(current$counts$enriched_records),
+    enriched_update = delta_value(current$counts$enriched_records, prev$enriched_records),
+    retracted_records = val(current$counts$retraction_exclusions),
+    retracted_update = delta_value(current$counts$retraction_exclusions, prev$retraction_exclusions),
+    screened_include = val(current$counts$screened_include),
+    screened_exclude = val(current$counts$screened_exclude),
+    screened_include_update = delta_value(current$counts$screened_include, prev$screened_include),
+    screened_exclude_update = delta_value(current$counts$screened_exclude, prev$screened_exclude),
+    species_records = val(current$counts$species_records),
+    species_update = delta_value(current$counts$species_records, prev$species_records),
+    geography_with = val(current$counts$geography$with),
+    geography_without = val(current$counts$geography$without),
+    geography_with_update = delta_value(current$counts$geography$with, (prev$geography %||% list())$with),
+    geography_without_update = delta_value(current$counts$geography$without, (prev$geography %||% list())$without),
+    topic_with = val(current$counts$topics$with),
+    topic_without = val(current$counts$topics$without),
+    topic_with_update = delta_value(current$counts$topics$with, (prev$topics %||% list())$with),
+    topic_without_update = delta_value(current$counts$topics$without, (prev$topics %||% list())$without),
+    completed_through = val(current$progress$completed_through),
+    active_workflow = val(current$progress$active_position),
+    status_label = val(current$progress$status_label)
+  )
 }
-
 
 user_registry_tab <- function() {
   Sys.getenv("LEM_GOOGLE_USERS_TAB", unset = "users")
