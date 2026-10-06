@@ -1261,7 +1261,7 @@
         "Maintainer": "Kevin Ushey <kevin@rstudio.com>",
         "Repository": "CRAN",
         "Date/Publication": "2026-10-06 10:40:02 UTC",
-        "Built": "R 4.6.0; ; 2026-10-06 18:30:36 UTC; unix"
+        "Built": "R 4.6.0; ; 2026-10-06 18:35:48 UTC; unix"
       }
     },
     "rlang": {
@@ -1698,7 +1698,7 @@
       "checksum": "ba4d83159e2ac230f18ce641c5a0ae54"
     },
     "app.R": {
-      "checksum": "02183fe264f17fbf77895032cacab62d"
+      "checksum": "5776bacd0086260874c548a9bbd20300"
     },
     "docs/production_multiuser_cutover_20261005.md": {
       "checksum": "0c8abb9a02a372eec4f35bb66812bce6"
@@ -1830,7 +1830,7 @@
       "checksum": "4eb8af71824e27f3e50e72b564066887"
     },
     "R/storage_sheets.R": {
-      "checksum": "045b0e12db647e8afbfdb51ce660fade"
+      "checksum": "dace7b99d740deda30b948d5e4b8f237"
     },
     "R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
@@ -1899,7 +1899,7 @@
       "checksum": "9d9ad1bb4c81ce4f65268f3843c5e429"
     },
     "tests/test_w04_resolution_abstract_edit.R": {
-      "checksum": "ef50888379b091a73be58f32ba9cddb3"
+      "checksum": "b1e518a19d487b5709e555a09875bb63"
     },
     "tests/test_w04_validation_dispatch.R": {
       "checksum": "bac8a6f0b75122533384cca72f498516"
