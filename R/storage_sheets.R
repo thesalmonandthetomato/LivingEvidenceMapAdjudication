@@ -1773,8 +1773,16 @@ read_latest_pipeline_status <- function() {
     "LivingEvidenceMap/workflow01-final-architecture/",
     "docs/current_run/current_run_status.json"
   )
+  # raw.githubusercontent.com may briefly serve a cached response for an
+  # unchanged URL after the status file is updated. Add a cache-busting query
+  # so the Shiny progress display follows the canonical branch state promptly.
+  repo_url_fresh <- paste0(
+    repo_url,
+    "?v=",
+    as.integer(as.numeric(Sys.time()))
+  )
   current <- tryCatch(
-    jsonlite::fromJSON(repo_url, simplifyVector = FALSE),
+    jsonlite::fromJSON(repo_url_fresh, simplifyVector = FALSE),
     error = function(e) NULL
   )
   if (is.null(current)) return(NULL)
