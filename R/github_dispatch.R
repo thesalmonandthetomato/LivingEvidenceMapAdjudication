@@ -61,22 +61,24 @@ read_w00_scoping_source_catalogue <- function(ref = github_scoping_ref()) {
   } else character()
 
   core_labels <- c(
-    lens="Lens",
-    scopus="Scopus",
-    openalex="OpenAlex",
-    agricola="AGRICOLA",
-    pubmed="PubMed/MEDLINE",
-    ethos="EThOS",
-    cba="Chinese Biological Abstracts",
-    epmc_preprints="Europe PMC preprints",
-    wos="Web of Science Core Collection"
+    lens="Lens, via Lens",
+    scopus="Scopus, via Scopus",
+    openalex="OpenAlex, via OpenAlex",
+    agricola="AGRICOLA, via Europe PMC",
+    pubmed="PubMed/MEDLINE, via Europe PMC",
+    ethos="EThOS, via Europe PMC",
+    cba="Chinese Biological Abstracts, via Europe PMC",
+    epmc_preprints="Europe PMC preprints, via Europe PMC",
+    wos="Web of Science Core Collection, via Web of Science"
   )
+  ebsco_labels <- paste0(ebsco_labels, ", via EBSCO")
   labels <- c(core_labels, stats::setNames(ebsco_labels, ebsco_slugs))
-  data.frame(
+  out <- data.frame(
     source_slug=names(labels),
     source=unname(labels),
     stringsAsFactors=FALSE
   )
+  out[order(tolower(out$source)),,drop=FALSE]
 }
 
 dispatch_w00_scoping <- function(request_id, search_string_path = "user_input/scoping_search_string.txt") {
