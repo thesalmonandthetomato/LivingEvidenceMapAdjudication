@@ -1750,6 +1750,29 @@ server <- function(input, output, session) {
           div(
             class = "col-12 col-lg-6",
             stage_card(
+              "Reviewer conflict resolution",
+              "Workflow 04",
+              "Human–machine or human–human screening conflicts awaiting adjudication.",
+              w04_conflict_total, w04_conflict_completed, w04_conflict_remaining,
+              if (w04_conflict_remaining > 0L) "open_w04_conflict" else NULL,
+              "Resolve reviewer conflicts",
+              w04_active_conflict_batch_id(),
+              w04_active_conflict_batch_status(),
+              can_open = w04_conflict_user_remaining > 0L,
+              idle_text = if (w04_conflict_total == 0L) {
+                "No records awaiting review"
+              } else if (w04_conflict_user_remaining == 0L && session_can("manage_assignments")) {
+                "Conflicts exist and are awaiting assignment"
+              } else if (w04_conflict_user_remaining == 0L) {
+                "No conflicts assigned to you"
+              } else {
+                "No records awaiting review"
+              }
+            )
+          ),
+          div(
+            class = "col-12 col-lg-6",
+            stage_card(
               "Model uncertainty resolution",
               "Workflow 04",
               "Records unresolved after model consensus passes requiring a final human include/exclude decision.",
@@ -1767,29 +1790,6 @@ server <- function(input, output, session) {
                 "Active cases are awaiting assignment"
               } else if (w04_resolution_user_remaining == 0L) {
                 "No records assigned to you"
-              } else {
-                "No records awaiting review"
-              }
-            )
-          ),
-          div(
-            class = "col-12 col-lg-6",
-            stage_card(
-              "Reviewer conflict resolution",
-              "Workflow 04",
-              "Human–machine or human–human screening conflicts awaiting adjudication.",
-              w04_conflict_total, w04_conflict_completed, w04_conflict_remaining,
-              if (w04_conflict_remaining > 0L) "open_w04_conflict" else NULL,
-              "Resolve reviewer conflicts",
-              w04_active_conflict_batch_id(),
-              w04_active_conflict_batch_status(),
-              can_open = w04_conflict_user_remaining > 0L,
-              idle_text = if (w04_conflict_total == 0L) {
-                "No records awaiting review"
-              } else if (w04_conflict_user_remaining == 0L && session_can("manage_assignments")) {
-                "Conflicts exist and are awaiting assignment"
-              } else if (w04_conflict_user_remaining == 0L) {
-                "No conflicts assigned to you"
               } else {
                 "No records awaiting review"
               }
@@ -2291,13 +2291,13 @@ server <- function(input, output, session) {
       ASSIGNMENT_MODES[["independent_blind_review"]]
     )
     add_empty_group(
-      "04","model_uncertainty",
-      if (has_w04_resolution_batch) w04_resolution_batch_id_rv() else "no-active-queue",
+      "04","conflict_resolution",
+      if (has_w04_conflict_batch) w04_active_conflict_batch_id() else "no-active-queue",
       ASSIGNMENT_MODES[["single_reviewer"]]
     )
     add_empty_group(
-      "04","conflict_resolution",
-      if (has_w04_conflict_batch) w04_active_conflict_batch_id() else "no-active-queue",
+      "04","model_uncertainty",
+      if (has_w04_resolution_batch) w04_resolution_batch_id_rv() else "no-active-queue",
       ASSIGNMENT_MODES[["single_reviewer"]]
     )
     add_empty_group(
@@ -2316,8 +2316,8 @@ server <- function(input, output, session) {
         deduplication=1L,
         enrichment=1L,
         manual_screening=1L,
-        model_uncertainty=2L,
-        conflict_resolution=3L,
+        conflict_resolution=2L,
+        model_uncertainty=3L,
         annotation=1L
       )
       task_order <- vapply(
