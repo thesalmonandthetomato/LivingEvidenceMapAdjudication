@@ -71,11 +71,7 @@ read_w00_scoping_source_catalogue <- function(ref = github_scoping_ref()) {
     epmc_preprints="Europe PMC preprints",
     wos="Web of Science Core Collection"
   )
-  manual_labels <- c(
-    cab_abstracts="CAB Abstracts",
-    proquest_dissertations="ProQuest Dissertations & Theses Global"
-  )
-  labels <- c(core_labels, stats::setNames(ebsco_labels, ebsco_slugs), manual_labels)
+  labels <- c(core_labels, stats::setNames(ebsco_labels, ebsco_slugs))
   data.frame(
     source_slug=names(labels),
     source=unname(labels),
