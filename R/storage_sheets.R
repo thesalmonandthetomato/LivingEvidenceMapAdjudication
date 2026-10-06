@@ -747,6 +747,101 @@ append_w02_resume_request <- function(queue_sha256, source_run_id, status, messa
 }
 
 
+workflow_resume_request_exists <- function(tab, queue_sha256, source_run_id, batch_id) {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tabs <- sheet_names_cached(ss)
+  if (!tab %in% tabs) return(FALSE)
+
+  x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
+  if (!nrow(x)) return(FALSE)
+  required <- c("queue_sha256","source_run_id","batch_id","status")
+  if (!all(required %in% names(x))) {
+    stop(tab, " resume-request tab is malformed", call. = FALSE)
+  }
+
+  any(
+    as.character(x$queue_sha256) == as.character(queue_sha256) &
+    as.character(x$source_run_id) == as.character(source_run_id) &
+    as.character(x$batch_id) == as.character(batch_id) &
+    as.character(x$status) %in% c("dispatching","dispatched")
+  )
+}
+
+append_workflow_resume_request <- function(tab, prefix, queue_sha256, source_run_id, batch_id, status, message = "") {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tabs <- sheet_names_cached(ss)
+  required_cols <- c(
+    "request_id","queue_sha256","source_run_id","batch_id","status",
+    "requested_at_utc","message"
+  )
+
+  if (!tab %in% tabs) {
+    sheet_add_cached(ss, tab)
+    empty <- as.data.frame(
+      setNames(replicate(length(required_cols), character(), simplify = FALSE), required_cols),
+      stringsAsFactors = FALSE
+    )
+    googlesheets4::sheet_write(empty, ss = ss, sheet = tab)
+  }
+
+  row <- data.frame(
+    request_id = paste0(prefix, digest::digest(
+      paste(
+        queue_sha256, source_run_id, batch_id, status,
+        format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%OS6Z"),
+        sep="|"
+      ),
+      algo="sha256", serialize=FALSE
+    )),
+    queue_sha256=as.character(queue_sha256),
+    source_run_id=as.character(source_run_id),
+    batch_id=as.character(batch_id),
+    status=as.character(status),
+    requested_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
+    message=as.character(message),
+    stringsAsFactors=FALSE
+  )
+  googlesheets4::sheet_append(ss, data=row, sheet=tab)
+  invisible(row)
+}
+
+w04_resolution_resume_request_tab <- function() {
+  Sys.getenv("LEM_W04_RESOLUTION_RESUME_REQUEST_TAB", unset = "w04_resolution_resume_requests")
+}
+
+w04_resolution_resume_request_exists <- function(queue_sha256, source_run_id, batch_id) {
+  workflow_resume_request_exists(
+    w04_resolution_resume_request_tab(), queue_sha256, source_run_id, batch_id
+  )
+}
+
+append_w04_resolution_resume_request <- function(queue_sha256, source_run_id, batch_id, status, message = "") {
+  append_workflow_resume_request(
+    w04_resolution_resume_request_tab(), "w04-resolution-resume-",
+    queue_sha256, source_run_id, batch_id, status, message
+  )
+}
+
+w08_resume_request_tab <- function() {
+  Sys.getenv("LEM_W08_RESUME_REQUEST_TAB", unset = "w08_resume_requests")
+}
+
+w08_resume_request_exists <- function(queue_sha256, source_run_id, batch_id) {
+  workflow_resume_request_exists(
+    w08_resume_request_tab(), queue_sha256, source_run_id, batch_id
+  )
+}
+
+append_w08_resume_request <- function(queue_sha256, source_run_id, batch_id, status, message = "") {
+  append_workflow_resume_request(
+    w08_resume_request_tab(), "w08-resume-",
+    queue_sha256, source_run_id, batch_id, status, message
+  )
+}
+
+
 w04_decision_tab <- function() {
   Sys.getenv("LEM_W04_DECISION_TAB", unset = "decisions_w04_validation")
 }
