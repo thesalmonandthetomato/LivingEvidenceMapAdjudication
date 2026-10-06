@@ -1669,6 +1669,9 @@ server <- function(input, output, session) {
         events=events %||% list(),
         assignments=active_assignments_for_batch(
           assignment_registry_rv(),workflow,bid,task_type
+        ),
+        all_assignments=assignments_for_batch(
+          assignment_registry_rv(),workflow,bid,task_type
         )
       )
     }
@@ -1745,8 +1748,40 @@ server <- function(input, output, session) {
   record_table_effective_assignments <- function(src) {
     xs <- src$assignments %||% list()
     events <- src$events %||% list()
-    if (!length(xs)) return(list())
     mode <- assignment_mode_for(src$workflow,src$task_type)
+
+    resolving_events <- Filter(decision_resolves_case,events)
+    if (length(resolving_events)) {
+      existing <- src$all_assignments %||% list()
+      existing_keys <- if(length(existing)) vapply(existing,function(raw) {
+        a <- normalise_assignment_row(raw)
+        paste(a$case_id,a$user_id,sep="|")
+      },character(1)) else character()
+      implicit <- list()
+      for (e in resolving_events) {
+        cid <- decision_case_id(e)
+        uid <- decision_user_id(e)
+        key <- paste(cid,uid,sep="|")
+        if (!nzchar(cid) || !nzchar(uid) || key %in% existing_keys) next
+        implicit[[length(implicit)+1L]] <- list(
+          assignment_id=paste0("implicit-table-",substr(digest::digest(
+            paste(src$workflow,src$task_type,src$batch_id,cid,uid,sep="|"),
+            algo="sha256",serialize=FALSE
+          ),1L,24L)),
+          workflow=src$workflow,
+          task_type=src$task_type,
+          batch_id=src$batch_id,
+          case_id=cid,
+          user_id=uid,
+          blind_group="implicit-table",
+          status="assigned"
+        )
+        existing_keys <- c(existing_keys,key)
+      }
+      xs <- c(xs,implicit)
+    }
+    if (!length(xs)) return(list())
+
     lapply(xs,function(raw) {
       a <- normalise_assignment_row(raw)
       if (identical(mode,ASSIGNMENT_MODES[["independent_blind_review"]])) {
