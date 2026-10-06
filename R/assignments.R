@@ -11,7 +11,7 @@ assignment_mode_for <- function(workflow, task_type) {
   if (identical(workflow, "04") && identical(task_type, "manual_screening")) {
     return(ASSIGNMENT_MODES[["independent_blind_review"]])
   }
-  if (task_type %in% c("deduplication", "enrichment", "annotation")) {
+  if (task_type %in% c("deduplication", "enrichment", "annotation", "model_uncertainty")) {
     return(ASSIGNMENT_MODES[["shared_work_pool"]])
   }
   ASSIGNMENT_MODES[["single_reviewer"]]
