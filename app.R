@@ -928,6 +928,8 @@ server <- function(input, output, session) {
   w04_resolution_source_run_id_rv <- reactiveVal("")
   w04_resolution_idx <- reactiveVal(1L)
   w04_resolution_decisions <- reactiveVal(list())
+  w04_resolution_abstract_edits_rv <- reactiveVal(list())
+  w04_resolution_abstract_edit_rv <- reactiveVal(FALSE)
   w04_resolution_batch_status_rv <- reactiveVal("")
   w04_resolution_status <- reactiveVal("")
   w04_resolution_include_terms <- reactiveVal(character())
@@ -5438,6 +5440,13 @@ server <- function(input, output, session) {
           w04_resolution_include_terms(w04_resolution_batch$highlight_include %||% character())
           w04_resolution_exclude_terms(w04_resolution_batch$highlight_exclude %||% character())
           w04_resolution_decisions(w04_filter_batch_decisions(all_res,w04_resolution_batch$queue_sha256))
+          w04_resolution_abstract_edits_rv(
+            tryCatch(
+              active_sheet_w04_resolution_abstract_edits(w04_resolution_batch$queue_sha256),
+              error=function(e) list()
+            )
+          )
+          w04_resolution_abstract_edit_rv(FALSE)
           w04_resolution_visible <- cases_for_assignment_user(
             w04_resolution_batch$cases,
             assignment_registry_rv(),
@@ -5453,6 +5462,8 @@ server <- function(input, output, session) {
         } else {
           w04_resolution_all_cases_rv(list())
           w04_resolution_cases_rv(NULL)
+          w04_resolution_abstract_edits_rv(list())
+          w04_resolution_abstract_edit_rv(FALSE)
         }
 
         w04_conflict_batch <- load_w04_conflict_batch()
@@ -6480,6 +6491,26 @@ server <- function(input, output, session) {
     as.character(hit[[1L]]$decision %||% "")
   })
 
+  w04_resolution_current_abstract_edit <- reactive({
+    z <- w04_resolution_current_case()
+    edits <- w04_resolution_abstract_edits_rv() %||% list()
+    hits <- Filter(
+      function(x) identical(as.character(x$review_case_id %||% ""), as.character(z$review_case_id %||% "")),
+      edits
+    )
+    if (!length(hits)) return(NULL)
+    hits[[1L]]
+  })
+
+  w04_resolution_effective_abstract <- reactive({
+    edit <- w04_resolution_current_abstract_edit()
+    if (!is.null(edit) && nzchar(trimws(as.character(edit$abstract %||% "")))) {
+      return(as.character(edit$abstract))
+    }
+    z <- w04_resolution_current_case()
+    as.character((z$bibliographic %||% list())$abstract %||% "")
+  })
+
   output$w04_resolution_decision_buttons <- renderUI({
     choice <- w04_resolution_current_saved_choice()
     div(
@@ -6528,8 +6559,39 @@ server <- function(input, output, session) {
           div(class="w04-citation-item",span(class="w04-citation-label","Pages"),span(class="w04-citation-value",b$pages %||% ""))
         ),
         div(class="w04-doi",tags$strong("DOI: "),doi_link(b$doi %||% "")),
-        tags$h6(class="abstract-heading","Abstract"),
-        div(class="abstract-text",highlight_screening_text(display_sentence_case_if_all_caps(b$abstract %||% ""),w04_resolution_include_terms(),w04_resolution_exclude_terms())),
+        div(
+          class="d-flex justify-content-between align-items-center mt-2",
+          tags$h6(class="abstract-heading mb-0","Abstract"),
+          actionButton(
+            "w04_resolution_edit_abstract",
+            if (isTRUE(w04_resolution_abstract_edit_rv())) "Cancel edit" else "Edit abstract",
+            class="btn-sm btn-outline-secondary"
+          )
+        ),
+        if (isTRUE(w04_resolution_abstract_edit_rv())) {
+          tagList(
+            textAreaInput(
+              "w04_resolution_abstract_text",
+              label=NULL,
+              value=w04_resolution_effective_abstract(),
+              rows=10,
+              width="100%",
+              placeholder="Paste or correct the abstract here."
+            ),
+            div(
+              class="d-flex align-items-center gap-2 mb-2",
+              actionButton("w04_resolution_save_abstract","Save abstract",class="btn-sm btn-primary"),
+              tags$span(class="text-secondary small","Saved abstracts are carried into the canonical record when W04 is sent to GitHub.")
+            )
+          )
+        } else {
+          tagList(
+            div(class="abstract-text",highlight_screening_text(display_sentence_case_if_all_caps(w04_resolution_effective_abstract()),w04_resolution_include_terms(),w04_resolution_exclude_terms())),
+            if (!is.null(w04_resolution_current_abstract_edit())) {
+              tags$div(class="text-secondary small mt-1","Manually edited abstract saved for this W04 resolution.")
+            }
+          )
+        },
         div(class="mt-3 p-2 border rounded",
           tags$strong("Model decisions: "),
           if(length(votes)) tagList(lapply(seq_along(votes),function(i)tags$span(class="task-badge me-1",sprintf("Pass %d: %s",i,votes[[i]])))) else tags$span(class="text-secondary","No model vote provenance available")
@@ -6539,6 +6601,49 @@ server <- function(input, output, session) {
     )
   })
   output$w04_resolution_save_status <- renderText(w04_resolution_status())
+
+  observeEvent(input$w04_resolution_edit_abstract, {
+    w04_resolution_abstract_edit_rv(!isTRUE(w04_resolution_abstract_edit_rv()))
+  })
+
+  observeEvent(input$w04_resolution_save_abstract, {
+    if(!session_can("adjudicate_assigned")) {
+      w04_resolution_status("You do not have permission to edit this record.")
+      return()
+    }
+    z <- w04_resolution_current_case()
+    value <- trimws(as.character(input$w04_resolution_abstract_text %||% ""))
+    if (!nzchar(value)) {
+      w04_resolution_status("Abstract cannot be empty.")
+      return()
+    }
+    current <- w04_resolution_abstract_edits_rv() %||% list()
+    hits <- Filter(
+      function(x) identical(as.character(x$review_case_id %||% ""),as.character(z$review_case_id %||% "")),
+      current
+    )
+    prior <- if(length(hits)) hits[[1L]] else NULL
+    edit <- list(
+      review_case_id=as.character(z$review_case_id),
+      record_id=as.character(z$record_id),
+      abstract=value,
+      reviewer=session_reviewer_id(),
+      saved_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
+      queue_sha256=w04_resolution_queue_sha_rv()
+    )
+    saved <- tryCatch(
+      append_sheet_w04_resolution_abstract_edit(edit, prior_edit=prior),
+      error=function(e){w04_resolution_status(paste("Abstract save failed:",conditionMessage(e)));NULL}
+    )
+    if(is.null(saved)) return()
+    remaining <- Filter(
+      function(x)!identical(as.character(x$review_case_id %||% ""),as.character(z$review_case_id %||% "")),
+      current
+    )
+    w04_resolution_abstract_edits_rv(c(remaining,list(saved)))
+    w04_resolution_abstract_edit_rv(FALSE)
+    w04_resolution_status(sprintf("Saved abstract at %s. Choose Include or Exclude to resolve the record.",format(Sys.time(),"%H:%M:%S")))
+  })
 
   save_w04_resolution_choice <- function(choice) {
     if(!session_can("adjudicate_assigned")) {
@@ -7745,13 +7850,24 @@ server <- function(input, output, session) {
   observeEvent(input$open_w04_resolution, {
     unresolved<-w04_resolution_unresolved_indices()
     if(length(unresolved))w04_resolution_idx(unresolved[[1L]])
+    w04_resolution_abstract_edit_rv(FALSE)
     app_view("w04_resolution")
   })
   observeEvent(input$back_to_tasks_w04_resolution, app_view("tasks"))
   observeEvent(input$w04_resolution_retain, {if(save_w04_resolution_choice("retain"))advance_w04_resolution()})
   observeEvent(input$w04_resolution_exclude, {if(save_w04_resolution_choice("exclude"))advance_w04_resolution()})
-  observeEvent(input$w04_resolution_previous, if(w04_resolution_idx()>1L)w04_resolution_idx(w04_resolution_idx()-1L))
-  observeEvent(input$w04_resolution_next, if(w04_resolution_idx()<length(w04_resolution_cases_rv()))w04_resolution_idx(w04_resolution_idx()+1L))
+  observeEvent(input$w04_resolution_previous, {
+    if(w04_resolution_idx()>1L) {
+      w04_resolution_idx(w04_resolution_idx()-1L)
+      w04_resolution_abstract_edit_rv(FALSE)
+    }
+  })
+  observeEvent(input$w04_resolution_next, {
+    if(w04_resolution_idx()<length(w04_resolution_cases_rv())) {
+      w04_resolution_idx(w04_resolution_idx()+1L)
+      w04_resolution_abstract_edit_rv(FALSE)
+    }
+  })
   observeEvent(input$open_w04_conflict, {
     unresolved <- w04_conflict_unresolved_indices()
     if(length(unresolved)) w04_conflict_idx(unresolved[[1L]])
