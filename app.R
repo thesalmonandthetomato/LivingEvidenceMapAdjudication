@@ -712,7 +712,9 @@ ui <- page_fillable(
     .pipeline-kpis { display:grid; grid-template-columns:repeat(5,minmax(145px,1fr)); gap:.5rem; margin-top:.15rem; }
     .pipeline-kpi { background:#f7f8fa; border:1px solid #e1e5e9; border-radius:8px; padding:.62rem .72rem .58rem .72rem; min-width:0; }
     .pipeline-kpi-label { display:block; color:#6a747d; font-size:.8rem; line-height:1.2; margin-bottom:.2rem; overflow-wrap:anywhere; }
+    .pipeline-kpi-value-row { display:flex; align-items:baseline; gap:.42rem; }
     .pipeline-kpi-value { display:block; font-size:1.12rem; line-height:1.2; font-weight:700; white-space:normal; overflow-wrap:anywhere; }
+    .pipeline-kpi-inline-note { display:block; color:#7c858d; font-size:.74rem; line-height:1.2; font-weight:600; white-space:nowrap; }
     .pipeline-kpi-sub { display:block; color:#7c858d; font-size:.74rem; line-height:1.2; margin-top:.12rem; overflow-wrap:anywhere; }
     .pipeline-kpi.pre-update {
       background:#fbfcfc;
@@ -1375,12 +1377,16 @@ server <- function(input, output, session) {
       !is.na(completed) && completed >= as.integer(position)
     }
 
-    kpi <- function(label,value,sub=NULL,stage_position=NULL,class_extra=NULL) {
+    kpi <- function(label,value,sub=NULL,stage_position=NULL,class_extra=NULL,inline_note=NULL) {
       stale_class <- if(!is.null(stage_position) && !stage_complete(stage_position)) "pre-update" else NULL
       div(
         class=paste(c("pipeline-kpi", stale_class, class_extra), collapse=" "),
         tags$span(class="pipeline-kpi-label",label),
-        tags$span(class="pipeline-kpi-value",value),
+        div(
+          class="pipeline-kpi-value-row",
+          tags$span(class="pipeline-kpi-value",value),
+          if(!is.null(inline_note)) tags$span(class="pipeline-kpi-inline-note",inline_note)
+        ),
         if(!is.null(sub)) tags$span(class="pipeline-kpi-sub",sub)
       )
     }
@@ -1407,7 +1413,16 @@ server <- function(input, output, session) {
       ),
       div(
         class="pipeline-kpis",
-        kpi("Database searching",fmt_pipeline_n(p$search_results_total),"records",stage_position=1L),
+        kpi(
+          "Database searching",
+          fmt_pipeline_n(p$search_results_total),
+          "records",
+          stage_position=1L,
+          inline_note={
+            n <- suppressWarnings(as.numeric(as.character(p$search_results_update %||% "")))
+            if(is.na(n)) NULL else paste0("+",fmt_pipeline_n(n))
+          }
+        ),
         kpi("After dedup.",fmt_pipeline_n(p$deduplicated_records),"records",stage_position=2L),
         kpi("Enriched",fmt_pipeline_n(p$enriched_records),"records",stage_position=3L),
         kpi("Retracted",fmt_pipeline_n(p$retracted_records),"records",stage_position=4L),
