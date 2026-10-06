@@ -1013,6 +1013,15 @@ server <- function(input, output, session) {
   authoritative_w08_rv <- reactiveVal(NULL)
   backend_reset_status <- reactiveVal("")
 
+  search_scope_string_rv <- reactiveVal("")
+  search_scope_status_rv <- reactiveVal("")
+  search_scope_request_id_rv <- reactiveVal("")
+  search_scope_run_id_rv <- reactiveVal("")
+  search_scope_rows_rv <- reactiveVal(NULL)
+  search_scope_seen_artifacts_rv <- reactiveVal(character())
+  search_scope_job_sources_rv <- reactiveVal(character())
+  search_scope_progress_rv <- reactiveVal(list(completed=0L,total=0L,pct=0L))
+
   observe({
     req(authenticated())
     invalidateLater(30000, session)
@@ -2202,6 +2211,7 @@ server <- function(input, output, session) {
           uiOutput("session_identity")
         ),
         pipeline_summary_ui(),
+        uiOutput("configure_review"),
         uiOutput("assignment_progress"),
         div(
           class = "row g-3",
@@ -2790,6 +2800,315 @@ server <- function(input, output, session) {
   session_can <- function(permission) {
     user_can(current_user(), permission)
   }
+
+  search_scope_pretty_source <- function(slug) {
+    slug <- as.character(slug %||% "")
+    core <- c(
+      lens="Lens",
+      scopus="Scopus",
+      openalex="OpenAlex",
+      agricola="AGRICOLA",
+      pubmed="PubMed/MEDLINE",
+      ethos="EThOS",
+      cba="Chinese Biological Abstracts",
+      epmc_preprints="Europe PMC preprints",
+      wos="Web of Science Core Collection",
+      cab_abstracts="CAB Abstracts",
+      proquest_dissertations="ProQuest Dissertations & Theses Global"
+    )
+    if (slug %in% names(core)) return(unname(core[[slug]]))
+    x <- sub("^ebsco_", "", slug)
+    tools::toTitleCase(gsub("_", " ", x, fixed=TRUE))
+  }
+
+  observe({
+    req(authenticated())
+    if (!session_can("control_workflows")) return()
+    if (nzchar(search_scope_string_rv())) return()
+    x <- tryCatch(
+      read_github_text_file("user_input/scoping_search_string.txt"),
+      error=function(e) structure("", error=conditionMessage(e))
+    )
+    if (nzchar(as.character(x))) {
+      search_scope_string_rv(trimws(as.character(x)))
+    } else {
+      search_scope_status_rv(paste(
+        "Could not load scoping search string:",
+        attr(x, "error") %||% "unknown GitHub read error"
+      ))
+    }
+  })
+
+  output$configure_review <- renderUI({
+    req(authenticated())
+    if (!session_can("control_workflows")) return(NULL)
+
+    running <- nzchar(as.character(search_scope_request_id_rv() %||% ""))
+    card(
+      class="assignment-summary",
+      tags$details(
+        class="assignment-disclosure",
+        `data-accordion-key`="configure-review",
+        tags$summary(
+          div(
+            class="d-inline-flex flex-wrap align-items-center gap-2 p-3",
+            tags$strong("Configure review"),
+            tags$span(class="task-badge","Search scoping")
+          )
+        ),
+        div(
+          class="px-3 pb-3",
+          tags$h6("Search string"),
+          tags$pre(
+            class="border rounded bg-light p-3 small",
+            style="white-space:pre-wrap;overflow-wrap:anywhere;",
+            if (nzchar(search_scope_string_rv())) search_scope_string_rv() else "Loading search string…"
+          ),
+          div(
+            class="d-flex align-items-center gap-2 flex-wrap mb-2",
+            actionButton(
+              "run_search_scope",
+              if (running) "Scoping search running…" else "Run scoping search",
+              class="btn-primary btn-sm",
+              disabled=if (running) NA else NULL
+            ),
+            tags$span(class="saved-note", search_scope_status_rv())
+          ),
+          uiOutput("search_scope_progress"),
+          uiOutput("search_scope_table")
+        )
+      )
+    )
+  })
+
+  output$search_scope_progress <- renderUI({
+    p <- search_scope_progress_rv() %||% list(completed=0L,total=0L,pct=0L)
+    total <- as.integer(p$total %||% 0L)
+    completed <- as.integer(p$completed %||% 0L)
+    pct <- as.integer(p$pct %||% 0L)
+    if (total < 1L && !nzchar(search_scope_run_id_rv())) return(NULL)
+    label <- if (total > 0L) {
+      sprintf("Scoping search progress: %d of %d databases complete",completed,total)
+    } else {
+      "Preparing scoping search…"
+    }
+    div(
+      class="mt-3 mb-3",
+      tags$div(class="d-flex justify-content-between small mb-1",
+               tags$span(label),tags$span(sprintf("%d%%",pct))),
+      div(
+        class="progress",
+        div(
+          class="progress-bar",
+          role="progressbar",
+          style=sprintf("width:%d%%",pct),
+          `aria-valuenow`=pct,
+          `aria-valuemin`=0,
+          `aria-valuemax`=100
+        )
+      )
+    )
+  })
+
+  output$search_scope_table <- renderUI({
+    rows <- search_scope_rows_rv()
+    job_sources <- search_scope_job_sources_rv() %||% character()
+    if (is.null(rows) && !length(job_sources)) return(NULL)
+
+    if (is.null(rows)) {
+      rows <- data.frame(
+        source_slug=job_sources,
+        source=vapply(job_sources,search_scope_pretty_source,character(1)),
+        hits=NA_integer_,
+        status="Queued",
+        stringsAsFactors=FALSE
+      )
+    }
+
+    if (!"source_slug" %in% names(rows)) rows$source_slug <- ""
+    if (!"source" %in% names(rows)) rows$source <- vapply(rows$source_slug,search_scope_pretty_source,character(1))
+    if (!"hits" %in% names(rows)) rows$hits <- NA_integer_
+    if (!"status" %in% names(rows)) rows$status <- ""
+
+    tags$div(
+      class="table-responsive mt-2",
+      tags$table(
+        class="table table-sm align-middle mb-0",
+        tags$thead(tags$tr(
+          tags$th("Database"),
+          tags$th(class="text-end","Hits"),
+          tags$th("Status")
+        )),
+        tags$tbody(tagList(lapply(seq_len(nrow(rows)),function(i) {
+          hit <- suppressWarnings(as.integer(rows$hits[[i]]))
+          stat <- as.character(rows$status[[i]] %||% "")
+          shown_status <- if (identical(stat,"counted live") || identical(stat,"validated W00 manual-search reported count")) {
+            "Complete"
+          } else if (startsWith(stat,"API count failed:")) {
+            paste("Failed", sub("^API count failed:\\s*", "", stat))
+          } else stat
+          tags$tr(
+            tags$td(as.character(rows$source[[i]])),
+            tags$td(class="text-end",if(is.na(hit)) "—" else format(hit,big.mark=",",scientific=FALSE)),
+            tags$td(shown_status)
+          )
+        })))
+      )
+    )
+  })
+
+  observeEvent(input$run_search_scope, {
+    req(authenticated())
+    if (!session_can("control_workflows")) {
+      search_scope_status_rv("Administrator permission is required.")
+      return()
+    }
+    if (nzchar(search_scope_request_id_rv())) return()
+
+    stamp <- format(Sys.time(),tz="UTC",format="%Y%m%dT%H%M%SZ")
+    request_id <- paste0(
+      "shiny-",stamp,"-",
+      substr(digest::digest(
+        paste(stamp,session_reviewer_id(),search_scope_string_rv(),sep="|"),
+        algo="sha256",serialize=FALSE
+      ),1L,10L)
+    )
+    search_scope_rows_rv(NULL)
+    search_scope_seen_artifacts_rv(character())
+    search_scope_job_sources_rv(character())
+    search_scope_progress_rv(list(completed=0L,total=0L,pct=0L))
+    search_scope_run_id_rv("")
+    search_scope_status_rv("Dispatching count-only scoping search…")
+
+    ok <- tryCatch({
+      dispatch_w00_scoping(request_id)
+      TRUE
+    },error=function(e) {
+      search_scope_status_rv(paste("Scoping dispatch failed:",conditionMessage(e)))
+      FALSE
+    })
+    if (ok) {
+      search_scope_request_id_rv(request_id)
+      search_scope_status_rv("Scoping search queued in GitHub Actions.")
+    }
+  })
+
+  observe({
+    req(authenticated())
+    request_id <- as.character(search_scope_request_id_rv() %||% "")
+    if (!nzchar(request_id)) return()
+    invalidateLater(3000, session)
+
+    run <- tryCatch(find_w00_scoping_run(request_id),error=function(e)e)
+    if (inherits(run,"error")) {
+      search_scope_status_rv(paste("Could not read scoping run:",conditionMessage(run)))
+      return()
+    }
+    if (is.null(run)) {
+      search_scope_status_rv("Waiting for GitHub Actions to create the scoping run…")
+      return()
+    }
+
+    run_id <- as.character(run$id %||% "")
+    search_scope_run_id_rv(run_id)
+    jobs <- tryCatch(w00_scoping_run_jobs(run_id),error=function(e)e)
+    if (inherits(jobs,"error")) {
+      search_scope_status_rv(paste("Could not read scoping job progress:",conditionMessage(jobs)))
+      return()
+    }
+
+    count_jobs <- Filter(function(j) startsWith(as.character(j$name %||% ""),"count / "), jobs)
+    sources <- vapply(count_jobs,function(j) sub("^count / ","",as.character(j$name %||% "")),character(1))
+    if (length(sources)) search_scope_job_sources_rv(sources)
+
+    completed <- sum(vapply(count_jobs,function(j) identical(as.character(j$status %||% ""),"completed"),logical(1)))
+    total <- length(count_jobs)
+    pct <- if (total > 0L) round(100*completed/total) else if (identical(as.character(run$status %||% ""),"queued")) 0L else 1L
+    search_scope_progress_rv(list(completed=completed,total=total,pct=pct))
+
+    current <- search_scope_rows_rv()
+    if (is.null(current) && length(sources)) {
+      current <- data.frame(
+        source_slug=sources,
+        source=vapply(sources,search_scope_pretty_source,character(1)),
+        hits=NA_integer_,
+        status=vapply(count_jobs,function(j) {
+          st <- as.character(j$status %||% "")
+          if (identical(st,"in_progress")) "Running" else if (identical(st,"completed")) {
+            if (identical(as.character(j$conclusion %||% ""),"success")) "Complete" else "Failed"
+          } else "Queued"
+        },character(1)),
+        stringsAsFactors=FALSE
+      )
+    } else if (!is.null(current) && length(sources)) {
+      for (k in seq_along(sources)) {
+        slug <- sources[[k]]
+        hit <- which(as.character(current$source_slug)==slug)
+        if (!length(hit)) {
+          current <- rbind(current,data.frame(
+            source_slug=slug,source=search_scope_pretty_source(slug),hits=NA_integer_,
+            status="Queued",stringsAsFactors=FALSE
+          ))
+          hit <- nrow(current)
+        }
+        if (is.na(suppressWarnings(as.integer(current$hits[[hit[[1L]]]])))) {
+          st <- as.character(count_jobs[[k]]$status %||% "")
+          current$status[[hit[[1L]]]] <- if (identical(st,"in_progress")) "Running" else if (identical(st,"completed")) {
+            if (identical(as.character(count_jobs[[k]]$conclusion %||% ""),"success")) "Complete" else "Failed"
+          } else "Queued"
+        }
+      }
+    }
+
+    artifacts <- tryCatch(w00_scoping_run_artifacts(run_id),error=function(e) list())
+    seen <- search_scope_seen_artifacts_rv() %||% character()
+    count_artifacts <- Filter(function(a) startsWith(as.character(a$name %||% ""),"workflow00-scope-count-"), artifacts)
+    for (a in count_artifacts) {
+      aid <- as.character(a$id %||% "")
+      if (!nzchar(aid) || aid %in% seen) next
+      row <- tryCatch(read_w00_scoping_count_artifact(a),error=function(e) NULL)
+      if (is.null(row)) next
+      slug <- as.character(row$source_slug %||% "")
+      if (!nzchar(slug)) next
+      if (is.null(current)) current <- data.frame(source_slug=character(),source=character(),hits=integer(),status=character(),stringsAsFactors=FALSE)
+      current <- current[as.character(current$source_slug)!=slug,,drop=FALSE]
+      current <- rbind(current,data.frame(
+        source_slug=slug,
+        source=as.character(row$source %||% search_scope_pretty_source(slug)),
+        hits=suppressWarnings(as.integer(row$hits %||% NA_integer_)),
+        status=as.character(row$status %||% ""),
+        stringsAsFactors=FALSE
+      ))
+      seen <- c(seen,aid)
+    }
+    search_scope_seen_artifacts_rv(unique(seen))
+
+    if (!is.null(current) && length(sources)) {
+      current$.ord <- match(current$source_slug,sources)
+      current <- current[order(current$.ord,current$source),setdiff(names(current),".ord"),drop=FALSE]
+    }
+    if (!is.null(current)) search_scope_rows_rv(current)
+
+    run_status <- as.character(run$status %||% "")
+    run_conclusion <- as.character(run$conclusion %||% "")
+    if (identical(run_status,"completed")) {
+      final_art <- Filter(function(a) startsWith(as.character(a$name %||% ""),"workflow00-search-scoping-"), artifacts)
+      if (identical(run_conclusion,"success") && length(final_art)) {
+        final_rows <- tryCatch(read_w00_scoping_final_artifact(final_art[[1L]]),error=function(e) NULL)
+        if (!is.null(final_rows)) search_scope_rows_rv(final_rows)
+        search_scope_progress_rv(list(completed=max(total,completed),total=max(total,completed),pct=100L))
+        search_scope_status_rv("Scoping search complete.")
+      } else {
+        search_scope_status_rv(paste0(
+          "Scoping search finished",
+          if(nzchar(run_conclusion)) paste0(" with status: ",run_conclusion) else "."
+        ))
+      }
+      search_scope_request_id_rv("")
+    } else {
+      search_scope_status_rv(if(total > 0L) sprintf("Scoping search running: %d of %d databases complete.",completed,total) else "Preparing database count jobs…")
+    }
+  })
 
   w01_active_assignment_events <- function() {
     decisions() %||% list()
