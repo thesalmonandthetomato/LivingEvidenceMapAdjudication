@@ -3041,7 +3041,7 @@ server <- function(input, output, session) {
 
     count_jobs <- Filter(function(j) startsWith(as.character(j$name %||% ""),"count / "), jobs)
     sources <- vapply(count_jobs,function(j) sub("^count / ","",as.character(j$name %||% "")),character(1))
-    if (length(sources)) search_scope_job_sources_rv(sources)
+    if (length(sources) && is.null(search_scope_catalogue_rv())) search_scope_job_sources_rv(sources)
 
     completed <- sum(vapply(count_jobs,function(j) identical(as.character(j$status %||% ""),"completed"),logical(1)))
     catalogue <- search_scope_catalogue_rv()
@@ -3106,9 +3106,15 @@ server <- function(input, output, session) {
     }
     search_scope_seen_artifacts_rv(unique(seen))
 
-    if (!is.null(current) && length(sources)) {
-      current$.ord <- match(current$source_slug,sources)
-      current <- current[order(current$.ord,current$source),setdiff(names(current),".ord"),drop=FALSE]
+    if (!is.null(current)) {
+      catalogue <- search_scope_catalogue_rv()
+      order_slugs <- if (!is.null(catalogue) && nrow(catalogue)) {
+        as.character(catalogue$source_slug)
+      } else sources
+      if (length(order_slugs)) {
+        current$.ord <- match(current$source_slug,order_slugs)
+        current <- current[order(current$.ord,current$source),setdiff(names(current),".ord"),drop=FALSE]
+      }
     }
     if (!is.null(current)) search_scope_rows_rv(current)
 
