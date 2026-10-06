@@ -132,8 +132,7 @@ cases_for_assignment_user <- function(
 ) {
   if (!length(cases)) return(list())
   mode <- assignment_mode_for(workflow, task_type %||% "")
-  explicit_user_scope <- identical(mode, ASSIGNMENT_MODES[["independent_blind_review"]]) ||
-    identical(as.character(task_type %||% ""), "conflict_resolution")
+  explicit_user_scope <- !identical(mode, ASSIGNMENT_MODES[["shared_work_pool"]])
 
   batch_assignments <- active_assignments_for_batch(assignments, workflow, batch_id, task_type)
   if (!length(batch_assignments)) {
