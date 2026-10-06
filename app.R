@@ -2883,7 +2883,15 @@ server <- function(input, output, session) {
             tags$span(class="saved-note", search_scope_status_rv())
           ),
           uiOutput("search_scope_progress"),
-          uiOutput("search_scope_table")
+          uiOutput("search_scope_table"),
+          conditionalPanel(
+            condition="output.search_scope_report_ready",
+            downloadButton(
+              "download_search_scope_report",
+              "Download scoping report",
+              class="btn-outline-secondary btn-sm mt-3"
+            )
+          )
         )
       )
     )
@@ -2918,6 +2926,49 @@ server <- function(input, output, session) {
     )
   })
 
+  output$search_scope_report_ready <- reactive({
+    rows <- search_scope_rows_rv()
+    !is.null(rows) && nrow(rows) > 0L && !nzchar(as.character(search_scope_request_id_rv() %||% ""))
+  })
+  outputOptions(output,"search_scope_report_ready",suspendWhenHidden=FALSE)
+
+  output$download_search_scope_report <- downloadHandler(
+    filename=function() sprintf("search-scoping-report-%s.md",format(Sys.Date(),"%Y-%m-%d")),
+    content=function(file) {
+      rows <- search_scope_rows_rv()
+      req(!is.null(rows), nrow(rows) > 0L)
+      hits <- suppressWarnings(as.integer(rows$hits))
+      status <- vapply(rows$status,search_scope_display_status,character(1))
+      fmt <- ifelse(is.na(hits),"—",format(hits,big.mark=",",scientific=FALSE))
+      total <- sum(hits,na.rm=TRUE)
+      esc <- function(x) gsub("\\|","\\\\|",as.character(x))
+      z <- c(
+        "# Search scoping report",
+        "",
+        sprintf("**Scoping date:** %s",format(Sys.Date(),"%d-%m-%Y")),
+        "",
+        "This report records a count-only scoping search. No bibliographic records or raw API responses were retained.",
+        "",
+        "## Search string",
+        "",
+        "```",
+        search_scope_string_rv(),
+        "```",
+        "",
+        "## Database counts",
+        "",
+        "| Database | Hits | Status |",
+        "|---|---:|---|",
+        sprintf("| %s | %s | %s |",esc(rows$source),fmt,status),
+        sprintf("| **Total** | **%s** | |",format(total,big.mark=",",scientific=FALSE)),
+        "",
+        "Counts are the totals reported by each live-searchable database/API at the time of the scoping run."
+      )
+      writeLines(z,file,useBytes=TRUE)
+    },
+    contentType="text/markdown"
+  )
+
   output$search_scope_table <- renderUI({
     rows <- search_scope_rows_rv()
     job_sources <- search_scope_job_sources_rv() %||% character()
@@ -2947,20 +2998,31 @@ server <- function(input, output, session) {
           tags$th(class="text-end","Hits"),
           tags$th("Status")
         )),
-        tags$tbody(tagList(lapply(seq_len(nrow(rows)),function(i) {
-          hit <- suppressWarnings(as.integer(rows$hits[[i]]))
-          stat <- as.character(rows$status[[i]] %||% "")
-          shown_status <- if (identical(stat,"counted live") || identical(stat,"validated W00 manual-search reported count")) {
-            "Complete"
-          } else if (startsWith(stat,"API count failed:")) {
-            paste("Failed", sub("^API count failed:\\s*", "", stat))
-          } else stat
+        tags$tbody(tagList(
+          lapply(seq_len(nrow(rows)),function(i) {
+            hit <- suppressWarnings(as.integer(rows$hits[[i]]))
+            stat <- as.character(rows$status[[i]] %||% "")
+            shown_status <- if (identical(stat,"counted live")) {
+              "Complete"
+            } else if (startsWith(stat,"API count failed:")) {
+              paste("Failed", sub("^API count failed:\\s*", "", stat))
+            } else stat
+            tags$tr(
+              tags$td(as.character(rows$source[[i]])),
+              tags$td(class="text-end",if(is.na(hit)) "—" else format(hit,big.mark=",",scientific=FALSE)),
+              tags$td(shown_status)
+            )
+          }),
           tags$tr(
-            tags$td(as.character(rows$source[[i]])),
-            tags$td(class="text-end",if(is.na(hit)) "—" else format(hit,big.mark=",",scientific=FALSE)),
-            tags$td(shown_status)
+            class="fw-semibold border-top",
+            tags$td("Total"),
+            tags$td(
+              class="text-end",
+              format(sum(suppressWarnings(as.integer(rows$hits)),na.rm=TRUE),big.mark=",",scientific=FALSE)
+            ),
+            tags$td("")
           )
-        })))
+        ))
       )
     )
   })
