@@ -538,6 +538,77 @@ stopifnot(
   identical(unname(shared_plan$by_user), c(2L,2L))
 )
 
+# W04 model uncertainty also supports shared first-finisher-wins assignment.
+stopifnot(
+  identical(
+    assignment_mode_for("04", "model_uncertainty"),
+    ASSIGNMENT_MODES[["shared_work_pool"]]
+  )
+)
+
+w04_resolution_cases <- lapply(seq_len(3), function(i) {
+  list(review_case_id=paste0("w04-resolution-",i))
+})
+w04_resolution_plan <- plan_workflow_assignment(
+  cases=w04_resolution_cases,
+  assignments=list(),
+  active_events=list(),
+  workflow="04",
+  batch_id="w04-resolution-batch",
+  task_type="model_uncertainty",
+  user_ids=c("usr-a","usr-b"),
+  allocation_type="number",
+  amount=3,
+  allocation_strategy="shared"
+)
+stopifnot(
+  identical(w04_resolution_plan$selected_cases,3L),
+  identical(w04_resolution_plan$allocated,6L),
+  identical(unname(w04_resolution_plan$by_user),c(3L,3L))
+)
+
+w04_resolution_event <- list(
+  list(
+    review_case_id="w04-resolution-1",
+    reviewer="usr-a",
+    decision="retain",
+    resolved_at_utc="2026-10-06T13:00:00Z"
+  )
+)
+visible_w04_resolution_b <- cases_for_assignment_user(
+  w04_resolution_cases,
+  w04_resolution_plan$new_assignments,
+  "04",
+  "w04-resolution-batch",
+  reviewer_b,
+  task_type="model_uncertainty",
+  active_events=w04_resolution_event
+)
+stopifnot(
+  length(visible_w04_resolution_b)==2L,
+  !"w04-resolution-1" %in% vapply(
+    visible_w04_resolution_b,
+    function(x)x$review_case_id,
+    character(1)
+  )
+)
+
+w04_resolution_progress <- assignment_progress(
+  w04_resolution_plan$new_assignments,
+  w04_resolution_event,
+  users,
+  workflow="04",
+  batch_id="w04-resolution-batch",
+  task_type="model_uncertainty"
+)
+stopifnot(
+  identical(w04_resolution_progress$completed,1L),
+  identical(w04_resolution_progress$resolved_elsewhere,1L),
+  identical(w04_resolution_progress$remaining,4L)
+)
+
+cat("PASS: W04 model-uncertainty shared first-finisher assignment semantics\n")
+
 cat("PASS: W02 and W08 shared-pool assignment semantics\n")
 
 
