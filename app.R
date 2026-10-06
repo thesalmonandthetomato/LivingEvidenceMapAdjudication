@@ -1852,6 +1852,7 @@ server <- function(input, output, session) {
       }
       notes <- record_table_notes_for(cid,src$workflow,src$task_type)
       list(
+        key=paste(src$workflow,src$task_type,cid,sep="|"),
         case_id=cid,
         workflow=src$workflow,
         task_type=src$task_type,
@@ -2456,6 +2457,210 @@ server <- function(input, output, session) {
 
   login_status <- reactiveVal("")
   output$login_status <- renderText(login_status())
+
+
+  observeEvent(input$record_table_open,{
+    req(authenticated())
+    z <- input$record_table_open
+    if (is.null(z)) return()
+    record_table_context(list(
+      workflow=as.character(z$workflow %||% ""),
+      task_type=as.character(z$task_type %||% ""),
+      batch_id=as.character(z$batch_id %||% ""),
+      metric=as.character(z$metric %||% "cases"),
+      user_id=as.character(z$user_id %||% ""),
+      label=as.character(z$label %||% "")
+    ))
+    record_table_page(1L)
+    record_table_abstract_open(character())
+    record_table_notes_open(character())
+    app_view("record_table")
+  })
+
+  observeEvent(input$record_table_back,{
+    record_table_context(NULL)
+    record_table_page(1L)
+    record_table_abstract_open(character())
+    record_table_notes_open(character())
+    app_view("tasks")
+  })
+
+  observeEvent(input$record_table_toggle,{
+    z <- input$record_table_toggle
+    key <- as.character(z$case_id %||% "")
+    detail <- as.character(z$detail %||% "")
+    if (!nzchar(key)) return()
+    if (identical(detail,"abstract")) {
+      cur <- record_table_abstract_open()
+      record_table_abstract_open(if(key %in% cur) setdiff(cur,key) else c(cur,key))
+    } else if (identical(detail,"notes")) {
+      cur <- record_table_notes_open()
+      record_table_notes_open(if(key %in% cur) setdiff(cur,key) else c(cur,key))
+    }
+  })
+
+  observeEvent(input$record_table_search,{
+    record_table_page(1L)
+  },ignoreInit=TRUE)
+
+  observeEvent(input$record_table_page_size,{
+    record_table_page(1L)
+  },ignoreInit=TRUE)
+
+  observeEvent(input$record_table_prev,{
+    record_table_page(max(1L,record_table_page()-1L))
+  })
+
+  observeEvent(input$record_table_next,{
+    size <- suppressWarnings(as.integer(input$record_table_page_size %||% 50L))
+    if (is.na(size) || size < 1L) size <- 50L
+    total <- length(record_table_filtered_rows())
+    pages <- max(1L,ceiling(total/size))
+    record_table_page(min(pages,record_table_page()+1L))
+  })
+
+  output$record_table_context_label <- renderUI({
+    ctx <- record_table_context()
+    if (is.null(ctx)) return(NULL)
+    metric_label <- c(
+      cases="Cases",
+      assignments="Assignments",
+      completed="Completed",
+      closed="Closed",
+      outstanding="Outstanding",
+      unassigned="Unassigned cases"
+    )[[ctx$metric]] %||% ctx$metric
+    who <- if(nzchar(ctx$user_id)) paste0(" · ",record_table_user_label(ctx$user_id)) else ""
+    label <- if(nzchar(ctx$label)) ctx$label else paste0(
+      if(identical(ctx$workflow,"all")) "All workflows" else paste0("W",ctx$workflow),
+      if(nzchar(ctx$task_type) && !identical(ctx$task_type,"all")) paste0(" · ",gsub("_"," ",ctx$task_type,fixed=TRUE)) else "",
+      " · ",metric_label,who
+    )
+    rows <- length(record_table_filtered_rows())
+    matched <- record_table_data()$matched_assignments
+    suffix <- if(ctx$metric %in% c("assignments","completed","closed","outstanding") && matched != rows) {
+      sprintf(" · %d assignments across %d records",matched,rows)
+    } else {
+      sprintf(" · %d record%s",rows,if(rows==1L)"" else "s")
+    }
+    tags$span(label,suffix)
+  })
+
+  output$record_table_body <- renderUI({
+    rows <- record_table_filtered_rows()
+    if (!length(rows)) {
+      return(tags$div(class="p-3 border rounded bg-white text-secondary","No records match this view."))
+    }
+    size <- suppressWarnings(as.integer(input$record_table_page_size %||% 50L))
+    if (is.na(size) || size < 1L) size <- 50L
+    pages <- max(1L,ceiling(length(rows)/size))
+    page <- min(max(1L,record_table_page()),pages)
+    if (!identical(page,record_table_page())) record_table_page(page)
+    idx <- seq.int((page-1L)*size+1L,min(page*size,length(rows)))
+    shown <- rows[idx]
+
+    render_record <- function(r) {
+      citation <- tagList(
+        tags$span(class="fw-semibold",as.character(r$work_id %||% "")),
+        if(nzchar(r$year)) tags$span(paste0(" (",r$year,") ")) else " ",
+        tags$span(as.character(r$title %||% "")),
+        if(nzchar(r$doi)) tagList(
+          tags$span(". "),
+          tags$a(
+            href=paste0("https://doi.org/",normalise_doi_value(r$doi)),
+            target="_blank",rel="noopener noreferrer",
+            normalise_doi_value(r$doi)
+          )
+        ) else NULL
+      )
+      abstract_open <- r$key %in% record_table_abstract_open()
+      notes_open <- r$key %in% record_table_notes_open()
+      abstract_preview <- record_table_preview(r$abstract,5L)
+      note_count <- length(r$notes %||% list())
+
+      main <- tags$tr(
+        tags$td(class="lem-record-cell",citation),
+        tags$td(
+          if(nzchar(abstract_preview)) tags$button(
+            type="button",class="lem-detail-toggle",
+            `data-case-id`=r$key,`data-detail`="abstract",
+            paste0(abstract_preview,"… ",if(abstract_open)"▴" else "▾")
+          ) else tags$span(class="text-secondary","No abstract")
+        ),
+        tags$td(r$status),
+        tags$td(if(nzchar(r$assigned)) r$assigned else tags$span(class="text-secondary","—")),
+        tags$td(if(nzchar(r$decisions)) r$decisions else tags$span(class="text-secondary","—")),
+        tags$td(
+          if(note_count) tags$button(
+            type="button",class="lem-detail-toggle",
+            `data-case-id`=r$key,`data-detail`="notes",
+            sprintf("%d note%s %s",note_count,if(note_count==1L)"" else "s",if(notes_open)"▴" else "▾")
+          ) else tags$span(class="text-secondary","—")
+        ),
+        tags$td(if(nzchar(r$last_activity)) r$last_activity else tags$span(class="text-secondary","—"))
+      )
+
+      detail <- if(abstract_open || notes_open) {
+        tags$tr(
+          class="lem-detail-row",
+          tags$td(
+            colspan="7",
+            if(abstract_open) div(
+              class="lem-detail-text",
+              tags$div(class="fw-semibold mb-1","Abstract"),
+              tags$div(style="white-space:pre-wrap;",as.character(r$abstract %||% ""))
+            ),
+            if(notes_open && note_count) div(
+              class=paste("lem-detail-text",if(abstract_open)"mt-3 pt-3 border-top" else ""),
+              tags$div(class="fw-semibold mb-1","Notes"),
+              tagList(lapply(r$notes,function(n) {
+                div(
+                  class="lem-note-entry",
+                  tags$div(class="fw-semibold",record_table_user_label(as.character(n$reviewer %||% ""))),
+                  tags$div(as.character(n$note %||% ""))
+                )
+              }))
+            )
+          )
+        )
+      } else NULL
+      tagList(main,detail)
+    }
+
+    div(
+      class="lem-record-table-wrap",
+      tags$table(
+        class="lem-record-table",
+        tags$thead(tags$tr(
+          tags$th("Record"),
+          tags$th("Abstract"),
+          tags$th("Status"),
+          tags$th("Assigned reviewer(s)"),
+          tags$th("Decision(s)"),
+          tags$th("Notes"),
+          tags$th("Last activity")
+        )),
+        tags$tbody(tagList(lapply(shown,render_record)))
+      )
+    )
+  })
+
+  output$record_table_pager <- renderUI({
+    rows <- record_table_filtered_rows()
+    size <- suppressWarnings(as.integer(input$record_table_page_size %||% 50L))
+    if (is.na(size) || size < 1L) size <- 50L
+    pages <- max(1L,ceiling(length(rows)/size))
+    page <- min(max(1L,record_table_page()),pages)
+    div(
+      class="d-flex align-items-center justify-content-between gap-2 mt-2 flex-wrap",
+      tags$span(class="text-secondary small",sprintf("Page %d of %d",page,pages)),
+      div(
+        class="d-flex gap-2",
+        actionButton("record_table_prev","← Previous",class="btn-outline-secondary btn-sm",disabled=if(page<=1L)NA else NULL),
+        actionButton("record_table_next","Next →",class="btn-outline-secondary btn-sm",disabled=if(page>=pages)NA else NULL)
+      )
+    )
+  })
 
   output$session_identity <- renderUI({
     req(authenticated(), current_user())
