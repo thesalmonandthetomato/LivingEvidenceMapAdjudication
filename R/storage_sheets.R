@@ -1497,6 +1497,12 @@ read_latest_pipeline_status <- function() {
     if (!identical(as.character(current$schema), "living-evidence-map-current-run-status-v1")) {
       stop("Unexpected current-run status schema", call. = FALSE)
     }
+    delta_value <- function(cur, prev) {
+      a <- suppressWarnings(as.numeric(val(cur)))
+      b <- suppressWarnings(as.numeric(val(prev)))
+      if (is.na(a) || is.na(b)) "" else as.character(a - b)
+    }
+    prev <- current$baseline$previous_counts %||% list()
     list(
       update_id = val(current$update_id),
       event_at_utc = val(current$last_updated_at_utc),
@@ -1507,14 +1513,25 @@ read_latest_pipeline_status <- function() {
       search_results_total = val(current$counts$search_results),
       search_results_update = val(current$search$search_results),
       deduplicated_records = val(current$counts$deduplicated_records),
+      deduplicated_update = delta_value(current$counts$deduplicated_records, prev$deduplicated_records),
       enriched_records = val(current$counts$enriched_records),
+      enriched_update = delta_value(current$counts$enriched_records, prev$enriched_records),
       retracted_records = val(current$counts$retraction_exclusions),
+      retracted_update = delta_value(current$counts$retraction_exclusions, prev$retraction_exclusions),
       screened_include = val(current$counts$screened_include),
       screened_exclude = val(current$counts$screened_exclude),
+      screened_include_update = delta_value(current$counts$screened_include, prev$screened_include),
+      screened_exclude_update = delta_value(current$counts$screened_exclude, prev$screened_exclude),
+      species_records = val(current$counts$species_records),
+      species_update = delta_value(current$counts$species_records, prev$species_records),
       geography_with = val(current$counts$geography$with),
       geography_without = val(current$counts$geography$without),
+      geography_with_update = delta_value(current$counts$geography$with, (prev$geography %||% list())$with),
+      geography_without_update = delta_value(current$counts$geography$without, (prev$geography %||% list())$without),
       topic_with = val(current$counts$topics$with),
       topic_without = val(current$counts$topics$without),
+      topic_with_update = delta_value(current$counts$topics$with, (prev$topics %||% list())$with),
+      topic_without_update = delta_value(current$counts$topics$without, (prev$topics %||% list())$without),
       completed_through = val(current$progress$completed_through),
       active_workflow = val(current$progress$active_position),
       status_label = val(current$progress$status_label)
@@ -1572,10 +1589,21 @@ read_latest_pipeline_status <- function() {
   # The Sheet is written before the branch status commit. Prefer it only when
   # it is strictly newer; otherwise GitHub remains the canonical tie-breaker.
   chosen <- if (event_time(sheet_status) > event_time(repo_status)) sheet_status else repo_status
-  if (!nzchar(as.character(chosen$search_results_update %||% "")) &&
-      !is.null(repo_status) &&
-      nzchar(as.character(repo_status$search_results_update %||% ""))) {
-    chosen$search_results_update <- repo_status$search_results_update
+  if (!is.null(repo_status)) {
+    supplemental <- c(
+      "search_results_update",
+      "deduplicated_update","enriched_update","retracted_update",
+      "screened_include_update","screened_exclude_update",
+      "species_records","species_update",
+      "geography_with_update","geography_without_update",
+      "topic_with_update","topic_without_update"
+    )
+    for (nm in supplemental) {
+      if (!nzchar(as.character(chosen[[nm]] %||% "")) &&
+          nzchar(as.character(repo_status[[nm]] %||% ""))) {
+        chosen[[nm]] <- repo_status[[nm]]
+      }
+    }
   }
   chosen
 }
