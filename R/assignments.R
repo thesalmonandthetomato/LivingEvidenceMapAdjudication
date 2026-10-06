@@ -136,7 +136,14 @@ cases_for_assignment_user <- function(
 
   batch_assignments <- active_assignments_for_batch(assignments, workflow, batch_id, task_type)
   if (!length(batch_assignments)) {
-    if (isTRUE(explicit_user_scope)) return(list())
+    # Before assignment begins, administrators retain access to the full queue
+    # so existing adjudication work does not disappear from the app. Reviewers
+    # remain blocked until cases are explicitly assigned. Once any assignment
+    # exists, single-reviewer queues are scoped normally for every user.
+    if (isTRUE(explicit_user_scope)) {
+      if (user_can(user, "manage_assignments")) return(cases)
+      return(list())
+    }
     return(cases)
   }
 
