@@ -35,3 +35,10 @@ stopifnot(
   grepl("Sent to GitHub. Workflow 08 resume has been requested.", app_src, fixed=TRUE)
 )
 cat("PASS: W02/W08 GitHub send-state UI contract\n")
+
+stopifnot(
+  grepl("w04_validation_finalize_requested_rv <- reactiveVal(FALSE)", app_src, fixed=TRUE),
+  grepl("Sent to GitHub. Workflow 04 validation finalisation has been requested.", app_src, fixed=TRUE),
+  grepl("w04_validation_finalize_request_exists", app_src, fixed=TRUE)
+)
+cat("PASS: W04 validation GitHub send-state UI contract\n")
