@@ -1698,7 +1698,7 @@
       "checksum": "1bf54114f52c98b210a8aa977965a21b"
     },
     "app.R": {
-      "checksum": "47ecec3f2c7652ab15e2d1a629c521a1"
+      "checksum": "af5bc0abffea5d222d144c9ccb8eff4b"
     },
     "docs/production_multiuser_cutover_20261005.md": {
       "checksum": "0c8abb9a02a372eec4f35bb66812bce6"
@@ -1830,7 +1830,7 @@
       "checksum": "4eb8af71824e27f3e50e72b564066887"
     },
     "R/storage_sheets.R": {
-      "checksum": "70557fa8ab53fa6189eb45d24336ada8"
+      "checksum": "2de3181109047e06b1e02f7016020b3a"
     },
     "R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
@@ -1872,7 +1872,7 @@
       "checksum": "5694c4b318b92fc4926c022bf68fd37c"
     },
     "tests/test_phase1c_permissions.R": {
-      "checksum": "6cb80068b9538a109f185bb4fc248a59"
+      "checksum": "320fd337cb148ed8e8202aaeb01a3aaa"
     },
     "tests/test_preproduction_contract.R": {
       "checksum": "e443660c618fa0845f6602c2aca18f30"
