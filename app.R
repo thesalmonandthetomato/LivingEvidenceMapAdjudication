@@ -856,6 +856,8 @@ server <- function(input, output, session) {
   w04_batch_id_rv <- reactiveVal("")
   w04_idx <- reactiveVal(1L)
   w04_decisions <- reactiveVal(list())
+  w04_screening_notes_rv <- reactiveVal(list())
+  w04_note_status <- reactiveVal("")
   w04_batch_status_rv <- reactiveVal("")
   w04_status <- reactiveVal("")
   w04_include_terms <- reactiveVal(character())
@@ -4603,6 +4605,8 @@ server <- function(input, output, session) {
     w01_repairs_rv(list())
     w02_all_cases_rv(list())
     w04_all_cases_rv(list())
+    w04_screening_notes_rv(list())
+    w04_note_status("")
     w04_consistency_analyses_rv(list())
     w04_conflict_sets_rv(list())
     w04_kappa_registry_rv(w04_empty_kappa_registry())
@@ -4728,6 +4732,12 @@ server <- function(input, output, session) {
           w02_all_cases_rv(list())
           w02_cases_rv(NULL)
         }
+
+        w04_screening_notes_rv(
+          if (identical(storage_backend(),"google_sheets")) {
+            tryCatch(active_sheet_w04_screening_notes(), error=function(e) list())
+          } else list()
+        )
 
         w04_batch <- load_w04_batch()
         if (!is.null(w04_batch) && identical(as.character(w04_batch$review_mode %||% ""), "resolution")) {
@@ -5481,6 +5491,36 @@ server <- function(input, output, session) {
     invisible(TRUE)
   }
 
+  w04_screening_note_for <- function(review_case_id, user_id, queue_sha256 = "") {
+    notes <- w04_screening_notes_rv() %||% list()
+    if (!length(notes)) return(NULL)
+    hits <- Filter(function(x) {
+      same_case <- identical(
+        as.character(x$review_case_id %||% ""),
+        as.character(review_case_id %||% "")
+      )
+      same_user <- identical(
+        as.character(x$reviewer %||% ""),
+        as.character(user_id %||% "")
+      )
+      note_sha <- tolower(as.character(x$queue_sha256 %||% ""))
+      want_sha <- tolower(as.character(queue_sha256 %||% ""))
+      same_sha <- !nzchar(want_sha) || identical(note_sha,want_sha)
+      same_case && same_user && same_sha
+    }, notes)
+    if (!length(hits)) NULL else hits[[1L]]
+  }
+
+  w04_current_note_text <- reactive({
+    z <- w04_current_case()
+    note <- w04_screening_note_for(
+      z$review_case_id,
+      session_reviewer_id(),
+      w04_queue_sha_rv()
+    )
+    as.character(note$note %||% "")
+  })
+
   w04_current_case <- reactive({
     req(authenticated(), w04_cases_rv())
     w04_cases_rv()[[w04_idx()]]
@@ -5579,12 +5619,29 @@ server <- function(input, output, session) {
           class="w04-keywords",
           tags$strong("Keywords: "),
           highlight_screening_text(b$keywords %||% "",w04_include_terms(),w04_exclude_terms())
+        ),
+        div(
+          class="mt-3 pt-3 border-top",
+          textAreaInput(
+            "w04_note",
+            "Notes",
+            value=w04_current_note_text(),
+            rows=3,
+            width="100%",
+            placeholder="Optional note for this record"
+          ),
+          div(
+            class="d-flex align-items-center gap-2 flex-wrap",
+            actionButton("w04_save_note","Save note",class="btn-outline-secondary btn-sm"),
+            tags$span(class="saved-note",textOutput("w04_note_status",inline=TRUE))
+          )
         )
       )
     )
   })
 
   output$w04_save_status <- renderText(w04_status())
+  output$w04_note_status <- renderText(w04_note_status())
 
   dispatch_completed_w04_validation <- function() {
     if (!session_can("control_workflows")) {
@@ -5629,6 +5686,56 @@ server <- function(input, output, session) {
 
   observeEvent(input$w04_finalize_validation, {
     dispatch_completed_w04_validation()
+  })
+
+  observeEvent(input$w04_save_note, {
+    req(authenticated())
+    if (!session_can("adjudicate_assigned")) {
+      w04_note_status("You do not have permission to save notes.")
+      return()
+    }
+    if (!identical(storage_backend(),"google_sheets")) {
+      w04_note_status("Notes are available in the production Google Sheets backend.")
+      return()
+    }
+
+    z <- w04_current_case()
+    note_text <- trimws(as.character(input$w04_note %||% ""))
+    if (!nzchar(note_text)) {
+      w04_note_status("Enter a note before saving.")
+      return()
+    }
+
+    prior <- w04_screening_note_for(
+      z$review_case_id,
+      session_reviewer_id(),
+      w04_queue_sha_rv()
+    )
+    item <- list(
+      review_case_id=as.character(z$review_case_id),
+      record_id=as.character(z$record_id %||% ""),
+      note=note_text,
+      reviewer=session_reviewer_id(),
+      saved_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
+      queue_sha256=w04_queue_sha_rv()
+    )
+    saved <- tryCatch(
+      append_sheet_w04_screening_note(item,prior_note=prior),
+      error=function(e){w04_note_status(paste("Note save failed:",conditionMessage(e)));NULL}
+    )
+    if (is.null(saved)) return()
+
+    notes <- w04_screening_notes_rv() %||% list()
+    notes <- Filter(function(x) !(
+      identical(as.character(x$review_case_id %||% ""),as.character(z$review_case_id)) &&
+      identical(as.character(x$reviewer %||% ""),session_reviewer_id()) &&
+      identical(
+        tolower(as.character(x$queue_sha256 %||% "")),
+        tolower(as.character(w04_queue_sha_rv() %||% ""))
+      )
+    ),notes)
+    w04_screening_notes_rv(c(notes,list(saved)))
+    w04_note_status(sprintf("Note saved at %s",format(Sys.time(),"%H:%M:%S")))
   })
 
   save_w04_choice <- function(choice) {
@@ -5971,6 +6078,33 @@ server <- function(input, output, session) {
       "selected raters"
     }
 
+    human_ids <- setdiff(as.character(comparison_ids %||% character()),"model")
+    parent_sha <- {
+      set <- w04_active_consistency_conflict_set()
+      if (!is.null(set)) {
+        as.character(set$parent_queue_sha256 %||% "")
+      } else {
+        as.character(w04_queue_sha_rv() %||% "")
+      }
+    }
+    case_notes <- if (length(human_ids) >= 2L) {
+      Filter(function(x) {
+        identical(
+          as.character(x$review_case_id %||% ""),
+          as.character(z$review_case_id %||% "")
+        ) &&
+        as.character(x$reviewer %||% "") %in% human_ids &&
+        (
+          !nzchar(parent_sha) ||
+          identical(
+            tolower(as.character(x$queue_sha256 %||% "")),
+            tolower(parent_sha)
+          )
+        ) &&
+        nzchar(trimws(as.character(x$note %||% "")))
+      }, w04_screening_notes_rv() %||% list())
+    } else list()
+
     card(
       class="record-card",
       card_header(
@@ -5996,6 +6130,19 @@ server <- function(input, output, session) {
             class="mt-3 p-2 border rounded",
             tags$strong("Decisions for this case: "),
             tagList(reviewer_badges)
+          )
+        },
+        if (length(case_notes)) {
+          div(
+            class="mt-3 p-2 border rounded",
+            tags$strong("Reviewer notes"),
+            tagList(lapply(case_notes,function(n) {
+              div(
+                class="mt-2",
+                tags$div(class="fw-semibold",rater_label(as.character(n$reviewer %||% ""))),
+                tags$div(class="text-body",as.character(n$note %||% ""))
+              )
+            }))
           )
         },
         div(class="w04-keywords",tags$strong("Keywords: "),highlight_screening_text(b$keywords %||% "",w04_include_terms(),w04_exclude_terms()))
