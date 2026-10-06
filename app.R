@@ -44,12 +44,26 @@ normalise_display_text <- function(x) {
   trimws(x)
 }
 
-display_title_case_if_all_caps <- function(x) {
+display_sentence_case_if_all_caps <- function(x) {
   x <- normalise_display_text(x)
   if (!nzchar(x)) return(x)
   letters <- gsub("[^[:alpha:]]", "", x)
   if (!nzchar(letters) || !identical(letters, toupper(letters))) return(x)
-  tools::toTitleCase(tolower(x))
+
+  y <- tolower(x)
+  chars <- strsplit(y, "", fixed = TRUE)[[1L]]
+  capitalise_next <- TRUE
+  for (i in seq_along(chars)) {
+    ch <- chars[[i]]
+    if (capitalise_next && grepl("[[:alpha:]]", ch)) {
+      chars[[i]] <- toupper(ch)
+      capitalise_next <- FALSE
+    }
+    if (ch %in% c(".", "!", "?")) {
+      capitalise_next <- TRUE
+    }
+  }
+  paste0(chars, collapse = "")
 }
 
 
@@ -5054,8 +5068,8 @@ server <- function(input, output, session) {
     fields <- list(
       source = field_pair(z$record_i$source, z$record_j$source),
       title = field_pair(
-        display_title_case_if_all_caps(z$record_i$title),
-        display_title_case_if_all_caps(z$record_j$title)
+        display_sentence_case_if_all_caps(z$record_i$title),
+        display_sentence_case_if_all_caps(z$record_j$title)
       ),
       authors = field_pair(z$record_i$authors, z$record_j$authors),
       year = field_pair(z$record_i$year, z$record_j$year),
@@ -5067,8 +5081,8 @@ server <- function(input, output, session) {
         char_level = TRUE
       ),
       abstract = field_pair(
-        display_title_case_if_all_caps(abstract_i),
-        display_title_case_if_all_caps(abstract_j)
+        display_sentence_case_if_all_caps(abstract_i),
+        display_sentence_case_if_all_caps(abstract_j)
       )
     )
     fields$source$a <- tags$span(class = "source-badge", fields$source$a)
@@ -5206,10 +5220,10 @@ server <- function(input, output, session) {
     field <- as.character(z$field %||% z$conflict$field %||% "")
     reason <- as.character(z$reason %||% z$conflict$reason %||% "")
     returned_doi <- as.character(z$returned_doi %||% z$conflict$returned_doi %||% pr$returned_doi %||% "")
-    provider_title <- display_title_case_if_all_caps(pr$title %||% "")
-    provider_abstract <- display_title_case_if_all_caps(pr$abstract %||% "")
-    can_title <- display_title_case_if_all_caps(can$title %||% "")
-    can_abstract <- display_title_case_if_all_caps(can$abstract %||% "")
+    provider_title <- display_sentence_case_if_all_caps(pr$title %||% "")
+    provider_abstract <- display_sentence_case_if_all_caps(pr$abstract %||% "")
+    can_title <- display_sentence_case_if_all_caps(can$title %||% "")
+    can_abstract <- display_sentence_case_if_all_caps(can$abstract %||% "")
     can_doi <- as.character(can$doi %||% z$doi %||% "")
 
     title_pair <- field_pair(can_title, provider_title)
@@ -5544,7 +5558,7 @@ server <- function(input, output, session) {
         class="compact-record-body w04-text",
         div(
           class="record-title",
-          highlight_screening_text(display_title_case_if_all_caps(b$title %||% ""),w04_include_terms(),w04_exclude_terms())
+          highlight_screening_text(display_sentence_case_if_all_caps(b$title %||% ""),w04_include_terms(),w04_exclude_terms())
         ),
         div(
           class="w04-citation-grid",
@@ -5558,7 +5572,7 @@ server <- function(input, output, session) {
         tags$h6(class="abstract-heading","Abstract"),
         div(
           class="abstract-text",
-          highlight_screening_text(display_title_case_if_all_caps(b$abstract %||% ""),w04_include_terms(),w04_exclude_terms())
+          highlight_screening_text(display_sentence_case_if_all_caps(b$abstract %||% ""),w04_include_terms(),w04_exclude_terms())
         ),
 
         div(
@@ -5755,7 +5769,7 @@ server <- function(input, output, session) {
         tags$span(class="task-badge",sprintf("Record %d",w04_resolution_idx()))
       )),
       div(class="compact-record-body w04-text",
-        div(class="record-title",highlight_screening_text(display_title_case_if_all_caps(b$title %||% ""),w04_resolution_include_terms(),w04_resolution_exclude_terms())),
+        div(class="record-title",highlight_screening_text(display_sentence_case_if_all_caps(b$title %||% ""),w04_resolution_include_terms(),w04_resolution_exclude_terms())),
         div(class="w04-citation-grid",
           div(class="w04-citation-item",span(class="w04-citation-label","Authors"),span(class="w04-citation-value",b$authors %||% "")),
           div(class="w04-citation-item",span(class="w04-citation-label","Year"),span(class="w04-citation-value",b$year %||% "")),
@@ -5765,7 +5779,7 @@ server <- function(input, output, session) {
         ),
         div(class="w04-doi",tags$strong("DOI: "),doi_link(b$doi %||% "")),
         tags$h6(class="abstract-heading","Abstract"),
-        div(class="abstract-text",highlight_screening_text(display_title_case_if_all_caps(b$abstract %||% ""),w04_resolution_include_terms(),w04_resolution_exclude_terms())),
+        div(class="abstract-text",highlight_screening_text(display_sentence_case_if_all_caps(b$abstract %||% ""),w04_resolution_include_terms(),w04_resolution_exclude_terms())),
         div(class="mt-3 p-2 border rounded",
           tags$strong("Model decisions: "),
           if(length(votes)) tagList(lapply(seq_along(votes),function(i)tags$span(class="task-badge me-1",sprintf("Pass %d: %s",i,votes[[i]])))) else tags$span(class="text-secondary","No model vote provenance available")
@@ -5968,7 +5982,7 @@ server <- function(input, output, session) {
       ),
       div(
         class="compact-record-body w04-text",
-        div(class="record-title",highlight_screening_text(display_title_case_if_all_caps(b$title %||% ""),w04_include_terms(),w04_exclude_terms())),
+        div(class="record-title",highlight_screening_text(display_sentence_case_if_all_caps(b$title %||% ""),w04_include_terms(),w04_exclude_terms())),
         div(
           class="w04-citation-grid",
           div(class="w04-citation-item",span(class="w04-citation-label","Authors"),span(class="w04-citation-value",b$authors %||% "")),
@@ -5976,7 +5990,7 @@ server <- function(input, output, session) {
           div(class="w04-citation-item",span(class="w04-citation-label","Journal"),span(class="w04-citation-value",b$journal %||% ""))
         ),
         tags$h6(class="abstract-heading","Abstract"),
-        div(class="abstract-text",highlight_screening_text(display_title_case_if_all_caps(b$abstract %||% ""),w04_include_terms(),w04_exclude_terms())),
+        div(class="abstract-text",highlight_screening_text(display_sentence_case_if_all_caps(b$abstract %||% ""),w04_include_terms(),w04_exclude_terms())),
         if (length(reviewer_badges)) {
           div(
             class="mt-3 p-2 border rounded",
@@ -6423,12 +6437,12 @@ server <- function(input, output, session) {
           class="w08-review-evidence",
           div(
             class="record-title",
-            highlight_named_terms(display_title_case_if_all_caps(z$title %||% ""),highlight_terms)
+            highlight_named_terms(display_sentence_case_if_all_caps(z$title %||% ""),highlight_terms)
           ),
           tags$h6(class="abstract-heading","Abstract"),
           div(
             class="abstract-text",
-            highlight_named_terms(display_title_case_if_all_caps(z$abstract %||% ""),highlight_terms)
+            highlight_named_terms(display_sentence_case_if_all_caps(z$abstract %||% ""),highlight_terms)
           )
         ),
         div(
