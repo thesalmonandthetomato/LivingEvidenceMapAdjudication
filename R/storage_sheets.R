@@ -1505,6 +1505,7 @@ read_latest_pipeline_status <- function() {
       last_search_date = val(current$search$search_date),
       canonical_existing = val(current$baseline$canonical_records),
       search_results_total = val(current$counts$search_results),
+      search_results_update = val(current$search$search_results),
       deduplicated_records = val(current$counts$deduplicated_records),
       enriched_records = val(current$counts$enriched_records),
       retracted_records = val(current$counts$retraction_exclusions),
@@ -1541,7 +1542,9 @@ read_latest_pipeline_status <- function() {
 
     if(all(c("geography_with","geography_without","topic_with","topic_without") %in% names(x))) {
       cols <- c(base[1:13],"geography_with","geography_without","topic_with","topic_without",base[14:16])
-      return(x[nrow(x),cols,drop=FALSE] |> as.list())
+      z <- x[nrow(x),cols,drop=FALSE] |> as.list()
+      z$search_results_update <- if("search_results_update" %in% names(x)) as.character(x$search_results_update[[nrow(x)]]) else ""
+      return(z)
     }
 
     if(all(c("geography_coded","topic_coded") %in% names(x))) {
@@ -1550,6 +1553,7 @@ read_latest_pipeline_status <- function() {
       z$geography_without <- ""
       z$topic_with <- as.character(x$topic_coded[[nrow(x)]])
       z$topic_without <- ""
+      z$search_results_update <- if("search_results_update" %in% names(x)) as.character(x$search_results_update[[nrow(x)]]) else ""
       return(z)
     }
 
@@ -1567,7 +1571,13 @@ read_latest_pipeline_status <- function() {
 
   # The Sheet is written before the branch status commit. Prefer it only when
   # it is strictly newer; otherwise GitHub remains the canonical tie-breaker.
-  if (event_time(sheet_status) > event_time(repo_status)) sheet_status else repo_status
+  chosen <- if (event_time(sheet_status) > event_time(repo_status)) sheet_status else repo_status
+  if (!nzchar(as.character(chosen$search_results_update %||% "")) &&
+      !is.null(repo_status) &&
+      nzchar(as.character(repo_status$search_results_update %||% ""))) {
+    chosen$search_results_update <- repo_status$search_results_update
+  }
+  chosen
 }
 
 
