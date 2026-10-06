@@ -846,6 +846,95 @@ w04_decision_tab <- function() {
   Sys.getenv("LEM_W04_DECISION_TAB", unset = "decisions_w04_validation")
 }
 
+w04_screening_note_tab <- function() {
+  Sys.getenv("LEM_W04_SCREENING_NOTE_TAB", unset = "w04_screening_notes")
+}
+
+read_sheet_w04_screening_note_log <- function() {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w04_screening_note_tab()
+  if (!tab %in% sheet_names_cached(ss)) return(list())
+  x <- googlesheets4::read_sheet(ss, sheet=tab, col_types="c")
+  if (!nrow(x)) return(list())
+  lapply(seq_len(nrow(x)), function(i) as.list(x[i,,drop=FALSE]))
+}
+
+active_sheet_w04_screening_notes <- function(queue_sha256 = "") {
+  rows <- read_sheet_w04_screening_note_log()
+  if (!length(rows)) return(list())
+  sha <- tolower(as.character(queue_sha256 %||% ""))
+  if (nzchar(sha)) {
+    rows <- Filter(
+      function(x) identical(tolower(as.character(x$queue_sha256 %||% "")), sha),
+      rows
+    )
+  }
+  if (!length(rows)) return(list())
+  keys <- vapply(rows, function(x) paste(
+    as.character(x$review_case_id %||% ""),
+    as.character(x$reviewer %||% ""),
+    sep="::"
+  ), character(1))
+  tm <- vapply(rows, function(x) as.character(x$saved_at_utc %||% ""), character(1))
+  ord <- order(tm, seq_along(rows), decreasing=TRUE)
+  rows <- rows[ord]
+  keys <- keys[ord]
+  rows[!duplicated(keys)]
+}
+
+append_sheet_w04_screening_note <- function(note, prior_note=NULL) {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w04_screening_note_tab()
+  tabs <- sheet_names_cached(ss)
+  cols <- c(
+    "note_id","review_case_id","record_id","note","reviewer",
+    "saved_at_utc","queue_sha256","supersedes_note_id"
+  )
+
+  if (!tab %in% tabs) {
+    sheet_add_cached(ss, tab)
+    empty <- as.data.frame(
+      setNames(replicate(length(cols), character(), simplify=FALSE), cols),
+      stringsAsFactors=FALSE
+    )
+    googlesheets4::sheet_write(empty, ss=ss, sheet=tab)
+  }
+
+  review_case_id <- as.character(note$review_case_id %||% "")
+  reviewer <- as.character(note$reviewer %||% "")
+  text <- trimws(as.character(note$note %||% ""))
+  if (!nzchar(review_case_id)) stop("W04 screening note is missing review_case_id", call.=FALSE)
+  if (!nzchar(reviewer)) stop("W04 screening note is missing reviewer", call.=FALSE)
+  if (!nzchar(text)) stop("W04 screening note must not be empty", call.=FALSE)
+
+  saved_at <- as.character(note$saved_at_utc %||% format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"))
+  note_id <- paste0("w04-note-", substr(digest::digest(
+    paste(review_case_id, reviewer, text, saved_at, sep="|"),
+    algo="sha256", serialize=FALSE
+  ),1L,24L))
+  supersedes <- if (is.null(prior_note)) "" else as.character(prior_note$note_id %||% "")
+
+  row <- data.frame(
+    note_id=note_id,
+    review_case_id=review_case_id,
+    record_id=as.character(note$record_id %||% ""),
+    note=text,
+    reviewer=reviewer,
+    saved_at_utc=saved_at,
+    queue_sha256=as.character(note$queue_sha256 %||% ""),
+    supersedes_note_id=supersedes,
+    stringsAsFactors=FALSE
+  )
+  googlesheets4::sheet_append(ss, data=row, sheet=tab)
+
+  verify <- googlesheets4::read_sheet(ss, sheet=tab, col_types="c")
+  hit <- verify[as.character(verify$note_id)==note_id,,drop=FALSE]
+  if (nrow(hit)!=1L) stop("W04 screening note write could not be verified", call.=FALSE)
+  as.list(hit[1,,drop=FALSE])
+}
+
 w04_resolution_decision_tab <- function() {
   Sys.getenv("LEM_W04_RESOLUTION_DECISION_TAB", unset = "decisions_w04_resolution")
 }
