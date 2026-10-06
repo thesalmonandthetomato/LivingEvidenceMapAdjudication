@@ -1020,6 +1020,7 @@ server <- function(input, output, session) {
   search_scope_rows_rv <- reactiveVal(NULL)
   search_scope_seen_artifacts_rv <- reactiveVal(character())
   search_scope_job_sources_rv <- reactiveVal(character())
+  search_scope_catalogue_rv <- reactiveVal(NULL)
   search_scope_progress_rv <- reactiveVal(list(completed=0L,total=0L,pct=0L))
 
   observe({
@@ -2803,22 +2804,22 @@ server <- function(input, output, session) {
 
   search_scope_pretty_source <- function(slug) {
     slug <- as.character(slug %||% "")
-    core <- c(
-      lens="Lens",
-      scopus="Scopus",
-      openalex="OpenAlex",
-      agricola="AGRICOLA",
-      pubmed="PubMed/MEDLINE",
-      ethos="EThOS",
-      cba="Chinese Biological Abstracts",
-      epmc_preprints="Europe PMC preprints",
-      wos="Web of Science Core Collection",
-      cab_abstracts="CAB Abstracts",
-      proquest_dissertations="ProQuest Dissertations & Theses Global"
-    )
-    if (slug %in% names(core)) return(unname(core[[slug]]))
+    catalogue <- search_scope_catalogue_rv()
+    if (!is.null(catalogue) && nrow(catalogue)) {
+      hit <- match(slug, as.character(catalogue$source_slug))
+      if (!is.na(hit)) return(as.character(catalogue$source[[hit]]))
+    }
     x <- sub("^ebsco_", "", slug)
     tools::toTitleCase(gsub("_", " ", x, fixed=TRUE))
+  }
+
+  search_scope_display_status <- function(x) {
+    x <- tolower(trimws(as.character(x %||% "")))
+    if (!nzchar(x)) return("Queued")
+    if (grepl("fail|error", x)) return("Failed")
+    if (x %in% c("queued","waiting","pending")) return("Queued")
+    if (x %in% c("in_progress","running")) return("Running")
+    "Complete"
   }
 
   observe({
@@ -2831,6 +2832,10 @@ server <- function(input, output, session) {
     )
     if (nzchar(as.character(x))) {
       search_scope_string_rv(trimws(as.character(x)))
+      catalogue <- tryCatch(read_w00_scoping_source_catalogue(), error=function(e) NULL)
+      if (!is.null(catalogue) && nrow(catalogue)) {
+        search_scope_catalogue_rv(catalogue)
+      }
     } else {
       search_scope_status_rv(paste(
         "Could not load scoping search string:",
@@ -2973,10 +2978,27 @@ server <- function(input, output, session) {
         algo="sha256",serialize=FALSE
       ),1L,10L)
     )
-    search_scope_rows_rv(NULL)
+    catalogue <- search_scope_catalogue_rv()
+    if (is.null(catalogue) || !nrow(catalogue)) {
+      catalogue <- tryCatch(read_w00_scoping_source_catalogue(), error=function(e) NULL)
+      if (!is.null(catalogue) && nrow(catalogue)) search_scope_catalogue_rv(catalogue)
+    }
+    if (!is.null(catalogue) && nrow(catalogue)) {
+      search_scope_job_sources_rv(as.character(catalogue$source_slug))
+      search_scope_rows_rv(data.frame(
+        source_slug=as.character(catalogue$source_slug),
+        source=as.character(catalogue$source),
+        hits=NA_integer_,
+        status="Queued",
+        stringsAsFactors=FALSE
+      ))
+      search_scope_progress_rv(list(completed=0L,total=nrow(catalogue),pct=0L))
+    } else {
+      search_scope_rows_rv(NULL)
+      search_scope_job_sources_rv(character())
+      search_scope_progress_rv(list(completed=0L,total=0L,pct=0L))
+    }
     search_scope_seen_artifacts_rv(character())
-    search_scope_job_sources_rv(character())
-    search_scope_progress_rv(list(completed=0L,total=0L,pct=0L))
     search_scope_run_id_rv("")
     search_scope_status_rv("Dispatching count-only scoping search…")
 
@@ -3022,8 +3044,9 @@ server <- function(input, output, session) {
     if (length(sources)) search_scope_job_sources_rv(sources)
 
     completed <- sum(vapply(count_jobs,function(j) identical(as.character(j$status %||% ""),"completed"),logical(1)))
-    total <- length(count_jobs)
-    pct <- if (total > 0L) round(100*completed/total) else if (identical(as.character(run$status %||% ""),"queued")) 0L else 1L
+    catalogue <- search_scope_catalogue_rv()
+    total <- if (!is.null(catalogue) && nrow(catalogue)) nrow(catalogue) else length(count_jobs)
+    pct <- if (total > 0L) round(100*completed/total) else 0L
     search_scope_progress_rv(list(completed=completed,total=total,pct=pct))
 
     current <- search_scope_rows_rv()
@@ -3076,7 +3099,7 @@ server <- function(input, output, session) {
         source_slug=slug,
         source=as.character(row$source %||% search_scope_pretty_source(slug)),
         hits=suppressWarnings(as.integer(row$hits %||% NA_integer_)),
-        status=as.character(row$status %||% ""),
+        status=search_scope_display_status(row$status),
         stringsAsFactors=FALSE
       ))
       seen <- c(seen,aid)
@@ -3093,11 +3116,19 @@ server <- function(input, output, session) {
     run_conclusion <- as.character(run$conclusion %||% "")
     if (identical(run_status,"completed")) {
       final_art <- Filter(function(a) startsWith(as.character(a$name %||% ""),"workflow00-search-scoping-"), artifacts)
-      if (identical(run_conclusion,"success") && length(final_art)) {
+      if (length(final_art)) {
         final_rows <- tryCatch(read_w00_scoping_final_artifact(final_art[[1L]]),error=function(e) NULL)
-        if (!is.null(final_rows)) search_scope_rows_rv(final_rows)
-        search_scope_progress_rv(list(completed=max(total,completed),total=max(total,completed),pct=100L))
-        search_scope_status_rv("Scoping search complete.")
+        if (!is.null(final_rows)) {
+          final_rows$status <- vapply(final_rows$status,search_scope_display_status,character(1))
+          search_scope_rows_rv(final_rows)
+          failed_n <- sum(final_rows$status=="Failed")
+          search_scope_progress_rv(list(completed=nrow(final_rows),total=nrow(final_rows),pct=100L))
+          search_scope_status_rv(if (failed_n) {
+            sprintf("Scoping search complete with %d failed database%s.",failed_n,if(failed_n==1L)"" else "s")
+          } else "Scoping search complete.")
+        } else {
+          search_scope_status_rv("Scoping search finished, but the final count artefact could not be read.")
+        }
       } else {
         search_scope_status_rv(paste0(
           "Scoping search finished",
