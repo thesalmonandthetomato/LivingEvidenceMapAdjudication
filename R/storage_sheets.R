@@ -872,6 +872,7 @@ active_sheet_w04_screening_notes <- function(queue_sha256 = "") {
   }
   if (!length(rows)) return(list())
   keys <- vapply(rows, function(x) paste(
+    tolower(as.character(x$queue_sha256 %||% "")),
     as.character(x$review_case_id %||% ""),
     as.character(x$reviewer %||% ""),
     sep="::"
