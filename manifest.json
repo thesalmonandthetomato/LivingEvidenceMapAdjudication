@@ -1695,10 +1695,10 @@
   },
   "files": {
     ".github/workflows/validate.yml": {
-      "checksum": "924c35b65e436a2123c2243983b0f5b2"
+      "checksum": "ba4d83159e2ac230f18ce641c5a0ae54"
     },
     "app.R": {
-      "checksum": "71e65e24ca0ac826bc58f205c27f9b12"
+      "checksum": "f6e332bdffa7ee36599956b9073b8028"
     },
     "docs/production_multiuser_cutover_20261005.md": {
       "checksum": "0c8abb9a02a372eec4f35bb66812bce6"
@@ -1830,7 +1830,7 @@
       "checksum": "4eb8af71824e27f3e50e72b564066887"
     },
     "R/storage_sheets.R": {
-      "checksum": "dac6ea114e5e52e729ac7eb63e9e928e"
+      "checksum": "1983f11e97cdf6a0e64d2eae6c4f320e"
     },
     "R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
@@ -1897,6 +1897,9 @@
     },
     "tests/test_w04_kappa_registry.R": {
       "checksum": "9d9ad1bb4c81ce4f65268f3843c5e429"
+    },
+    "tests/test_w04_resolution_abstract_edit.R": {
+      "checksum": "77ad5f4fe8a2b5fc1a39500bb73cd6d1"
     },
     "tests/test_w04_validation_dispatch.R": {
       "checksum": "bac8a6f0b75122533384cca72f498516"
