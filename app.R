@@ -911,6 +911,7 @@ server <- function(input, output, session) {
   observe({
     req(authenticated())
     invalidateLater(30000, session)
+    if (!identical(app_view(), "tasks")) return()
     refreshed <- tryCatch(
       if(identical(storage_backend(),"google_sheets")) read_latest_pipeline_status() else NULL,
       error=function(e) NULL
@@ -971,6 +972,7 @@ server <- function(input, output, session) {
   observe({
     req(authenticated())
     invalidateLater(300000, session)
+    if (!identical(app_view(), "tasks")) return()
     refreshed <- tryCatch(read_manual_screening_metrics(),error=function(e)e)
     if (inherits(refreshed,"error")) {
       if (session_can("manage_assignments")) {
@@ -7169,6 +7171,32 @@ server <- function(input, output, session) {
     complete(FALSE)
     app_view("tasks")
   })
+
+  observeEvent(app_view(), {
+    req(authenticated())
+    if (!identical(app_view(), "tasks")) return()
+
+    refreshed <- tryCatch(
+      if(identical(storage_backend(),"google_sheets")) read_latest_pipeline_status() else NULL,
+      error=function(e) NULL
+    )
+    if(!is.null(refreshed)) {
+      pipeline_status_rv(refreshed)
+      if (w08_status_is_final(refreshed)) {
+        authoritative_w08_rv(tryCatch(
+          read_authoritative_w08_metrics(),
+          error=function(e) NULL
+        ))
+      } else {
+        authoritative_w08_rv(NULL)
+      }
+    }
+
+    screening <- tryCatch(read_manual_screening_metrics(), error=function(e)e)
+    if (!inherits(screening,"error")) {
+      manual_screening_rv(screening)
+    }
+  }, ignoreInit=TRUE)
 
   observeEvent(input$back_to_tasks_complete, {
     complete(FALSE)
