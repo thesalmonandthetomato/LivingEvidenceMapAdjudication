@@ -1,5 +1,9 @@
 suppressPackageStartupMessages(library(httr2))
 
+if (!exists("%||%", mode="function")) {
+  `%||%` <- function(x,y) if (is.null(x) || length(x)==0L) y else x
+}
+
 github_dispatch_token <- function() {
   token <- Sys.getenv("LEM_GITHUB_DISPATCH_TOKEN", unset = "")
   if (!nzchar(token)) stop("LEM_GITHUB_DISPATCH_TOKEN is not configured", call. = FALSE)
@@ -43,6 +47,40 @@ read_github_text_file <- function(path, ref = github_scoping_ref()) {
     stop(sprintf("GitHub file %s did not return base64 content", path), call.=FALSE)
   }
   rawToChar(jsonlite::base64_dec(content))
+}
+
+read_w00_scoping_source_catalogue <- function(ref = github_scoping_ref()) {
+  cfg <- jsonlite::fromJSON(
+    read_github_text_file("config/workflow00_ebsco_sources.json", ref=ref),
+    simplifyVector=FALSE
+  )
+  ebsco <- cfg$sources %||% list()
+  ebsco_slugs <- names(ebsco)
+  ebsco_labels <- if (length(ebsco_slugs)) {
+    vapply(ebsco, function(x) as.character(x$display_name %||% ""), character(1))
+  } else character()
+
+  core_labels <- c(
+    lens="Lens",
+    scopus="Scopus",
+    openalex="OpenAlex",
+    agricola="AGRICOLA",
+    pubmed="PubMed/MEDLINE",
+    ethos="EThOS",
+    cba="Chinese Biological Abstracts",
+    epmc_preprints="Europe PMC preprints",
+    wos="Web of Science Core Collection"
+  )
+  manual_labels <- c(
+    cab_abstracts="CAB Abstracts",
+    proquest_dissertations="ProQuest Dissertations & Theses Global"
+  )
+  labels <- c(core_labels, stats::setNames(ebsco_labels, ebsco_slugs), manual_labels)
+  data.frame(
+    source_slug=names(labels),
+    source=unname(labels),
+    stringsAsFactors=FALSE
+  )
 }
 
 dispatch_w00_scoping <- function(request_id, search_string_path = "user_input/scoping_search_string.txt") {
@@ -124,7 +162,12 @@ find_w00_scoping_run <- function(request_id) {
   x <- github_api_get_json(endpoint)
   runs <- x$workflow_runs %||% list()
   wanted <- paste("W00 scope", as.character(request_id))
-  hits <- Filter(function(r) identical(as.character(r$display_title %||% ""), wanted), runs)
+  hits <- Filter(function(r) {
+    title_match <- identical(as.character(r$display_title %||% ""), wanted)
+    head_message <- as.character((r$head_commit %||% list())$message %||% "")
+    push_fallback_match <- identical(head_message, as.character(request_id))
+    title_match || push_fallback_match
+  }, runs)
   if (!length(hits)) return(NULL)
   hits[[1L]]
 }
