@@ -571,14 +571,29 @@ ui <- page_fillable(
           document.body.appendChild(overlay);
 
           let busyTimer = null;
+          let busyEligibleUntil = 0;
+
+          // Only show the blocking overlay for an explicit user action that
+          // remains busy long enough to warrant feedback. Background reactive
+          // refreshes must not interrupt screening or administration work.
+          document.addEventListener('click', function(ev) {
+            if (ev.target.closest('button, .action-button, .btn')) {
+              busyEligibleUntil = Date.now() + 10000;
+            }
+          }, true);
+
           $(document).on('shiny:busy', function() {
             clearTimeout(busyTimer);
+            if (Date.now() > busyEligibleUntil) return;
             busyTimer = setTimeout(function() {
-              overlay.classList.add('is-visible');
-            }, 180);
+              if (Date.now() <= busyEligibleUntil) {
+                overlay.classList.add('is-visible');
+              }
+            }, 900);
           });
           $(document).on('shiny:idle', function() {
             clearTimeout(busyTimer);
+            busyEligibleUntil = 0;
             overlay.classList.remove('is-visible');
           });
 
