@@ -948,6 +948,7 @@ server <- function(input, output, session) {
   w02_decisions <- reactiveVal(list())
   w02_batch_status_rv <- reactiveVal("")
   w02_status <- reactiveVal("")
+  w02_resume_requested_rv <- reactiveVal(FALSE)
 
   w04_all_cases_rv <- reactiveVal(list())
   w04_cases_rv <- reactiveVal(NULL)
@@ -1005,6 +1006,7 @@ server <- function(input, output, session) {
   w08_decisions <- reactiveVal(list())
   w08_batch_status_rv <- reactiveVal("")
   w08_status <- reactiveVal("")
+  w08_resume_requested_rv <- reactiveVal(FALSE)
   pipeline_status_rv <- reactiveVal(NULL)
   manual_screening_rv <- reactiveVal(NULL)
   authoritative_w08_rv <- reactiveVal(NULL)
@@ -3576,7 +3578,11 @@ server <- function(input, output, session) {
                 tags$strong("W02 review complete"),
                 tags$div(class="text-secondary small","All enrichment cases have final decisions. Send the reviewed queue to GitHub to resume Workflow 02.")
               ),
-              actionButton("w02_send_github","Send W02 to GitHub",class="btn-primary btn-sm")
+              if (isTRUE(w02_resume_requested_rv())) {
+                tags$div(class="text-success small fw-semibold","Sent to GitHub. Workflow 02 resume has been requested.")
+              } else {
+                actionButton("w02_send_github","Send W02 to GitHub",class="btn-primary btn-sm")
+              }
             )
           },
           if (
@@ -3613,7 +3619,11 @@ server <- function(input, output, session) {
                 tags$strong("W08 review complete"),
                 tags$div(class="text-secondary small","All annotation records have final decisions. Send the reviewed queue to GitHub to resume Workflow 08.")
               ),
-              actionButton("w08_send_github","Send W08 to GitHub",class="btn-primary btn-sm")
+              if (isTRUE(w08_resume_requested_rv())) {
+                tags$div(class="text-success small fw-semibold","Sent to GitHub. Workflow 08 resume has been requested.")
+              } else {
+                actionButton("w08_send_github","Send W08 to GitHub",class="btn-primary btn-sm")
+              }
             )
           },
           assignment_manager_ui(z)
@@ -4037,12 +4047,12 @@ server <- function(input, output, session) {
     removeModal()
     assignment_registry_rv(list())
     w01_all_cases_rv(list()); cases_rv(NULL); decisions(list()); batch_id_rv(""); queue_sha_rv(""); batch_status_rv("")
-    w02_all_cases_rv(list()); w02_cases_rv(NULL); w02_decisions(list()); w02_batch_id_rv(""); w02_queue_sha_rv(""); w02_batch_status_rv("")
+    w02_all_cases_rv(list()); w02_cases_rv(NULL); w02_decisions(list()); w02_batch_id_rv(""); w02_queue_sha_rv(""); w02_batch_status_rv(""); w02_resume_requested_rv(FALSE)
     w04_all_cases_rv(list()); w04_cases_rv(NULL); w04_decisions(list()); w04_batch_id_rv(""); w04_queue_sha_rv(""); w04_batch_status_rv("")
     w04_resolution_cases_rv(NULL); w04_resolution_decisions(list()); w04_resolution_batch_id_rv(""); w04_resolution_queue_sha_rv(""); w04_resolution_resume_requested_rv(FALSE)
     w04_conflict_cases_rv(NULL); w04_conflict_decisions(list()); w04_conflict_batch_id_rv(""); w04_conflict_queue_sha_rv("")
     w04_consistency_analyses_rv(list()); w04_conflict_sets_rv(list()); w04_consistency_history_loaded(FALSE)
-    w08_all_cases_rv(list()); w08_cases_rv(NULL); w08_decisions(list()); w08_batch_id_rv(""); w08_queue_sha_rv(""); w08_batch_status_rv("")
+    w08_all_cases_rv(list()); w08_cases_rv(NULL); w08_decisions(list()); w08_batch_id_rv(""); w08_queue_sha_rv(""); w08_batch_status_rv(""); w08_resume_requested_rv(FALSE)
 
     doi <- as.character(result$archived$doi %||% "")
     record_id <- as.character(result$archived$record_id %||% "")
@@ -5415,6 +5425,15 @@ server <- function(input, output, session) {
           w02_batch_id_rv(w02_batch$batch_id)
           w02_batch_status_rv(w02_batch$batch_status %||% "")
           w02_decisions(w02_batch_decisions)
+          w02_resume_requested_rv(
+            tryCatch(
+              w02_resume_request_exists(
+                w02_batch$queue_sha256,
+                sub("^w02-run-", "", as.character(w02_batch$batch_id %||% ""))
+              ),
+              error=function(e) FALSE
+            )
+          )
           w02_unresolved <- w02_unresolved_indices()
           w02_idx(if (length(w02_unresolved)) w02_unresolved[[1L]] else max(1L, length(w02_visible_cases)))
           if(
@@ -5433,6 +5452,7 @@ server <- function(input, output, session) {
         } else {
           w02_all_cases_rv(list())
           w02_cases_rv(NULL)
+          w02_resume_requested_rv(FALSE)
         }
 
         w04_screening_notes_rv(
@@ -5594,6 +5614,16 @@ server <- function(input, output, session) {
           w08_species_options(species_opts)
           w08_topic_options(w08_batch$topic_options %||% list())
           w08_decisions(w08_batch_decisions)
+          w08_resume_requested_rv(
+            tryCatch(
+              w08_resume_request_exists(
+                w08_batch$queue_sha256,
+                w08_batch$source_run_id %||% "",
+                w08_batch$batch_id
+              ),
+              error=function(e) FALSE
+            )
+          )
           w08_unresolved <- w08_unresolved_indices()
           w08_idx(if(length(w08_unresolved)) w08_unresolved[[1L]] else max(1L,length(w08_visible_cases)))
           if(
@@ -5612,6 +5642,7 @@ server <- function(input, output, session) {
         } else {
           w08_all_cases_rv(list())
           w08_cases_rv(NULL)
+          w08_resume_requested_rv(FALSE)
         }
 
         if (!is.null(batch)) {
@@ -6172,6 +6203,7 @@ server <- function(input, output, session) {
     )
     if (is.na(already)) return(FALSE)
     if (isTRUE(already)) {
+      w02_resume_requested_rv(TRUE)
       w02_status("Workflow 02 resume has already been requested for this batch.")
       return(TRUE)
     }
@@ -6183,6 +6215,7 @@ server <- function(input, output, session) {
       append_w02_resume_request(queue_sha, source_run_id, "dispatching")
       dispatch_w02_resume(source_run_id, publish = TRUE)
       append_w02_resume_request(queue_sha, source_run_id, "dispatched")
+      w02_resume_requested_rv(TRUE)
       w02_status("Sent to GitHub. Workflow 02 resume requested.")
       TRUE
     }, error = function(e) {
@@ -7657,6 +7690,7 @@ server <- function(input, output, session) {
     )
     if (is.na(already)) return(FALSE)
     if (isTRUE(already)) {
+      w08_resume_requested_rv(TRUE)
       w08_status("Workflow 08 has already been sent to GitHub for this batch.")
       return(TRUE)
     }
@@ -7668,6 +7702,7 @@ server <- function(input, output, session) {
       append_w08_resume_request(queue_sha,source_run_id,batch_id,"dispatching")
       dispatch_w08_resume(source_run_id,batch_id,queue_sha)
       append_w08_resume_request(queue_sha,source_run_id,batch_id,"dispatched")
+      w08_resume_requested_rv(TRUE)
       w08_status("Sent to GitHub. Workflow 08 resume requested.")
       TRUE
     },error=function(e){
