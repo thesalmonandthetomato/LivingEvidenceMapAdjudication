@@ -2822,6 +2822,12 @@ server <- function(input, output, session) {
     "Complete"
   }
 
+  search_scope_counts_resolved <- function(rows = search_scope_rows_rv()) {
+    if (is.null(rows) || !nrow(rows) || !"status" %in% names(rows)) return(FALSE)
+    states <- vapply(rows$status,search_scope_display_status,character(1))
+    !any(states %in% c("Queued","Running"))
+  }
+
   observe({
     req(authenticated())
     if (!session_can("control_workflows")) return()
@@ -2848,7 +2854,8 @@ server <- function(input, output, session) {
     req(authenticated())
     if (!session_can("control_workflows")) return(NULL)
 
-    running <- nzchar(as.character(search_scope_request_id_rv() %||% ""))
+    request_active <- nzchar(as.character(search_scope_request_id_rv() %||% ""))
+    counts_resolved <- search_scope_counts_resolved()
     card(
       class="assignment-summary",
       tags$details(
@@ -2871,8 +2878,10 @@ server <- function(input, output, session) {
           ),
           div(
             class="d-flex align-items-center gap-2 flex-wrap mb-2",
-            if (running) {
+            if (request_active && !counts_resolved) {
               tags$span(class="saved-note fw-semibold","Scoping search running…")
+            } else if (request_active && counts_resolved) {
+              tags$span(class="saved-note fw-semibold","Scoping search complete.")
             } else {
               actionButton(
                 "run_search_scope",
@@ -2921,8 +2930,7 @@ server <- function(input, output, session) {
 
   output$search_scope_report_download <- renderUI({
     rows <- search_scope_rows_rv()
-    if (is.null(rows) || nrow(rows) < 1L) return(NULL)
-    if (nzchar(as.character(search_scope_request_id_rv() %||% ""))) return(NULL)
+    if (!search_scope_counts_resolved(rows)) return(NULL)
     downloadButton(
       "download_search_scope_report",
       "Download scoping report",
@@ -3211,7 +3219,11 @@ server <- function(input, output, session) {
       }
       search_scope_request_id_rv("")
     } else {
-      search_scope_status_rv(if(total > 0L) sprintf("Scoping search running: %d of %d databases complete.",completed,total) else "Preparing database count jobs…")
+      if (total > 0L && completed >= total && search_scope_counts_resolved(current)) {
+        search_scope_status_rv("All database searches complete. Finalising GitHub report artefact…")
+      } else {
+        search_scope_status_rv(if(total > 0L) sprintf("Scoping search running: %d of %d databases complete.",completed,total) else "Preparing database count jobs…")
+      }
     }
   })
 
