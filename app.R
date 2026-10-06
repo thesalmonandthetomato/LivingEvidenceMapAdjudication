@@ -970,6 +970,7 @@ server <- function(input, output, session) {
   w04_consistency_history_loaded <- reactiveVal(FALSE)
   w04_consistency_status <- reactiveVal("")
   w04_refresh_status <- reactiveVal("")
+  w04_validation_finalize_requested_rv <- reactiveVal(FALSE)
 
   w04_resolution_all_cases_rv <- reactiveVal(list())
   w04_resolution_cases_rv <- reactiveVal(NULL)
@@ -3526,11 +3527,18 @@ server <- function(input, output, session) {
                   "Every queue case has exactly one assignment and one valid decision with the expected queue SHA."
                 )
               ),
-              actionButton(
-                "w04_finalize_validation",
-                "Send validation set to GitHub",
-                class = "btn-primary btn-sm"
-              )
+              if (isTRUE(w04_validation_finalize_requested_rv())) {
+                tags$div(
+                  class="text-success small fw-semibold",
+                  "Sent to GitHub. Workflow 04 validation finalisation has been requested."
+                )
+              } else {
+                actionButton(
+                  "w04_finalize_validation",
+                  "Send validation set to GitHub",
+                  class = "btn-primary btn-sm"
+                )
+              }
             )
           },
           if (
@@ -4048,7 +4056,7 @@ server <- function(input, output, session) {
     assignment_registry_rv(list())
     w01_all_cases_rv(list()); cases_rv(NULL); decisions(list()); batch_id_rv(""); queue_sha_rv(""); batch_status_rv("")
     w02_all_cases_rv(list()); w02_cases_rv(NULL); w02_decisions(list()); w02_batch_id_rv(""); w02_queue_sha_rv(""); w02_batch_status_rv(""); w02_resume_requested_rv(FALSE)
-    w04_all_cases_rv(list()); w04_cases_rv(NULL); w04_decisions(list()); w04_batch_id_rv(""); w04_queue_sha_rv(""); w04_batch_status_rv("")
+    w04_all_cases_rv(list()); w04_cases_rv(NULL); w04_decisions(list()); w04_batch_id_rv(""); w04_queue_sha_rv(""); w04_batch_status_rv(""); w04_validation_finalize_requested_rv(FALSE)
     w04_resolution_cases_rv(NULL); w04_resolution_decisions(list()); w04_resolution_batch_id_rv(""); w04_resolution_queue_sha_rv(""); w04_resolution_resume_requested_rv(FALSE)
     w04_conflict_cases_rv(NULL); w04_conflict_decisions(list()); w04_conflict_batch_id_rv(""); w04_conflict_queue_sha_rv("")
     w04_consistency_analyses_rv(list()); w04_conflict_sets_rv(list()); w04_consistency_history_loaded(FALSE)
@@ -5485,6 +5493,15 @@ server <- function(input, output, session) {
           w04_include_terms(w04_batch$highlight_include %||% character())
           w04_exclude_terms(w04_batch$highlight_exclude %||% character())
           w04_decisions(w04_batch_decisions)
+          w04_validation_finalize_requested_rv(
+            tryCatch(
+              w04_validation_finalize_request_exists(
+                w04_batch$queue_sha256,
+                w04_batch$batch_id
+              ),
+              error=function(e) FALSE
+            )
+          )
           w04_unresolved <- w04_unresolved_indices()
           w04_idx(if (length(w04_unresolved)) w04_unresolved[[1L]] else max(1L,length(w04_visible_cases)))
           validation_state <- w04_validation_state()
@@ -6418,6 +6435,17 @@ server <- function(input, output, session) {
       return(FALSE)
     }
 
+    already <- tryCatch(
+      w04_validation_finalize_request_exists(w04_queue_sha_rv(), w04_batch_id_rv()),
+      error=function(e){w04_status(paste("Validation finalise status check failed:",conditionMessage(e)));NA}
+    )
+    if (is.na(already)) return(FALSE)
+    if (isTRUE(already)) {
+      w04_validation_finalize_requested_rv(TRUE)
+      w04_status("Validation set has already been sent to GitHub for finalisation.")
+      return(TRUE)
+    }
+
     mark_review_complete(
       "04",
       w04_batch_id_rv(),
@@ -6425,12 +6453,24 @@ server <- function(input, output, session) {
       w04_batch_status_rv
     )
     dispatched <- tryCatch({
+      append_w04_validation_finalize_request(
+        w04_queue_sha_rv(), w04_batch_id_rv(), "dispatching"
+      )
       dispatch_w04_validation_finalize(
         w04_batch_id_rv(),
         w04_queue_sha_rv()
       )
+      append_w04_validation_finalize_request(
+        w04_queue_sha_rv(), w04_batch_id_rv(), "dispatched"
+      )
       TRUE
     }, error = function(e) {
+      try(
+        append_w04_validation_finalize_request(
+          w04_queue_sha_rv(), w04_batch_id_rv(), "failed", conditionMessage(e)
+        ),
+        silent=TRUE
+      )
       w04_status(paste(
         "Validation is complete, but W04 finalisation dispatch failed:",
         conditionMessage(e)
@@ -6438,6 +6478,7 @@ server <- function(input, output, session) {
       FALSE
     })
     if (dispatched) {
+      w04_validation_finalize_requested_rv(TRUE)
       w04_status("Validation set sent to GitHub for Workflow 04 finalisation.")
     }
     dispatched
