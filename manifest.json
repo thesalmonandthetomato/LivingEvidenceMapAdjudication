@@ -1261,7 +1261,7 @@
         "Maintainer": "Kevin Ushey <kevin@rstudio.com>",
         "Repository": "CRAN",
         "Date/Publication": "2026-10-06 10:40:02 UTC",
-        "Built": "R 4.6.0; ; 2026-10-06 13:47:45 UTC; unix"
+        "Built": "R 4.6.0; ; 2026-10-06 13:52:46 UTC; unix"
       }
     },
     "rlang": {
@@ -1830,7 +1830,7 @@
       "checksum": "4eb8af71824e27f3e50e72b564066887"
     },
     "R/storage_sheets.R": {
-      "checksum": "1983f11e97cdf6a0e64d2eae6c4f320e"
+      "checksum": "045b0e12db647e8afbfdb51ce660fade"
     },
     "R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
