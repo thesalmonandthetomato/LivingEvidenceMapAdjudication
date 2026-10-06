@@ -1261,7 +1261,7 @@
         "Maintainer": "Kevin Ushey <kevin@rstudio.com>",
         "Repository": "CRAN",
         "Date/Publication": "2026-10-06 10:40:02 UTC",
-        "Built": "R 4.6.0; ; 2026-10-06 13:52:46 UTC; unix"
+        "Built": "R 4.6.0; ; 2026-10-06 14:36:15 UTC; unix"
       }
     },
     "rlang": {
@@ -1812,7 +1812,7 @@
       "checksum": "cd12bcd15240403163354e7a89ac7f40"
     },
     "R/assignments.R": {
-      "checksum": "185a6c22a7303c755176a91de29a9b80"
+      "checksum": "cafa60c1da256014441639fcdd40bb2c"
     },
     "R/auth.R": {
       "checksum": "cadec0238e5356811bd8495088892a66"
@@ -1857,7 +1857,7 @@
       "checksum": "830f4fe98acd7bfe7139617f6a5cbfa8"
     },
     "tests/test_assignments.R": {
-      "checksum": "56bc23194ae9612a912dbc192d373244"
+      "checksum": "f0956247054a2aef7ccee4b67baee6f3"
     },
     "tests/test_auth.R": {
       "checksum": "71a83aecde7c9af7e37a90d8dfc13b63"
