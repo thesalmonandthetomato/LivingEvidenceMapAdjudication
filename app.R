@@ -3160,7 +3160,7 @@ server <- function(input, output, session) {
       current <- current[as.character(current$source_slug)!=slug,,drop=FALSE]
       current <- rbind(current,data.frame(
         source_slug=slug,
-        source=as.character(row$source %||% search_scope_pretty_source(slug)),
+        source=search_scope_pretty_source(slug),
         hits=suppressWarnings(as.integer(row$hits %||% NA_integer_)),
         status=search_scope_display_status(row$status),
         stringsAsFactors=FALSE
@@ -3174,9 +3174,9 @@ server <- function(input, output, session) {
       order_slugs <- if (!is.null(catalogue) && nrow(catalogue)) {
         as.character(catalogue$source_slug)
       } else sources
-      if (length(order_slugs)) {
-        current$.ord <- match(current$source_slug,order_slugs)
-        current <- current[order(current$.ord,current$source),setdiff(names(current),".ord"),drop=FALSE]
+      if (nrow(current)) {
+        current <- current[order(tolower(current$source)),,drop=FALSE]
+        rownames(current) <- NULL
       }
     }
     if (!is.null(current)) search_scope_rows_rv(current)
@@ -3189,6 +3189,11 @@ server <- function(input, output, session) {
         final_rows <- tryCatch(read_w00_scoping_final_artifact(final_art[[1L]]),error=function(e) NULL)
         if (!is.null(final_rows)) {
           final_rows$status <- vapply(final_rows$status,search_scope_display_status,character(1))
+          if ("source_slug" %in% names(final_rows)) {
+            final_rows$source <- vapply(final_rows$source_slug,search_scope_pretty_source,character(1))
+          }
+          final_rows <- final_rows[order(tolower(final_rows$source)),,drop=FALSE]
+          rownames(final_rows) <- NULL
           search_scope_rows_rv(final_rows)
           failed_n <- sum(final_rows$status=="Failed")
           search_scope_progress_rv(list(completed=nrow(final_rows),total=nrow(final_rows),pct=100L))
