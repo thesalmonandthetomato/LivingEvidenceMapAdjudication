@@ -2871,12 +2871,15 @@ server <- function(input, output, session) {
           ),
           div(
             class="d-flex align-items-center gap-2 flex-wrap mb-2",
-            actionButton(
-              "run_search_scope",
-              if (running) "Scoping search running…" else "Run scoping search",
-              class="btn-primary btn-sm",
-              disabled=if (running) NA else NULL
-            ),
+            if (running) {
+              tags$span(class="saved-note fw-semibold","Scoping search running…")
+            } else {
+              actionButton(
+                "run_search_scope",
+                "Run scoping search",
+                class="btn-primary btn-sm"
+              )
+            },
             tags$span(class="saved-note", search_scope_status_rv())
           ),
           uiOutput("search_scope_progress"),
