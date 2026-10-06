@@ -19,3 +19,11 @@ stopifnot(length(gregexpr('google_scholar_button\\(b\\$title', app, perl=TRUE)[[
 stopifnot(grepl('if \\(!nzchar\\(url\\)\\) return\\(NULL\\)', app, perl=TRUE))
 
 cat("PASS: W04 Google Scholar title-link contract\n")
+
+app_src <- paste(readLines("app.R", warn=FALSE, encoding="UTF-8"), collapse="\n")
+stopifnot(
+  grepl("w04_resolution_resume_requested_rv <- reactiveVal(FALSE)", app_src, fixed=TRUE),
+  grepl("Sent to GitHub. Workflow 04 finalisation has been requested.", app_src, fixed=TRUE),
+  grepl("w04_resolution_resume_requested_rv(TRUE)", app_src, fixed=TRUE)
+)
+cat("PASS: W04 resolution GitHub send-state UI contract\n")
