@@ -6601,10 +6601,16 @@ server <- function(input, output, session) {
         div(
           class="d-flex justify-content-between align-items-center mt-2",
           tags$h6(class="abstract-heading mb-0","Abstract"),
-          actionButton(
-            "w04_resolution_edit_abstract",
-            if (isTRUE(w04_resolution_abstract_edit_rv())) "Cancel edit" else "Edit abstract",
-            class="btn-sm btn-outline-secondary"
+          div(
+            class="d-flex align-items-center gap-2",
+            if (isTRUE(w04_resolution_abstract_edit_rv())) {
+              actionButton("w04_resolution_save_abstract","Save abstract",class="btn-sm btn-primary")
+            },
+            actionButton(
+              "w04_resolution_edit_abstract",
+              if (isTRUE(w04_resolution_abstract_edit_rv())) "Cancel edit" else "Edit abstract",
+              class="btn-sm btn-outline-secondary"
+            )
           )
         ),
         if (isTRUE(w04_resolution_abstract_edit_rv())) {
@@ -6617,10 +6623,9 @@ server <- function(input, output, session) {
               width="100%",
               placeholder="Paste or correct the abstract here."
             ),
-            div(
-              class="d-flex align-items-center gap-2 mb-2",
-              actionButton("w04_resolution_save_abstract","Save abstract",class="btn-sm btn-primary"),
-              tags$span(class="text-secondary small","Saved abstracts are carried into the canonical record when W04 is sent to GitHub.")
+            tags$div(
+              class="text-secondary small mb-2",
+              "Saved abstracts are carried into the canonical record when W04 is sent to GitHub."
             )
           )
         } else {
