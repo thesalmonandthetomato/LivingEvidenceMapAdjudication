@@ -712,9 +712,10 @@ ui <- page_fillable(
     .pipeline-kpis { display:grid; grid-template-columns:repeat(5,minmax(145px,1fr)); gap:.5rem; margin-top:.15rem; }
     .pipeline-kpi { background:#f7f8fa; border:1px solid #e1e5e9; border-radius:8px; padding:.62rem .72rem .58rem .72rem; min-width:0; }
     .pipeline-kpi-label { display:block; color:#6a747d; font-size:.8rem; line-height:1.2; margin-bottom:.2rem; overflow-wrap:anywhere; }
-    .pipeline-kpi-value-row { display:flex; align-items:baseline; gap:.42rem; }
-    .pipeline-kpi-value { display:block; font-size:1.12rem; line-height:1.2; font-weight:700; white-space:normal; overflow-wrap:anywhere; }
-    .pipeline-kpi-inline-note { display:block; color:#7c858d; font-size:.74rem; line-height:1.2; font-weight:600; white-space:nowrap; }
+    .pipeline-kpi-value-row { display:flex; align-items:baseline; gap:.42rem; flex-wrap:nowrap; white-space:nowrap; }
+    .pipeline-kpi-value { display:block; font-size:1.12rem; line-height:1.2; font-weight:700; white-space:nowrap; }
+    .pipeline-kpi-value.compact { font-size:1rem; }
+    .pipeline-kpi-inline-note { display:block; color:#7c858d; font-size:.7rem; line-height:1.2; font-weight:600; white-space:nowrap; }
     .pipeline-kpi-sub { display:block; color:#7c858d; font-size:.74rem; line-height:1.2; margin-top:.12rem; overflow-wrap:anywhere; }
     .pipeline-kpi.pre-update {
       background:#fbfcfc;
@@ -1328,6 +1329,19 @@ server <- function(input, output, session) {
     format(d,"%d %b %Y")
   }
 
+  fmt_pipeline_delta <- function(x) {
+    z <- suppressWarnings(as.numeric(as.character(x %||% "")))
+    if(is.na(z)) return(NULL)
+    paste0(if(z >= 0) "+" else "−", fmt_pipeline_n(abs(z)))
+  }
+
+  fmt_pipeline_pair_delta <- function(a,b) {
+    x <- fmt_pipeline_delta(a)
+    y <- fmt_pipeline_delta(b)
+    if(is.null(x) || is.null(y)) return(NULL)
+    paste0(x," / ",y)
+  }
+
   read_manual_screening_metrics <- function() {
     registry <- if (identical(storage_backend(),"google_sheets")) {
       sync_w04_kappa_registry_from_github()
@@ -1377,14 +1391,14 @@ server <- function(input, output, session) {
       !is.na(completed) && completed >= as.integer(position)
     }
 
-    kpi <- function(label,value,sub=NULL,stage_position=NULL,class_extra=NULL,inline_note=NULL) {
+    kpi <- function(label,value,sub=NULL,stage_position=NULL,class_extra=NULL,inline_note=NULL,compact_value=FALSE) {
       stale_class <- if(!is.null(stage_position) && !stage_complete(stage_position)) "pre-update" else NULL
       div(
         class=paste(c("pipeline-kpi", stale_class, class_extra), collapse=" "),
         tags$span(class="pipeline-kpi-label",label),
         div(
           class="pipeline-kpi-value-row",
-          tags$span(class="pipeline-kpi-value",value),
+          tags$span(class=paste(c("pipeline-kpi-value",if(isTRUE(compact_value)) "compact" else NULL),collapse=" "),value),
           if(!is.null(inline_note)) tags$span(class="pipeline-kpi-inline-note",inline_note)
         ),
         if(!is.null(sub)) tags$span(class="pipeline-kpi-sub",sub)
@@ -1418,14 +1432,29 @@ server <- function(input, output, session) {
           fmt_pipeline_n(p$search_results_total),
           "records",
           stage_position=1L,
-          inline_note={
-            n <- suppressWarnings(as.numeric(as.character(p$search_results_update %||% "")))
-            if(is.na(n)) NULL else paste0("+",fmt_pipeline_n(n))
-          }
+          inline_note=if(stage_complete(1L)) fmt_pipeline_delta(p$search_results_update) else NULL
         ),
-        kpi("After dedup.",fmt_pipeline_n(p$deduplicated_records),"records",stage_position=2L),
-        kpi("Enriched",fmt_pipeline_n(p$enriched_records),"records",stage_position=3L),
-        kpi("Retracted",fmt_pipeline_n(p$retracted_records),"records",stage_position=4L),
+        kpi(
+          "After deduplication",
+          fmt_pipeline_n(p$deduplicated_records),
+          "records",
+          stage_position=2L,
+          inline_note=if(stage_complete(2L)) fmt_pipeline_delta(p$deduplicated_update) else NULL
+        ),
+        kpi(
+          "Enriched",
+          fmt_pipeline_n(p$enriched_records),
+          "records",
+          stage_position=3L,
+          inline_note=if(stage_complete(3L)) fmt_pipeline_delta(p$enriched_update) else NULL
+        ),
+        kpi(
+          "Retracted",
+          fmt_pipeline_n(p$retracted_records),
+          "records",
+          stage_position=4L,
+          inline_note=if(stage_complete(4L)) fmt_pipeline_delta(p$retracted_update) else NULL
+        ),
         {
           m <- manual_screening_rv()
           kpi(
@@ -1439,25 +1468,32 @@ server <- function(input, output, session) {
           "Screened",
           paste0(fmt_pipeline_n(p$screened_include)," / ",fmt_pipeline_n(p$screened_exclude)),
           "include / exclude",
-          stage_position=5L
+          stage_position=5L,
+          inline_note=if(stage_complete(5L)) fmt_pipeline_pair_delta(p$screened_include_update,p$screened_exclude_update) else NULL,
+          compact_value=TRUE
         ),
         kpi(
           "Species",
-          fmt_pipeline_n(p$screened_include),
+          fmt_pipeline_n(p$species_records),
           "records processed",
-          stage_position=6L
+          stage_position=6L,
+          inline_note=if(stage_complete(6L)) fmt_pipeline_delta(p$species_update) else NULL
         ),
         kpi(
           "Geography",
           paste0(fmt_pipeline_n(p$geography_with)," / ",fmt_pipeline_n(p$geography_without)),
           "with / without",
-          stage_position=7L
+          stage_position=7L,
+          inline_note=if(stage_complete(7L)) fmt_pipeline_pair_delta(p$geography_with_update,p$geography_without_update) else NULL,
+          compact_value=TRUE
         ),
         kpi(
           "Topics",
           paste0(fmt_pipeline_n(p$topic_with)," / ",fmt_pipeline_n(p$topic_without)),
           "with / without",
-          stage_position=8L
+          stage_position=8L,
+          inline_note=if(stage_complete(8L)) fmt_pipeline_pair_delta(p$topic_with_update,p$topic_without_update) else NULL,
+          compact_value=TRUE
         ),
         kpi(
           "Canonical database",
