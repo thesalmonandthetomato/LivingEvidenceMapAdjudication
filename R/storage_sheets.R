@@ -807,6 +807,23 @@ append_workflow_resume_request <- function(tab, prefix, queue_sha256, source_run
   invisible(row)
 }
 
+w04_validation_finalize_request_tab <- function() {
+  Sys.getenv("LEM_W04_VALIDATION_FINALIZE_REQUEST_TAB", unset = "w04_validation_finalize_requests")
+}
+
+w04_validation_finalize_request_exists <- function(queue_sha256, batch_id) {
+  workflow_resume_request_exists(
+    w04_validation_finalize_request_tab(), queue_sha256, "", batch_id
+  )
+}
+
+append_w04_validation_finalize_request <- function(queue_sha256, batch_id, status, message = "") {
+  append_workflow_resume_request(
+    w04_validation_finalize_request_tab(), "w04-validation-finalize-",
+    queue_sha256, "", batch_id, status, message
+  )
+}
+
 w04_resolution_resume_request_tab <- function() {
   Sys.getenv("LEM_W04_RESOLUTION_RESUME_REQUEST_TAB", unset = "w04_resolution_resume_requests")
 }
@@ -2549,6 +2566,7 @@ backend_reset_operational_tabs <- function() {
     Sys.getenv("LEM_W02_RESUME_REQUEST_TAB", unset = "w02_resume_requests"),
     Sys.getenv("LEM_W04_QUEUE_TAB", unset = "queue_w04_validation_active"),
     w04_decision_tab(),
+    w04_validation_finalize_request_tab(),
     Sys.getenv("LEM_W04_RESOLUTION_QUEUE_TAB", unset = "queue_w04_resolution_active"),
     w04_resolution_decision_tab(),
     w04_resolution_abstract_edit_tab(),
