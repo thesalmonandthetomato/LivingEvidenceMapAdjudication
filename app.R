@@ -981,6 +981,7 @@ server <- function(input, output, session) {
   w04_resolution_abstract_edit_rv <- reactiveVal(FALSE)
   w04_resolution_batch_status_rv <- reactiveVal("")
   w04_resolution_status <- reactiveVal("")
+  w04_resolution_resume_requested_rv <- reactiveVal(FALSE)
   w04_resolution_include_terms <- reactiveVal(character())
   w04_resolution_exclude_terms <- reactiveVal(character())
 
@@ -3590,7 +3591,14 @@ server <- function(input, output, session) {
                 tags$strong("Model uncertainty review complete"),
                 tags$div(class="text-secondary small","All model-uncertainty cases have final decisions. Send the reviewed queue to GitHub to finalise Workflow 04.")
               ),
-              actionButton("w04_resolution_send_github","Send W04 to GitHub",class="btn-primary btn-sm")
+              if (isTRUE(w04_resolution_resume_requested_rv())) {
+                tags$div(
+                  class="text-success small fw-semibold",
+                  "Sent to GitHub. Workflow 04 finalisation has been requested."
+                )
+              } else {
+                actionButton("w04_resolution_send_github","Send W04 to GitHub",class="btn-primary btn-sm")
+              }
             )
           },
           if (
@@ -4031,7 +4039,7 @@ server <- function(input, output, session) {
     w01_all_cases_rv(list()); cases_rv(NULL); decisions(list()); batch_id_rv(""); queue_sha_rv(""); batch_status_rv("")
     w02_all_cases_rv(list()); w02_cases_rv(NULL); w02_decisions(list()); w02_batch_id_rv(""); w02_queue_sha_rv(""); w02_batch_status_rv("")
     w04_all_cases_rv(list()); w04_cases_rv(NULL); w04_decisions(list()); w04_batch_id_rv(""); w04_queue_sha_rv(""); w04_batch_status_rv("")
-    w04_resolution_cases_rv(NULL); w04_resolution_decisions(list()); w04_resolution_batch_id_rv(""); w04_resolution_queue_sha_rv("")
+    w04_resolution_cases_rv(NULL); w04_resolution_decisions(list()); w04_resolution_batch_id_rv(""); w04_resolution_queue_sha_rv(""); w04_resolution_resume_requested_rv(FALSE)
     w04_conflict_cases_rv(NULL); w04_conflict_decisions(list()); w04_conflict_batch_id_rv(""); w04_conflict_queue_sha_rv("")
     w04_consistency_analyses_rv(list()); w04_conflict_sets_rv(list()); w04_consistency_history_loaded(FALSE)
     w08_all_cases_rv(list()); w08_cases_rv(NULL); w08_decisions(list()); w08_batch_id_rv(""); w08_queue_sha_rv(""); w08_batch_status_rv("")
@@ -5489,6 +5497,16 @@ server <- function(input, output, session) {
           w04_resolution_include_terms(w04_resolution_batch$highlight_include %||% character())
           w04_resolution_exclude_terms(w04_resolution_batch$highlight_exclude %||% character())
           w04_resolution_decisions(w04_filter_batch_decisions(all_res,w04_resolution_batch$queue_sha256))
+          w04_resolution_resume_requested_rv(
+            tryCatch(
+              w04_resolution_resume_request_exists(
+                w04_resolution_batch$queue_sha256,
+                w04_resolution_batch$source_run_id %||% "",
+                w04_resolution_batch$batch_id
+              ),
+              error=function(e) FALSE
+            )
+          )
           w04_resolution_abstract_edits_rv(
             tryCatch(
               active_sheet_w04_resolution_abstract_edits(w04_resolution_batch$queue_sha256),
@@ -5511,6 +5529,7 @@ server <- function(input, output, session) {
         } else {
           w04_resolution_all_cases_rv(list())
           w04_resolution_cases_rv(NULL)
+          w04_resolution_resume_requested_rv(FALSE)
           w04_resolution_abstract_edits_rv(list())
           w04_resolution_abstract_edit_rv(FALSE)
         }
@@ -6743,6 +6762,7 @@ server <- function(input, output, session) {
     )
     if (is.na(already)) return(FALSE)
     if (isTRUE(already)) {
+      w04_resolution_resume_requested_rv(TRUE)
       w04_resolution_status("Workflow 04 has already been sent to GitHub for this model-uncertainty batch.")
       return(TRUE)
     }
@@ -6754,6 +6774,7 @@ server <- function(input, output, session) {
       append_w04_resolution_resume_request(queue_sha,source_run_id,batch_id,"dispatching")
       dispatch_w04_resolution_resume(source_run_id,batch_id,queue_sha)
       append_w04_resolution_resume_request(queue_sha,source_run_id,batch_id,"dispatched")
+      w04_resolution_resume_requested_rv(TRUE)
       w04_resolution_status("Sent to GitHub. Workflow 04 finalisation requested.")
       TRUE
     },error=function(e){
