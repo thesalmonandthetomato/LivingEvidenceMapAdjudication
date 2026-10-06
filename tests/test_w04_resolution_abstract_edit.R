@@ -27,3 +27,11 @@ stopifnot(
   grepl("w04_resolution_resume_requested_rv(TRUE)", app_src, fixed=TRUE)
 )
 cat("PASS: W04 resolution GitHub send-state UI contract\n")
+
+stopifnot(
+  grepl("w02_resume_requested_rv <- reactiveVal(FALSE)", app_src, fixed=TRUE),
+  grepl("Sent to GitHub. Workflow 02 resume has been requested.", app_src, fixed=TRUE),
+  grepl("w08_resume_requested_rv <- reactiveVal(FALSE)", app_src, fixed=TRUE),
+  grepl("Sent to GitHub. Workflow 08 resume has been requested.", app_src, fixed=TRUE)
+)
+cat("PASS: W02/W08 GitHub send-state UI contract\n")
