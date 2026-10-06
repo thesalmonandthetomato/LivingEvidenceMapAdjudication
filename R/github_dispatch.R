@@ -71,15 +71,53 @@ dispatch_w00_scoping <- function(request_id, search_string_path = "user_input/sc
     ))
   resp <- httr2::req_perform(req)
   status <- httr2::resp_status(resp)
-  if (!identical(status, 204L)) {
+  if (identical(status, 204L)) return(invisible(TRUE))
+  if (!identical(status, 404L)) {
     stop(sprintf("W00 scoping dispatch failed with HTTP %d", status), call.=FALSE)
+  }
+
+  # Branch-only workflows can return 404 from the workflow-dispatch endpoint
+  # when the workflow is not yet present on the repository default branch.
+  # Fall back to a tiny branch commit watched only by the scoping workflow.
+  marker_path <- sprintf(
+    "docs/shiny_scoping_requests/%s.json",
+    request_id
+  )
+  payload <- jsonlite::toJSON(list(
+    request_id=request_id,
+    search_string_path=as.character(search_string_path),
+    requested_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
+    requested_by="LivingEvidenceMapAdjudication"
+  ),auto_unbox=TRUE,pretty=TRUE)
+
+  endpoint <- sprintf(
+    "https://api.github.com/repos/%s/contents/%s",
+    github_dispatch_repo(), marker_path
+  )
+  marker_req <- httr2::request(endpoint) |>
+    httr2::req_method("PUT") |>
+    httr2::req_headers(
+      Authorization = paste("Bearer", github_dispatch_token()),
+      Accept = "application/vnd.github+json",
+      `X-GitHub-Api-Version` = "2022-11-28",
+      `User-Agent` = "LivingEvidenceMap-Adjudication"
+    ) |>
+    httr2::req_body_json(list(
+      message=request_id,
+      content=jsonlite::base64_enc(charToRaw(payload)),
+      branch=github_scoping_ref()
+    ))
+  marker_resp <- httr2::req_perform(marker_req)
+  marker_status <- httr2::resp_status(marker_resp)
+  if (!marker_status %in% c(200L,201L)) {
+    stop(sprintf("W00 scoping fallback request failed with HTTP %d",marker_status),call.=FALSE)
   }
   invisible(TRUE)
 }
 
 find_w00_scoping_run <- function(request_id) {
   endpoint <- sprintf(
-    "https://api.github.com/repos/%s/actions/workflows/workflow_00_search_scoping.yml/runs?branch=%s&event=workflow_dispatch&per_page=30",
+    "https://api.github.com/repos/%s/actions/workflows/workflow_00_search_scoping.yml/runs?branch=%s&per_page=30",
     github_dispatch_repo(),
     utils::URLencode(github_scoping_ref(), reserved=TRUE)
   )
