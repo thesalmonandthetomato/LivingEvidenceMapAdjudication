@@ -839,6 +839,7 @@ server <- function(input, output, session) {
   w04_consistency_status <- reactiveVal("")
   w04_refresh_status <- reactiveVal("")
 
+  w04_resolution_all_cases_rv <- reactiveVal(list())
   w04_resolution_cases_rv <- reactiveVal(NULL)
   w04_resolution_queue_sha_rv <- reactiveVal("")
   w04_resolution_batch_id_rv <- reactiveVal("")
@@ -1015,6 +1016,35 @@ server <- function(input, output, session) {
     if (!identical(storage_backend(),"google_sheets")) return(NULL)
     read_sheet_w04_resolution_queue()
   }
+
+  observe({
+    req(authenticated())
+    batch_id <- as.character(w04_resolution_batch_id_rv() %||% "")
+    all_cases <- w04_resolution_all_cases_rv() %||% list()
+    user <- current_user()
+    if (!nzchar(batch_id) || !length(all_cases) || is.null(user)) {
+      w04_resolution_cases_rv(list())
+      return()
+    }
+    visible <- cases_for_assignment_user(
+      all_cases,
+      assignment_registry_rv(),
+      "04",
+      batch_id,
+      user,
+      task_type="model_uncertainty",
+      active_events=w04_resolution_decisions()
+    )
+    w04_resolution_cases_rv(visible)
+    unresolved <- if(length(visible)) {
+      ids <- vapply(visible,function(x)as.character(x$review_case_id %||% ""),character(1))
+      which(!ids %in% w04_resolution_decision_ids())
+    } else integer()
+    current <- suppressWarnings(as.integer(w04_resolution_idx()))
+    if (is.na(current) || current < 1L || current > max(1L,length(visible))) {
+      w04_resolution_idx(if(length(unresolved)) unresolved[[1L]] else 1L)
+    }
+  })
 
   observe({
     req(authenticated())
@@ -1558,9 +1588,22 @@ server <- function(input, output, session) {
       w04_remaining <- if (w04_total) length(w04_unresolved_indices()) else 0L
       w04_completed <- max(0L, w04_total - w04_remaining)
 
-      w04_resolution_total <- length(w04_resolution_cases_rv() %||% list())
-      w04_resolution_remaining <- if (w04_resolution_total) length(w04_resolution_unresolved_indices()) else 0L
-      w04_resolution_completed <- max(0L, w04_resolution_total - w04_resolution_remaining)
+      w04_resolution_user_total <- length(w04_resolution_cases_rv() %||% list())
+      w04_resolution_user_remaining <- if (w04_resolution_user_total) length(w04_resolution_unresolved_indices()) else 0L
+      if (session_can("manage_assignments")) {
+        w04_resolution_total <- length(w04_resolution_all_cases_rv() %||% list())
+        w04_resolution_all_ids <- if (w04_resolution_total) vapply(
+          w04_resolution_all_cases_rv(),
+          function(x) as.character(x$review_case_id %||% ""),
+          character(1)
+        ) else character()
+        w04_resolution_completed <- sum(w04_resolution_all_ids %in% w04_resolution_decision_ids())
+        w04_resolution_remaining <- max(0L, w04_resolution_total - w04_resolution_completed)
+      } else {
+        w04_resolution_total <- w04_resolution_user_total
+        w04_resolution_remaining <- w04_resolution_user_remaining
+        w04_resolution_completed <- max(0L, w04_resolution_total - w04_resolution_remaining)
+      }
 
       w04_conflict_user_total <- length(w04_active_conflict_cases())
       w04_conflict_user_remaining <- if (w04_conflict_user_total) length(w04_conflict_unresolved_indices()) else 0L
@@ -1714,7 +1757,19 @@ server <- function(input, output, session) {
               if (w04_resolution_remaining > 0L) "open_w04_resolution" else NULL,
               "Resolve model uncertainty",
               w04_resolution_batch_id_rv(),
-              w04_resolution_batch_status_rv()
+              w04_resolution_batch_status_rv(),
+              can_open = w04_resolution_user_remaining > 0L,
+              idle_text = if (!nzchar(w04_resolution_batch_id_rv())) {
+                "No records awaiting review"
+              } else if (
+                w04_resolution_remaining > 0L && session_can("manage_assignments") && w04_resolution_user_remaining == 0L
+              ) {
+                "Active cases are awaiting assignment"
+              } else if (w04_resolution_user_remaining == 0L) {
+                "No records assigned to you"
+              } else {
+                "No records awaiting review"
+              }
             )
           ),
           div(
@@ -2087,6 +2142,7 @@ server <- function(input, output, session) {
     has_w01_batch <- nzchar(as.character(batch_id_rv())) && length(w01_all_cases_rv()) > 0L
     has_w02_batch <- nzchar(as.character(w02_batch_id_rv())) && length(w02_all_cases_rv()) > 0L
     has_w04_batch <- nzchar(as.character(w04_batch_id_rv())) && length(w04_all_cases_rv()) > 0L
+    has_w04_resolution_batch <- nzchar(as.character(w04_resolution_batch_id_rv())) && length(w04_resolution_all_cases_rv()) > 0L
     has_w04_conflict_batch <- nzchar(as.character(w04_active_conflict_batch_id())) && length(w04_all_conflict_cases()) > 0L
     has_w08_batch <- nzchar(as.character(w08_batch_id_rv())) && length(w08_all_cases_rv()) > 0L
     task_labels <- c(
@@ -2128,6 +2184,9 @@ server <- function(input, output, session) {
       if (identical(workflow, "04") && identical(task_type, "manual_screening")) {
         return(if (has_w04_batch) as.character(w04_batch_id_rv()) else "")
       }
+      if (identical(workflow, "04") && identical(task_type, "model_uncertainty")) {
+        return(if (has_w04_resolution_batch) as.character(w04_resolution_batch_id_rv()) else "")
+      }
       if (identical(workflow, "04") && identical(task_type, "conflict_resolution")) {
         return(if (has_w04_conflict_batch) as.character(w04_active_conflict_batch_id()) else "")
       }
@@ -2162,6 +2221,11 @@ server <- function(input, output, session) {
         identical(z$task_type, "manual_screening") &&
         identical(z$batch_id, w04_batch_id_rv())
       ) return(w04_active_assignment_events())
+      if (
+        identical(z$workflow, "04") &&
+        identical(z$task_type, "model_uncertainty") &&
+        identical(z$batch_id, w04_resolution_batch_id_rv())
+      ) return(w04_resolution_decisions())
       if (
         identical(z$workflow, "04") &&
         identical(z$task_type, "conflict_resolution") &&
@@ -2226,13 +2290,16 @@ server <- function(input, output, session) {
       if (has_w04_batch) w04_batch_id_rv() else "no-active-queue",
       ASSIGNMENT_MODES[["independent_blind_review"]]
     )
-    if (has_w04_conflict_batch) {
-      add_empty_group(
-        "04","conflict_resolution",
-        w04_active_conflict_batch_id(),
-        ASSIGNMENT_MODES[["single_reviewer"]]
-      )
-    }
+    add_empty_group(
+      "04","model_uncertainty",
+      if (has_w04_resolution_batch) w04_resolution_batch_id_rv() else "no-active-queue",
+      ASSIGNMENT_MODES[["single_reviewer"]]
+    )
+    add_empty_group(
+      "04","conflict_resolution",
+      if (has_w04_conflict_batch) w04_active_conflict_batch_id() else "no-active-queue",
+      ASSIGNMENT_MODES[["single_reviewer"]]
+    )
     add_empty_group(
       "08","annotation",
       if (has_w08_batch) w08_batch_id_rv() else "no-active-queue",
@@ -2290,6 +2357,13 @@ server <- function(input, output, session) {
              events=w04_active_assignment_events(), label="W04")
       } else if (
         identical(z$workflow, "04") &&
+        identical(z$task_type, "model_uncertainty") &&
+        identical(z$batch_id, w04_resolution_batch_id_rv())
+      ) {
+        list(prefix="w04resolution", workflow="04", task_type="model_uncertainty", batch_id=w04_resolution_batch_id_rv(),
+             events=w04_resolution_decisions(), label="W04 model uncertainty")
+      } else if (
+        identical(z$workflow, "04") &&
         identical(z$task_type, "conflict_resolution") &&
         identical(z$batch_id, w04_active_conflict_batch_id())
       ) {
@@ -2333,6 +2407,26 @@ server <- function(input, output, session) {
           return(tags$div(
             class = "mt-2",
             tags$div(class = "text-secondary small mb-2", "No active W04 manual-screening queue is loaded.")
+          ))
+        }
+        if (
+          identical(z$workflow, "04") &&
+          identical(z$task_type, "model_uncertainty") &&
+          identical(z$batch_id, "no-active-queue")
+        ) {
+          return(tags$div(
+            class = "mt-2",
+            tags$div(class = "text-secondary small mb-2", "No active W04 model-uncertainty queue is loaded.")
+          ))
+        }
+        if (
+          identical(z$workflow, "04") &&
+          identical(z$task_type, "conflict_resolution") &&
+          identical(z$batch_id, "no-active-queue")
+        ) {
+          return(tags$div(
+            class = "mt-2",
+            tags$div(class = "text-secondary small mb-2", "No active W04 conflict-resolution queue is loaded.")
           ))
         }
         if (
@@ -2524,6 +2618,9 @@ server <- function(input, output, session) {
         identical(z$workflow,"04") && identical(z$task_type,"manual_screening") &&
         identical(z$batch_id,w04_batch_id_rv())
       ) w04_all_cases_rv() else if (
+        identical(z$workflow,"04") && identical(z$task_type,"model_uncertainty") &&
+        identical(z$batch_id,w04_resolution_batch_id_rv())
+      ) w04_resolution_all_cases_rv() else if (
         identical(z$workflow,"04") && identical(z$task_type,"conflict_resolution") &&
         identical(z$batch_id,w04_active_conflict_batch_id())
       ) w04_all_conflict_cases() else if (
@@ -3996,6 +4093,34 @@ server <- function(input, output, session) {
     )
   })
 
+  w04resolution_assignment_plan <- reactive({
+    req(authenticated())
+    workflow_assignment_plan(
+      "w04resolution", w04_resolution_all_cases_rv(), w04_resolution_decisions(),
+      "04", w04_resolution_batch_id_rv(), "model_uncertainty"
+    )
+  })
+  output$w04resolution_assignment_preview <- renderUI({
+    req(authenticated())
+    workflow_assignment_preview(
+      w04resolution_assignment_plan(), "w04resolution", "04", w04_resolution_batch_id_rv(),
+      "model_uncertainty", w04_resolution_decisions()
+    )
+  })
+  output$w04resolution_assignment_status <- renderText(assignment_manage_status())
+  observeEvent(input$w04resolution_apply_assignments, {
+    apply_workflow_assignments(w04resolution_assignment_plan())
+  })
+  observeEvent(input$w04resolution_remove_assignments, {
+    remove_workflow_user_assignments(
+      input$w04resolution_remove_assignment_user,
+      w04_resolution_decisions(),
+      "04",
+      w04_resolution_batch_id_rv(),
+      "model_uncertainty"
+    )
+  })
+
   w04conflict_assignment_plan <- reactive({
     req(authenticated())
     workflow_assignment_plan(
@@ -4553,7 +4678,7 @@ server <- function(input, output, session) {
         w04_resolution_batch <- load_w04_resolution_batch()
         if (!is.null(w04_resolution_batch)) {
           all_res <- active_sheet_w04_resolution_decisions()
-          w04_resolution_cases_rv(w04_resolution_batch$cases)
+          w04_resolution_all_cases_rv(w04_resolution_batch$cases)
           w04_resolution_queue_sha_rv(w04_resolution_batch$queue_sha256)
           w04_resolution_batch_id_rv(w04_resolution_batch$batch_id)
           w04_resolution_source_run_id_rv(w04_resolution_batch$source_run_id %||% "")
@@ -4561,8 +4686,21 @@ server <- function(input, output, session) {
           w04_resolution_include_terms(w04_resolution_batch$highlight_include %||% character())
           w04_resolution_exclude_terms(w04_resolution_batch$highlight_exclude %||% character())
           w04_resolution_decisions(w04_filter_batch_decisions(all_res,w04_resolution_batch$queue_sha256))
+          w04_resolution_visible <- cases_for_assignment_user(
+            w04_resolution_batch$cases,
+            assignment_registry_rv(),
+            "04",
+            w04_resolution_batch$batch_id,
+            login_user,
+            task_type = "model_uncertainty",
+            active_events = w04_resolution_decisions()
+          )
+          w04_resolution_cases_rv(w04_resolution_visible)
           rr <- w04_resolution_unresolved_indices()
-          w04_resolution_idx(if(length(rr)) rr[[1L]] else max(1L,length(w04_resolution_batch$cases)))
+          w04_resolution_idx(if(length(rr)) rr[[1L]] else max(1L,length(w04_resolution_visible)))
+        } else {
+          w04_resolution_all_cases_rv(list())
+          w04_resolution_cases_rv(NULL)
         }
 
         w04_conflict_batch <- load_w04_conflict_batch()
@@ -5546,6 +5684,16 @@ server <- function(input, output, session) {
   advance_w04_resolution <- function() {
     unresolved<-w04_resolution_unresolved_indices()
     if(!length(unresolved)){
+      all_ids <- vapply(
+        w04_resolution_all_cases_rv() %||% list(),
+        function(x) as.character(x$review_case_id %||% ""),
+        character(1)
+      )
+      globally_unresolved <- setdiff(all_ids, w04_resolution_decision_ids())
+      if (length(globally_unresolved)) {
+        w04_resolution_status("Your assigned model-uncertainty records are complete. Other assigned or unassigned records remain.")
+        app_view("tasks");return(invisible(TRUE))
+      }
       if(session_can("control_workflows")) {
         mark_review_complete("04",w04_resolution_batch_id_rv(),w04_resolution_queue_sha_rv(),w04_resolution_batch_status_rv)
         dispatched<-tryCatch({dispatch_w04_resolution_resume(w04_resolution_source_run_id_rv(),w04_resolution_batch_id_rv(),w04_resolution_queue_sha_rv());TRUE},
