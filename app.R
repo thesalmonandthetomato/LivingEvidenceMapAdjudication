@@ -44,6 +44,37 @@ normalise_display_text <- function(x) {
   trimws(x)
 }
 
+google_scholar_title_url <- function(title) {
+  title <- normalise_display_text(title)
+  if (!nzchar(title)) return("")
+  query <- gsub("[[:punct:]]+", "", title)
+  query <- gsub("[[:space:]]+", " ", trimws(query))
+  if (!nzchar(query)) return("")
+  paste0(
+    "https://scholar.google.co.uk/scholar?start=0&q=",
+    gsub(" ", "+", query, fixed=TRUE)
+  )
+}
+
+google_scholar_button <- function(title) {
+  url <- google_scholar_title_url(title)
+  if (!nzchar(url)) return(NULL)
+  tags$a(
+    href=url,
+    target="_blank",
+    rel="noopener noreferrer",
+    title="Search this title on Google Scholar",
+    `aria-label`="Search this title on Google Scholar",
+    class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center ms-2 flex-shrink-0",
+    style="width:30px;height:30px;padding:3px;",
+    tags$img(
+      src="https://scholar.google.com/favicon.ico",
+      alt="Google Scholar",
+      style="width:18px;height:18px;display:block;"
+    )
+  )
+}
+
 display_sentence_case_if_all_caps <- function(x) {
   x <- normalise_display_text(x)
   if (!nzchar(x)) return(x)
@@ -6251,8 +6282,12 @@ server <- function(input, output, session) {
       div(
         class="compact-record-body w04-text",
         div(
-          class="record-title",
-          highlight_screening_text(display_sentence_case_if_all_caps(b$title %||% ""),w04_include_terms(),w04_exclude_terms())
+          class="d-flex align-items-start justify-content-between gap-2",
+          div(
+            class="record-title flex-grow-1",
+            highlight_screening_text(display_sentence_case_if_all_caps(b$title %||% ""),w04_include_terms(),w04_exclude_terms())
+          ),
+          google_scholar_button(b$title %||% "")
         ),
         div(
           class="w04-citation-grid",
@@ -6550,7 +6585,11 @@ server <- function(input, output, session) {
         tags$span(class="task-badge",sprintf("Record %d",w04_resolution_idx()))
       )),
       div(class="compact-record-body w04-text",
-        div(class="record-title",highlight_screening_text(display_sentence_case_if_all_caps(b$title %||% ""),w04_resolution_include_terms(),w04_resolution_exclude_terms())),
+        div(
+          class="d-flex align-items-start justify-content-between gap-2",
+          div(class="record-title flex-grow-1",highlight_screening_text(display_sentence_case_if_all_caps(b$title %||% ""),w04_resolution_include_terms(),w04_resolution_exclude_terms())),
+          google_scholar_button(b$title %||% "")
+        ),
         div(class="w04-citation-grid",
           div(class="w04-citation-item",span(class="w04-citation-label","Authors"),span(class="w04-citation-value",b$authors %||% "")),
           div(class="w04-citation-item",span(class="w04-citation-label","Year"),span(class="w04-citation-value",b$year %||% "")),
@@ -6864,7 +6903,11 @@ server <- function(input, output, session) {
       ),
       div(
         class="compact-record-body w04-text",
-        div(class="record-title",highlight_screening_text(display_sentence_case_if_all_caps(b$title %||% ""),w04_include_terms(),w04_exclude_terms())),
+        div(
+          class="d-flex align-items-start justify-content-between gap-2",
+          div(class="record-title flex-grow-1",highlight_screening_text(display_sentence_case_if_all_caps(b$title %||% ""),w04_include_terms(),w04_exclude_terms())),
+          google_scholar_button(b$title %||% "")
+        ),
         div(
           class="w04-citation-grid",
           div(class="w04-citation-item",span(class="w04-citation-label","Authors"),span(class="w04-citation-value",b$authors %||% "")),
