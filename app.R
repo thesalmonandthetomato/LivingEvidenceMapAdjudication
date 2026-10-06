@@ -2496,13 +2496,28 @@ server <- function(input, output, session) {
 
   observeEvent(input$record_table_open,{
     req(authenticated())
+    if (!session_can("manage_assignments")) {
+      showNotification("Administrator permission is required to open record tables.",type="error")
+      return()
+    }
     z <- input$record_table_open
     if (is.null(z)) return()
+    workflow <- as.character(z$workflow %||% "")
+    task_type <- as.character(z$task_type %||% "")
+    batch_id <- as.character(z$batch_id %||% "")
+    metric <- as.character(z$metric %||% "cases")
+    allowed_metrics <- c("cases","assignments","completed","closed","outstanding","unassigned")
+    if (!metric %in% allowed_metrics) return()
+    sources <- record_table_source(workflow,task_type,batch_id)
+    if (!length(sources)) {
+      showNotification("No active records are available for this table view.",type="warning")
+      return()
+    }
     record_table_context(list(
-      workflow=as.character(z$workflow %||% ""),
-      task_type=as.character(z$task_type %||% ""),
-      batch_id=as.character(z$batch_id %||% ""),
-      metric=as.character(z$metric %||% "cases"),
+      workflow=workflow,
+      task_type=task_type,
+      batch_id=batch_id,
+      metric=metric,
       user_id=as.character(z$user_id %||% ""),
       label=as.character(z$label %||% "")
     ))
