@@ -3296,10 +3296,10 @@ server <- function(input, output, session) {
         tags$tr(
           tags$td(x$display_name),
           tags$td(role_label),
-          tags$td(x$assigned),
-          tags$td(x$completed),
-          tags$td(x$resolved_elsewhere),
-          tags$td(x$remaining),
+          tags$td(record_table_link(x$assigned,z$workflow,z$task_type,z$batch_id,"assignments",x$user_id,paste(workflow_label,task_label,x$display_name,"Assigned",sep=" · "))),
+          tags$td(record_table_link(x$completed,z$workflow,z$task_type,z$batch_id,"completed",x$user_id,paste(workflow_label,task_label,x$display_name,"Completed",sep=" · "))),
+          tags$td(record_table_link(x$resolved_elsewhere,z$workflow,z$task_type,z$batch_id,"closed",x$user_id,paste(workflow_label,task_label,x$display_name,"Closed",sep=" · "))),
+          tags$td(record_table_link(x$remaining,z$workflow,z$task_type,z$batch_id,"outstanding",x$user_id,paste(workflow_label,task_label,x$display_name,"Outstanding",sep=" · "))),
           tags$td(
             tags$span(
               class = "assignment-progress-bar",
@@ -3376,14 +3376,18 @@ server <- function(input, output, session) {
           },
           div(
             class = "assignment-kpis",
-            div(class = "assignment-kpi", tags$span("Cases"), tags$strong(p$cases)),
-            div(class = "assignment-kpi", tags$span("Assignments"), tags$strong(p$assigned)),
-            div(class = "assignment-kpi", tags$span("Completed"), tags$strong(p$completed)),
-            div(class = "assignment-kpi", tags$span("Closed"), tags$strong(p$resolved_elsewhere)),
-            div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(p$remaining))
+            div(class = "assignment-kpi", tags$span("Cases"), tags$strong(record_table_link(p$cases,z$workflow,z$task_type,z$batch_id,"cases",label=paste(workflow_label,task_label,"Cases",sep=" · ")))),
+            div(class = "assignment-kpi", tags$span("Assignments"), tags$strong(record_table_link(p$assigned,z$workflow,z$task_type,z$batch_id,"assignments",label=paste(workflow_label,task_label,"Assignments",sep=" · ")))),
+            div(class = "assignment-kpi", tags$span("Completed"), tags$strong(record_table_link(p$completed,z$workflow,z$task_type,z$batch_id,"completed",label=paste(workflow_label,task_label,"Completed",sep=" · ")))),
+            div(class = "assignment-kpi", tags$span("Closed"), tags$strong(record_table_link(p$resolved_elsewhere,z$workflow,z$task_type,z$batch_id,"closed",label=paste(workflow_label,task_label,"Closed",sep=" · ")))),
+            div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(record_table_link(p$remaining,z$workflow,z$task_type,z$batch_id,"outstanding",label=paste(workflow_label,task_label,"Outstanding",sep=" · "))))
           ),
           if (unassigned > 0L) {
-            tags$div(class = "small mb-2", paste0("Unassigned cases: ", unassigned))
+            tags$div(
+              class = "small mb-2",
+              "Unassigned cases: ",
+              record_table_link(unassigned,z$workflow,z$task_type,z$batch_id,"unassigned",label=paste(workflow_label,task_label,"Unassigned cases",sep=" · "))
+            )
           },
           div(
             class = "assignment-table-wrap",
@@ -3815,11 +3819,11 @@ server <- function(input, output, session) {
           class = "px-3 pb-3",
           div(
             class = "assignment-kpis",
-            div(class = "assignment-kpi", tags$span("Assignments"), tags$strong(total_assigned)),
-            div(class = "assignment-kpi", tags$span("Completed"), tags$strong(total_completed)),
-            div(class = "assignment-kpi", tags$span("Closed"), tags$strong(total_released)),
-            div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(total_remaining)),
-            div(class = "assignment-kpi", tags$span("Conflicts"), tags$strong(length(w04_all_conflict_cases())))
+            div(class = "assignment-kpi", tags$span("Assignments"), tags$strong(record_table_link(total_assigned,"all","all","","assignments",label="All workflows · Assignments"))),
+            div(class = "assignment-kpi", tags$span("Completed"), tags$strong(record_table_link(total_completed,"all","all","","completed",label="All workflows · Completed"))),
+            div(class = "assignment-kpi", tags$span("Closed"), tags$strong(record_table_link(total_released,"all","all","","closed",label="All workflows · Closed"))),
+            div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(record_table_link(total_remaining,"all","all","","outstanding",label="All workflows · Outstanding"))),
+            div(class = "assignment-kpi", tags$span("Conflicts"), tags$strong(record_table_link(length(w04_all_conflict_cases()),"04","conflict_resolution",w04_active_conflict_batch_id(),"cases",label="W04 · Reviewer conflict resolution · Cases")))
           ),
           workflow_sections_display,
           tags$hr(class = "my-3"),
