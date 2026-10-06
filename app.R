@@ -143,8 +143,16 @@ highlight_screening_text <- function(text, include_terms = character(), exclude_
       if (pos < 0L) break
       s <- start_at + pos - 1L
       e <- s + nchar(term) - 1L
-      k <- k + 1L
-      candidates[[k]] <- list(start=s,end=e,class=names(terms)[[i]],length=nchar(term))
+      before <- if (s > 1L) substr(hay, s - 1L, s - 1L) else ""
+      after <- if (e < nchar(hay)) substr(hay, e + 1L, e + 1L) else ""
+      starts_word <- grepl("^[[:alnum:]]", needle)
+      ends_word <- grepl("[[:alnum:]]$", needle)
+      left_ok <- !starts_word || !nzchar(before) || !grepl("[[:alnum:]]", before)
+      right_ok <- !ends_word || !nzchar(after) || !grepl("[[:alnum:]]", after)
+      if (left_ok && right_ok) {
+        k <- k + 1L
+        candidates[[k]] <- list(start=s,end=e,class=names(terms)[[i]],length=nchar(term))
+      }
       start_at <- s + 1L
       if (start_at > nchar(hay)) break
     }
@@ -2134,6 +2142,30 @@ server <- function(input, output, session) {
     identical(progress$remaining, 0L)
   }
 
+  w02_handoff_ready <- reactive({
+    cs <- w02_all_cases_rv() %||% list()
+    if (!length(cs) || !nzchar(as.character(w02_batch_id_rv() %||% ""))) return(FALSE)
+    ids <- vapply(cs,function(x)as.character(x$review_case_id %||% ""),character(1))
+    resolved <- w02_resolved_ids(w02_decisions())
+    length(ids) > 0L && all(nzchar(ids)) && all(ids %in% resolved)
+  })
+
+  w04_resolution_handoff_ready <- reactive({
+    cs <- w04_resolution_all_cases_rv() %||% list()
+    if (!length(cs) || !nzchar(as.character(w04_resolution_batch_id_rv() %||% ""))) return(FALSE)
+    ids <- vapply(cs,function(x)as.character(x$review_case_id %||% ""),character(1))
+    resolved <- w04_resolution_decision_ids(w04_resolution_decisions())
+    length(ids) > 0L && all(nzchar(ids)) && all(ids %in% resolved)
+  })
+
+  w08_handoff_ready <- reactive({
+    cs <- w08_all_cases_rv() %||% list()
+    if (!length(cs) || !nzchar(as.character(w08_batch_id_rv() %||% ""))) return(FALSE)
+    ids <- vapply(cs,function(x)as.character(x$record_id %||% ""),character(1))
+    resolved <- w08_decision_ids(w08_decisions())
+    length(ids) > 0L && all(nzchar(ids)) && all(ids %in% resolved)
+  })
+
   output$assignment_progress <- renderUI({
     req(authenticated())
     if (!session_can("manage_assignments")) return(NULL)
@@ -2811,6 +2843,51 @@ server <- function(input, output, session) {
                   class = "btn-primary btn-sm"
                 )
               }
+            )
+          },
+          if (
+            identical(z$workflow, "02") &&
+            identical(z$task_type, "enrichment") &&
+            isTRUE(w02_handoff_ready()) &&
+            session_can("control_workflows")
+          ) {
+            tags$div(
+              class="d-flex flex-wrap align-items-center gap-2 mt-3 p-2 border rounded bg-light",
+              tags$div(
+                tags$strong("W02 review complete"),
+                tags$div(class="text-secondary small","All enrichment cases have final decisions. Send the reviewed queue to GitHub to resume Workflow 02.")
+              ),
+              actionButton("w02_send_github","Send W02 to GitHub",class="btn-primary btn-sm")
+            )
+          },
+          if (
+            identical(z$workflow, "04") &&
+            identical(z$task_type, "model_uncertainty") &&
+            isTRUE(w04_resolution_handoff_ready()) &&
+            session_can("control_workflows")
+          ) {
+            tags$div(
+              class="d-flex flex-wrap align-items-center gap-2 mt-3 p-2 border rounded bg-light",
+              tags$div(
+                tags$strong("Model uncertainty review complete"),
+                tags$div(class="text-secondary small","All model-uncertainty cases have final decisions. Send the reviewed queue to GitHub to finalise Workflow 04.")
+              ),
+              actionButton("w04_resolution_send_github","Send W04 to GitHub",class="btn-primary btn-sm")
+            )
+          },
+          if (
+            identical(z$workflow, "08") &&
+            identical(z$task_type, "annotation") &&
+            isTRUE(w08_handoff_ready()) &&
+            session_can("control_workflows")
+          ) {
+            tags$div(
+              class="d-flex flex-wrap align-items-center gap-2 mt-3 p-2 border rounded bg-light",
+              tags$div(
+                tags$strong("W08 review complete"),
+                tags$div(class="text-secondary small","All annotation records have final decisions. Send the reviewed queue to GitHub to resume Workflow 08.")
+              ),
+              actionButton("w08_send_github","Send W08 to GitHub",class="btn-primary btn-sm")
             )
           },
           assignment_manager_ui(z)
@@ -5286,14 +5363,31 @@ server <- function(input, output, session) {
       status("W01 sent to GitHub.")
     }
   })
+  observeEvent(input$w02_send_github, {
+    req(authenticated())
+    dispatch_completed_w02()
+  })
+
+  observeEvent(input$w04_resolution_send_github, {
+    req(authenticated())
+    dispatch_completed_w04_resolution()
+  })
+
+  observeEvent(input$w08_send_github, {
+    req(authenticated())
+    dispatch_completed_w08()
+  })
+
 
   dispatch_completed_w02 <- function() {
     if(!session_can("control_workflows")) {
       w02_status("Review complete. Awaiting an administrator to resume Workflow 02.")
       return(FALSE)
     }
-    unresolved <- w02_unresolved_indices()
-    if (length(unresolved)) return(FALSE)
+    if (!isTRUE(w02_handoff_ready())) {
+      w02_status("Workflow 02 is not ready to send to GitHub because one or more cases remain unresolved.")
+      return(FALSE)
+    }
 
     active <- w02_decisions()
     if (!length(active)) return(FALSE)
@@ -5323,10 +5417,13 @@ server <- function(input, output, session) {
     }
 
     tryCatch({
+      if (!identical(w02_batch_status_rv(),"review_complete")) {
+        mark_review_complete("02",w02_batch_id_rv(),w02_queue_sha_rv(),w02_batch_status_rv)
+      }
       append_w02_resume_request(queue_sha, source_run_id, "dispatching")
       dispatch_w02_resume(source_run_id, publish = TRUE)
       append_w02_resume_request(queue_sha, source_run_id, "dispatched")
-      w02_status("All cases complete. Workflow 02 resumed automatically.")
+      w02_status("Sent to GitHub. Workflow 02 resume requested.")
       TRUE
     }, error = function(e) {
       try(
@@ -5341,11 +5438,12 @@ server <- function(input, output, session) {
   advance_w02 <- function() {
     unresolved <- w02_unresolved_indices()
     if (!length(unresolved)) {
-      if(session_can("control_workflows")) {
-        mark_review_complete("02",w02_batch_id_rv(),w02_queue_sha_rv(),w02_batch_status_rv)
-        dispatch_completed_w02()
+      if (isTRUE(w02_handoff_ready()) && session_can("control_workflows")) {
+        w02_status("Review complete. Use Send W02 to GitHub in Administration & assignments.")
+      } else if (isTRUE(w02_handoff_ready())) {
+        w02_status("Review complete. Awaiting an administrator to send Workflow 02 to GitHub.")
       } else {
-        w02_status("Review complete. Awaiting an administrator to resume Workflow 02.")
+        w02_status("Your assigned enrichment review is complete. Other assigned or unassigned cases remain.")
       }
       app_view("tasks")
       return(invisible(TRUE))
@@ -5681,26 +5779,54 @@ server <- function(input, output, session) {
     w04_resolution_status(sprintf("Saved %s at %s",choice,format(Sys.time(),"%H:%M:%S")));TRUE
   }
 
+  dispatch_completed_w04_resolution <- function() {
+    if (!session_can("control_workflows")) {
+      w04_resolution_status("Review complete. Awaiting an administrator to send Workflow 04 to GitHub.")
+      return(FALSE)
+    }
+    if (!isTRUE(w04_resolution_handoff_ready())) {
+      w04_resolution_status("Workflow 04 model-uncertainty review is not ready to send to GitHub.")
+      return(FALSE)
+    }
+
+    source_run_id <- as.character(w04_resolution_source_run_id_rv())
+    batch_id <- as.character(w04_resolution_batch_id_rv())
+    queue_sha <- as.character(w04_resolution_queue_sha_rv())
+    already <- tryCatch(
+      w04_resolution_resume_request_exists(queue_sha,source_run_id,batch_id),
+      error=function(e){w04_resolution_status(paste("Resume status check failed:",conditionMessage(e)));NA}
+    )
+    if (is.na(already)) return(FALSE)
+    if (isTRUE(already)) {
+      w04_resolution_status("Workflow 04 has already been sent to GitHub for this model-uncertainty batch.")
+      return(TRUE)
+    }
+
+    tryCatch({
+      if (!identical(w04_resolution_batch_status_rv(),"review_complete")) {
+        mark_review_complete("04",batch_id,queue_sha,w04_resolution_batch_status_rv)
+      }
+      append_w04_resolution_resume_request(queue_sha,source_run_id,batch_id,"dispatching")
+      dispatch_w04_resolution_resume(source_run_id,batch_id,queue_sha)
+      append_w04_resolution_resume_request(queue_sha,source_run_id,batch_id,"dispatched")
+      w04_resolution_status("Sent to GitHub. Workflow 04 finalisation requested.")
+      TRUE
+    },error=function(e){
+      try(append_w04_resolution_resume_request(queue_sha,source_run_id,batch_id,"failed",conditionMessage(e)),silent=TRUE)
+      w04_resolution_status(paste("Workflow 04 send failed:",conditionMessage(e)))
+      FALSE
+    })
+  }
+
   advance_w04_resolution <- function() {
     unresolved<-w04_resolution_unresolved_indices()
     if(!length(unresolved)){
-      all_ids <- vapply(
-        w04_resolution_all_cases_rv() %||% list(),
-        function(x) as.character(x$review_case_id %||% ""),
-        character(1)
-      )
-      globally_unresolved <- setdiff(all_ids, w04_resolution_decision_ids())
-      if (length(globally_unresolved)) {
-        w04_resolution_status("Your assigned model-uncertainty records are complete. Other assigned or unassigned records remain.")
-        app_view("tasks");return(invisible(TRUE))
-      }
-      if(session_can("control_workflows")) {
-        mark_review_complete("04",w04_resolution_batch_id_rv(),w04_resolution_queue_sha_rv(),w04_resolution_batch_status_rv)
-        dispatched<-tryCatch({dispatch_w04_resolution_resume(w04_resolution_source_run_id_rv(),w04_resolution_batch_id_rv(),w04_resolution_queue_sha_rv());TRUE},
-          error=function(e){w04_resolution_status(paste("Review complete, but W04 resume dispatch failed:",conditionMessage(e)));FALSE})
-        if(dispatched)w04_resolution_status("Review complete. Workflow 04 finalisation dispatched.")
+      if (isTRUE(w04_resolution_handoff_ready()) && session_can("control_workflows")) {
+        w04_resolution_status("Review complete. Use Send W04 to GitHub in Administration & assignments.")
+      } else if (isTRUE(w04_resolution_handoff_ready())) {
+        w04_resolution_status("Review complete. Awaiting an administrator to send Workflow 04 to GitHub.")
       } else {
-        w04_resolution_status("Review complete. Awaiting an administrator to resume Workflow 04.")
+        w04_resolution_status("Your assigned model-uncertainty records are complete. Other assigned or unassigned records remain.")
       }
       app_view("tasks");return(invisible(TRUE))
     }
@@ -6502,21 +6628,54 @@ server <- function(input, output, session) {
     TRUE
   }
 
+  dispatch_completed_w08 <- function() {
+    if (!session_can("control_workflows")) {
+      w08_status("Review complete. Awaiting an administrator to send Workflow 08 to GitHub.")
+      return(FALSE)
+    }
+    if (!isTRUE(w08_handoff_ready())) {
+      w08_status("Workflow 08 is not ready to send to GitHub because one or more records remain unresolved.")
+      return(FALSE)
+    }
+
+    source_run_id <- as.character(w08_source_run_id_rv())
+    batch_id <- as.character(w08_batch_id_rv())
+    queue_sha <- as.character(w08_queue_sha_rv())
+    already <- tryCatch(
+      w08_resume_request_exists(queue_sha,source_run_id,batch_id),
+      error=function(e){w08_status(paste("Resume status check failed:",conditionMessage(e)));NA}
+    )
+    if (is.na(already)) return(FALSE)
+    if (isTRUE(already)) {
+      w08_status("Workflow 08 has already been sent to GitHub for this batch.")
+      return(TRUE)
+    }
+
+    tryCatch({
+      if (!identical(w08_batch_status_rv(),"review_complete")) {
+        mark_review_complete("08",batch_id,queue_sha,w08_batch_status_rv)
+      }
+      append_w08_resume_request(queue_sha,source_run_id,batch_id,"dispatching")
+      dispatch_w08_resume(source_run_id,batch_id,queue_sha)
+      append_w08_resume_request(queue_sha,source_run_id,batch_id,"dispatched")
+      w08_status("Sent to GitHub. Workflow 08 resume requested.")
+      TRUE
+    },error=function(e){
+      try(append_w08_resume_request(queue_sha,source_run_id,batch_id,"failed",conditionMessage(e)),silent=TRUE)
+      w08_status(paste("Workflow 08 send failed:",conditionMessage(e)))
+      FALSE
+    })
+  }
+
   advance_w08 <- function() {
     unresolved <- w08_unresolved_indices()
     if(!length(unresolved)) {
-      if(session_can("control_workflows")) {
-        mark_review_complete("08",w08_batch_id_rv(),w08_queue_sha_rv(),w08_batch_status_rv)
-        dispatched <- tryCatch({
-          dispatch_w08_resume(w08_source_run_id_rv(),w08_batch_id_rv(),w08_queue_sha_rv())
-          TRUE
-        }, error=function(e){
-          w08_status(paste("Review complete, but W08 resume dispatch failed:",conditionMessage(e)))
-          FALSE
-        })
-        if(dispatched) w08_status("Review complete. Workflow 08 resume dispatched.")
+      if (isTRUE(w08_handoff_ready()) && session_can("control_workflows")) {
+        w08_status("Review complete. Use Send W08 to GitHub in Administration & assignments.")
+      } else if (isTRUE(w08_handoff_ready())) {
+        w08_status("Review complete. Awaiting an administrator to send Workflow 08 to GitHub.")
       } else {
-        w08_status("Review complete. Awaiting an administrator to resume Workflow 08.")
+        w08_status("Your assigned annotation review is complete. Other assigned or unassigned records remain.")
       }
       app_view("tasks")
       return(invisible(TRUE))
