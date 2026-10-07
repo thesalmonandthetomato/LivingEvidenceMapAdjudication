@@ -2942,40 +2942,85 @@ server <- function(input, output, session) {
   })
 
   output$download_search_scope_report <- downloadHandler(
-    filename=function() sprintf("search-scoping-report-%s.md",format(Sys.Date(),"%Y-%m-%d")),
+    filename=function() sprintf("search-scoping-report-%s.pdf",format(Sys.Date(),"%Y-%m-%d")),
     content=function(file) {
       rows <- search_scope_rows_rv()
       req(!is.null(rows), nrow(rows) > 0L)
       hits <- suppressWarnings(as.integer(rows$hits))
       status <- vapply(rows$status,search_scope_display_status,character(1))
-      fmt <- ifelse(is.na(hits),"—",format(hits,big.mark=",",scientific=FALSE))
+      fmt <- ifelse(is.na(hits),"-",format(hits,big.mark=",",scientific=FALSE))
       total <- sum(hits,na.rm=TRUE)
-      esc <- function(x) gsub("\\|","\\\\|",as.character(x))
-      z <- c(
-        "# Search scoping report",
-        "",
-        sprintf("**Scoping date:** %s",format(Sys.Date(),"%d-%m-%Y")),
-        "",
-        "This report records a count-only scoping search. No bibliographic records or raw API responses were retained.",
-        "",
-        "## Search string",
-        "",
-        "```",
-        search_scope_string_rv(),
-        "```",
-        "",
-        "## Database counts",
-        "",
-        "| Database | Hits | Status |",
-        "|---|---:|---|",
-        sprintf("| %s | %s | %s |",esc(rows$source),fmt,status),
-        sprintf("| **Total** | **%s** | |",format(total,big.mark=",",scientific=FALSE)),
-        "",
-        "Counts are the totals reported by each live-searchable database/API at the time of the scoping run."
+
+      grDevices::pdf(file,width=8.27,height=11.69,onefile=TRUE,useDingbats=FALSE)
+      on.exit(grDevices::dev.off(),add=TRUE)
+
+      graphics::plot.new()
+      graphics::text(0.06,0.95,"Search scoping report",adj=c(0,1),family="sans",font=2,cex=1.45)
+      graphics::text(
+        0.06,0.91,
+        sprintf("Scoping date: %s",format(Sys.Date(),"%d-%m-%Y")),
+        adj=c(0,1),family="sans",cex=0.9
       )
-      writeLines(z,file,useBytes=TRUE)
+      graphics::text(
+        0.06,0.865,
+        "This report records a count-only scoping search. No bibliographic records or raw API responses were retained.",
+        adj=c(0,1),family="sans",cex=0.82
+      )
+      graphics::text(0.06,0.81,"Search string",adj=c(0,1),family="sans",font=2,cex=1.05)
+
+      q_lines <- unlist(strwrap(search_scope_string_rv(),width=105),use.names=FALSE)
+      y <- 0.775
+      for (line in q_lines) {
+        if (y < 0.07) {
+          graphics::plot.new()
+          graphics::text(0.06,0.95,"Search string (continued)",adj=c(0,1),family="sans",font=2,cex=1.0)
+          y <- 0.90
+        }
+        graphics::text(0.06,y,line,adj=c(0,1),family="mono",cex=0.68)
+        y <- y-0.022
+      }
+
+      graphics::plot.new()
+      graphics::text(0.06,0.95,"Database counts",adj=c(0,1),family="sans",font=2,cex=1.15)
+      graphics::text(0.06,0.91,"Database",adj=c(0,1),family="sans",font=2,cex=0.82)
+      graphics::text(0.77,0.91,"Hits",adj=c(1,1),family="sans",font=2,cex=0.82)
+      graphics::text(0.80,0.91,"Status",adj=c(0,1),family="sans",font=2,cex=0.82)
+      graphics::segments(0.06,0.885,0.94,0.885)
+      y <- 0.865
+
+      for (i in seq_len(nrow(rows))) {
+        label_lines <- strwrap(as.character(rows$source[[i]]),width=65)
+        if (y < 0.10) {
+          graphics::plot.new()
+          graphics::text(0.06,0.95,"Database counts (continued)",adj=c(0,1),family="sans",font=2,cex=1.0)
+          y <- 0.90
+        }
+        graphics::text(0.06,y,label_lines[[1L]],adj=c(0,1),family="sans",cex=0.76)
+        graphics::text(0.77,y,fmt[[i]],adj=c(1,1),family="sans",cex=0.76)
+        graphics::text(0.80,y,status[[i]],adj=c(0,1),family="sans",cex=0.76)
+        if (length(label_lines)>1L) {
+          for (extra in label_lines[-1L]) {
+            y <- y-0.021
+            graphics::text(0.06,y,extra,adj=c(0,1),family="sans",cex=0.76)
+          }
+        }
+        y <- y-0.029
+      }
+
+      graphics::segments(0.06,y+0.009,0.94,y+0.009)
+      graphics::text(0.06,y-0.008,"Total",adj=c(0,1),family="sans",font=2,cex=0.8)
+      graphics::text(
+        0.77,y-0.008,
+        format(total,big.mark=",",scientific=FALSE),
+        adj=c(1,1),family="sans",font=2,cex=0.8
+      )
+      graphics::text(
+        0.06,0.045,
+        "Counts are totals reported by each live-searchable database/API at the time of the scoping run.",
+        adj=c(0,0),family="sans",cex=0.7
+      )
     },
-    contentType="text/markdown"
+    contentType="application/pdf"
   )
 
   output$search_scope_table <- renderUI({
