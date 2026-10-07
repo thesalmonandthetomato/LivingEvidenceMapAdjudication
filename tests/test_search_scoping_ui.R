@@ -5,6 +5,7 @@ stopifnot(
   grepl('uiOutput("configure_review")', app, fixed=TRUE),
   grepl('tags$strong("Configure review")', app, fixed=TRUE),
   grepl('Run scoping search', app, fixed=TRUE),
+  grepl('session_can("run_search_scoping")', app, fixed=TRUE),
   grepl('Edit search string', app, fixed=TRUE),
   grepl('Run the original scoping search before editing version 2', app, fixed=TRUE),
   grepl('original_complete <- search_scope_counts_resolved(original_rows)', app, fixed=TRUE),
