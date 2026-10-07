@@ -2913,6 +2913,8 @@ server <- function(input, output, session) {
 
     request_active <- nzchar(as.character(search_scope_request_id_rv() %||% ""))
     counts_resolved <- search_scope_counts_resolved()
+    original_rows <- (search_scope_results_rv() %||% list())[["original"]]
+    original_complete <- search_scope_counts_resolved(original_rows)
     card(
       class="assignment-summary",
       tags$details(
@@ -2934,7 +2936,7 @@ server <- function(input, output, session) {
               tags$h6(class="mb-0","Search string"),
               tags$span(class="task-badge", search_scope_active_version_rv())
             ),
-            if (!request_active) actionButton(
+            if (!request_active && isTRUE(original_complete)) actionButton(
               "edit_search_scope",
               "Edit search string",
               class="btn-outline-secondary btn-sm"
@@ -2945,6 +2947,12 @@ server <- function(input, output, session) {
             style="white-space:pre-wrap;overflow-wrap:anywhere;",
             if (nzchar(search_scope_string_rv())) search_scope_string_rv() else "Loading search string…"
           ),
+          if (!isTRUE(original_complete) && identical(search_scope_active_version_rv(),"original")) {
+            tags$div(
+              class="saved-note mb-2",
+              "Run the original scoping search before editing version 2"
+            )
+          },
           if (length(search_scope_versions_rv()) > 1L) {
             tags$div(
               class="saved-note mb-2",
