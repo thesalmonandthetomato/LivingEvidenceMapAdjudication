@@ -837,10 +837,10 @@ ui <- page_fillable(
     .pipeline-kpis { display:grid; grid-template-columns:repeat(5,minmax(145px,1fr)); gap:.5rem; margin-top:.15rem; }
     .pipeline-kpi { background:#f7f8fa; border:1px solid #e1e5e9; border-radius:8px; padding:.62rem .72rem .58rem .72rem; min-width:0; }
     .pipeline-kpi-label { display:block; color:#6a747d; font-size:.8rem; line-height:1.2; margin-bottom:.2rem; overflow-wrap:anywhere; }
-    .pipeline-kpi-value-row { display:flex; align-items:baseline; gap:.42rem; flex-wrap:nowrap; white-space:nowrap; }
+    .pipeline-kpi-value-row { display:block; white-space:nowrap; }
     .pipeline-kpi-value { display:block; font-size:1.12rem; line-height:1.2; font-weight:700; white-space:nowrap; }
     .pipeline-kpi-value.compact { font-size:1rem; }
-    .pipeline-kpi-inline-note { display:block; color:#7c858d; font-size:.7rem; line-height:1.2; font-weight:600; white-space:nowrap; }
+    .pipeline-kpi-inline-note { display:block; color:#7c858d; font-size:.7rem; line-height:1.2; font-weight:600; white-space:nowrap; margin-top:.08rem; }
     .pipeline-kpi-sub { display:block; color:#7c858d; font-size:.74rem; line-height:1.2; margin-top:.12rem; overflow-wrap:anywhere; }
     .pipeline-kpi.pre-update {
       background:#fbfcfc;
@@ -1581,9 +1581,9 @@ server <- function(input, output, session) {
         tags$span(class="pipeline-kpi-label",label),
         div(
           class="pipeline-kpi-value-row",
-          tags$span(class=paste(c("pipeline-kpi-value",if(isTRUE(compact_value)) "compact" else NULL),collapse=" "),value),
-          if(!is.null(inline_note)) tags$span(class="pipeline-kpi-inline-note",inline_note)
+          tags$span(class=paste(c("pipeline-kpi-value",if(isTRUE(compact_value)) "compact" else NULL),collapse=" "),value)
         ),
+        if(!is.null(inline_note)) tags$span(class="pipeline-kpi-inline-note",inline_note),
         if(!is.null(sub)) tags$span(class="pipeline-kpi-sub",sub)
       )
     }
