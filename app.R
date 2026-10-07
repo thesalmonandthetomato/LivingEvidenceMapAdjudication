@@ -8032,19 +8032,11 @@ server <- function(input, output, session) {
     z <- w08_current_case()
     rid <- as.character(z$record_id)
 
-    if (
-      session_can("manage_assignments") &&
-      !user_has_active_assignment(
-        assignment_registry_rv(), "08", w08_batch_id_rv(), "annotation",
-        rid, session_reviewer_id()
-      )
-    ) {
-      ensure_direct_assignment(
-        "08", w08_batch_id_rv(), "annotation",
-        z, rid, w08_active_assignment_events()
-      )
-    }
-
+    # Administrators may adjudicate W08 records directly. Do not create a
+    # per-record assignment as a side effect of Save: that rewrites the shared
+    # assignment registry and is unnecessary because the W08 decision event
+    # itself records reviewer/provenance. Explicit assignments remain enforced
+    # for non-administrators below.
     if (
       assignment_mode_active(assignment_registry_rv(), "08", w08_batch_id_rv(), "annotation") &&
       !session_can("manage_assignments") &&
