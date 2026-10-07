@@ -1022,6 +1022,10 @@ server <- function(input, output, session) {
   search_scope_job_sources_rv <- reactiveVal(character())
   search_scope_catalogue_rv <- reactiveVal(NULL)
   search_scope_progress_rv <- reactiveVal(list(completed=0L,total=0L,pct=0L,label=""))
+  search_scope_versions_rv <- reactiveVal(character())
+  search_scope_results_rv <- reactiveVal(list())
+  search_scope_active_version_rv <- reactiveVal("v1")
+  search_scope_running_version_rv <- reactiveVal("")
 
   observe({
     req(authenticated())
@@ -2828,6 +2832,54 @@ server <- function(input, output, session) {
     !any(states %in% c("Queued","Running"))
   }
 
+  search_scope_change_summary <- function(original, revised) {
+    original <- as.character(original %||% "")
+    revised <- as.character(revised %||% "")
+    if (identical(original, revised)) return("No change from v1.")
+    a <- strsplit(original, "", fixed=TRUE)[[1L]]
+    b <- strsplit(revised, "", fixed=TRUE)[[1L]]
+    max_prefix <- min(length(a), length(b))
+    prefix <- 0L
+    if (max_prefix > 0L) {
+      while (prefix < max_prefix && identical(a[[prefix + 1L]], b[[prefix + 1L]])) prefix <- prefix + 1L
+    }
+    max_suffix <- min(length(a) - prefix, length(b) - prefix)
+    suffix <- 0L
+    if (max_suffix > 0L) {
+      while (
+        suffix < max_suffix &&
+        identical(a[[length(a) - suffix]], b[[length(b) - suffix]])
+      ) suffix <- suffix + 1L
+    }
+    old_end <- length(a) - suffix
+    new_end <- length(b) - suffix
+    old_mid <- if (old_end >= prefix + 1L) paste0(a[(prefix + 1L):old_end], collapse="") else ""
+    new_mid <- if (new_end >= prefix + 1L) paste0(b[(prefix + 1L):new_end], collapse="") else ""
+    old_mid <- trimws(old_mid)
+    new_mid <- trimws(new_mid)
+    if (!nzchar(old_mid)) return(sprintf("Added relative to v1: %s", new_mid))
+    if (!nzchar(new_mid)) return(sprintf("Removed relative to v1: %s", old_mid))
+    sprintf("Changed relative to v1: %s  ->  %s", old_mid, new_mid)
+  }
+
+  search_scope_result_rows <- function(version) {
+    results <- search_scope_results_rv() %||% list()
+    rows <- results[[version]]
+    if (
+      identical(version, search_scope_active_version_rv()) &&
+      !is.null(search_scope_rows_rv())
+    ) rows <- search_scope_rows_rv()
+    rows
+  }
+
+  search_scope_total_for_version <- function(version) {
+    rows <- search_scope_result_rows(version)
+    if (is.null(rows) || !nrow(rows) || !"hits" %in% names(rows)) return(NA_integer_)
+    hits <- suppressWarnings(as.integer(rows$hits))
+    if (all(is.na(hits))) return(NA_integer_)
+    sum(hits, na.rm=TRUE)
+  }
+
   observe({
     req(authenticated())
     if (!session_can("control_workflows")) return()
@@ -2837,7 +2889,12 @@ server <- function(input, output, session) {
       error=function(e) structure("", error=conditionMessage(e))
     )
     if (nzchar(as.character(x))) {
-      search_scope_string_rv(trimws(as.character(x)))
+      original <- trimws(as.character(x))
+      search_scope_string_rv(original)
+      if (!length(search_scope_versions_rv())) {
+        search_scope_versions_rv(stats::setNames(original, "v1"))
+        search_scope_active_version_rv("v1")
+      }
       catalogue <- tryCatch(read_w00_scoping_source_catalogue(), error=function(e) NULL)
       if (!is.null(catalogue) && nrow(catalogue)) {
         search_scope_catalogue_rv(catalogue)
@@ -2870,12 +2927,30 @@ server <- function(input, output, session) {
         ),
         div(
           class="px-3 pb-3",
-          tags$h6("Search string"),
+          div(
+            class="d-flex align-items-center justify-content-between gap-2 flex-wrap",
+            div(
+              class="d-inline-flex align-items-center gap-2",
+              tags$h6(class="mb-0","Search string"),
+              tags$span(class="task-badge", search_scope_active_version_rv())
+            ),
+            if (!request_active) actionButton(
+              "edit_search_scope",
+              "Edit search string",
+              class="btn-outline-secondary btn-sm"
+            )
+          ),
           tags$pre(
-            class="border rounded bg-light p-3 small",
+            class="border rounded bg-light p-3 small mt-2",
             style="white-space:pre-wrap;overflow-wrap:anywhere;",
             if (nzchar(search_scope_string_rv())) search_scope_string_rv() else "Loading search string…"
           ),
+          if (length(search_scope_versions_rv()) > 1L) {
+            tags$div(
+              class="saved-note mb-2",
+              paste("Temporary versions in this session:", paste(names(search_scope_versions_rv()), collapse=", "))
+            )
+          },
           div(
             class="d-flex align-items-center gap-2 flex-wrap mb-2",
             if (request_active && !counts_resolved) {
@@ -2885,7 +2960,7 @@ server <- function(input, output, session) {
             } else {
               actionButton(
                 "run_search_scope",
-                "Run scoping search",
+                sprintf("Run scoping search %s", search_scope_active_version_rv()),
                 class="btn-primary btn-sm"
               )
             },
@@ -2931,9 +3006,72 @@ server <- function(input, output, session) {
     )
   })
 
+  observeEvent(input$edit_search_scope, {
+    req(authenticated())
+    if (!session_can("control_workflows")) return()
+    if (nzchar(search_scope_request_id_rv())) return()
+    versions <- search_scope_versions_rv()
+    if (!length(versions)) return()
+    next_version <- paste0("v", length(versions) + 1L)
+    showModal(modalDialog(
+      title=sprintf("Edit search string - create %s", next_version),
+      textAreaInput(
+        "search_scope_edit_text",
+        "Search string",
+        value=search_scope_string_rv(),
+        rows=8,
+        width="100%"
+      ),
+      tags$p(
+        class="saved-note",
+        "This creates a temporary scoping version in the app. It does not replace the GitHub search string."
+      ),
+      easyClose=FALSE,
+      footer=tagList(
+        modalButton("Cancel"),
+        actionButton("save_search_scope_edit","Save new version",class="btn-primary")
+      )
+    ))
+  })
+
+  observeEvent(input$save_search_scope_edit, {
+    req(authenticated())
+    if (!session_can("control_workflows")) return()
+    proposed <- trimws(as.character(input$search_scope_edit_text %||% ""))
+    if (!nzchar(proposed)) {
+      showNotification("Search string cannot be empty.", type="error")
+      return()
+    }
+    versions <- search_scope_versions_rv()
+    if (!length(versions)) return()
+    if (identical(proposed, as.character(tail(versions,1L)))) {
+      showNotification("No change was made, so no new version was created.", type="message")
+      return()
+    }
+    version <- paste0("v", length(versions) + 1L)
+    versions[[version]] <- proposed
+    search_scope_versions_rv(versions)
+    search_scope_active_version_rv(version)
+    search_scope_string_rv(proposed)
+    search_scope_rows_rv(NULL)
+    search_scope_seen_artifacts_rv(character())
+    search_scope_job_sources_rv(character())
+    search_scope_progress_rv(list(completed=0L,total=0L,pct=0L,label=""))
+    search_scope_run_id_rv("")
+    search_scope_request_id_rv("")
+    search_scope_running_version_rv("")
+    search_scope_status_rv(sprintf(
+      "%s saved temporarily in this app session. Run scoping to compare it with v1.",
+      version
+    ))
+    removeModal()
+  })
+
   output$search_scope_report_download <- renderUI({
-    rows <- search_scope_rows_rv()
-    if (!search_scope_counts_resolved(rows)) return(NULL)
+    results <- search_scope_results_rv() %||% list()
+    active_rows <- search_scope_rows_rv()
+    has_completed <- any(vapply(results, search_scope_counts_resolved, logical(1)))
+    if (!has_completed && !search_scope_counts_resolved(active_rows)) return(NULL)
     downloadButton(
       "download_search_scope_report",
       "Download scoping report",
@@ -2944,12 +3082,39 @@ server <- function(input, output, session) {
   output$download_search_scope_report <- downloadHandler(
     filename=function() sprintf("search-scoping-report-%s.pdf",format(Sys.Date(),"%Y-%m-%d")),
     content=function(file) {
-      rows <- search_scope_rows_rv()
-      req(!is.null(rows), nrow(rows) > 0L)
-      hits <- suppressWarnings(as.integer(rows$hits))
-      status <- vapply(rows$status,search_scope_display_status,character(1))
-      fmt <- ifelse(is.na(hits),"-",format(hits,big.mark=",",scientific=FALSE))
-      total <- sum(hits,na.rm=TRUE)
+      versions <- search_scope_versions_rv()
+      req(length(versions) > 0L)
+      results <- search_scope_results_rv() %||% list()
+      active_version <- search_scope_active_version_rv()
+      if (!is.null(search_scope_rows_rv())) results[[active_version]] <- search_scope_rows_rv()
+
+      catalogue <- search_scope_catalogue_rv()
+      source_slugs <- if (!is.null(catalogue) && nrow(catalogue)) as.character(catalogue$source_slug) else {
+        unique(unlist(lapply(results,function(x) if(is.null(x)) character() else as.character(x$source_slug)),use.names=FALSE))
+      }
+      source_labels <- if (!is.null(catalogue) && nrow(catalogue)) {
+        stats::setNames(as.character(catalogue$source),as.character(catalogue$source_slug))
+      } else {
+        vals <- unlist(lapply(results,function(x) {
+          if(is.null(x) || !nrow(x)) return(character())
+          stats::setNames(as.character(x$source),as.character(x$source_slug))
+        }),use.names=TRUE)
+        vals[!duplicated(names(vals))]
+      }
+
+      version_hits <- lapply(names(versions),function(v) {
+        rows <- results[[v]]
+        out <- stats::setNames(rep(NA_integer_,length(source_slugs)),source_slugs)
+        if (!is.null(rows) && nrow(rows) && "source_slug" %in% names(rows)) {
+          idx <- match(source_slugs,as.character(rows$source_slug))
+          ok <- !is.na(idx)
+          out[ok] <- suppressWarnings(as.integer(rows$hits[idx[ok]]))
+        }
+        out
+      })
+      names(version_hits) <- names(versions)
+      totals <- vapply(version_hits,function(x) if(all(is.na(x))) NA_integer_ else sum(x,na.rm=TRUE),integer(1))
+      baseline_total <- totals[["v1"]]
 
       grDevices::pdf(file,width=8.27,height=11.69,onefile=TRUE,useDingbats=FALSE)
       on.exit(grDevices::dev.off(),add=TRUE)
@@ -2963,60 +3128,106 @@ server <- function(input, output, session) {
       )
       graphics::text(
         0.06,0.865,
-        "This report records a count-only scoping search. No bibliographic records or raw API responses were retained.",
+        "This report records count-only scoping searches. No bibliographic records or raw API responses were retained.",
         adj=c(0,1),family="sans",cex=0.82
       )
-      graphics::text(0.06,0.81,"Search string",adj=c(0,1),family="sans",font=2,cex=1.05)
+      y <- 0.81
+      original <- as.character(versions[["v1"]])
 
-      q_lines <- unlist(strwrap(search_scope_string_rv(),width=105),use.names=FALSE)
-      y <- 0.775
-      for (line in q_lines) {
-        if (y < 0.07) {
+      for (v in names(versions)) {
+        heading <- if (identical(v,"v1")) "Search string v1 (original)" else sprintf("Search string %s",v)
+        if (y < 0.18) {
           graphics::plot.new()
-          graphics::text(0.06,0.95,"Search string (continued)",adj=c(0,1),family="sans",font=2,cex=1.0)
-          y <- 0.90
+          y <- 0.94
         }
-        graphics::text(0.06,y,line,adj=c(0,1),family="mono",cex=0.68)
-        y <- y-0.022
+        graphics::text(0.06,y,heading,adj=c(0,1),family="sans",font=2,cex=1.02)
+        y <- y-0.035
+        q_lines <- unlist(strwrap(as.character(versions[[v]]),width=105),use.names=FALSE)
+        for (line in q_lines) {
+          if (y < 0.10) {
+            graphics::plot.new()
+            graphics::text(0.06,0.95,paste(heading,"(continued)"),adj=c(0,1),family="sans",font=2,cex=0.95)
+            y <- 0.90
+          }
+          graphics::text(0.06,y,line,adj=c(0,1),family="mono",cex=0.68)
+          y <- y-0.022
+        }
+        if (!identical(v,"v1")) {
+          diff_lines <- unlist(strwrap(search_scope_change_summary(original,versions[[v]]),width=100),use.names=FALSE)
+          y <- y-0.006
+          for (line in diff_lines) {
+            graphics::text(0.06,y,line,adj=c(0,1),family="sans",cex=0.72,col="red3")
+            y <- y-0.022
+          }
+        }
+        y <- y-0.035
       }
 
       graphics::plot.new()
       graphics::text(0.06,0.95,"Database counts",adj=c(0,1),family="sans",font=2,cex=1.15)
-      graphics::text(0.06,0.91,"Database",adj=c(0,1),family="sans",font=2,cex=0.82)
-      graphics::text(0.77,0.91,"Hits",adj=c(1,1),family="sans",font=2,cex=0.82)
-      graphics::text(0.80,0.91,"Status",adj=c(0,1),family="sans",font=2,cex=0.82)
-      graphics::segments(0.06,0.885,0.94,0.885)
+
+      version_names <- names(versions)
+      n_versions <- length(version_names)
+      db_x <- 0.06
+      status_x <- 0.88
+      result_left <- 0.57
+      result_right <- 0.84
+      result_x <- if (n_versions == 1L) 0.76 else seq(result_left,result_right,length.out=n_versions)
+      graphics::text(db_x,0.91,"Database",adj=c(0,1),family="sans",font=2,cex=0.78)
+      for (j in seq_along(version_names)) {
+        graphics::text(result_x[[j]],0.91,version_names[[j]],adj=c(0.5,1),family="sans",font=2,cex=0.76)
+      }
+      graphics::text(status_x,0.91,"Status",adj=c(0,1),family="sans",font=2,cex=0.76)
+      graphics::segments(0.06,0.885,0.96,0.885)
       y <- 0.865
 
-      for (i in seq_len(nrow(rows))) {
-        label_lines <- strwrap(as.character(rows$source[[i]]),width=65)
+      active_rows <- results[[active_version]]
+      for (slug in source_slugs) {
+        label <- as.character(source_labels[[slug]] %||% search_scope_pretty_source(slug))
+        label_lines <- strwrap(label,width=55)
         if (y < 0.10) {
           graphics::plot.new()
           graphics::text(0.06,0.95,"Database counts (continued)",adj=c(0,1),family="sans",font=2,cex=1.0)
           y <- 0.90
         }
-        graphics::text(0.06,y,label_lines[[1L]],adj=c(0,1),family="sans",cex=0.76)
-        graphics::text(0.77,y,fmt[[i]],adj=c(1,1),family="sans",cex=0.76)
-        graphics::text(0.80,y,status[[i]],adj=c(0,1),family="sans",cex=0.76)
+        graphics::text(db_x,y,label_lines[[1L]],adj=c(0,1),family="sans",cex=0.70)
+        for (j in seq_along(version_names)) {
+          val <- version_hits[[version_names[[j]]]][[slug]]
+          txt <- if(is.na(val)) "-" else format(val,big.mark=",",scientific=FALSE)
+          graphics::text(result_x[[j]],y,txt,adj=c(0.5,1),family="sans",cex=0.70)
+        }
+        st <- ""
+        if (!is.null(active_rows) && nrow(active_rows) && "source_slug" %in% names(active_rows)) {
+          hit <- which(as.character(active_rows$source_slug)==slug)
+          if(length(hit)) st <- search_scope_display_status(active_rows$status[[hit[[1L]]]])
+        }
+        graphics::text(status_x,y,st,adj=c(0,1),family="sans",cex=0.68)
         if (length(label_lines)>1L) {
           for (extra in label_lines[-1L]) {
-            y <- y-0.021
-            graphics::text(0.06,y,extra,adj=c(0,1),family="sans",cex=0.76)
+            y <- y-0.019
+            graphics::text(db_x,y,extra,adj=c(0,1),family="sans",cex=0.70)
           }
         }
-        y <- y-0.029
+        y <- y-0.027
       }
 
-      graphics::segments(0.06,y+0.009,0.94,y+0.009)
-      graphics::text(0.06,y-0.008,"Total",adj=c(0,1),family="sans",font=2,cex=0.8)
-      graphics::text(
-        0.77,y-0.008,
-        format(total,big.mark=",",scientific=FALSE),
-        adj=c(1,1),family="sans",font=2,cex=0.8
-      )
+      graphics::segments(0.06,y+0.009,0.96,y+0.009)
+      total_y <- y-0.008
+      graphics::text(db_x,total_y,"Total",adj=c(0,1),family="sans",font=2,cex=0.78)
+      for (j in seq_along(version_names)) {
+        v <- version_names[[j]]
+        total <- totals[[v]]
+        txt <- if(is.na(total)) "-" else format(total,big.mark=",",scientific=FALSE)
+        graphics::text(result_x[[j]],total_y,txt,adj=c(0.5,1),family="sans",font=2,cex=0.76)
+        if (!identical(v,"v1") && !is.na(total) && !is.na(baseline_total)) {
+          delta <- total-baseline_total
+          delta_txt <- sprintf("(%s%s)",if(delta>=0) "+" else "",format(delta,big.mark=",",scientific=FALSE))
+          graphics::text(result_x[[j]],total_y-0.022,delta_txt,adj=c(0.5,1),family="sans",cex=0.66,col="red3")
+        }
+      }
       graphics::text(
         0.06,0.045,
-        "Counts are totals reported by each live-searchable database/API at the time of the scoping run.",
+        "Counts are totals reported by each live-searchable database/API at the time of each scoping run.",
         adj=c(0,0),family="sans",cex=0.7
       )
     },
@@ -3024,24 +3235,49 @@ server <- function(input, output, session) {
   )
 
   output$search_scope_table <- renderUI({
-    rows <- search_scope_rows_rv()
-    job_sources <- search_scope_job_sources_rv() %||% character()
-    if (is.null(rows) && !length(job_sources)) return(NULL)
+    versions <- search_scope_versions_rv()
+    if (!length(versions)) return(NULL)
+    results <- search_scope_results_rv() %||% list()
+    active_version <- search_scope_active_version_rv()
+    active_rows <- search_scope_rows_rv()
+    if (!is.null(active_rows)) results[[active_version]] <- active_rows
 
-    if (is.null(rows)) {
-      rows <- data.frame(
-        source_slug=job_sources,
-        source=vapply(job_sources,search_scope_pretty_source,character(1)),
-        hits=NA_integer_,
-        status="Queued",
-        stringsAsFactors=FALSE
-      )
+    catalogue <- search_scope_catalogue_rv()
+    job_sources <- search_scope_job_sources_rv() %||% character()
+    source_slugs <- if (!is.null(catalogue) && nrow(catalogue)) {
+      as.character(catalogue$source_slug)
+    } else if (length(job_sources)) {
+      as.character(job_sources)
+    } else {
+      unique(unlist(lapply(results,function(x) if(is.null(x)) character() else as.character(x$source_slug)),use.names=FALSE))
+    }
+    if (!length(source_slugs)) return(NULL)
+    source_slugs <- source_slugs[order(tolower(vapply(source_slugs,search_scope_pretty_source,character(1))))]
+    baseline_total <- search_scope_total_for_version("v1")
+
+    value_cell <- function(version, slug) {
+      rows <- results[[version]]
+      if (is.null(rows) || !nrow(rows) || !"source_slug" %in% names(rows)) return("—")
+      hit <- which(as.character(rows$source_slug)==slug)
+      if (!length(hit)) return("—")
+      value <- suppressWarnings(as.integer(rows$hits[[hit[[1L]]]]))
+      if (is.na(value)) "—" else format(value,big.mark=",",scientific=FALSE)
     }
 
-    if (!"source_slug" %in% names(rows)) rows$source_slug <- ""
-    if (!"source" %in% names(rows)) rows$source <- vapply(rows$source_slug,search_scope_pretty_source,character(1))
-    if (!"hits" %in% names(rows)) rows$hits <- NA_integer_
-    if (!"status" %in% names(rows)) rows$status <- ""
+    total_cell <- function(version) {
+      total <- search_scope_total_for_version(version)
+      if (is.na(total)) return("—")
+      main <- tags$strong(format(total,big.mark=",",scientific=FALSE))
+      if (identical(version,"v1") || is.na(baseline_total)) return(main)
+      delta <- total-baseline_total
+      tagList(
+        main,
+        tags$div(
+          class="small text-danger",
+          sprintf("(%s%s)",if(delta>=0) "+" else "",format(delta,big.mark=",",scientific=FALSE))
+        )
+      )
+    }
 
     tags$div(
       class="table-responsive mt-2",
@@ -3049,31 +3285,27 @@ server <- function(input, output, session) {
         class="table table-sm align-middle mb-0",
         tags$thead(tags$tr(
           tags$th("Database"),
-          tags$th(class="text-end","Hits"),
+          lapply(names(versions),function(v) tags$th(class="text-end",v)),
           tags$th("Status")
         )),
         tags$tbody(tagList(
-          lapply(seq_len(nrow(rows)),function(i) {
-            hit <- suppressWarnings(as.integer(rows$hits[[i]]))
-            stat <- as.character(rows$status[[i]] %||% "")
-            shown_status <- if (identical(stat,"counted live")) {
-              "Complete"
-            } else if (startsWith(stat,"API count failed:")) {
-              paste("Failed", sub("^API count failed:\\s*", "", stat))
-            } else stat
+          lapply(source_slugs,function(slug) {
+            st <- ""
+            rows <- results[[active_version]]
+            if (!is.null(rows) && nrow(rows) && "source_slug" %in% names(rows)) {
+              hit <- which(as.character(rows$source_slug)==slug)
+              if(length(hit)) st <- search_scope_display_status(rows$status[[hit[[1L]]]])
+            }
             tags$tr(
-              tags$td(as.character(rows$source[[i]])),
-              tags$td(class="text-end",if(is.na(hit)) "—" else format(hit,big.mark=",",scientific=FALSE)),
-              tags$td(shown_status)
+              tags$td(search_scope_pretty_source(slug)),
+              lapply(names(versions),function(v) tags$td(class="text-end",value_cell(v,slug))),
+              tags$td(st)
             )
           }),
           tags$tr(
             class="fw-semibold border-top",
             tags$td("Total"),
-            tags$td(
-              class="text-end",
-              format(sum(suppressWarnings(as.integer(rows$hits)),na.rm=TRUE),big.mark=",",scientific=FALSE)
-            ),
+            lapply(names(versions),function(v) tags$td(class="text-end",total_cell(v))),
             tags$td("")
           )
         ))
@@ -3081,7 +3313,7 @@ server <- function(input, output, session) {
     )
   })
 
-  observeEvent(input$run_search_scope, {
+  observeEvent(input$run_search_scope, {  observeEvent(input$run_search_scope, {
     req(authenticated())
     if (!session_can("control_workflows")) {
       search_scope_status_rv("Administrator permission is required.")
@@ -3119,10 +3351,12 @@ server <- function(input, output, session) {
     }
     search_scope_seen_artifacts_rv(character())
     search_scope_run_id_rv("")
-    search_scope_status_rv("Dispatching count-only scoping search…")
+    running_version <- search_scope_active_version_rv()
+    search_scope_running_version_rv(running_version)
+    search_scope_status_rv(sprintf("Dispatching count-only scoping search %s…",running_version))
 
     ok <- tryCatch({
-      dispatch_w00_scoping(request_id)
+      dispatch_w00_scoping(request_id, search_string=search_scope_string_rv())
       TRUE
     },error=function(e) {
       search_scope_status_rv(paste("Scoping dispatch failed:",conditionMessage(e)))
@@ -3275,6 +3509,11 @@ server <- function(input, output, session) {
           final_rows <- final_rows[order(tolower(final_rows$source)),,drop=FALSE]
           rownames(final_rows) <- NULL
           search_scope_rows_rv(final_rows)
+          completed_version <- as.character(search_scope_running_version_rv() %||% search_scope_active_version_rv())
+          if (!nzchar(completed_version)) completed_version <- search_scope_active_version_rv()
+          results <- search_scope_results_rv() %||% list()
+          results[[completed_version]] <- final_rows
+          search_scope_results_rv(results)
           failed_n <- sum(final_rows$status=="Failed")
           search_scope_progress_rv(list(completed=nrow(final_rows),total=nrow(final_rows),pct=100L,label="Scoping search complete"))
           search_scope_status_rv(if (failed_n) {
@@ -3290,6 +3529,7 @@ server <- function(input, output, session) {
         ))
       }
       search_scope_request_id_rv("")
+      search_scope_running_version_rv("")
     } else {
       if (total > 0L && completed >= total && search_scope_counts_resolved(current)) {
         search_scope_status_rv("All database searches complete. Finalising GitHub report artefact…")
