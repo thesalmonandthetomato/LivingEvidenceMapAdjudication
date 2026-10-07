@@ -81,11 +81,16 @@ read_w00_scoping_source_catalogue <- function(ref = github_scoping_ref()) {
   out[order(tolower(out$source)),,drop=FALSE]
 }
 
-dispatch_w00_scoping <- function(request_id, search_string_path = "user_input/scoping_search_string.txt") {
+dispatch_w00_scoping <- function(request_id, search_string = NULL, search_string_path = "user_input/scoping_search_string.txt") {
   request_id <- trimws(as.character(request_id))
   if (!grepl("^[A-Za-z0-9._-]{8,80}$", request_id)) {
     stop("Invalid scoping request ID", call.=FALSE)
   }
+  search_string <- if (is.null(search_string)) "" else trimws(as.character(search_string))
+  search_string_b64 <- if (nzchar(search_string)) {
+    jsonlite::base64_enc(charToRaw(enc2utf8(search_string)))
+  } else ""
+
   endpoint <- sprintf(
     "https://api.github.com/repos/%s/actions/workflows/workflow_00_search_scoping.yml/dispatches",
     github_dispatch_repo()
@@ -102,6 +107,7 @@ dispatch_w00_scoping <- function(request_id, search_string_path = "user_input/sc
       ref = github_scoping_ref(),
       inputs = list(
         search_string_path = as.character(search_string_path),
+        search_string_b64 = search_string_b64,
         request_id = request_id
       )
     ))
@@ -122,6 +128,7 @@ dispatch_w00_scoping <- function(request_id, search_string_path = "user_input/sc
   payload <- jsonlite::toJSON(list(
     request_id=request_id,
     search_string_path=as.character(search_string_path),
+    search_string_b64=search_string_b64,
     requested_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
     requested_by="LivingEvidenceMapAdjudication"
   ),auto_unbox=TRUE,pretty=TRUE)
