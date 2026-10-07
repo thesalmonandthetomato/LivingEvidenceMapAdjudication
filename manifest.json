@@ -1698,7 +1698,7 @@
       "checksum": "bdaddf5e2521a1cba14d438d6441b2b7"
     },
     "app.R": {
-      "checksum": "f7257c8a52e7d6c26014a618b66243f8"
+      "checksum": "7b60dc0850d6de4fa6ad2356d9b53edd"
     },
     "docs/production_multiuser_cutover_20261005.md": {
       "checksum": "0c8abb9a02a372eec4f35bb66812bce6"
@@ -1809,7 +1809,7 @@
       "checksum": "cd4e195e71abbeb42f7801fdaae27f0f"
     },
     "R/adjudication_schema.R": {
-      "checksum": "cd12bcd15240403163354e7a89ac7f40"
+      "checksum": "cf25fe8ab4441952c5c228448c52520b"
     },
     "R/assignments.R": {
       "checksum": "cafa60c1da256014441639fcdd40bb2c"
@@ -1872,7 +1872,7 @@
       "checksum": "5694c4b318b92fc4926c022bf68fd37c"
     },
     "tests/test_phase1c_permissions.R": {
-      "checksum": "320fd337cb148ed8e8202aaeb01a3aaa"
+      "checksum": "5cb23985673c39d2b2d1868b0a54a52a"
     },
     "tests/test_preproduction_contract.R": {
       "checksum": "e443660c618fa0845f6602c2aca18f30"
@@ -1881,7 +1881,7 @@
       "checksum": "c3230d48d1f3907abf333ad6a0f621ee"
     },
     "tests/test_search_scoping_ui.R": {
-      "checksum": "9b685434efb16b5dff31547fc9d2fdb4"
+      "checksum": "88348f6d89fea3d8cadf88ca11c4641b"
     },
     "tests/test_users.R": {
       "checksum": "3478785333151da4bc9976089d9d66b9"
