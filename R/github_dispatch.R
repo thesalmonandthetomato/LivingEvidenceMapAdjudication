@@ -61,7 +61,7 @@ read_w00_scoping_source_catalogue <- function(ref = github_scoping_ref()) {
   } else character()
 
   core_labels <- c(
-    lens="Lens, via Lens",
+    lens="The Lens, via The Lens",
     scopus="Scopus, via Scopus",
     openalex="OpenAlex, via OpenAlex",
     agricola="AGRICOLA, via Europe PMC",
