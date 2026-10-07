@@ -1261,7 +1261,7 @@
         "Maintainer": "Kevin Ushey <kevin@rstudio.com>",
         "Repository": "CRAN",
         "Date/Publication": "2026-10-06 10:40:02 UTC",
-        "Built": "R 4.6.0; ; 2026-10-07 00:47:36 UTC; unix"
+        "Built": "R 4.6.0; ; 2026-10-07 01:06:04 UTC; unix"
       }
     },
     "rlang": {
@@ -1695,7 +1695,7 @@
   },
   "files": {
     ".github/workflows/validate.yml": {
-      "checksum": "ba5a7c5278c11e933fd729da5e0e5711"
+      "checksum": "536c9e506f6f44c9f82959ae13850d19"
     },
     "app.R": {
       "checksum": "8608c832206cff82a791a9ea3a756f71"
@@ -1830,7 +1830,7 @@
       "checksum": "4eb8af71824e27f3e50e72b564066887"
     },
     "R/storage_sheets.R": {
-      "checksum": "dace7b99d740deda30b948d5e4b8f237"
+      "checksum": "5a50a0335df1905abfb3af3f20c8738d"
     },
     "R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
@@ -1912,6 +1912,9 @@
     },
     "tests/test_w08_canonical_kpi.R": {
       "checksum": "cd4e195e71abbeb42f7801fdaae27f0f"
+    },
+    "tests/test_w08_save_performance_contract.R": {
+      "checksum": "9a661e8e89367f42080b649170294579"
     }
   },
   "users": null
