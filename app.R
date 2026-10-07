@@ -1024,7 +1024,7 @@ server <- function(input, output, session) {
   search_scope_progress_rv <- reactiveVal(list(completed=0L,total=0L,pct=0L,label=""))
   search_scope_versions_rv <- reactiveVal(character())
   search_scope_results_rv <- reactiveVal(list())
-  search_scope_active_version_rv <- reactiveVal("v1")
+  search_scope_active_version_rv <- reactiveVal("original")
   search_scope_running_version_rv <- reactiveVal("")
 
   observe({
@@ -2835,7 +2835,7 @@ server <- function(input, output, session) {
   search_scope_change_summary <- function(original, revised) {
     original <- as.character(original %||% "")
     revised <- as.character(revised %||% "")
-    if (identical(original, revised)) return("No change from v1.")
+    if (identical(original, revised)) return("No change from original.")
     a <- strsplit(original, "", fixed=TRUE)[[1L]]
     b <- strsplit(revised, "", fixed=TRUE)[[1L]]
     max_prefix <- min(length(a), length(b))
@@ -2857,9 +2857,9 @@ server <- function(input, output, session) {
     new_mid <- if (new_end >= prefix + 1L) paste0(b[(prefix + 1L):new_end], collapse="") else ""
     old_mid <- trimws(old_mid)
     new_mid <- trimws(new_mid)
-    if (!nzchar(old_mid)) return(sprintf("Added relative to v1: %s", new_mid))
-    if (!nzchar(new_mid)) return(sprintf("Removed relative to v1: %s", old_mid))
-    sprintf("Changed relative to v1: %s  ->  %s", old_mid, new_mid)
+    if (!nzchar(old_mid)) return(sprintf("Added relative to original: %s", new_mid))
+    if (!nzchar(new_mid)) return(sprintf("Removed relative to original: %s", old_mid))
+    sprintf("Changed relative to original: %s  ->  %s", old_mid, new_mid)
   }
 
   search_scope_result_rows <- function(version) {
@@ -2892,8 +2892,8 @@ server <- function(input, output, session) {
       original <- trimws(as.character(x))
       search_scope_string_rv(original)
       if (!length(search_scope_versions_rv())) {
-        search_scope_versions_rv(stats::setNames(original, "v1"))
-        search_scope_active_version_rv("v1")
+        search_scope_versions_rv(stats::setNames(original, "original"))
+        search_scope_active_version_rv("original")
       }
       catalogue <- tryCatch(read_w00_scoping_source_catalogue(), error=function(e) NULL)
       if (!is.null(catalogue) && nrow(catalogue)) {
@@ -3061,7 +3061,7 @@ server <- function(input, output, session) {
     search_scope_request_id_rv("")
     search_scope_running_version_rv("")
     search_scope_status_rv(sprintf(
-      "%s saved temporarily in this app session. Run scoping to compare it with v1.",
+      "%s saved temporarily in this app session. Run scoping to compare it with the original.",
       version
     ))
     removeModal()
@@ -3114,7 +3114,7 @@ server <- function(input, output, session) {
       })
       names(version_hits) <- names(versions)
       totals <- vapply(version_hits,function(x) if(all(is.na(x))) NA_integer_ else sum(x,na.rm=TRUE),integer(1))
-      baseline_total <- totals[["v1"]]
+      baseline_total <- totals[["original"]]
 
       grDevices::pdf(file,width=8.27,height=11.69,onefile=TRUE,useDingbats=FALSE)
       on.exit(grDevices::dev.off(),add=TRUE)
@@ -3132,10 +3132,10 @@ server <- function(input, output, session) {
         adj=c(0,1),family="sans",cex=0.82
       )
       y <- 0.81
-      original <- as.character(versions[["v1"]])
+      original <- as.character(versions[["original"]])
 
       for (v in names(versions)) {
-        heading <- if (identical(v,"v1")) "Search string v1 (original)" else sprintf("Search string %s",v)
+        heading <- if (identical(v,"original")) "Search string original" else sprintf("Search string %s",v)
         if (y < 0.18) {
           graphics::plot.new()
           y <- 0.94
@@ -3152,7 +3152,7 @@ server <- function(input, output, session) {
           graphics::text(0.06,y,line,adj=c(0,1),family="mono",cex=0.68)
           y <- y-0.022
         }
-        if (!identical(v,"v1")) {
+        if (!identical(v,"original")) {
           diff_lines <- unlist(strwrap(search_scope_change_summary(original,versions[[v]]),width=100),use.names=FALSE)
           y <- y-0.006
           for (line in diff_lines) {
@@ -3219,7 +3219,7 @@ server <- function(input, output, session) {
         total <- totals[[v]]
         txt <- if(is.na(total)) "-" else format(total,big.mark=",",scientific=FALSE)
         graphics::text(result_x[[j]],total_y,txt,adj=c(0.5,1),family="sans",font=2,cex=0.76)
-        if (!identical(v,"v1") && !is.na(total) && !is.na(baseline_total)) {
+        if (!identical(v,"original") && !is.na(total) && !is.na(baseline_total)) {
           delta <- total-baseline_total
           delta_txt <- sprintf("(%s%s)",if(delta>=0) "+" else "",format(delta,big.mark=",",scientific=FALSE))
           graphics::text(result_x[[j]],total_y-0.022,delta_txt,adj=c(0.5,1),family="sans",cex=0.66,col="red3")
@@ -3253,7 +3253,7 @@ server <- function(input, output, session) {
     }
     if (!length(source_slugs)) return(NULL)
     source_slugs <- source_slugs[order(tolower(vapply(source_slugs,search_scope_pretty_source,character(1))))]
-    baseline_total <- search_scope_total_for_version("v1")
+    baseline_total <- search_scope_total_for_version("original")
 
     value_cell <- function(version, slug) {
       rows <- results[[version]]
@@ -3268,7 +3268,7 @@ server <- function(input, output, session) {
       total <- search_scope_total_for_version(version)
       if (is.na(total)) return("—")
       main <- tags$strong(format(total,big.mark=",",scientific=FALSE))
-      if (identical(version,"v1") || is.na(baseline_total)) return(main)
+      if (identical(version,"original") || is.na(baseline_total)) return(main)
       delta <- total-baseline_total
       tagList(
         main,
