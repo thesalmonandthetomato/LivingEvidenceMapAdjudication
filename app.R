@@ -2882,7 +2882,7 @@ server <- function(input, output, session) {
 
   observe({
     req(authenticated())
-    if (!session_can("control_workflows")) return()
+    if (!session_can("run_search_scoping")) return()
     if (nzchar(search_scope_string_rv())) return()
     x <- tryCatch(
       read_github_text_file("user_input/scoping_search_string.txt"),
@@ -2909,7 +2909,7 @@ server <- function(input, output, session) {
 
   output$configure_review <- renderUI({
     req(authenticated())
-    if (!session_can("control_workflows")) return(NULL)
+    if (!session_can("run_search_scoping")) return(NULL)
 
     request_active <- nzchar(as.character(search_scope_request_id_rv() %||% ""))
     counts_resolved <- search_scope_counts_resolved()
@@ -3016,7 +3016,7 @@ server <- function(input, output, session) {
 
   observeEvent(input$edit_search_scope, {
     req(authenticated())
-    if (!session_can("control_workflows")) return()
+    if (!session_can("run_search_scoping")) return()
     if (nzchar(search_scope_request_id_rv())) return()
     versions <- search_scope_versions_rv()
     if (!length(versions)) return()
@@ -3044,7 +3044,7 @@ server <- function(input, output, session) {
 
   observeEvent(input$save_search_scope_edit, {
     req(authenticated())
-    if (!session_can("control_workflows")) return()
+    if (!session_can("run_search_scoping")) return()
     proposed <- trimws(as.character(input$search_scope_edit_text %||% ""))
     if (!nzchar(proposed)) {
       showNotification("Search string cannot be empty.", type="error")
@@ -3324,7 +3324,7 @@ server <- function(input, output, session) {
   observeEvent(input$run_search_scope, {
     req(authenticated())
     if (!session_can("control_workflows")) {
-      search_scope_status_rv("Administrator permission is required.")
+      search_scope_status_rv("Search scoping permission is required.")
       return()
     }
     if (nzchar(search_scope_request_id_rv())) return()
