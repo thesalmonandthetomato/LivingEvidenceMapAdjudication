@@ -1261,7 +1261,7 @@
         "Maintainer": "Kevin Ushey <kevin@rstudio.com>",
         "Repository": "CRAN",
         "Date/Publication": "2026-10-06 10:40:02 UTC",
-        "Built": "R 4.6.0; ; 2026-10-07 01:06:04 UTC; unix"
+        "Built": "R 4.6.0; ; 2026-10-07 01:11:48 UTC; unix"
       }
     },
     "rlang": {
@@ -1698,7 +1698,7 @@
       "checksum": "536c9e506f6f44c9f82959ae13850d19"
     },
     "app.R": {
-      "checksum": "8608c832206cff82a791a9ea3a756f71"
+      "checksum": "509c51ca97bf5de18c0b8778e901278f"
     },
     "docs/production_multiuser_cutover_20261005.md": {
       "checksum": "0c8abb9a02a372eec4f35bb66812bce6"
@@ -1914,7 +1914,7 @@
       "checksum": "cd4e195e71abbeb42f7801fdaae27f0f"
     },
     "tests/test_w08_save_performance_contract.R": {
-      "checksum": "9a661e8e89367f42080b649170294579"
+      "checksum": "ebea7a3f10ea3bd779893979efa50f1b"
     }
   },
   "users": null
