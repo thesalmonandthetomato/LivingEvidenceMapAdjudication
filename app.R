@@ -3313,7 +3313,7 @@ server <- function(input, output, session) {
     )
   })
 
-  observeEvent(input$run_search_scope, {  observeEvent(input$run_search_scope, {
+  observeEvent(input$run_search_scope, {
     req(authenticated())
     if (!session_can("control_workflows")) {
       search_scope_status_rv("Administrator permission is required.")
