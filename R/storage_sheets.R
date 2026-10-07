@@ -1761,13 +1761,14 @@ append_sheet_w08_decision <- function(decision, prior_decision=NULL) {
     supersedes_decision_id=prior_id,
     stringsAsFactors=FALSE
   )
+  # sheet_append() returns only after the Google Sheets API accepts the write.
+  # Keep the authoritative pre-write collision check above, but avoid a second
+  # full-table read after every W08 save. Normalise the exact row submitted so
+  # the session state advances immediately after a successful append response.
   googlesheets4::sheet_append(ss,data=row,sheet=tab)
 
-  verify <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
-  hit <- verify[verify$decision_id==decision_id,,drop=FALSE]
-  if(nrow(hit)!=1L) stop("W08 decision write verification failed",call.=FALSE)
   normalise_saved_decision_event(
-    as.list(hit[1,,drop=FALSE]),
+    as.list(row[1,,drop=FALSE]),
     prior_decision = prior_decision,
     case_fields = c("case_id", "record_id")
   )
