@@ -1261,7 +1261,7 @@
         "Maintainer": "Kevin Ushey <kevin@rstudio.com>",
         "Repository": "CRAN",
         "Date/Publication": "2026-10-06 10:40:02 UTC",
-        "Built": "R 4.6.0; ; 2026-10-06 20:51:21 UTC; unix"
+        "Built": "R 4.6.0; ; 2026-10-07 00:47:36 UTC; unix"
       }
     },
     "rlang": {
@@ -1698,7 +1698,7 @@
       "checksum": "ba5a7c5278c11e933fd729da5e0e5711"
     },
     "app.R": {
-      "checksum": "6143e4c7f1778b0cde2ecc31bc3b3649"
+      "checksum": "8608c832206cff82a791a9ea3a756f71"
     },
     "docs/production_multiuser_cutover_20261005.md": {
       "checksum": "0c8abb9a02a372eec4f35bb66812bce6"
@@ -1821,7 +1821,7 @@
       "checksum": "544d137b964d270470ecfe99197ddee1"
     },
     "R/github_dispatch.R": {
-      "checksum": "8455c4215a545e960822e510eb8e6dda"
+      "checksum": "efeffe0a3b48aba6e9153ecfc53bd932"
     },
     "R/storage_backend.R": {
       "checksum": "e6e395bca1f55e20a9aedf7c647904e4"
@@ -1881,7 +1881,7 @@
       "checksum": "c3230d48d1f3907abf333ad6a0f621ee"
     },
     "tests/test_search_scoping_ui.R": {
-      "checksum": "1af895860771cdb4636a617627c194d1"
+      "checksum": "a0ad76ecdf4c0c23fa610fee157219cc"
     },
     "tests/test_users.R": {
       "checksum": "3478785333151da4bc9976089d9d66b9"
