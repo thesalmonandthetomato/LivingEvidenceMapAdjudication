@@ -8000,9 +8000,21 @@ server <- function(input, output, session) {
         div(
           class="w08-review-evidence",
           div(
-            class="record-title",
-            highlight_named_terms(display_sentence_case_if_all_caps(z$title %||% ""),highlight_terms)
+            class="d-flex align-items-start justify-content-between gap-2",
+            div(
+              class="record-title flex-grow-1",
+              highlight_named_terms(display_sentence_case_if_all_caps(z$title %||% ""),highlight_terms)
+            ),
+            google_scholar_button(z$title %||% "")
           ),
+          div(class="w04-citation-grid",
+            div(class="w04-citation-item",span(class="w04-citation-label","Authors"),span(class="w04-citation-value",z$authors %||% "")),
+            div(class="w04-citation-item",span(class="w04-citation-label","Year"),span(class="w04-citation-value",z$year %||% "")),
+            div(class="w04-citation-item",span(class="w04-citation-label","Journal"),span(class="w04-citation-value",z$journal %||% "")),
+            div(class="w04-citation-item",span(class="w04-citation-label","Volume"),span(class="w04-citation-value",z$volume %||% "")),
+            div(class="w04-citation-item",span(class="w04-citation-label","Pages"),span(class="w04-citation-value",z$pages %||% ""))
+          ),
+          div(class="w04-doi",tags$strong("DOI: "),doi_link(z$doi %||% "")),
           tags$h6(class="abstract-heading","Abstract"),
           div(
             class="abstract-text",
