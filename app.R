@@ -4743,6 +4743,15 @@ server <- function(input, output, session) {
   })
 
   output$backend_reset_status <- renderText(backend_reset_status())
+  output$backend_reset_modal_status <- renderUI({
+    msg <- trimws(as.character(backend_reset_status() %||% ""))
+    if (!nzchar(msg)) return(NULL)
+    div(
+      class = if (grepl("^Reset refused|^Reset cancelled|permission", msg, ignore.case = TRUE)) "alert alert-danger mt-3 mb-0" else "alert alert-info mt-3 mb-0",
+      style = "white-space: pre-wrap;",
+      msg
+    )
+  })
 
   observeEvent(input$reset_backend_queue, {
     req(authenticated())
@@ -4750,6 +4759,7 @@ server <- function(input, output, session) {
       backend_reset_status("Administrator permission is required.")
       return()
     }
+    backend_reset_status("")
     showModal(modalDialog(
       title = "Reset backend queue",
       tags$p(
@@ -4759,11 +4769,16 @@ server <- function(input, output, session) {
         class = "text-danger",
         tags$strong("Any non-test production queue that is not marked consumed will block the reset.")
       ),
+      tags$p(
+        class = "text-secondary small",
+        'Normal reset: type "RESET". For the current controlled integrity repair only, type "RESET REPAIR"; this can ignore only the exact obsolete W08 batch w08-run-37553444492 and no other live production queue.'
+      ),
       textInput(
         "backend_reset_confirmation",
-        'Type "RESET" to confirm',
+        'Type "RESET" or "RESET REPAIR" to confirm',
         value = ""
       ),
+      uiOutput("backend_reset_modal_status"),
       footer = tagList(
         modalButton("Cancel"),
         actionButton("confirm_backend_reset", "Archive and reset", class = "btn-danger")
@@ -4779,8 +4794,10 @@ server <- function(input, output, session) {
       removeModal()
       return()
     }
-    if (!identical(trimws(as.character(input$backend_reset_confirmation %||% "")), "RESET")) {
-      backend_reset_status('Reset cancelled: type "RESET" exactly to confirm.')
+    confirmation <- trimws(as.character(input$backend_reset_confirmation %||% ""))
+    repair_reset <- identical(confirmation, "RESET REPAIR")
+    if (!confirmation %in% c("RESET", "RESET REPAIR")) {
+      backend_reset_status('Reset cancelled: type "RESET" or "RESET REPAIR" exactly to confirm.')
       return()
     }
 
@@ -4793,14 +4810,26 @@ server <- function(input, output, session) {
       !is.na(completed) && completed >= 11L &&
       grepl("complete|final", status_label)
 
-    if (!isTRUE(update_complete)) {
-      backend_reset_status("Reset refused: the current update is not recorded as complete.")
+    if (!isTRUE(update_complete) && !repair_reset) {
+      backend_reset_status('Reset refused: the current update is not recorded as complete. For the controlled integrity-repair reset, type "RESET REPAIR".')
       return()
     }
 
+    repair_override <- if (repair_reset) {
+      list(list(
+        stage = "08",
+        tab = Sys.getenv("LEM_W08_QUEUE_TAB", unset = "queue_w08_active"),
+        batch_id = "w08-run-37553444492",
+        queue_sha256 = "6d1d4ccb24c3e929eb4357b58f53e25a56438c749c32428ca812e51637766f85"
+      ))
+    } else list()
+
     backend_reset_status("Archiving backend to Zenodo before reset…")
     result <- tryCatch(
-      reset_backend_queue_state(created_by = session_reviewer_id()),
+      reset_backend_queue_state(
+        created_by = session_reviewer_id(),
+        allowed_obsolete_batches = repair_override
+      ),
       error = function(e) e
     )
     if (inherits(result, "error")) {
