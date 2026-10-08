@@ -57,3 +57,17 @@ stopifnot(
   !grepl('"No active queue"', app_src, fixed = TRUE),
   !grepl('"No reviewer conflicts"', app_src, fixed = TRUE)
 )
+
+
+# Private-repository compatibility: production app must not depend on anonymous
+# raw.githubusercontent.com reads from LivingEvidenceMap.
+storage_src <- paste(readLines("R/storage_sheets.R", warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+stopifnot(
+  !grepl("raw.githubusercontent.com/thesalmonandthetomato/LivingEvidenceMap", app_src, fixed = TRUE),
+  !grepl("raw.githubusercontent.com/thesalmonandthetomato/LivingEvidenceMap", storage_src, fixed = TRUE),
+  grepl("read_github_text_file(registry_path, ref = ref)", app_src, fixed = TRUE),
+  grepl('"docs/current_run/current_run_status.json"', storage_src, fixed = TRUE),
+  grepl("LEM_GITHUB_DISPATCH_TOKEN is required to read the authoritative GitHub W04 kappa registry", storage_src, fixed = TRUE)
+)
+
+cat("PASS: private-repository GitHub reads are authenticated\n")
