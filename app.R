@@ -1709,13 +1709,23 @@ server <- function(input, output, session) {
 
   record_table_user_label <- function(user_id) {
     uid <- as.character(user_id %||% "")
-    if (!nzchar(uid)) return("")
-    u <- find_user_by_id(user_registry_rv(),uid,require_active=FALSE)
-    if (is.null(u)) uid else as.character(u$display_name %||% uid)
+    uid <- if (length(uid)) uid[[1L]] else ""
+    if (is.na(uid) || !nzchar(uid)) return("")
+    u <- tryCatch(
+      find_user_by_id(user_registry_rv(),uid,require_active=FALSE),
+      error=function(e) NULL
+    )
+    if (is.null(u)) return(uid)
+    label <- as.character(u$display_name %||% uid)
+    label <- if (length(label)) label[[1L]] else uid
+    if (is.na(label) || !nzchar(label)) uid else label
   }
 
   record_table_decision_label <- function(x) {
-    d <- tolower(trimws(as.character(x$decision %||% "")))
+    d <- as.character(x$decision %||% "")
+    d <- if (length(d)) d[[1L]] else ""
+    if (is.na(d)) d <- ""
+    d <- tolower(trimws(d))
     if (nzchar(d)) {
       return(c(
         duplicate="Duplicate",
@@ -1728,7 +1738,9 @@ server <- function(input, output, session) {
         reject_provider_match="Reject provider match"
       )[[d]] %||% gsub("_"," ",d,fixed=TRUE))
     }
-    if (nzchar(trimws(as.character(x$issue_decisions_json %||% "")))) return("Annotation saved")
+    issue_json <- as.character(x$issue_decisions_json %||% "")
+    issue_json <- if (length(issue_json)) issue_json[[1L]] else ""
+    if (!is.na(issue_json) && nzchar(trimws(issue_json))) return("Annotation saved")
     ""
   }
 
