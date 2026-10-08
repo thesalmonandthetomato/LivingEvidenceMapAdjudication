@@ -1419,8 +1419,8 @@
       "description": {
         "Package": "snowflakeauth",
         "Title": "Authentication Helpers for 'Snowflake'",
-        "Version": "0.3.0",
-        "Authors@R": "c(\n    person(\"Aaron\", \"Jacobs\", , \"aaron.jacobs@posit.co\", role = c(\"aut\")),\n    person(\"E. David\", \"Aja\", , \"david@posit.co\", role = c(\"aut\", \"cre\")),\n    person(\"Posit Software, PBC\", role = c(\"cph\", \"fnd\"))\n  )",
+        "Version": "0.3.1",
+        "Authors@R": "c(\n    person(\"Aaron\", \"Jacobs\", , \"aaron.jacobs@posit.co\", role = c(\"aut\", \"cre\")),\n    person(\"E. David\", \"Aja\", , \"david@posit.co\", role = c(\"aut\")),\n    person(\"Posit Software, PBC\", role = c(\"cph\", \"fnd\"))\n  )",
         "Description": "Authentication helpers for 'Snowflake'.\n    It provides compatibility with authentication approaches supported\n    by the 'Snowflake Connector for Python' <https://pypi.org/project/snowflake-connector-python>\n    and the 'Snowflake CLI' <https://pypi.org/project/snowflake-cli>.",
         "License": "MIT + file LICENSE",
         "Encoding": "UTF-8",
@@ -1431,12 +1431,12 @@
         "URL": "https://posit-dev.github.io/snowflakeauth/,\nhttps://github.com/posit-dev/snowflakeauth",
         "BugReports": "https://github.com/posit-dev/snowflakeauth/issues",
         "NeedsCompilation": "no",
-        "Packaged": "2026-08-31 15:34:48 UTC; edavidaja",
-        "Author": "Aaron Jacobs [aut],\n  E. David Aja [aut, cre],\n  Posit Software, PBC [cph, fnd]",
-        "Maintainer": "E. David Aja <david@posit.co>",
+        "Packaged": "2026-10-07 15:10:55 UTC; aaron",
+        "Author": "Aaron Jacobs [aut, cre],\n  E. David Aja [aut],\n  Posit Software, PBC [cph, fnd]",
+        "Maintainer": "Aaron Jacobs <aaron.jacobs@posit.co>",
         "Repository": "RSPM",
-        "Date/Publication": "2026-08-31 22:00:02 UTC",
-        "Built": "R 4.6.0; ; 2026-09-01 04:09:03 UTC; unix"
+        "Date/Publication": "2026-10-07 16:00:02 UTC",
+        "Built": "R 4.6.0; ; 2026-10-08 04:11:11 UTC; unix"
       }
     },
     "sourcetools": {
@@ -1698,7 +1698,7 @@
       "checksum": "bdaddf5e2521a1cba14d438d6441b2b7"
     },
     "app.R": {
-      "checksum": "7b60dc0850d6de4fa6ad2356d9b53edd"
+      "checksum": "6685722be4650ad14dfd3965b51e51fe"
     },
     "docs/production_multiuser_cutover_20261005.md": {
       "checksum": "0c8abb9a02a372eec4f35bb66812bce6"
@@ -1830,7 +1830,7 @@
       "checksum": "4eb8af71824e27f3e50e72b564066887"
     },
     "R/storage_sheets.R": {
-      "checksum": "5a50a0335df1905abfb3af3f20c8738d"
+      "checksum": "644ea748e719a8259ab7611ab919b8e4"
     },
     "R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
@@ -1863,7 +1863,7 @@
       "checksum": "71a83aecde7c9af7e37a90d8dfc13b63"
     },
     "tests/test_backend_reset_contract.R": {
-      "checksum": "209c48127072cb047959b1b1b04f32b4"
+      "checksum": "a4b7ce361db7aae9f4c5af5166d3ed3a"
     },
     "tests/test_decision_events.R": {
       "checksum": "27f6693f251666375388b6c71d038c95"
