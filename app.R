@@ -888,12 +888,20 @@ read_authoritative_w08_metrics <- function(
   ),
   ref = github_scoping_ref()
 ) {
-  registry_text <- read_github_text_file(registry_path, ref = ref)
-  reg <- utils::read.csv(
-    text = registry_text,
-    stringsAsFactors = FALSE,
-    check.names = FALSE
-  )
+  if (file.exists(registry_path)) {
+    reg <- utils::read.csv(
+      registry_path,
+      stringsAsFactors = FALSE,
+      check.names = FALSE
+    )
+  } else {
+    registry_text <- read_github_text_file(registry_path, ref = ref)
+    reg <- utils::read.csv(
+      text = registry_text,
+      stringsAsFactors = FALSE,
+      check.names = FALSE
+    )
+  }
   required <- c("source_run_id", "status")
   if (!all(required %in% names(reg))) stop("W08 registry contract mismatch", call. = FALSE)
 
@@ -905,8 +913,12 @@ read_authoritative_w08_metrics <- function(
 
   pointer_name <- paste0("run-", run_id, ".json")
   pointer_path <- file.path(pointer_base, pointer_name)
-  pointer_text <- read_github_text_file(pointer_path, ref = ref)
-  x <- jsonlite::fromJSON(pointer_text, simplifyVector = FALSE)
+  if (file.exists(pointer_path)) {
+    x <- jsonlite::fromJSON(pointer_path, simplifyVector = FALSE)
+  } else {
+    pointer_text <- read_github_text_file(pointer_path, ref = ref)
+    x <- jsonlite::fromJSON(pointer_text, simplifyVector = FALSE)
+  }
   pointer_run <- as.character(x$source_github_run_id %||% "")
   n <- suppressWarnings(as.integer(x$canonical_records %||% NA_integer_))
   if (!identical(pointer_run, run_id)) stop("Authoritative W08 pointer/run mismatch", call. = FALSE)
