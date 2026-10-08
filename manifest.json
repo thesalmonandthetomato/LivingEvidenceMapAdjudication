@@ -1698,7 +1698,7 @@
       "checksum": "bdaddf5e2521a1cba14d438d6441b2b7"
     },
     "app.R": {
-      "checksum": "b4f4c5ab82c48e99bfe799c2c8953852"
+      "checksum": "96820748014c32f464fafba0f007d42d"
     },
     "docs/production_multiuser_cutover_20261005.md": {
       "checksum": "0c8abb9a02a372eec4f35bb66812bce6"
@@ -1878,7 +1878,7 @@
       "checksum": "e443660c618fa0845f6602c2aca18f30"
     },
     "tests/test_record_table_contract.R": {
-      "checksum": "c3230d48d1f3907abf333ad6a0f621ee"
+      "checksum": "250bf5cd0df6a742dbe5d473f3390e0e"
     },
     "tests/test_search_scoping_ui.R": {
       "checksum": "88348f6d89fea3d8cadf88ca11c4641b"
