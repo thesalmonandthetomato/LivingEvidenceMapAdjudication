@@ -2027,7 +2027,7 @@ server <- function(input, output, session) {
         a$case_id %in% keep_ids &&
           (!nzchar(uid) || identical(a$user_id,uid)) &&
           (
-            metric %in% c("cases","assignments","unassigned") ||
+            metric %in% c("cases","assignments","unassigned","resolved_cases","outstanding_cases") ||
             identical(
               a$effective_status,
               c(completed="complete",closed="resolved_elsewhere",outstanding="assigned")[[metric]] %||% ""
