@@ -1698,7 +1698,7 @@
       "checksum": "bdaddf5e2521a1cba14d438d6441b2b7"
     },
     "app.R": {
-      "checksum": "05232646c5e54510a016836fff3c905d"
+      "checksum": "5b4e3bacf00f142986734938024c7d10"
     },
     "docs/production_multiuser_cutover_20261005.md": {
       "checksum": "0c8abb9a02a372eec4f35bb66812bce6"
@@ -1830,7 +1830,7 @@
       "checksum": "4eb8af71824e27f3e50e72b564066887"
     },
     "R/storage_sheets.R": {
-      "checksum": "644ea748e719a8259ab7611ab919b8e4"
+      "checksum": "9bf9db531c1c1b333505a9f1eef81a0e"
     },
     "R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
@@ -1875,7 +1875,7 @@
       "checksum": "5cb23985673c39d2b2d1868b0a54a52a"
     },
     "tests/test_preproduction_contract.R": {
-      "checksum": "e443660c618fa0845f6602c2aca18f30"
+      "checksum": "14812b5c82be161a5acf5fb58df25ed1"
     },
     "tests/test_record_table_contract.R": {
       "checksum": "130670b2cec8f8e904b8d2cc1a6ad8f8"
