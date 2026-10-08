@@ -611,6 +611,17 @@ ui <- page_fillable(
               }, {priority:'event'});
               return;
             }
+            const edit = ev.target.closest('.lem-record-edit');
+            if (edit) {
+              ev.preventDefault();
+              Shiny.setInputValue('record_table_edit', {
+                workflow: edit.dataset.workflow || '',
+                task_type: edit.dataset.taskType || '',
+                batch_id: edit.dataset.batchId || '',
+                case_id: edit.dataset.caseId || ''
+              }, {priority:'event'});
+              return;
+            }
             const toggle = ev.target.closest('.lem-detail-toggle');
             if (toggle) {
               ev.preventDefault();
@@ -789,6 +800,7 @@ ui <- page_fillable(
     .decision-badge-neutral { background:#eef1f4 !important; color:#5f6973 !important; border:1px solid #d7dde2; }
     .assignment-summary { margin-bottom:1rem; border:1px solid #dde3e8; box-shadow:0 2px 10px rgba(22,33,43,.04); }
     .assignment-kpis { display:grid; grid-template-columns:repeat(5,minmax(100px,1fr)); gap:.5rem; margin-bottom:.75rem; }
+    .assignment-kpis.four { grid-template-columns:repeat(4,minmax(100px,1fr)); }
     .assignment-kpi { background:#f7f8fa; border:1px solid #e1e5e9; border-radius:8px; padding:.55rem .65rem; }
     .assignment-kpi span { display:block; color:#6a747d; font-size:.76rem; }
     .assignment-kpi strong { display:block; font-size:1.08rem; margin-top:.08rem; }
@@ -1764,6 +1776,38 @@ server <- function(input, output, session) {
     hits
   }
 
+  record_table_completed_case_ids <- function(src) {
+    cases <- src$cases %||% list()
+    case_ids <- unique(vapply(cases,record_table_case_id,character(1)))
+    case_ids <- case_ids[nzchar(case_ids)]
+    if (!length(case_ids)) return(character())
+
+    events <- Filter(decision_resolves_case,src$events %||% list())
+    mode <- assignment_mode_for(src$workflow,src$task_type)
+
+    if (!identical(mode,ASSIGNMENT_MODES[["independent_blind_review"]])) {
+      resolved <- unique(vapply(events,decision_case_id,character(1)))
+      return(case_ids[case_ids %in% resolved])
+    }
+
+    formal <- active_assignments(src$assignments %||% list())
+    complete <- vapply(case_ids,function(cid) {
+      ca <- Filter(function(a) identical(normalise_assignment_row(a)$case_id,cid),formal)
+      ce <- Filter(function(e) identical(decision_case_id(e),cid),events)
+      if (!length(ca)) return(length(ce) > 0L)
+      required_users <- unique(vapply(ca,function(a)normalise_assignment_row(a)$user_id,character(1)))
+      completed_users <- unique(vapply(ce,decision_user_id,character(1)))
+      length(required_users) > 0L && all(required_users %in% completed_users)
+    },logical(1))
+    case_ids[complete]
+  }
+
+  record_table_outstanding_case_ids <- function(src) {
+    all_ids <- unique(vapply(src$cases %||% list(),record_table_case_id,character(1)))
+    all_ids <- all_ids[nzchar(all_ids)]
+    setdiff(all_ids,record_table_completed_case_ids(src))
+  }
+
   record_table_case_fields <- function(z,workflow,task_type) {
     work_id <- as.character(z$work_id %||% z$record_id %||% z$review_case_id %||% z$case_id %||% "")
     title <- ""
@@ -1909,7 +1953,12 @@ server <- function(input, output, session) {
       completed=status_case_ids("complete"),
       closed=status_case_ids("resolved_elsewhere"),
       outstanding=status_case_ids("assigned"),
-      unassigned=setdiff(all_ids,unique(vapply(eff,function(a)a$case_id,character(1)))),
+      resolved_cases=record_table_completed_case_ids(src),
+      outstanding_cases=record_table_outstanding_case_ids(src),
+      unassigned=setdiff(
+        setdiff(all_ids,record_table_completed_case_ids(src)),
+        unique(vapply(eff,function(a)a$case_id,character(1)))
+      ),
       all_ids
     )
     keep_ids <- unique(keep_ids[nzchar(keep_ids)])
@@ -1940,12 +1989,12 @@ server <- function(input, output, session) {
       status <- if(!length(ca_view)) {
         "Unassigned"
       } else if(length(statuses)==1L) {
-        c(complete="Completed",assigned="Outstanding",resolved_elsewhere="Closed")[[statuses[[1L]]]] %||% statuses[[1L]]
+        c(complete="Completed",assigned="Outstanding",resolved_elsewhere="Resolved elsewhere")[[statuses[[1L]]]] %||% statuses[[1L]]
       } else {
         paste(
           sum(vapply(ca_view,function(a)identical(a$effective_status,"complete"),logical(1))),"completed ·",
           sum(vapply(ca_view,function(a)identical(a$effective_status,"assigned"),logical(1))),"outstanding ·",
-          sum(vapply(ca_view,function(a)identical(a$effective_status,"resolved_elsewhere"),logical(1))),"closed"
+          sum(vapply(ca_view,function(a)identical(a$effective_status,"resolved_elsewhere"),logical(1))),"resolved elsewhere"
         )
       }
       last_activity <- ""
@@ -2576,7 +2625,7 @@ server <- function(input, output, session) {
     task_type <- as.character(z$task_type %||% "")
     batch_id <- as.character(z$batch_id %||% "")
     metric <- as.character(z$metric %||% "cases")
-    allowed_metrics <- c("cases","assignments","completed","closed","outstanding","unassigned")
+    allowed_metrics <- c("cases","assignments","completed","closed","outstanding","resolved_cases","outstanding_cases","unassigned")
     if (!metric %in% allowed_metrics) return()
     sources <- record_table_source(workflow,task_type,batch_id)
     if (!length(sources)) {
@@ -2603,6 +2652,65 @@ server <- function(input, output, session) {
     record_table_abstract_open(character())
     record_table_notes_open(character())
     app_view("tasks")
+  })
+
+  observeEvent(input$record_table_edit,{
+    req(authenticated())
+    if (!session_can("manage_assignments")) {
+      showNotification("Administrator permission is required to edit completed records.",type="error")
+      return()
+    }
+    z <- input$record_table_edit
+    if (is.null(z)) return()
+    workflow <- as.character(z$workflow %||% "")
+    task_type <- as.character(z$task_type %||% "")
+    batch_id <- as.character(z$batch_id %||% "")
+    case_id <- as.character(z$case_id %||% "")
+    if (!nzchar(case_id)) return()
+
+    open_case <- function(cases,set_cases,set_index,view,status_value="") {
+      if (nzchar(status_value) && identical(status_value,"consumed")) {
+        showNotification("This batch has already been consumed by GitHub and is read-only.",type="warning")
+        return(FALSE)
+      }
+      ids <- vapply(cases,record_table_case_id,character(1))
+      hit <- match(case_id,ids)
+      if (is.na(hit)) {
+        showNotification("The selected record is no longer available in the active batch.",type="warning")
+        return(FALSE)
+      }
+      set_cases(cases)
+      set_index(hit)
+      record_table_context(NULL)
+      app_view(view)
+      TRUE
+    }
+
+    if (identical(workflow,"01") && identical(task_type,"deduplication") && identical(batch_id,batch_id_rv())) {
+      complete(FALSE)
+      open_case(w01_all_cases_rv(),cases_rv,idx,"w01",batch_status_rv())
+    } else if (identical(workflow,"02") && identical(task_type,"enrichment") && identical(batch_id,w02_batch_id_rv())) {
+      open_case(w02_all_cases_rv(),w02_cases_rv,w02_idx,"w02",w02_batch_status_rv())
+    } else if (identical(workflow,"04") && identical(task_type,"manual_screening") && identical(batch_id,w04_batch_id_rv())) {
+      open_case(w04_all_cases_rv(),w04_cases_rv,w04_idx,"w04",w04_batch_status_rv())
+    } else if (identical(workflow,"04") && identical(task_type,"model_uncertainty") && identical(batch_id,w04_resolution_batch_id_rv())) {
+      open_case(w04_resolution_all_cases_rv(),w04_resolution_cases_rv,w04_resolution_idx,"w04_resolution",w04_resolution_batch_status_rv())
+    } else if (identical(workflow,"04") && identical(task_type,"conflict_resolution") && identical(batch_id,w04_active_conflict_batch_id())) {
+      cases <- w04_all_conflict_cases()
+      ids <- vapply(cases,record_table_case_id,character(1))
+      hit <- match(case_id,ids)
+      if (is.na(hit)) {
+        showNotification("The selected record is no longer available in the active conflict batch.",type="warning")
+      } else {
+        w04_conflict_idx(hit)
+        record_table_context(NULL)
+        app_view("w04_conflict")
+      }
+    } else if (identical(workflow,"08") && identical(task_type,"annotation") && identical(batch_id,w08_batch_id_rv())) {
+      open_case(w08_all_cases_rv(),w08_cases_rv,w08_idx,"w08",w08_batch_status_rv())
+    } else {
+      showNotification("This completed record is no longer part of an active editable batch.",type="warning")
+    }
   })
 
   observeEvent(input$record_table_toggle,{
@@ -2646,8 +2754,10 @@ server <- function(input, output, session) {
       cases="Cases",
       assignments="Assignments",
       completed="Completed",
-      closed="Closed",
+      closed="Resolved elsewhere",
       outstanding="Outstanding",
+      resolved_cases="Completed",
+      outstanding_cases="Outstanding",
       unassigned="Unassigned cases"
     )[[ctx$metric]] %||% ctx$metric
     who <- if(nzchar(ctx$user_id)) paste0(" · ",record_table_user_label(ctx$user_id)) else ""
@@ -2678,6 +2788,11 @@ server <- function(input, output, session) {
     if (!identical(page,record_table_page())) record_table_page(page)
     idx <- seq.int((page-1L)*size+1L,min(page*size,length(rows)))
     shown <- rows[idx]
+    ctx <- record_table_context()
+    allow_edit <- !is.null(ctx) &&
+      identical(as.character(ctx$metric %||% ""),"resolved_cases") &&
+      session_can("manage_assignments") &&
+      !identical(as.character(ctx$workflow %||% ""),"all")
 
     render_record <- function(r) {
       citation <- tagList(
@@ -2717,14 +2832,25 @@ server <- function(input, output, session) {
             sprintf("%d note%s %s",note_count,if(note_count==1L)"" else "s",if(notes_open)"▴" else "▾")
           ) else tags$span(class="text-secondary","—")
         ),
-        tags$td(if(nzchar(r$last_activity)) r$last_activity else tags$span(class="text-secondary","—"))
+        tags$td(if(nzchar(r$last_activity)) r$last_activity else tags$span(class="text-secondary","—")),
+        if (allow_edit) tags$td(
+          tags$button(
+            type="button",
+            class="btn btn-outline-primary btn-sm lem-record-edit",
+            `data-workflow`=r$workflow,
+            `data-task-type`=r$task_type,
+            `data-batch-id`=ctx$batch_id,
+            `data-case-id`=r$case_id,
+            "Edit"
+          )
+        ) else NULL
       )
 
       detail <- if(abstract_open || notes_open) {
         tags$tr(
           class="lem-detail-row",
           tags$td(
-            colspan="7",
+            colspan=if(allow_edit) "8" else "7",
             if(abstract_open) div(
               class="lem-detail-text",
               tags$div(class="fw-semibold mb-1","Abstract"),
@@ -2758,7 +2884,8 @@ server <- function(input, output, session) {
           tags$th("Assigned reviewer(s)"),
           tags$th("Decision(s)"),
           tags$th("Notes"),
-          tags$th("Last activity")
+          tags$th("Last activity"),
+          if (allow_edit) tags$th("Edit") else NULL
         )),
         tags$tbody(tagList(lapply(shown,render_record)))
       )
@@ -3834,10 +3961,22 @@ server <- function(input, output, session) {
       group_progress <- group_progress[order(workflow_order, task_order, names(group_progress))]
     }
 
-    total_assigned <- sum(vapply(group_progress, function(x) x$progress$assigned, integer(1)))
-    total_completed <- sum(vapply(group_progress, function(x) x$progress$completed, integer(1)))
-    total_released <- sum(vapply(group_progress, function(x) x$progress$resolved_elsewhere, integer(1)))
-    total_remaining <- sum(vapply(group_progress, function(x) x$progress$remaining, integer(1)))
+    active_sources_for_summary <- record_table_source_list()
+    total_assigned <- sum(vapply(
+      active_sources_for_summary,
+      function(src) length(active_assignments(src$assignments %||% list())),
+      integer(1)
+    ))
+    total_completed_cases <- sum(vapply(
+      active_sources_for_summary,
+      function(src) length(record_table_completed_case_ids(src)),
+      integer(1)
+    ))
+    total_outstanding_cases <- sum(vapply(
+      active_sources_for_summary,
+      function(src) length(record_table_outstanding_case_ids(src)),
+      integer(1)
+    ))
 
     assignment_manager_ui <- function(z) {
       cfg <- if (
@@ -4147,8 +4286,14 @@ server <- function(input, output, session) {
         function(x) normalise_assignment_row(x)$case_id,
         character(1)
       )) else character()
+      src_now <- record_table_source(z$workflow,z$task_type,z$batch_id)
+      completed_case_ids <- if (length(src_now)) record_table_completed_case_ids(src_now[[1L]]) else character()
+      case_total <- length(all_case_ids[nzchar(all_case_ids)])
+      case_completed <- sum(all_case_ids %in% completed_case_ids)
+      case_outstanding <- max(0L,case_total-case_completed)
+      formal_assignments <- length(active_group_assignments)
       unassigned <- if (length(all_case_ids)) {
-        sum(nzchar(all_case_ids) & !all_case_ids %in% assigned_case_ids)
+        sum(nzchar(all_case_ids) & !all_case_ids %in% assigned_case_ids & !all_case_ids %in% completed_case_ids)
       } else 0L
 
       rows <- lapply(p$by_user, function(x) {
@@ -4159,7 +4304,7 @@ server <- function(input, output, session) {
           tags$td(role_label),
           tags$td(record_table_link(x$assigned,z$workflow,z$task_type,z$batch_id,"assignments",x$user_id,paste(workflow_label,task_label,x$display_name,"Assigned",sep=" · "))),
           tags$td(record_table_link(x$completed,z$workflow,z$task_type,z$batch_id,"completed",x$user_id,paste(workflow_label,task_label,x$display_name,"Completed",sep=" · "))),
-          tags$td(record_table_link(x$resolved_elsewhere,z$workflow,z$task_type,z$batch_id,"closed",x$user_id,paste(workflow_label,task_label,x$display_name,"Closed",sep=" · "))),
+          tags$td(record_table_link(x$resolved_elsewhere,z$workflow,z$task_type,z$batch_id,"closed",x$user_id,paste(workflow_label,task_label,x$display_name,"Resolved elsewhere",sep=" · "))),
           tags$td(record_table_link(x$remaining,z$workflow,z$task_type,z$batch_id,"outstanding",x$user_id,paste(workflow_label,task_label,x$display_name,"Outstanding",sep=" · "))),
           tags$td(
             tags$span(
@@ -4196,7 +4341,7 @@ server <- function(input, output, session) {
               if (identical(z$batch_id, "no-active-queue")) {
                 "No records awaiting review"
               } else {
-                sprintf("%d cases · %d remaining assignments", p$cases, p$remaining)
+                sprintf("%d cases · %d outstanding", case_total, case_outstanding)
               }
             )
           )
@@ -4236,12 +4381,15 @@ server <- function(input, output, session) {
             )
           },
           div(
-            class = "assignment-kpis",
-            div(class = "assignment-kpi", tags$span("Cases"), tags$strong(record_table_link(p$cases,z$workflow,z$task_type,z$batch_id,"cases",label=paste(workflow_label,task_label,"Cases",sep=" · ")))),
-            div(class = "assignment-kpi", tags$span("Assignments"), tags$strong(record_table_link(p$assigned,z$workflow,z$task_type,z$batch_id,"assignments",label=paste(workflow_label,task_label,"Assignments",sep=" · ")))),
-            div(class = "assignment-kpi", tags$span("Completed"), tags$strong(record_table_link(p$completed,z$workflow,z$task_type,z$batch_id,"completed",label=paste(workflow_label,task_label,"Completed",sep=" · ")))),
-            div(class = "assignment-kpi", tags$span("Closed"), tags$strong(record_table_link(p$resolved_elsewhere,z$workflow,z$task_type,z$batch_id,"closed",label=paste(workflow_label,task_label,"Closed",sep=" · ")))),
-            div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(record_table_link(p$remaining,z$workflow,z$task_type,z$batch_id,"outstanding",label=paste(workflow_label,task_label,"Outstanding",sep=" · "))))
+            class = "assignment-kpis four",
+            div(class = "assignment-kpi", tags$span("Cases"), tags$strong(record_table_link(case_total,z$workflow,z$task_type,z$batch_id,"cases",label=paste(workflow_label,task_label,"Cases",sep=" · ")))),
+            div(class = "assignment-kpi", tags$span("Assignments"), tags$strong(record_table_link(formal_assignments,z$workflow,z$task_type,z$batch_id,"assignments",label=paste(workflow_label,task_label,"Assignments",sep=" · ")))),
+            div(class = "assignment-kpi", tags$span("Completed"), tags$strong(record_table_link(case_completed,z$workflow,z$task_type,z$batch_id,"resolved_cases",label=paste(workflow_label,task_label,"Completed",sep=" · ")))),
+            div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(record_table_link(case_outstanding,z$workflow,z$task_type,z$batch_id,"outstanding_cases",label=paste(workflow_label,task_label,"Outstanding",sep=" · "))))
+          ),
+          tags$div(
+            class = "text-secondary small mb-2",
+            "Click on 'Completed' to manually edit the responses."
           ),
           if (unassigned > 0L) {
             tags$div(
@@ -4259,7 +4407,7 @@ server <- function(input, output, session) {
                 tags$th("Role"),
                 tags$th("Assigned"),
                 tags$th("Completed"),
-                tags$th("Closed"),
+                tags$th("Resolved elsewhere"),
                 tags$th("Outstanding"),
                 tags$th("Resolved"),
                 tags$th("Last activity")
@@ -4694,18 +4842,17 @@ server <- function(input, output, session) {
             tags$span(class = "task-badge", paste0(length(group_progress), " workflow section", if (length(group_progress) == 1L) "" else "s")),
             tags$span(
               class = "text-secondary small",
-              sprintf("%d assignments · %d resolved · %d remaining", total_assigned, total_completed + total_released, total_remaining)
+              sprintf("%d assignments · %d completed cases · %d outstanding cases", total_assigned, total_completed_cases, total_outstanding_cases)
             )
           )
         ),
         div(
           class = "px-3 pb-3",
           div(
-            class = "assignment-kpis",
+            class = "assignment-kpis four",
             div(class = "assignment-kpi", tags$span("Assignments"), tags$strong(record_table_link(total_assigned,"all","all","","assignments",label="All workflows · Assignments"))),
-            div(class = "assignment-kpi", tags$span("Completed"), tags$strong(record_table_link(total_completed,"all","all","","completed",label="All workflows · Completed"))),
-            div(class = "assignment-kpi", tags$span("Closed"), tags$strong(record_table_link(total_released,"all","all","","closed",label="All workflows · Closed"))),
-            div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(record_table_link(total_remaining,"all","all","","outstanding",label="All workflows · Outstanding"))),
+            div(class = "assignment-kpi", tags$span("Completed"), tags$strong(record_table_link(total_completed_cases,"all","all","","resolved_cases",label="All workflows · Completed"))),
+            div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(record_table_link(total_outstanding_cases,"all","all","","outstanding_cases",label="All workflows · Outstanding"))),
             div(class = "assignment-kpi", tags$span("Conflicts"), tags$strong(record_table_link(length(w04_all_conflict_cases()),"04","conflict_resolution",w04_active_conflict_batch_id(),"cases",label="W04 · Reviewer conflict resolution · Cases")))
           ),
           workflow_sections_display,
