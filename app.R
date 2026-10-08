@@ -878,16 +878,22 @@ ui <- page_fillable(
 
 
 read_authoritative_w08_metrics <- function(
-  registry_url = Sys.getenv(
-    "LEM_W08_REGISTRY_URL",
-    unset = "https://raw.githubusercontent.com/thesalmonandthetomato/LivingEvidenceMap/workflow01-final-architecture/docs/workflow08/zenodo_registry.csv"
+  registry_path = Sys.getenv(
+    "LEM_W08_REGISTRY_PATH",
+    unset = "docs/workflow08/zenodo_registry.csv"
   ),
   pointer_base = Sys.getenv(
-    "LEM_W08_POINTER_BASE",
-    unset = "https://raw.githubusercontent.com/thesalmonandthetomato/LivingEvidenceMap/workflow01-final-architecture/docs/workflow08/zenodo"
-  )
+    "LEM_W08_POINTER_BASE_PATH",
+    unset = "docs/workflow08/zenodo"
+  ),
+  ref = github_scoping_ref()
 ) {
-  reg <- utils::read.csv(registry_url, stringsAsFactors = FALSE, check.names = FALSE)
+  registry_text <- read_github_text_file(registry_path, ref = ref)
+  reg <- utils::read.csv(
+    text = registry_text,
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
   required <- c("source_run_id", "status")
   if (!all(required %in% names(reg))) stop("W08 registry contract mismatch", call. = FALSE)
 
@@ -898,13 +904,9 @@ read_authoritative_w08_metrics <- function(
   if (!grepl("^[0-9]+$", run_id)) stop("Invalid authoritative W08 source run ID", call. = FALSE)
 
   pointer_name <- paste0("run-", run_id, ".json")
-  pointer <- if (grepl("^https?://", pointer_base)) {
-    paste0(sub("/$", "", pointer_base), "/", pointer_name)
-  } else {
-    file.path(pointer_base, pointer_name)
-  }
-
-  x <- jsonlite::fromJSON(pointer, simplifyVector = FALSE)
+  pointer_path <- file.path(pointer_base, pointer_name)
+  pointer_text <- read_github_text_file(pointer_path, ref = ref)
+  x <- jsonlite::fromJSON(pointer_text, simplifyVector = FALSE)
   pointer_run <- as.character(x$source_github_run_id %||% "")
   n <- suppressWarnings(as.integer(x$canonical_records %||% NA_integer_))
   if (!identical(pointer_run, run_id)) stop("Authoritative W08 pointer/run mismatch", call. = FALSE)
