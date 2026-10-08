@@ -8000,10 +8000,10 @@ server <- function(input, output, session) {
       assign_named_species="Assign named species",
       assign_unspecified_species="Assign unspecified species",
       exclude_record="Exclude record",
-      assign_country_set="Assign country set",
+      assign_country_set="Enter geography",
       assign_none="Assign no country",
       accept_model="Accept model geography",
-      override_country_set="Override country set",
+      override_country_set="Enter geography",
       accept_retained_topics="Accept retained topics",
       replace_topic_set="Replace topic set",
       no_code="Retain with no topic code",
@@ -8088,13 +8088,16 @@ server <- function(input, output, session) {
         )
       },
       geography_model_failure = tagList(
-        selectizeInput(
-          paste0("w08_geo_",j),
-          "Countries",
-          choices = w08_country_choices(),
-          selected = toupper(as.character(unlist(saved_value$iso3c %||% character(), use.names = FALSE))),
-          multiple = TRUE,
-          options = list(create = FALSE, persist = FALSE)
+        conditionalPanel(
+          condition = sprintf("input.w08_decision_%d == 'assign_country_set'", j),
+          selectizeInput(
+            paste0("w08_geo_",j),
+            "Countries",
+            choices = w08_country_choices(),
+            selected = toupper(as.character(unlist(saved_value$iso3c %||% character(), use.names = FALSE))),
+            multiple = TRUE,
+            options = list(create = FALSE, persist = FALSE)
+          )
         )
       ),
       geography_unresolved = {
@@ -8103,24 +8106,30 @@ server <- function(input, output, session) {
           use.names = FALSE
         )))
         tagList(
-          selectizeInput(
-            paste0("w08_geo_",j),
-            "Override countries",
-            choices = w08_country_choices(),
-            selected = model_selected[nzchar(model_selected)],
-            multiple = TRUE,
-            options = list(create = FALSE, persist = FALSE)
+          conditionalPanel(
+            condition = sprintf("input.w08_decision_%d == 'override_country_set'", j),
+            selectizeInput(
+              paste0("w08_geo_",j),
+              "Countries",
+              choices = w08_country_choices(),
+              selected = model_selected[nzchar(model_selected)],
+              multiple = TRUE,
+              options = list(create = FALSE, persist = FALSE)
+            )
           )
         )
       },
       geography_evidence_unvalidated = tagList(
-        selectizeInput(
-          paste0("w08_geo_",j),
-          "Override countries",
-          choices = w08_country_choices(),
-          selected = toupper(as.character(unlist(saved_value$iso3c %||% character(), use.names = FALSE))),
-          multiple = TRUE,
-          options = list(create = FALSE, persist = FALSE)
+        conditionalPanel(
+          condition = sprintf("input.w08_decision_%d == 'override_country_set'", j),
+          selectizeInput(
+            paste0("w08_geo_",j),
+            "Countries",
+            choices = w08_country_choices(),
+            selected = toupper(as.character(unlist(saved_value$iso3c %||% character(), use.names = FALSE))),
+            multiple = TRUE,
+            options = list(create = FALSE, persist = FALSE)
+          )
         )
       ),
       topic_extreme_disagreement = {
