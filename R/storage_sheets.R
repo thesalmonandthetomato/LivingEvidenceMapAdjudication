@@ -2608,11 +2608,21 @@ backend_reset_is_synthetic_batch <- function(batch_id) {
   )
 }
 
-backend_reset_blockers <- function() {
+backend_reset_blockers <- function(allowed_obsolete_batches = list()) {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tabs <- sheet_names_cached(ss)
   blockers <- character()
+
+  allowed_exact <- function(stage, tab, batch_id, queue_sha256) {
+    if (!length(allowed_obsolete_batches)) return(FALSE)
+    any(vapply(allowed_obsolete_batches, function(z) {
+      identical(as.character(z$stage %||% ""), as.character(stage)) &&
+        identical(as.character(z$tab %||% ""), as.character(tab)) &&
+        identical(as.character(z$batch_id %||% ""), as.character(batch_id)) &&
+        identical(tolower(as.character(z$queue_sha256 %||% "")), tolower(as.character(queue_sha256)))
+    }, logical(1)))
+  }
 
   for (spec in backend_reset_queue_specs()) {
     tab <- as.character(spec$tab)
@@ -2634,6 +2644,7 @@ backend_reset_blockers <- function() {
     if (backend_reset_is_synthetic_batch(batches[[1L]])) next
     status <- latest_batch_status(spec$stage, batches[[1L]], hashes[[1L]])
     if (!identical(status, "consumed")) {
+      if (allowed_exact(spec$stage, tab, batches[[1L]], hashes[[1L]])) next
       blockers <- c(
         blockers,
         sprintf("%s: production batch %s is %s", tab, batches[[1L]], if(nzchar(status)) status else "not marked consumed")
@@ -2759,11 +2770,11 @@ archive_backend_queue_to_zenodo <- function(created_by = "") {
   )
 }
 
-reset_backend_queue_state <- function(created_by = "") {
+reset_backend_queue_state <- function(created_by = "", allowed_obsolete_batches = list()) {
   if (!identical(storage_backend(), "google_sheets")) {
     stop("Backend reset is only available with the Google Sheets backend", call. = FALSE)
   }
-  blockers <- backend_reset_blockers()
+  blockers <- backend_reset_blockers(allowed_obsolete_batches = allowed_obsolete_batches)
   if (length(blockers)) {
     stop(
       paste(c("Backend reset refused because live production queue state remains:", blockers), collapse = "\n"),
