@@ -26,7 +26,10 @@ stopifnot(
   grepl('"confirm_backend_reset"', src, fixed = TRUE),
   grepl('session_can("control_workflows")', src, fixed = TRUE),
   grepl('completed >= 11L', src, fixed = TRUE),
-  grepl('reset_backend_queue_state(created_by = session_reviewer_id())', src, fixed = TRUE)
+  grepl('RESET REPAIR', src, fixed = TRUE),
+  grepl('w08-run-37553444492', src, fixed = TRUE),
+  grepl('6d1d4ccb24c3e929eb4357b58f53e25a56438c749c32428ca812e51637766f85', src, fixed = TRUE),
+  grepl('allowed_obsolete_batches = repair_override', src, fixed = TRUE)
 )
 
 storage_src <- paste(readLines("R/storage_sheets.R", warn = FALSE, encoding = "UTF-8"), collapse = "\n")
@@ -34,6 +37,8 @@ stopifnot(
   grepl('ZENODO_ACCESS_TOKEN', storage_src, fixed = TRUE),
   grepl('access_right = "restricted"', storage_src, fixed = TRUE),
   grepl('if (!identical(status, "consumed"))', storage_src, fixed = TRUE),
+  grepl('backend_reset_blockers <- function(allowed_obsolete_batches = list())', storage_src, fixed = TRUE),
+  grepl('allowed_exact', storage_src, fixed = TRUE),
   grepl('googlesheets4::sheet_delete', storage_src, fixed = TRUE)
 )
 
