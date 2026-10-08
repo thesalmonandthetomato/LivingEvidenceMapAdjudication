@@ -1156,9 +1156,10 @@ read_github_w04_kappa_registry <- function() {
       `User-Agent`="LivingEvidenceMap-Adjudication"
     )
   token <- Sys.getenv("LEM_GITHUB_DISPATCH_TOKEN",unset="")
-  if(nzchar(token)) {
-    req <- httr2::req_headers(req,Authorization=paste("Bearer",token))
+  if(!nzchar(token)) {
+    stop("LEM_GITHUB_DISPATCH_TOKEN is required to read the authoritative GitHub W04 kappa registry",call.=FALSE)
   }
+  req <- httr2::req_headers(req,Authorization=paste("Bearer",token))
   x <- tryCatch({
     resp <- httr2::req_perform(req)
     if(httr2::resp_status(resp)!=200L) stop("GitHub API HTTP ",httr2::resp_status(resp))
@@ -1786,21 +1787,14 @@ read_latest_pipeline_status <- function() {
   # workflow01-final-architecture. Do not fall back to pipeline_run_status:
   # that Sheet is an operational event log and historical schema migrations
   # can leave older rows positionally incompatible with current KPI columns.
-  repo_url <- paste0(
-    "https://raw.githubusercontent.com/thesalmonandthetomato/",
-    "LivingEvidenceMap/workflow01-final-architecture/",
-    "docs/current_run/current_run_status.json"
-  )
-  # raw.githubusercontent.com may briefly serve a cached response for an
-  # unchanged URL after the status file is updated. Add a cache-busting query
-  # so the Shiny progress display follows the canonical branch state promptly.
-  repo_url_fresh <- paste0(
-    repo_url,
-    "?v=",
-    as.integer(as.numeric(Sys.time()))
-  )
   current <- tryCatch(
-    jsonlite::fromJSON(repo_url_fresh, simplifyVector = FALSE),
+    jsonlite::fromJSON(
+      read_github_text_file(
+        "docs/current_run/current_run_status.json",
+        ref = github_scoping_ref()
+      ),
+      simplifyVector = FALSE
+    ),
     error = function(e) NULL
   )
   if (is.null(current)) return(NULL)
