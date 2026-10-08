@@ -2079,6 +2079,29 @@ server <- function(input, output, session) {
     )
   }
 
+  record_table_batch_dispatched <- function(workflow,task_type,batch_id) {
+    workflow <- as.character(workflow %||% "")
+    task_type <- as.character(task_type %||% "")
+    batch_id <- as.character(batch_id %||% "")
+
+    if (identical(workflow,"01") && identical(task_type,"deduplication") && identical(batch_id,batch_id_rv())) {
+      return(isTRUE(w01_export_requested_rv()))
+    }
+    if (identical(workflow,"02") && identical(task_type,"enrichment") && identical(batch_id,w02_batch_id_rv())) {
+      return(isTRUE(w02_resume_requested_rv()))
+    }
+    if (identical(workflow,"04") && identical(task_type,"manual_screening") && identical(batch_id,w04_batch_id_rv())) {
+      return(isTRUE(w04_validation_finalize_requested_rv()))
+    }
+    if (identical(workflow,"04") && identical(task_type,"model_uncertainty") && identical(batch_id,w04_resolution_batch_id_rv())) {
+      return(isTRUE(w04_resolution_resume_requested_rv()))
+    }
+    if (identical(workflow,"08") && identical(task_type,"annotation") && identical(batch_id,w08_batch_id_rv())) {
+      return(isTRUE(w08_resume_requested_rv()))
+    }
+    FALSE
+  }
+
   record_table_preview <- function(text,n=5L) {
     x <- strsplit(normalise_display_text(text),"[[:space:]]+",perl=TRUE)[[1L]]
     x <- x[nzchar(x)]
@@ -2627,6 +2650,16 @@ server <- function(input, output, session) {
     metric <- as.character(z$metric %||% "cases")
     allowed_metrics <- c("cases","assignments","completed","closed","outstanding","resolved_cases","outstanding_cases","unassigned")
     if (!metric %in% allowed_metrics) return()
+    if (
+      identical(metric,"resolved_cases") &&
+      record_table_batch_dispatched(workflow,task_type,batch_id)
+    ) {
+      showNotification(
+        "This batch has already been sent to GitHub. Completed responses are now read-only.",
+        type="message"
+      )
+      return()
+    }
     sources <- record_table_source(workflow,task_type,batch_id)
     if (!length(sources)) {
       showNotification("No active records are available for this table view.",type="warning")
@@ -2667,6 +2700,15 @@ server <- function(input, output, session) {
     batch_id <- as.character(z$batch_id %||% "")
     case_id <- as.character(z$case_id %||% "")
     if (!nzchar(case_id)) return()
+    if (record_table_batch_dispatched(workflow,task_type,batch_id)) {
+      showNotification(
+        "This batch has already been sent to GitHub. Completed responses can no longer be edited in Shiny.",
+        type="warning"
+      )
+      record_table_context(NULL)
+      app_view("tasks")
+      return()
+    }
 
     open_case <- function(cases,set_cases,set_index,view,status_value="") {
       if (nzchar(status_value) && identical(status_value,"consumed")) {
@@ -4384,12 +4426,26 @@ server <- function(input, output, session) {
             class = "assignment-kpis four",
             div(class = "assignment-kpi", tags$span("Cases"), tags$strong(record_table_link(case_total,z$workflow,z$task_type,z$batch_id,"cases",label=paste(workflow_label,task_label,"Cases",sep=" · ")))),
             div(class = "assignment-kpi", tags$span("Assignments"), tags$strong(record_table_link(formal_assignments,z$workflow,z$task_type,z$batch_id,"assignments",label=paste(workflow_label,task_label,"Assignments",sep=" · ")))),
-            div(class = "assignment-kpi", tags$span("Completed"), tags$strong(record_table_link(case_completed,z$workflow,z$task_type,z$batch_id,"resolved_cases",label=paste(workflow_label,task_label,"Completed",sep=" · ")))),
+            div(
+              class = "assignment-kpi",
+              tags$span("Completed"),
+              tags$strong(
+                if (record_table_batch_dispatched(z$workflow,z$task_type,z$batch_id)) {
+                  as.character(case_completed)
+                } else {
+                  record_table_link(case_completed,z$workflow,z$task_type,z$batch_id,"resolved_cases",label=paste(workflow_label,task_label,"Completed",sep=" · "))
+                }
+              )
+            ),
             div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(record_table_link(case_outstanding,z$workflow,z$task_type,z$batch_id,"outstanding_cases",label=paste(workflow_label,task_label,"Outstanding",sep=" · "))))
           ),
           tags$div(
             class = "text-secondary small mb-2",
-            "Click on 'Completed' to manually edit the responses."
+            if (record_table_batch_dispatched(z$workflow,z$task_type,z$batch_id)) {
+              "Completed responses are read-only because this batch has been sent to GitHub."
+            } else {
+              "Click on 'Completed' to manually edit the responses."
+            }
           ),
           if (unassigned > 0L) {
             tags$div(
