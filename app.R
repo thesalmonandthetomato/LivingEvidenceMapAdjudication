@@ -2650,16 +2650,6 @@ server <- function(input, output, session) {
     metric <- as.character(z$metric %||% "cases")
     allowed_metrics <- c("cases","assignments","completed","closed","outstanding","resolved_cases","outstanding_cases","unassigned")
     if (!metric %in% allowed_metrics) return()
-    if (
-      identical(metric,"resolved_cases") &&
-      record_table_batch_dispatched(workflow,task_type,batch_id)
-    ) {
-      showNotification(
-        "This batch has already been sent to GitHub. Completed responses are now read-only.",
-        type="message"
-      )
-      return()
-    }
     sources <- record_table_source(workflow,task_type,batch_id)
     if (!length(sources)) {
       showNotification("No active records are available for this table view.",type="warning")
@@ -2834,7 +2824,8 @@ server <- function(input, output, session) {
     allow_edit <- !is.null(ctx) &&
       identical(as.character(ctx$metric %||% ""),"resolved_cases") &&
       session_can("manage_assignments") &&
-      !identical(as.character(ctx$workflow %||% ""),"all")
+      !identical(as.character(ctx$workflow %||% ""),"all") &&
+      !record_table_batch_dispatched(ctx$workflow,ctx$task_type,ctx$batch_id)
 
     render_record <- function(r) {
       citation <- tagList(
@@ -4429,20 +4420,14 @@ server <- function(input, output, session) {
             div(
               class = "assignment-kpi",
               tags$span("Completed"),
-              tags$strong(
-                if (record_table_batch_dispatched(z$workflow,z$task_type,z$batch_id)) {
-                  as.character(case_completed)
-                } else {
-                  record_table_link(case_completed,z$workflow,z$task_type,z$batch_id,"resolved_cases",label=paste(workflow_label,task_label,"Completed",sep=" · "))
-                }
-              )
+              tags$strong(record_table_link(case_completed,z$workflow,z$task_type,z$batch_id,"resolved_cases",label=paste(workflow_label,task_label,"Completed",sep=" · ")))
             ),
             div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(record_table_link(case_outstanding,z$workflow,z$task_type,z$batch_id,"outstanding_cases",label=paste(workflow_label,task_label,"Outstanding",sep=" · "))))
           ),
           tags$div(
             class = "text-secondary small mb-2",
             if (record_table_batch_dispatched(z$workflow,z$task_type,z$batch_id)) {
-              "Completed responses are read-only because this batch has been sent to GitHub."
+              "Click on 'Completed' to view the responses. This batch has been sent to GitHub and is read-only."
             } else {
               "Click on 'Completed' to manually edit the responses."
             }
