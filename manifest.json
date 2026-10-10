@@ -1695,7 +1695,7 @@
   },
   "files": {
     ".github/workflows/validate.yml": {
-      "checksum": "bdaddf5e2521a1cba14d438d6441b2b7"
+      "checksum": "f10fa3a18d70bb9633e1319268f07c1e"
     },
     "app.R": {
       "checksum": "5b4e3bacf00f142986734938024c7d10"
@@ -1716,19 +1716,13 @@
       "checksum": "480a0d337e4fbf1a18baca82acdbcb23"
     },
     "multiuser_app/app.R": {
-      "checksum": "b749e9ec84abd9b39e1eb02afa3f39e8"
+      "checksum": "5b4e3bacf00f142986734938024c7d10"
     },
-    "multiuser_app/DEVELOPMENT_TODO.md": {
-      "checksum": "f63e7dfdacaac0e88610aa7b8e059d70"
+    "multiuser_app/docs/production_multiuser_cutover_20261005.md": {
+      "checksum": "0c8abb9a02a372eec4f35bb66812bce6"
     },
-    "multiuser_app/docs/adjudication_data_contract.md": {
-      "checksum": "3919321855a4cb2298dc7f9cbaa3602b"
-    },
-    "multiuser_app/docs/individual_authentication.md": {
-      "checksum": "8c7a57fda27783c9d43731d71d7143dc"
-    },
-    "multiuser_app/docs/w04_validation_sendback_contract.md": {
-      "checksum": "10dd621b6f8e01ca50f7c76461892085"
+    "multiuser_app/docs/workflow02_adjudication_contract.md": {
+      "checksum": "70e8056f8d6149f52ed939221645e1f9"
     },
     "multiuser_app/fixtures/assignments_w01_local.jsonl": {
       "checksum": "33e36050d471ebd693858c5747f1fab3"
@@ -1736,11 +1730,14 @@
     "multiuser_app/fixtures/w01_real_sample_2.jsonl": {
       "checksum": "b95ff9acc42004e0c32e0bbeec3d93a9"
     },
+    "multiuser_app/fixtures/w01_real_sample_2.provenance.json": {
+      "checksum": "480a0d337e4fbf1a18baca82acdbcb23"
+    },
     "multiuser_app/R/adjudication_schema.R": {
-      "checksum": "cd12bcd15240403163354e7a89ac7f40"
+      "checksum": "cf25fe8ab4441952c5c228448c52520b"
     },
     "multiuser_app/R/assignments.R": {
-      "checksum": "67d1d4345f1982faf86c0fa6bd74fd7a"
+      "checksum": "cafa60c1da256014441639fcdd40bb2c"
     },
     "multiuser_app/R/auth.R": {
       "checksum": "cadec0238e5356811bd8495088892a66"
@@ -1749,16 +1746,16 @@
       "checksum": "544d137b964d270470ecfe99197ddee1"
     },
     "multiuser_app/R/github_dispatch.R": {
-      "checksum": "7aff66141a1756109b0dccde20670e67"
+      "checksum": "4fcad8dd19c849a28ef021a2c42aa6f1"
     },
     "multiuser_app/R/storage_backend.R": {
-      "checksum": "f6febf54e12c9a4a486e36f05ecd62e1"
+      "checksum": "e6e395bca1f55e20a9aedf7c647904e4"
     },
     "multiuser_app/R/storage_local.R": {
-      "checksum": "6cfc5fa65dc8fd1020fad3ca42f2e397"
+      "checksum": "4eb8af71824e27f3e50e72b564066887"
     },
     "multiuser_app/R/storage_sheets.R": {
-      "checksum": "d27cb046cf907646edd546d966ef4482"
+      "checksum": "2256d601d64c176716eb5a75e23313cc"
     },
     "multiuser_app/R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
@@ -1769,44 +1766,14 @@
     "multiuser_app/R/w04_blind_resolution.R": {
       "checksum": "ba6fd28afe370e10d7010181e3aff887"
     },
+    "multiuser_app/R/w04_human_kappa_registry.R": {
+      "checksum": "108d9b0aedd6fe5ec693264b68dfe3d5"
+    },
+    "multiuser_app/R/w04_kappa_registry.R": {
+      "checksum": "d578ba9d982bb42da09da0face770fec"
+    },
     "multiuser_app/R/w04_validation_lifecycle.R": {
       "checksum": "0793acf1d57562d687b254fcc633bfb2"
-    },
-    "multiuser_app/tests/test_assignments.R": {
-      "checksum": "56bc23194ae9612a912dbc192d373244"
-    },
-    "multiuser_app/tests/test_auth.R": {
-      "checksum": "71a83aecde7c9af7e37a90d8dfc13b63"
-    },
-    "multiuser_app/tests/test_decision_events.R": {
-      "checksum": "27f6693f251666375388b6c71d038c95"
-    },
-    "multiuser_app/tests/test_local_assignments.R": {
-      "checksum": "5694c4b318b92fc4926c022bf68fd37c"
-    },
-    "multiuser_app/tests/test_phase1c_permissions.R": {
-      "checksum": "6cb80068b9538a109f185bb4fc248a59"
-    },
-    "multiuser_app/tests/test_preproduction_contract.R": {
-      "checksum": "3971a9a86cf5afe6ed978a9da179a4a5"
-    },
-    "multiuser_app/tests/test_users.R": {
-      "checksum": "3478785333151da4bc9976089d9d66b9"
-    },
-    "multiuser_app/tests/test_w01_decision_events.R": {
-      "checksum": "112a0e96d6ba1c604e42171bdea3cd43"
-    },
-    "multiuser_app/tests/test_w04_blind_resolution.R": {
-      "checksum": "a11cf1658b0f1913ddc0d1e637cdcef4"
-    },
-    "multiuser_app/tests/test_w04_validation_dispatch.R": {
-      "checksum": "bac8a6f0b75122533384cca72f498516"
-    },
-    "multiuser_app/tests/test_w04_validation_lifecycle.R": {
-      "checksum": "8711ce8a4c4eefc92e61781498c81e7d"
-    },
-    "multiuser_app/tests/test_w08_canonical_kpi.R": {
-      "checksum": "cd4e195e71abbeb42f7801fdaae27f0f"
     },
     "R/adjudication_schema.R": {
       "checksum": "cf25fe8ab4441952c5c228448c52520b"
@@ -1821,7 +1788,7 @@
       "checksum": "544d137b964d270470ecfe99197ddee1"
     },
     "R/github_dispatch.R": {
-      "checksum": "7586e0665a0484ecdc61e3afa2bb84de"
+      "checksum": "77a27bb965f0f0b242a1929135f12ff8"
     },
     "R/storage_backend.R": {
       "checksum": "e6e395bca1f55e20a9aedf7c647904e4"
@@ -1830,7 +1797,7 @@
       "checksum": "4eb8af71824e27f3e50e72b564066887"
     },
     "R/storage_sheets.R": {
-      "checksum": "9bf9db531c1c1b333505a9f1eef81a0e"
+      "checksum": "f002d8c7ffea9c3a7cf61344155d6e9f"
     },
     "R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
@@ -1882,6 +1849,9 @@
     },
     "tests/test_search_scoping_ui.R": {
       "checksum": "88348f6d89fea3d8cadf88ca11c4641b"
+    },
+    "tests/test_sheet_config.R": {
+      "checksum": "05599ae8124d6159688e75707c620ebf"
     },
     "tests/test_users.R": {
       "checksum": "3478785333151da4bc9976089d9d66b9"
