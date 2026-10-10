@@ -1,0 +1,15 @@
+local({
+  source("R/storage_sheets.R", local = TRUE)
+  old <- Sys.getenv("LEM_GOOGLE_SHEET_ID", unset = NA_character_)
+  on.exit({
+    if (is.na(old)) Sys.unsetenv("LEM_GOOGLE_SHEET_ID") else Sys.setenv(LEM_GOOGLE_SHEET_ID = old)
+  }, add = TRUE)
+  Sys.setenv(LEM_GOOGLE_SHEET_ID = "test-sheet-id-A")
+  stopifnot(identical(sheet_id_from_env(), "test-sheet-id-A"))
+  Sys.setenv(LEM_GOOGLE_SHEET_ID = " test-sheet-id-B ")
+  stopifnot(identical(sheet_id_from_env(), "test-sheet-id-B"))
+  Sys.unsetenv("LEM_GOOGLE_SHEET_ID")
+  err <- tryCatch(sheet_id_from_env(), error = function(e) conditionMessage(e))
+  stopifnot(identical(err, "LEM_GOOGLE_SHEET_ID is not configured"))
+  cat("PASS: configured Google Sheet ID required, trimmed, and never hard-coded\n")
+})
