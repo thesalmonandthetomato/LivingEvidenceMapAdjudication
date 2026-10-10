@@ -255,16 +255,39 @@ active_sheet_decisions <- function() {
   )
 }
 
+# Read-only recovery of uncertain append outcomes. Never retry a write blindly:
+# Google Sheets may have accepted it before its HTTP response failed.
+w01_lookup_persisted_decision <- function(ss, tab, decision_id) {
+  x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
+  if (!"decision_id" %in% names(x)) stop("W01 decision sheet has no decision_id", call. = FALSE)
+  hits <- x[!is.na(x$decision_id) & as.character(x$decision_id) == decision_id, , drop = FALSE]
+  if (nrow(hits) > 1L) stop("Duplicate W01 decision IDs found: manual reconciliation required", call. = FALSE)
+  if (!nrow(hits)) return(NULL)
+  normalise_sheet_rows(hits)[[1L]]
+}
+
 append_sheet_decision <- function(decision, prior_decision = NULL) {
   gs4_auth_from_env()
   ensure_w01_decision_tab()
   ss <- sheet_id_from_env()
   tab <- sheet_decision_tab()
+  decision_id <- paste0("dec-", digest::digest(
+    paste(decision$review_case_id, decision$resolved_at_utc, decision$decision, sep="|"),
+    algo="sha256", serialize=FALSE
+  ))
 
-  # Shared-work-pool authority: once another reviewer has made a substantive
-  # decision, later reviewers must not overwrite it. "uncertain" is explicitly
-  # non-resolving, and the authoritative reviewer may revise their own decision.
-  current_active <- active_sheet_decisions()
+  # One pre-write read is required to enforce cross-reviewer authority.
+  current_log <- read_sheet_decision_log()
+  existing_ids <- vapply(current_log, function(x) as.character(x$decision_id %||% ""), character(1))
+  existing <- which(existing_ids == decision_id)
+  if (length(existing) > 1L) stop("Duplicate W01 decision IDs found", call. = FALSE)
+  if (length(existing) == 1L) {
+    return(invisible(normalise_saved_decision_event(
+      current_log[[existing]], prior_decision=prior_decision,
+      case_fields=c("case_id", "review_case_id")
+    )))
+  }
+  current_active <- active_decision_events(current_log, case_fields=c("case_id", "review_case_id"))
   case_id <- as.character(decision$review_case_id %||% "")
   user_id <- as.character(decision$reviewer %||% "")
   current_case <- Filter(
@@ -275,49 +298,48 @@ append_sheet_decision <- function(decision, prior_decision = NULL) {
     current <- current_case[[1L]]
     current_decision <- tolower(trimws(as.character(current$decision %||% "")))
     current_user <- as.character(current$reviewer %||% current$user_id %||% "")
-    if (
-      nzchar(current_decision) &&
-      !identical(current_decision, "uncertain") &&
-      nzchar(current_user) &&
-      !identical(current_user, user_id)
-    ) {
+    if (nzchar(current_decision) && !identical(current_decision, "uncertain") &&
+        nzchar(current_user) && !identical(current_user, user_id)) {
       stop("This deduplication case has already been resolved by another reviewer", call. = FALSE)
     }
   }
 
-  decision_id <- paste0("dec-", digest::digest(
-    paste(decision$review_case_id, decision$resolved_at_utc, decision$decision, sep="|"),
-    algo="sha256", serialize=FALSE
-  ))
-  supersedes <- if (is.null(prior_decision)) "" else as.character(prior_decision$decision_id %||% "")
-
   row <- data.frame(
-    decision_id = decision_id,
-    review_case_id = as.character(decision$review_case_id),
-    decision = as.character(decision$decision),
-    rationale = as.character(decision$rationale),
-    reviewer = as.character(decision$reviewer),
-    resolved_at_utc = as.character(decision$resolved_at_utc),
-    queue_sha256 = as.character(decision$queue_sha256),
-    supersedes_decision_id = supersedes,
-    stringsAsFactors = FALSE
+    decision_id=decision_id,
+    review_case_id=as.character(decision$review_case_id),
+    decision=as.character(decision$decision),
+    rationale=as.character(decision$rationale),
+    reviewer=as.character(decision$reviewer),
+    resolved_at_utc=as.character(decision$resolved_at_utc),
+    queue_sha256=as.character(decision$queue_sha256),
+    supersedes_decision_id=if(is.null(prior_decision)) "" else as.character(prior_decision$decision_id %||% ""),
+    stringsAsFactors=FALSE
   )
-
-  googlesheets4::sheet_append(ss, data = row, sheet = tab)
-
-  # Verify persistence with one post-write read. Avoid repeated authentication
-  # and full-log reads inside a single adjudication action.
-  x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
-  hits <- x[as.character(x$decision_id) == decision_id, , drop = FALSE]
-  if (nrow(hits) != 1L) {
-    stop("Google Sheets write could not be verified; case remains unsaved", call.=FALSE)
+  # One write attempt only. A failed response may mean an accepted write;
+  # resolve its outcome with a read before permitting another action.
+  append_error <- tryCatch({
+    googlesheets4::sheet_append(ss, data=row, sheet=tab)
+    NULL
+  }, error=function(e) conditionMessage(e))
+  verified <- tryCatch(
+    w01_lookup_persisted_decision(ss, tab, decision_id),
+    error=function(e) e
+  )
+  if (inherits(verified, "error")) {
+    stop(paste0("Could not verify W01 decision persistence; do not resubmit yet. ",
+                "Refresh after the Google Sheets connection recovers. Details: ",
+                conditionMessage(verified)), call. = FALSE)
   }
-
-  verify <- normalise_sheet_rows(hits)[[1L]]
+  if (is.null(verified)) {
+    if (!is.null(append_error)) {
+      stop(paste0("W01 decision not found after Google Sheets write error: ",
+                  append_error, ". Try again after checking the saved decision."), call. = FALSE)
+    }
+    stop("W01 decision write was not found in Google Sheets; refresh and check before retrying", call. = FALSE)
+  }
   invisible(normalise_saved_decision_event(
-    verify,
-    prior_decision = prior_decision,
-    case_fields = c("case_id", "review_case_id")
+    verified, prior_decision=prior_decision,
+    case_fields=c("case_id", "review_case_id")
   ))
 }
 
@@ -1133,10 +1155,14 @@ delete_w04_human_kappa_registry_row <- function(consistency_id) {
 }
 
 read_github_w04_kappa_registry <- function() {
-  # Use the same validated target as every other development-app GitHub operation.
-  repo <- github_dispatch_repo()
-  ref <- github_scoping_ref()
-  assert_development_github_target(repo, ref)
+  repo <- Sys.getenv(
+    "LEM_W04_KAPPA_REGISTRY_REPO",
+    unset = "thesalmonandthetomato/LivingEvidenceMap"
+  )
+  ref <- Sys.getenv(
+    "LEM_W04_KAPPA_REGISTRY_REF",
+    unset = "workflow01-final-architecture"
+  )
   path <- Sys.getenv(
     "LEM_W04_KAPPA_REGISTRY_PATH",
     unset = "docs/workflow04/kappa_registry.csv"
