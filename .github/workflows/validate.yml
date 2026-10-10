@@ -46,6 +46,7 @@ jobs:
       - name: Run production regression suite
         shell: Rscript {0}
         run: |
+          source("tests/test_sheet_config.R")
           source("tests/test_w01_contract.R")
           source("tests/test_assignments.R")
           source("tests/test_decision_events.R")
