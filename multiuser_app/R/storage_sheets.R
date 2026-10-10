@@ -1131,15 +1131,10 @@ delete_w04_human_kappa_registry_row <- function(consistency_id) {
 }
 
 read_github_w04_kappa_registry <- function() {
-  repo <- Sys.getenv(
-    "LEM_W04_KAPPA_REGISTRY_REPO",
-    unset = "thesalmonandthetomato/LivingEvidenceMap"
-  )
-  ref <- Sys.getenv(
-    "LEM_W04_KAPPA_REGISTRY_REF",
-    unset = ""
-  )
-  if (!identical(repo, "thesalmonandthetomato/LivingEvidenceMap") || !identical(ref, "main")) stop("Development app refuses W04 registry reads outside LivingEvidenceMap/main",call.=FALSE)
+  # Use the same validated target as every other development-app GitHub operation.
+  repo <- github_dispatch_repo()
+  ref <- github_scoping_ref()
+  assert_development_github_target(repo, ref)
   path <- Sys.getenv(
     "LEM_W04_KAPPA_REGISTRY_PATH",
     unset = "docs/workflow04/kappa_registry.csv"
