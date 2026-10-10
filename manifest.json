@@ -1755,7 +1755,7 @@
       "checksum": "4eb8af71824e27f3e50e72b564066887"
     },
     "multiuser_app/R/storage_sheets.R": {
-      "checksum": "2256d601d64c176716eb5a75e23313cc"
+      "checksum": "48ca202050c8ba11d8777f494cd33ebb"
     },
     "multiuser_app/R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
@@ -1788,7 +1788,7 @@
       "checksum": "544d137b964d270470ecfe99197ddee1"
     },
     "R/github_dispatch.R": {
-      "checksum": "77a27bb965f0f0b242a1929135f12ff8"
+      "checksum": "ca08a2ad4a38e0ec7921dfb0e201f1d8"
     },
     "R/storage_backend.R": {
       "checksum": "e6e395bca1f55e20a9aedf7c647904e4"
@@ -1797,7 +1797,7 @@
       "checksum": "4eb8af71824e27f3e50e72b564066887"
     },
     "R/storage_sheets.R": {
-      "checksum": "f002d8c7ffea9c3a7cf61344155d6e9f"
+      "checksum": "48ca202050c8ba11d8777f494cd33ebb"
     },
     "R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
@@ -1851,7 +1851,7 @@
       "checksum": "88348f6d89fea3d8cadf88ca11c4641b"
     },
     "tests/test_sheet_config.R": {
-      "checksum": "05599ae8124d6159688e75707c620ebf"
+      "checksum": "8621af04b50c811d8c10aa95e7c2ff13"
     },
     "tests/test_users.R": {
       "checksum": "3478785333151da4bc9976089d9d66b9"
@@ -1875,7 +1875,7 @@
       "checksum": "b1e518a19d487b5709e555a09875bb63"
     },
     "tests/test_w04_validation_dispatch.R": {
-      "checksum": "bac8a6f0b75122533384cca72f498516"
+      "checksum": "314afb8b307ecff52d1ae2a2eaa1a0f5"
     },
     "tests/test_w04_validation_lifecycle.R": {
       "checksum": "8711ce8a4c4eefc92e61781498c81e7d"
