@@ -319,6 +319,104 @@ append_sheet_decision <- function(decision, prior_decision = NULL) {
   ))
 }
 
+w01_repair_tab <- function() {
+  Sys.getenv("LEM_W01_REPAIR_TAB", unset = "w01_data_quality_repairs")
+}
+
+ensure_w01_repair_tab <- function() {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w01_repair_tab()
+  cols <- c(
+    "repair_id","review_case_id","source","source_record_id","action","value",
+    "reason","reviewer","saved_at_utc","queue_sha256","supersedes_repair_id"
+  )
+  tabs <- sheet_names_cached(ss)
+  if (!tab %in% tabs) {
+    sheet_add_cached(ss, tab)
+    empty <- as.data.frame(setNames(replicate(length(cols), character(), simplify=FALSE), cols), stringsAsFactors=FALSE)
+    googlesheets4::sheet_write(empty, ss=ss, sheet=tab)
+  }
+  invisible(TRUE)
+}
+
+read_sheet_w01_repair_log <- function() {
+  ensure_w01_repair_tab()
+  ss <- sheet_id_from_env()
+  tab <- w01_repair_tab()
+  x <- googlesheets4::read_sheet(ss, sheet=tab, col_types="c")
+  if (!nrow(x)) return(list())
+  required <- c(
+    "repair_id","review_case_id","source","source_record_id","action","value",
+    "reason","reviewer","saved_at_utc","queue_sha256","supersedes_repair_id"
+  )
+  missing <- setdiff(required, names(x))
+  if (length(missing)) stop("W01 repair tab missing field(s): ", paste(missing, collapse=", "), call.=FALSE)
+  lapply(seq_len(nrow(x)), function(i) as.list(x[i, required, drop=FALSE]))
+}
+
+active_sheet_w01_repairs <- function(queue_sha256 = "") {
+  rows <- read_sheet_w01_repair_log()
+  if (nzchar(as.character(queue_sha256))) {
+    rows <- Filter(function(x) identical(
+      tolower(as.character(x$queue_sha256 %||% "")),
+      tolower(as.character(queue_sha256))
+    ), rows)
+  }
+  if (!length(rows)) return(list())
+  key <- vapply(rows, function(x) paste(
+    as.character(x$source %||% ""),
+    as.character(x$source_record_id %||% ""),
+    sep="::"
+  ), character(1))
+  tm <- vapply(rows, function(x) as.character(x$saved_at_utc %||% ""), character(1))
+  ord <- order(tm, seq_along(rows), decreasing=TRUE)
+  rows <- rows[ord]; key <- key[ord]
+  rows[!duplicated(key)]
+}
+
+append_sheet_w01_repair <- function(repair, prior_repair = NULL) {
+  ensure_w01_repair_tab()
+  action <- as.character(repair$action %||% "")
+  if (!(action %in% c("replace_abstract","strip_abstract"))) {
+    stop("Unsupported W01 Shiny abstract repair action", call.=FALSE)
+  }
+  if (identical(action,"replace_abstract") && !nzchar(trimws(as.character(repair$value %||% "")))) {
+    stop("Replacement abstract must not be empty", call.=FALSE)
+  }
+  ss <- sheet_id_from_env()
+  tab <- w01_repair_tab()
+  saved_at <- as.character(repair$saved_at_utc %||% format(Sys.time(), tz="UTC", format="%Y-%m-%dT%H:%M:%SZ"))
+  supersedes <- if (is.null(prior_repair)) "" else as.character(prior_repair$repair_id %||% "")
+  repair_id <- paste0("w01-repair-", substr(digest::digest(
+    paste(
+      repair$review_case_id, repair$source, repair$source_record_id,
+      repair$action, repair$value, repair$reviewer, saved_at, sep="|"
+    ),
+    algo="sha256", serialize=FALSE
+  ), 1L, 24L))
+  row <- data.frame(
+    repair_id=repair_id,
+    review_case_id=as.character(repair$review_case_id),
+    source=as.character(repair$source),
+    source_record_id=as.character(repair$source_record_id),
+    action=action,
+    value=as.character(repair$value %||% ""),
+    reason=as.character(repair$reason %||% "human_abstract_correction_during_deduplication"),
+    reviewer=as.character(repair$reviewer),
+    saved_at_utc=saved_at,
+    queue_sha256=tolower(as.character(repair$queue_sha256)),
+    supersedes_repair_id=supersedes,
+    stringsAsFactors=FALSE
+  )
+  googlesheets4::sheet_append(ss, data=row, sheet=tab)
+  verify <- googlesheets4::read_sheet(ss, sheet=tab, col_types="c")
+  hit <- verify[as.character(verify$repair_id)==repair_id,,drop=FALSE]
+  if (nrow(hit)!=1L) stop("W01 abstract repair write could not be verified", call.=FALSE)
+  as.list(hit[1,,drop=FALSE])
+}
+
+
 export_active_sheet_w01_decisions <- function(output_path) {
   active <- active_sheet_decisions()
   if (!length(active)) stop("No Google Sheets decisions found", call.=FALSE)
@@ -535,6 +633,63 @@ append_sheet_w02_decision <- function(decision, prior_decision = NULL) {
 }
 
 
+w01_export_request_tab <- function() {
+  Sys.getenv("LEM_W01_EXPORT_REQUEST_TAB", unset = "w01_export_requests")
+}
+
+w01_export_request_exists <- function(queue_sha256, batch_id) {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w01_export_request_tab()
+  tabs <- sheet_names_cached(ss)
+  if (!tab %in% tabs) return(FALSE)
+
+  x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
+  if (!nrow(x)) return(FALSE)
+  required <- c("queue_sha256","batch_id","status")
+  if (!all(required %in% names(x))) stop("W01 export-request tab is malformed", call.=FALSE)
+
+  any(
+    as.character(x$queue_sha256) == as.character(queue_sha256) &
+    as.character(x$batch_id) == as.character(batch_id) &
+    as.character(x$status) %in% c("dispatching","dispatched")
+  )
+}
+
+append_w01_export_request <- function(queue_sha256, batch_id, status, message = "") {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w01_export_request_tab()
+  tabs <- sheet_names_cached(ss)
+
+  required_cols <- c(
+    "request_id","queue_sha256","batch_id","status",
+    "requested_at_utc","message"
+  )
+
+  if (!tab %in% tabs) {
+    sheet_add_cached(ss, tab)
+    empty <- as.data.frame(setNames(replicate(length(required_cols), character(), simplify=FALSE), required_cols))
+    googlesheets4::sheet_write(empty, ss=ss, sheet=tab)
+  }
+
+  row <- data.frame(
+    request_id=paste0("w01-export-",digest::digest(
+      paste(queue_sha256,batch_id,status,format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%OS6Z"),sep="|"),
+      algo="sha256",serialize=FALSE
+    )),
+    queue_sha256=as.character(queue_sha256),
+    batch_id=as.character(batch_id),
+    status=as.character(status),
+    requested_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
+    message=as.character(message),
+    stringsAsFactors=FALSE
+  )
+  googlesheets4::sheet_append(ss,data=row,sheet=tab)
+  invisible(row)
+}
+
+
 w02_resume_request_tab <- function() {
   Sys.getenv("LEM_W02_RESUME_REQUEST_TAB", unset = "w02_resume_requests")
 }
@@ -592,8 +747,301 @@ append_w02_resume_request <- function(queue_sha256, source_run_id, status, messa
 }
 
 
+workflow_resume_request_exists <- function(tab, queue_sha256, source_run_id, batch_id) {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tabs <- sheet_names_cached(ss)
+  if (!tab %in% tabs) return(FALSE)
+
+  x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
+  if (!nrow(x)) return(FALSE)
+  required <- c("queue_sha256","source_run_id","batch_id","status")
+  if (!all(required %in% names(x))) {
+    stop(tab, " resume-request tab is malformed", call. = FALSE)
+  }
+
+  any(
+    as.character(x$queue_sha256) == as.character(queue_sha256) &
+    as.character(x$source_run_id) == as.character(source_run_id) &
+    as.character(x$batch_id) == as.character(batch_id) &
+    as.character(x$status) %in% c("dispatching","dispatched")
+  )
+}
+
+append_workflow_resume_request <- function(tab, prefix, queue_sha256, source_run_id, batch_id, status, message = "") {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tabs <- sheet_names_cached(ss)
+  required_cols <- c(
+    "request_id","queue_sha256","source_run_id","batch_id","status",
+    "requested_at_utc","message"
+  )
+
+  if (!tab %in% tabs) {
+    sheet_add_cached(ss, tab)
+    empty <- as.data.frame(
+      setNames(replicate(length(required_cols), character(), simplify = FALSE), required_cols),
+      stringsAsFactors = FALSE
+    )
+    googlesheets4::sheet_write(empty, ss = ss, sheet = tab)
+  }
+
+  row <- data.frame(
+    request_id = paste0(prefix, digest::digest(
+      paste(
+        queue_sha256, source_run_id, batch_id, status,
+        format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%OS6Z"),
+        sep="|"
+      ),
+      algo="sha256", serialize=FALSE
+    )),
+    queue_sha256=as.character(queue_sha256),
+    source_run_id=as.character(source_run_id),
+    batch_id=as.character(batch_id),
+    status=as.character(status),
+    requested_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
+    message=as.character(message),
+    stringsAsFactors=FALSE
+  )
+  googlesheets4::sheet_append(ss, data=row, sheet=tab)
+  invisible(row)
+}
+
+w04_validation_finalize_request_tab <- function() {
+  Sys.getenv("LEM_W04_VALIDATION_FINALIZE_REQUEST_TAB", unset = "w04_validation_finalize_requests")
+}
+
+w04_validation_finalize_request_exists <- function(queue_sha256, batch_id) {
+  workflow_resume_request_exists(
+    w04_validation_finalize_request_tab(), queue_sha256, "", batch_id
+  )
+}
+
+append_w04_validation_finalize_request <- function(queue_sha256, batch_id, status, message = "") {
+  append_workflow_resume_request(
+    w04_validation_finalize_request_tab(), "w04-validation-finalize-",
+    queue_sha256, "", batch_id, status, message
+  )
+}
+
+w04_resolution_resume_request_tab <- function() {
+  Sys.getenv("LEM_W04_RESOLUTION_RESUME_REQUEST_TAB", unset = "w04_resolution_resume_requests")
+}
+
+w04_resolution_resume_request_exists <- function(queue_sha256, source_run_id, batch_id) {
+  workflow_resume_request_exists(
+    w04_resolution_resume_request_tab(), queue_sha256, source_run_id, batch_id
+  )
+}
+
+append_w04_resolution_resume_request <- function(queue_sha256, source_run_id, batch_id, status, message = "") {
+  append_workflow_resume_request(
+    w04_resolution_resume_request_tab(), "w04-resolution-resume-",
+    queue_sha256, source_run_id, batch_id, status, message
+  )
+}
+
+w08_resume_request_tab <- function() {
+  Sys.getenv("LEM_W08_RESUME_REQUEST_TAB", unset = "w08_resume_requests")
+}
+
+w08_resume_request_exists <- function(queue_sha256, source_run_id, batch_id) {
+  workflow_resume_request_exists(
+    w08_resume_request_tab(), queue_sha256, source_run_id, batch_id
+  )
+}
+
+append_w08_resume_request <- function(queue_sha256, source_run_id, batch_id, status, message = "") {
+  append_workflow_resume_request(
+    w08_resume_request_tab(), "w08-resume-",
+    queue_sha256, source_run_id, batch_id, status, message
+  )
+}
+
+
 w04_decision_tab <- function() {
   Sys.getenv("LEM_W04_DECISION_TAB", unset = "decisions_w04_validation")
+}
+
+w04_screening_note_tab <- function() {
+  Sys.getenv("LEM_W04_SCREENING_NOTE_TAB", unset = "w04_screening_notes")
+}
+
+read_sheet_w04_screening_note_log <- function() {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w04_screening_note_tab()
+  if (!tab %in% sheet_names_cached(ss)) return(list())
+  x <- googlesheets4::read_sheet(ss, sheet=tab, col_types="c")
+  if (!nrow(x)) return(list())
+  lapply(seq_len(nrow(x)), function(i) as.list(x[i,,drop=FALSE]))
+}
+
+active_sheet_w04_screening_notes <- function(queue_sha256 = "") {
+  rows <- read_sheet_w04_screening_note_log()
+  if (!length(rows)) return(list())
+  sha <- tolower(as.character(queue_sha256 %||% ""))
+  if (nzchar(sha)) {
+    rows <- Filter(
+      function(x) identical(tolower(as.character(x$queue_sha256 %||% "")), sha),
+      rows
+    )
+  }
+  if (!length(rows)) return(list())
+  keys <- vapply(rows, function(x) paste(
+    tolower(as.character(x$queue_sha256 %||% "")),
+    as.character(x$review_case_id %||% ""),
+    as.character(x$reviewer %||% ""),
+    sep="::"
+  ), character(1))
+  tm <- vapply(rows, function(x) as.character(x$saved_at_utc %||% ""), character(1))
+  ord <- order(tm, seq_along(rows), decreasing=TRUE)
+  rows <- rows[ord]
+  keys <- keys[ord]
+  rows[!duplicated(keys)]
+}
+
+append_sheet_w04_screening_note <- function(note, prior_note=NULL) {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w04_screening_note_tab()
+  tabs <- sheet_names_cached(ss)
+  cols <- c(
+    "note_id","review_case_id","record_id","note","reviewer",
+    "saved_at_utc","queue_sha256","supersedes_note_id"
+  )
+
+  if (!tab %in% tabs) {
+    sheet_add_cached(ss, tab)
+    empty <- as.data.frame(
+      setNames(replicate(length(cols), character(), simplify=FALSE), cols),
+      stringsAsFactors=FALSE
+    )
+    googlesheets4::sheet_write(empty, ss=ss, sheet=tab)
+  }
+
+  review_case_id <- as.character(note$review_case_id %||% "")
+  reviewer <- as.character(note$reviewer %||% "")
+  text <- trimws(as.character(note$note %||% ""))
+  if (!nzchar(review_case_id)) stop("W04 screening note is missing review_case_id", call.=FALSE)
+  if (!nzchar(reviewer)) stop("W04 screening note is missing reviewer", call.=FALSE)
+  if (!nzchar(text)) stop("W04 screening note must not be empty", call.=FALSE)
+
+  saved_at <- as.character(note$saved_at_utc %||% format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"))
+  note_id <- paste0("w04-note-", substr(digest::digest(
+    paste(review_case_id, reviewer, text, saved_at, sep="|"),
+    algo="sha256", serialize=FALSE
+  ),1L,24L))
+  supersedes <- if (is.null(prior_note)) "" else as.character(prior_note$note_id %||% "")
+
+  row <- data.frame(
+    note_id=note_id,
+    review_case_id=review_case_id,
+    record_id=as.character(note$record_id %||% ""),
+    note=text,
+    reviewer=reviewer,
+    saved_at_utc=saved_at,
+    queue_sha256=as.character(note$queue_sha256 %||% ""),
+    supersedes_note_id=supersedes,
+    stringsAsFactors=FALSE
+  )
+  googlesheets4::sheet_append(ss, data=row, sheet=tab)
+
+  verify <- googlesheets4::read_sheet(ss, sheet=tab, col_types="c")
+  hit <- verify[as.character(verify$note_id)==note_id,,drop=FALSE]
+  if (nrow(hit)!=1L) stop("W04 screening note write could not be verified", call.=FALSE)
+  as.list(hit[1,,drop=FALSE])
+}
+
+w04_resolution_abstract_edit_tab <- function() {
+  Sys.getenv("LEM_W04_RESOLUTION_ABSTRACT_EDIT_TAB", unset = "w04_resolution_abstract_edits")
+}
+
+read_sheet_w04_resolution_abstract_edit_log <- function() {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w04_resolution_abstract_edit_tab()
+  if (!tab %in% sheet_names_cached(ss)) return(list())
+  x <- googlesheets4::read_sheet(ss, sheet=tab, col_types="c")
+  if (!nrow(x)) return(list())
+  lapply(seq_len(nrow(x)), function(i) as.list(x[i,,drop=FALSE]))
+}
+
+active_sheet_w04_resolution_abstract_edits <- function(queue_sha256 = "") {
+  rows <- read_sheet_w04_resolution_abstract_edit_log()
+  if (!length(rows)) return(list())
+  sha <- tolower(as.character(queue_sha256 %||% ""))
+  if (nzchar(sha)) {
+    rows <- Filter(
+      function(x) identical(tolower(as.character(x$queue_sha256 %||% "")), sha),
+      rows
+    )
+  }
+  if (!length(rows)) return(list())
+  keys <- vapply(rows, function(x) paste(
+    tolower(as.character(x$queue_sha256 %||% "")),
+    as.character(x$review_case_id %||% ""),
+    sep="::"
+  ), character(1))
+  tm <- vapply(rows, function(x) as.character(x$saved_at_utc %||% ""), character(1))
+  ord <- order(tm, seq_along(rows), decreasing=TRUE)
+  rows <- rows[ord]
+  keys <- keys[ord]
+  rows[!duplicated(keys)]
+}
+
+append_sheet_w04_resolution_abstract_edit <- function(edit, prior_edit=NULL) {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w04_resolution_abstract_edit_tab()
+  tabs <- sheet_names_cached(ss)
+  cols <- c(
+    "edit_id","review_case_id","record_id","abstract","reviewer",
+    "saved_at_utc","queue_sha256","supersedes_edit_id"
+  )
+  if (!tab %in% tabs) {
+    sheet_add_cached(ss, tab)
+    empty <- as.data.frame(
+      setNames(replicate(length(cols), character(), simplify=FALSE), cols),
+      stringsAsFactors=FALSE
+    )
+    googlesheets4::sheet_write(empty, ss=ss, sheet=tab)
+  }
+
+  review_case_id <- as.character(edit$review_case_id %||% "")
+  record_id <- as.character(edit$record_id %||% "")
+  reviewer <- as.character(edit$reviewer %||% "")
+  abstract <- trimws(as.character(edit$abstract %||% ""))
+  queue_sha <- tolower(as.character(edit$queue_sha256 %||% ""))
+  if (!nzchar(review_case_id) || !nzchar(record_id)) stop("W04 abstract edit is missing record identity", call.=FALSE)
+  if (!nzchar(reviewer)) stop("W04 abstract edit is missing reviewer", call.=FALSE)
+  if (!nzchar(abstract)) stop("W04 abstract edit must not be empty", call.=FALSE)
+  if (!grepl("^[0-9a-f]{64}$",queue_sha)) stop("W04 abstract edit has invalid queue SHA-256", call.=FALSE)
+
+  saved_at <- as.character(edit$saved_at_utc %||% format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"))
+  edit_id <- paste0("w04-abs-", substr(digest::digest(
+    paste(review_case_id, record_id, abstract, reviewer, saved_at, queue_sha, sep="|"),
+    algo="sha256", serialize=FALSE
+  ),1L,24L))
+  supersedes <- if (is.null(prior_edit)) "" else as.character(prior_edit$edit_id %||% "")
+
+  row <- data.frame(
+    edit_id=edit_id,
+    review_case_id=review_case_id,
+    record_id=record_id,
+    abstract=abstract,
+    reviewer=reviewer,
+    saved_at_utc=saved_at,
+    queue_sha256=queue_sha,
+    supersedes_edit_id=supersedes,
+    stringsAsFactors=FALSE
+  )
+  googlesheets4::sheet_append(ss, data=row, sheet=tab)
+
+  verify <- googlesheets4::read_sheet(ss, sheet=tab, col_types="c")
+  hit <- verify[as.character(verify$edit_id)==edit_id,,drop=FALSE]
+  if (nrow(hit)!=1L) stop("W04 abstract edit write could not be verified", call.=FALSE)
+  as.list(hit[1,,drop=FALSE])
 }
 
 w04_resolution_decision_tab <- function() {
@@ -606,6 +1054,174 @@ w04_conflict_decision_tab <- function() {
 
 w04_consistency_analysis_tab <- function() {
   Sys.getenv("LEM_W04_CONSISTENCY_TAB", unset = "w04_consistency_analyses")
+}
+
+w04_kappa_registry_tab <- function() {
+  Sys.getenv("LEM_W04_KAPPA_REGISTRY_TAB", unset = "w04_kappa_registry")
+}
+
+w04_human_kappa_registry_tab <- function() {
+  Sys.getenv("LEM_W04_HUMAN_KAPPA_REGISTRY_TAB", unset = "w04_human_kappa_registry")
+}
+
+ensure_w04_human_kappa_registry_tab <- function() {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w04_human_kappa_registry_tab()
+  cols <- w04_human_kappa_registry_columns()
+  tabs <- sheet_names_cached(ss)
+  if (!tab %in% tabs) {
+    sheet_add_cached(ss,tab)
+    googlesheets4::sheet_write(w04_empty_human_kappa_registry(),ss=ss,sheet=tab)
+    return(invisible(TRUE))
+  }
+  x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+  if (!nrow(x) && !all(cols %in% names(x))) {
+    googlesheets4::sheet_write(w04_empty_human_kappa_registry(),ss=ss,sheet=tab)
+  } else if (nrow(x)) {
+    w04_normalise_human_kappa_registry(x)
+  }
+  invisible(TRUE)
+}
+
+read_w04_human_kappa_registry <- function() {
+  gs4_auth_from_env()
+  ensure_w04_human_kappa_registry_tab()
+  ss <- sheet_id_from_env()
+  x <- googlesheets4::read_sheet(ss,sheet=w04_human_kappa_registry_tab(),col_types="c")
+  w04_normalise_human_kappa_registry(x)
+}
+
+append_w04_human_kappa_registry <- function(row) {
+  gs4_auth_from_env()
+  ensure_w04_human_kappa_registry_tab()
+  ss <- sheet_id_from_env()
+  tab <- w04_human_kappa_registry_tab()
+  row <- w04_normalise_human_kappa_registry(row)
+  if (nrow(row) != 1L) stop("Exactly one human consistency row must be appended",call.=FALSE)
+  existing <- read_w04_human_kappa_registry()
+  id <- as.character(row$consistency_id[[1L]])
+  if (id %in% existing$consistency_id) {
+    return(existing[existing$consistency_id==id,,drop=FALSE][1,,drop=FALSE])
+  }
+  googlesheets4::sheet_append(ss,data=row,sheet=tab)
+  verify <- read_w04_human_kappa_registry()
+  if (sum(verify$consistency_id==id) != 1L) {
+    stop("Human consistency registry append verification failed",call.=FALSE)
+  }
+  verify[verify$consistency_id==id,,drop=FALSE]
+}
+
+delete_w04_human_kappa_registry_row <- function(consistency_id) {
+  gs4_auth_from_env()
+  ensure_w04_human_kappa_registry_tab()
+  ss <- sheet_id_from_env()
+  tab <- w04_human_kappa_registry_tab()
+  id <- as.character(consistency_id)
+  if (!nzchar(id)) stop("Missing human consistency ID",call.=FALSE)
+  x <- read_w04_human_kappa_registry()
+  hits <- which(x$consistency_id==id)
+  if (length(hits) != 1L) stop("Human consistency row was not found uniquely",call.=FALSE)
+  keep <- x[-hits,,drop=FALSE]
+  if (!nrow(keep)) keep <- w04_empty_human_kappa_registry()
+  googlesheets4::sheet_write(keep,ss=ss,sheet=tab)
+  verify <- read_w04_human_kappa_registry()
+  if (id %in% verify$consistency_id) stop("Human consistency row deletion verification failed",call.=FALSE)
+  invisible(verify)
+}
+
+read_github_w04_kappa_registry <- function() {
+  repo <- Sys.getenv(
+    "LEM_W04_KAPPA_REGISTRY_REPO",
+    unset = "thesalmonandthetomato/LivingEvidenceMap"
+  )
+  ref <- Sys.getenv(
+    "LEM_W04_KAPPA_REGISTRY_REF",
+    unset = ""
+  )
+  if (!identical(repo, "thesalmonandthetomato/LivingEvidenceMap") || !identical(ref, "main")) stop("Development app refuses W04 registry reads outside LivingEvidenceMap/main",call.=FALSE)
+  path <- Sys.getenv(
+    "LEM_W04_KAPPA_REGISTRY_PATH",
+    unset = "docs/workflow04/kappa_registry.csv"
+  )
+  endpoint <- sprintf(
+    "https://api.github.com/repos/%s/contents/%s",
+    repo,
+    paste(vapply(strsplit(path,"/",fixed=TRUE)[[1L]],URLencode,character(1),reserved=TRUE),collapse="/")
+  )
+  req <- httr2::request(endpoint) |>
+    httr2::req_url_query(ref=ref) |>
+    httr2::req_headers(
+      Accept="application/vnd.github+json",
+      `X-GitHub-Api-Version`="2022-11-28",
+      `User-Agent`="LivingEvidenceMap-Adjudication"
+    )
+  token <- Sys.getenv("LEM_GITHUB_DISPATCH_TOKEN",unset="")
+  if(!nzchar(token)) {
+    stop("LEM_GITHUB_DISPATCH_TOKEN is required to read the authoritative GitHub W04 kappa registry",call.=FALSE)
+  }
+  req <- httr2::req_headers(req,Authorization=paste("Bearer",token))
+  x <- tryCatch({
+    resp <- httr2::req_perform(req)
+    if(httr2::resp_status(resp)!=200L) stop("GitHub API HTTP ",httr2::resp_status(resp))
+    meta <- jsonlite::fromJSON(httr2::resp_body_string(resp),simplifyVector=FALSE)
+    encoding <- if(is.null(meta$encoding)) "" else as.character(meta$encoding)
+    content <- if(is.null(meta$content)) "" else as.character(meta$content)
+    if(!identical(encoding,"base64") || !nzchar(content)) {
+      stop("GitHub registry response is missing base64 content")
+    }
+    txt <- rawToChar(jsonlite::base64_dec(gsub("[[:space:]]+","",content)))
+    utils::read.csv(
+      text=txt,
+      stringsAsFactors=FALSE,
+      check.names=FALSE,
+      colClasses="character",
+      na.strings=NULL
+    )
+  },error=function(e) {
+    stop("Could not read authoritative GitHub W04 kappa registry: ",conditionMessage(e),call.=FALSE)
+  })
+  w04_normalise_kappa_registry(x)
+}
+
+read_sheet_w04_kappa_registry <- function() {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w04_kappa_registry_tab()
+  if (!tab %in% sheet_names_cached(ss)) return(w04_empty_kappa_registry())
+  x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+  w04_normalise_kappa_registry(x)
+}
+
+write_sheet_w04_kappa_registry <- function(x) {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w04_kappa_registry_tab()
+  x <- w04_normalise_kappa_registry(x)
+  if (!tab %in% sheet_names_cached(ss)) sheet_add_cached(ss,tab)
+  googlesheets4::sheet_write(x,ss=ss,sheet=tab)
+  verify <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+  verify <- w04_normalise_kappa_registry(verify)
+  if (!identical(
+    unname(w04_kappa_registry_row_signatures(verify)),
+    unname(w04_kappa_registry_row_signatures(x))
+  ) || !identical(
+    names(w04_kappa_registry_row_signatures(verify)),
+    names(w04_kappa_registry_row_signatures(x))
+  )) {
+    stop("W04 kappa Google mirror write verification failed",call.=FALSE)
+  }
+  invisible(x)
+}
+
+sync_w04_kappa_registry_from_github <- function() {
+  github <- read_github_w04_kappa_registry()
+  google <- read_sheet_w04_kappa_registry()
+  relation <- w04_kappa_registry_relation(github,google)
+  if (relation %in% c("google_empty","google_subset")) {
+    write_sheet_w04_kappa_registry(github)
+  }
+  github
 }
 
 ensure_w04_consistency_analysis_tab <- function() {
@@ -759,7 +1375,7 @@ append_w04_conflict_set <- function(analysis_row,created_by="") {
   as.list(row[1,,drop=FALSE])
 }
 
-append_w04_consistency_analysis <- function(analysis,batch_id,queue_sha256,review_mode="",created_by="") {
+append_w04_consistency_analysis <- function(analysis,batch_id,queue_sha256,review_mode="",created_by="",analysis_id_override="") {
   gs4_auth_from_env()
   ensure_w04_consistency_analysis_tab()
   ss <- sheet_id_from_env()
@@ -772,10 +1388,18 @@ append_w04_consistency_analysis <- function(analysis,batch_id,queue_sha256,revie
     analysis$kappa %||% NA_real_,
     now,created_by,sep="|"
   )
-  analysis_id <- paste0(
-    "w04-analysis-",
-    substr(digest::digest(payload,algo="sha256",serialize=FALSE),1L,20L)
-  )
+  analysis_id <- as.character(analysis_id_override %||% "")
+  if (!nzchar(analysis_id)) {
+    analysis_id <- paste0(
+      "w04-analysis-",
+      substr(digest::digest(payload,algo="sha256",serialize=FALSE),1L,20L)
+    )
+  }
+  existing <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+  if (nrow(existing) && analysis_id %in% as.character(existing$analysis_id)) {
+    hit <- existing[as.character(existing$analysis_id)==analysis_id,,drop=FALSE]
+    return(as.list(hit[1,,drop=FALSE]))
+  }
   row <- data.frame(
     analysis_id=analysis_id,
     project_id=Sys.getenv("LEM_PROJECT_ID",unset="living-evidence-map"),
@@ -806,6 +1430,37 @@ append_w04_consistency_analysis <- function(analysis,batch_id,queue_sha256,revie
     stop("W04 consistency analysis write verification failed",call.=FALSE)
   }
   as.list(row[1,,drop=FALSE])
+}
+
+delete_w04_consistency_analysis_row <- function(analysis_id) {
+  gs4_auth_from_env()
+  ensure_w04_consistency_analysis_tab()
+  ss <- sheet_id_from_env()
+  tab <- w04_consistency_analysis_tab()
+  id <- as.character(analysis_id)
+  if (!nzchar(id)) stop("Missing W04 consistency analysis ID",call.=FALSE)
+  x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+  if (!nrow(x)) return(invisible(TRUE))
+  hits <- which(as.character(x$analysis_id)==id)
+  if (!length(hits)) return(invisible(TRUE))
+  if (length(hits)>1L) stop("W04 consistency analysis ID is not unique",call.=FALSE)
+  keep <- x[-hits,,drop=FALSE]
+  if (!nrow(keep)) {
+    cols <- c(
+      "analysis_id","project_id","project_name","batch_id","queue_sha256",
+      "review_mode","rater_ids_json","metric","eligible_n","complete_n",
+      "missing_n","agreement_n","conflict_n","raw_agreement","kappa",
+      "pairwise_json","patterns_json","conflict_case_ids_json",
+      "agreement_case_ids_json","created_by","created_at_utc"
+    )
+    keep <- as.data.frame(setNames(replicate(length(cols),character(),simplify=FALSE),cols),stringsAsFactors=FALSE)
+  }
+  googlesheets4::sheet_write(keep,ss=ss,sheet=tab)
+  verify <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+  if (nrow(verify) && id %in% as.character(verify$analysis_id)) {
+    stop("W04 consistency analysis deletion verification failed",call.=FALSE)
+  }
+  invisible(TRUE)
 }
 
 read_sheet_w04_queue_from_tab <- function(tab) {
@@ -1108,13 +1763,14 @@ append_sheet_w08_decision <- function(decision, prior_decision=NULL) {
     supersedes_decision_id=prior_id,
     stringsAsFactors=FALSE
   )
+  # sheet_append() returns only after the Google Sheets API accepts the write.
+  # Keep the authoritative pre-write collision check above, but avoid a second
+  # full-table read after every W08 save. Normalise the exact row submitted so
+  # the session state advances immediately after a successful append response.
   googlesheets4::sheet_append(ss,data=row,sheet=tab)
 
-  verify <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
-  hit <- verify[verify$decision_id==decision_id,,drop=FALSE]
-  if(nrow(hit)!=1L) stop("W08 decision write verification failed",call.=FALSE)
   normalise_saved_decision_event(
-    as.list(hit[1,,drop=FALSE]),
+    as.list(row[1,,drop=FALSE]),
     prior_decision = prior_decision,
     case_fields = c("case_id", "record_id")
   )
@@ -1126,74 +1782,68 @@ pipeline_status_tab <- function() {
 }
 
 read_latest_pipeline_status <- function() {
-  repo_url <- Sys.getenv(
-    "LEM_CURRENT_RUN_STATUS_URL",
-    unset = "https://raw.githubusercontent.com/thesalmonandthetomato/LivingEvidenceMap/workflow01-final-architecture/docs/current_run/current_run_status.json"
-  )
+  val <- function(x) if (is.null(x) || !length(x)) "" else as.character(x[[1L]])
+
+  # Production KPI values must come from the canonical current-run status on
+  # workflow01-final-architecture. Do not fall back to pipeline_run_status:
+  # that Sheet is an operational event log and historical schema migrations
+  # can leave older rows positionally incompatible with current KPI columns.
   current <- tryCatch(
-    jsonlite::fromJSON(repo_url, simplifyVector = FALSE),
+    jsonlite::fromJSON(
+      read_github_text_file(
+        "docs/current_run/current_run_status.json",
+        ref = github_scoping_ref()
+      ),
+      simplifyVector = FALSE
+    ),
     error = function(e) NULL
   )
-  if (!is.null(current) && identical(as.character(current$schema), "living-evidence-map-current-run-status-v1")) {
-    val <- function(x) if (is.null(x) || !length(x)) "" else as.character(x[[1L]])
-    return(list(
-      update_id = val(current$update_id),
-      event_at_utc = val(current$last_updated_at_utc),
-      stage = val(current$progress$current_stage),
-      workflow_run_id = val(current$workflow_runs[[val(current$progress$current_stage)]]),
-      last_search_date = val(current$search$search_date),
-      canonical_existing = val(current$baseline$canonical_records),
-      search_results_total = val(current$counts$search_results),
-      deduplicated_records = val(current$counts$deduplicated_records),
-      enriched_records = val(current$counts$enriched_records),
-      retracted_records = val(current$counts$retraction_exclusions),
-      screened_include = val(current$counts$screened_include),
-      screened_exclude = val(current$counts$screened_exclude),
-      geography_with = val(current$counts$geography$with),
-      geography_without = val(current$counts$geography$without),
-      topic_with = val(current$counts$topics$with),
-      topic_without = val(current$counts$topics$without),
-      completed_through = val(current$progress$completed_through),
-      active_workflow = val(current$progress$active_position),
-      status_label = val(current$progress$status_label)
-    ))
+  if (is.null(current)) return(NULL)
+  if (!identical(as.character(current$schema), "living-evidence-map-current-run-status-v1")) {
+    return(NULL)
   }
 
-  gs4_auth_from_env()
-  ss <- sheet_id_from_env()
-  tab <- pipeline_status_tab()
-  tabs <- sheet_names_cached(ss)
-  if(!tab %in% tabs) return(NULL)
-  x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
-  if(!nrow(x)) return(NULL)
+  delta_value <- function(cur, prev) {
+    a <- suppressWarnings(as.numeric(val(cur)))
+    b <- suppressWarnings(as.numeric(val(prev)))
+    if (is.na(a) || is.na(b)) "" else as.character(a - b)
+  }
+  prev <- current$baseline$previous_counts %||% list()
 
-  base <- c(
-    "event_id","update_id","event_at_utc","stage","workflow_run_id",
-    "last_search_date","canonical_existing","search_results_total",
-    "deduplicated_records","enriched_records","retracted_records",
-    "screened_include","screened_exclude",
-    "completed_through","active_workflow","status_label"
+  list(
+    update_id = val(current$update_id),
+    event_at_utc = val(current$last_updated_at_utc),
+    stage = val(current$progress$current_stage),
+    workflow_run_id = val(current$workflow_runs[[val(current$progress$current_stage)]]),
+    last_search_date = val(current$search$search_date),
+    canonical_existing = val(current$baseline$canonical_records),
+    search_results_total = val(current$counts$search_results),
+    search_results_update = val(current$search$search_results),
+    deduplicated_records = val(current$counts$deduplicated_records),
+    deduplicated_update = delta_value(current$counts$deduplicated_records, prev$deduplicated_records),
+    enriched_records = val(current$counts$enriched_records),
+    enriched_update = delta_value(current$counts$enriched_records, prev$enriched_records),
+    retracted_records = val(current$counts$retraction_exclusions),
+    retracted_update = delta_value(current$counts$retraction_exclusions, prev$retraction_exclusions),
+    screened_include = val(current$counts$screened_include),
+    screened_exclude = val(current$counts$screened_exclude),
+    screened_include_update = delta_value(current$counts$screened_include, prev$screened_include),
+    screened_exclude_update = delta_value(current$counts$screened_exclude, prev$screened_exclude),
+    species_records = val(current$counts$species_records),
+    species_update = delta_value(current$counts$species_records, prev$species_records),
+    geography_with = val(current$counts$geography$with),
+    geography_without = val(current$counts$geography$without),
+    geography_with_update = delta_value(current$counts$geography$with, (prev$geography %||% list())$with),
+    geography_without_update = delta_value(current$counts$geography$without, (prev$geography %||% list())$without),
+    topic_with = val(current$counts$topics$with),
+    topic_without = val(current$counts$topics$without),
+    topic_with_update = delta_value(current$counts$topics$with, (prev$topics %||% list())$with),
+    topic_without_update = delta_value(current$counts$topics$without, (prev$topics %||% list())$without),
+    completed_through = val(current$progress$completed_through),
+    active_workflow = val(current$progress$active_position),
+    status_label = val(current$progress$status_label)
   )
-  miss <- setdiff(base,names(x))
-  if(length(miss)) stop("pipeline_run_status missing field(s): ",paste(miss,collapse=", "),call.=FALSE)
-
-  if(all(c("geography_with","geography_without","topic_with","topic_without") %in% names(x))) {
-    cols <- c(base[1:13],"geography_with","geography_without","topic_with","topic_without",base[14:16])
-    return(x[nrow(x),cols,drop=FALSE] |> as.list())
-  }
-
-  if(all(c("geography_coded","topic_coded") %in% names(x))) {
-    z <- x[nrow(x),base,drop=FALSE] |> as.list()
-    z$geography_with <- as.character(x$geography_coded[[nrow(x)]])
-    z$geography_without <- ""
-    z$topic_with <- as.character(x$topic_coded[[nrow(x)]])
-    z$topic_without <- ""
-    return(z)
-  }
-
-  NULL
 }
-
 
 user_registry_tab <- function() {
   Sys.getenv("LEM_GOOGLE_USERS_TAB", unset = "users")
@@ -1899,4 +2549,248 @@ test_queue_tab_exists <- function(tab) {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tab %in% sheet_names_cached(ss)
+}
+
+
+backend_reset_operational_tabs <- function() {
+  unique(c(
+    "queue_w01_active",
+    "queue_w01_legacy_730",
+    sheet_decision_tab(),
+    Sys.getenv("LEM_W02_QUEUE_TAB", unset = "queue_w02_active"),
+    w02_decision_tab(),
+    Sys.getenv("LEM_W02_RESUME_REQUEST_TAB", unset = "w02_resume_requests"),
+    Sys.getenv("LEM_W04_QUEUE_TAB", unset = "queue_w04_validation_active"),
+    w04_decision_tab(),
+    w04_validation_finalize_request_tab(),
+    Sys.getenv("LEM_W04_RESOLUTION_QUEUE_TAB", unset = "queue_w04_resolution_active"),
+    w04_resolution_decision_tab(),
+    w04_resolution_abstract_edit_tab(),
+    Sys.getenv("LEM_W04_CONFLICT_QUEUE_TAB", unset = "queue_w04_conflict_active"),
+    w04_conflict_decision_tab(),
+    Sys.getenv("LEM_W04_TEST_QUEUE_TAB", unset = "queue_w04_test_active"),
+    w04_consistency_analysis_tab(),
+    w04_human_kappa_registry_tab(),
+    w04_conflict_set_tab(),
+    Sys.getenv("LEM_W08_QUEUE_TAB", unset = "queue_w08_active"),
+    w08_decision_tab(),
+    assignment_registry_tab(),
+    assignment_audit_tab(),
+    batch_status_tab(),
+    pipeline_status_tab()
+  ))
+}
+
+backend_reset_queue_specs <- function() {
+  list(
+    list(stage = "01", tab = "queue_w01_active"),
+    list(stage = "01", tab = "queue_w01_legacy_730"),
+    list(stage = "02", tab = Sys.getenv("LEM_W02_QUEUE_TAB", unset = "queue_w02_active")),
+    list(stage = "04", tab = Sys.getenv("LEM_W04_QUEUE_TAB", unset = "queue_w04_validation_active")),
+    list(stage = "04", tab = Sys.getenv("LEM_W04_RESOLUTION_QUEUE_TAB", unset = "queue_w04_resolution_active")),
+    list(stage = "04", tab = Sys.getenv("LEM_W04_CONFLICT_QUEUE_TAB", unset = "queue_w04_conflict_active")),
+    list(stage = "04", tab = Sys.getenv("LEM_W04_TEST_QUEUE_TAB", unset = "queue_w04_test_active")),
+    list(stage = "08", tab = Sys.getenv("LEM_W08_QUEUE_TAB", unset = "queue_w08_active"))
+  )
+}
+
+backend_reset_is_synthetic_batch <- function(batch_id) {
+  z <- tolower(trimws(as.character(batch_id %||% "")))
+  nzchar(z) && (
+    grepl("^test[-_]", z) ||
+    grepl("^w0[1248]-test", z) ||
+    grepl("synthetic", z, fixed = TRUE)
+  )
+}
+
+backend_reset_blockers <- function(allowed_obsolete_batches = list()) {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tabs <- sheet_names_cached(ss)
+  blockers <- character()
+
+  allowed_exact <- function(stage, tab, batch_id, queue_sha256) {
+    if (!length(allowed_obsolete_batches)) return(FALSE)
+    any(vapply(allowed_obsolete_batches, function(z) {
+      identical(as.character(z$stage %||% ""), as.character(stage)) &&
+        identical(as.character(z$tab %||% ""), as.character(tab)) &&
+        identical(as.character(z$batch_id %||% ""), as.character(batch_id)) &&
+        identical(tolower(as.character(z$queue_sha256 %||% "")), tolower(as.character(queue_sha256)))
+    }, logical(1)))
+  }
+
+  for (spec in backend_reset_queue_specs()) {
+    tab <- as.character(spec$tab)
+    if (!nzchar(tab) || !tab %in% tabs) next
+    x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
+    if (!nrow(x)) next
+    if (!all(c("batch_id", "queue_sha256") %in% names(x))) {
+      blockers <- c(blockers, paste0(tab, ": queue schema is not recognised"))
+      next
+    }
+    batches <- unique(trimws(as.character(x$batch_id)))
+    hashes <- unique(tolower(trimws(as.character(x$queue_sha256))))
+    batches <- batches[nzchar(batches)]
+    hashes <- hashes[nzchar(hashes)]
+    if (length(batches) != 1L || length(hashes) != 1L) {
+      blockers <- c(blockers, paste0(tab, ": ambiguous batch/SHA state"))
+      next
+    }
+    if (backend_reset_is_synthetic_batch(batches[[1L]])) next
+    status <- latest_batch_status(spec$stage, batches[[1L]], hashes[[1L]])
+    if (!identical(status, "consumed")) {
+      if (allowed_exact(spec$stage, tab, batches[[1L]], hashes[[1L]])) next
+      blockers <- c(
+        blockers,
+        sprintf("%s: production batch %s is %s", tab, batches[[1L]], if(nzchar(status)) status else "not marked consumed")
+      )
+    }
+  }
+  unique(blockers)
+}
+
+archive_backend_queue_to_zenodo <- function(created_by = "") {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  token <- Sys.getenv("ZENODO_ACCESS_TOKEN", unset = "")
+  if (!nzchar(token)) stop("ZENODO_ACCESS_TOKEN is not configured; backend reset refused", call. = FALSE)
+
+  tabs <- sheet_names_cached(ss)
+  archive_tabs <- intersect(backend_reset_operational_tabs(), tabs)
+  td <- tempfile("lem-shiny-backend-archive-")
+  dir.create(td, recursive = TRUE)
+  data_dir <- file.path(td, "tabs")
+  dir.create(data_dir)
+
+  manifest_tabs <- list()
+  for (tab in archive_tabs) {
+    x <- googlesheets4::read_sheet(ss, sheet = tab, col_types = "c")
+    safe_name <- gsub("[^A-Za-z0-9._-]+", "_", tab)
+    p <- file.path(data_dir, paste0(safe_name, ".csv"))
+    utils::write.csv(x, p, row.names = FALSE, na = "")
+    manifest_tabs[[tab]] <- list(
+      rows = nrow(x),
+      columns = ncol(x),
+      csv = basename(p),
+      sha256 = digest::digest(file = p, algo = "sha256", serialize = FALSE)
+    )
+  }
+
+  archived_at <- format(Sys.time(), tz = "UTC", format = "%Y-%m-%dT%H:%M:%SZ")
+  manifest <- list(
+    schema = "living-evidence-map-shiny-backend-archive-v1",
+    archived_at_utc = archived_at,
+    created_by = as.character(created_by),
+    sheet_id_sha256 = digest::digest(as.character(ss), algo = "sha256", serialize = FALSE),
+    excluded_tabs = intersect(c(user_registry_tab()), tabs),
+    tabs = manifest_tabs
+  )
+  manifest_path <- file.path(td, "manifest.json")
+  writeLines(jsonlite::toJSON(manifest, auto_unbox = TRUE, pretty = TRUE, null = "null"), manifest_path, useBytes = TRUE)
+
+  archive_path <- file.path(td, paste0("living-evidence-map-shiny-backend-", format(Sys.time(), tz="UTC", format="%Y%m%dT%H%M%SZ"), ".tar.gz"))
+  oldwd <- getwd()
+  on.exit(setwd(oldwd), add = TRUE)
+  setwd(td)
+  utils::tar(basename(archive_path), files = c("manifest.json", "tabs"), compression = "gzip", tar = "internal")
+  setwd(oldwd)
+  if (!file.exists(archive_path) || file.info(archive_path)$size <= 0) stop("Backend archive bundle was not created", call. = FALSE)
+
+  api <- "https://zenodo.org/api/deposit/depositions"
+  auth <- function(req) req |> httr2::req_headers(Authorization = paste("Bearer", token))
+  perform <- function(req, expected, label, timeout = 120) {
+    resp <- req |> httr2::req_timeout(timeout) |> httr2::req_error(is_error = function(resp) FALSE) |> httr2::req_perform()
+    status <- httr2::resp_status(resp)
+    if (!status %in% expected) {
+      body <- tryCatch(httr2::resp_body_string(resp), error = function(e) "")
+      stop(sprintf("Zenodo %s HTTP %d: %s", label, status, body), call. = FALSE)
+    }
+    resp
+  }
+
+  created <- perform(
+    httr2::request(api) |>
+      httr2::req_method("POST") |>
+      auth() |>
+      httr2::req_headers("Content-Type" = "application/json") |>
+      httr2::req_body_raw(charToRaw("{}"), type = "application/json"),
+    201L, "draft creation"
+  ) |> httr2::resp_body_json(simplifyVector = FALSE)
+
+  dep_id <- as.character(created$id)
+  bucket <- as.character(created$links$bucket)
+  metadata <- list(metadata = list(
+    title = paste0("Living Evidence Map Shiny adjudication backend archive | ", substr(archived_at, 1L, 10L)),
+    upload_type = "dataset",
+    publication_date = format(Sys.Date(), "%Y-%m-%d"),
+    description = "<p>Restricted operational archive of the Living Evidence Map Shiny adjudication backend immediately before an administrator reset. User registry data are excluded.</p>",
+    creators = list(list(name = "Haddaway, Neal")),
+    access_right = "restricted",
+    access_conditions = "Operational adjudication provenance archive. Access is restricted.",
+    keywords = list("Living Evidence Map", "Shiny", "adjudication", "backend archive")
+  ))
+
+  perform(
+    httr2::request(paste0(api, "/", dep_id)) |>
+      httr2::req_method("PUT") |>
+      auth() |>
+      httr2::req_headers("Content-Type" = "application/json") |>
+      httr2::req_body_json(metadata, auto_unbox = TRUE),
+    200L, "metadata update"
+  )
+
+  uploaded <- perform(
+    httr2::request(paste0(bucket, "/", URLencode(basename(archive_path), reserved = TRUE))) |>
+      httr2::req_method("PUT") |>
+      auth() |>
+      httr2::req_headers(Expect = "") |>
+      httr2::req_body_file(archive_path),
+    c(200L, 201L), "archive upload", timeout = 600
+  ) |> httr2::resp_body_json(simplifyVector = FALSE)
+
+  published <- perform(
+    httr2::request(paste0(api, "/", dep_id, "/actions/publish")) |>
+      httr2::req_method("POST") |>
+      auth(),
+    c(200L, 201L, 202L), "publish"
+  ) |> httr2::resp_body_json(simplifyVector = FALSE)
+
+  record_id <- as.character(published$record_id %||% published$id %||% dep_id)
+  list(
+    record_id = record_id,
+    doi = as.character(published$doi %||% ""),
+    archive_sha256 = digest::digest(file = archive_path, algo = "sha256", serialize = FALSE),
+    archived_at_utc = archived_at,
+    tabs = archive_tabs
+  )
+}
+
+reset_backend_queue_state <- function(created_by = "", allowed_obsolete_batches = list()) {
+  if (!identical(storage_backend(), "google_sheets")) {
+    stop("Backend reset is only available with the Google Sheets backend", call. = FALSE)
+  }
+  blockers <- backend_reset_blockers(allowed_obsolete_batches = allowed_obsolete_batches)
+  if (length(blockers)) {
+    stop(
+      paste(c("Backend reset refused because live production queue state remains:", blockers), collapse = "\n"),
+      call. = FALSE
+    )
+  }
+
+  receipt <- archive_backend_queue_to_zenodo(created_by = created_by)
+
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tabs <- sheet_names_cached(ss)
+  targets <- intersect(backend_reset_operational_tabs(), tabs)
+  for (tab in targets) {
+    googlesheets4::sheet_delete(ss, sheet = tab)
+    invalidate_sheet_names_cache(ss)
+  }
+
+  list(
+    archived = receipt,
+    deleted_tabs = targets,
+    preserved_tabs = intersect(c(user_registry_tab()), sheet_names_cached(ss))
+  )
 }

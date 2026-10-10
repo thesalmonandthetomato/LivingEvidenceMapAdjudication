@@ -13,6 +13,8 @@ source("R/assignments.R", local = TRUE)
 source("R/decision_events.R", local = TRUE)
 source("R/w04_blind_resolution.R", local = TRUE)
 source("R/w04_validation_lifecycle.R", local = TRUE)
+source("R/w04_kappa_registry.R", local = TRUE)
+source("R/w04_human_kappa_registry.R", local = TRUE)
 source("R/storage_local.R", local = TRUE)
 source("R/storage_sheets.R", local = TRUE)
 source("R/storage_backend.R", local = TRUE)
@@ -21,6 +23,7 @@ source("R/github_dispatch.R", local = TRUE)
 
 queue_path <- Sys.getenv("LEM_W01_QUEUE", unset = "fixtures/w01_real_sample_2.jsonl")
 decision_path <- Sys.getenv("LEM_W01_DECISIONS", unset = "local_state/w01_decisions.jsonl")
+w01_repair_path <- Sys.getenv("LEM_W01_REPAIRS", unset = "local_state/w01_repairs.jsonl")
 assignment_path <- Sys.getenv("LEM_ASSIGNMENTS", unset = "fixtures/assignments_w01_local.jsonl")
 reviewer <- Sys.getenv("LEM_REVIEWER", unset = "prototype-reviewer")
 
@@ -39,6 +42,59 @@ normalise_display_text <- function(x) {
   x <- as.character(x %||% "")
   x <- gsub("[[:space:]]+", " ", x)
   trimws(x)
+}
+
+google_scholar_title_url <- function(title) {
+  title <- normalise_display_text(title)
+  if (!nzchar(title)) return("")
+  query <- gsub("[[:punct:]]+", "", title)
+  query <- gsub("[[:space:]]+", " ", trimws(query))
+  if (!nzchar(query)) return("")
+  paste0(
+    "https://scholar.google.co.uk/scholar?start=0&q=",
+    gsub(" ", "+", query, fixed=TRUE)
+  )
+}
+
+google_scholar_button <- function(title) {
+  url <- google_scholar_title_url(title)
+  if (!nzchar(url)) return(NULL)
+  tags$a(
+    href=url,
+    target="_blank",
+    rel="noopener noreferrer",
+    title="Search this title on Google Scholar",
+    `aria-label`="Search this title on Google Scholar",
+    class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center ms-2 flex-shrink-0",
+    style="width:30px;height:30px;padding:3px;",
+    tags$img(
+      src="https://scholar.google.com/favicon.ico",
+      alt="Google Scholar",
+      style="width:18px;height:18px;display:block;"
+    )
+  )
+}
+
+display_sentence_case_if_all_caps <- function(x) {
+  x <- normalise_display_text(x)
+  if (!nzchar(x)) return(x)
+  letters <- gsub("[^[:alpha:]]", "", x)
+  if (!nzchar(letters) || !identical(letters, toupper(letters))) return(x)
+
+  y <- tolower(x)
+  chars <- strsplit(y, "", fixed = TRUE)[[1L]]
+  capitalise_next <- TRUE
+  for (i in seq_along(chars)) {
+    ch <- chars[[i]]
+    if (capitalise_next && grepl("[[:alpha:]]", ch)) {
+      chars[[i]] <- toupper(ch)
+      capitalise_next <- FALSE
+    }
+    if (ch %in% c(".", "!", "?")) {
+      capitalise_next <- TRUE
+    }
+  }
+  paste0(chars, collapse = "")
 }
 
 
@@ -96,6 +152,9 @@ screening_green_terms <- c(
   "aquacultural",
   "aquacultured",
   "aquaculturing",
+  "culture",
+  "cultured",
+  "culturing",
   "aquaculturist",
   "aquaculturists",
   "commercial",
@@ -140,8 +199,16 @@ highlight_screening_text <- function(text, include_terms = character(), exclude_
       if (pos < 0L) break
       s <- start_at + pos - 1L
       e <- s + nchar(term) - 1L
-      k <- k + 1L
-      candidates[[k]] <- list(start=s,end=e,class=names(terms)[[i]],length=nchar(term))
+      before <- if (s > 1L) substr(hay, s - 1L, s - 1L) else ""
+      after <- if (e < nchar(hay)) substr(hay, e + 1L, e + 1L) else ""
+      starts_word <- grepl("^[[:alnum:]]", needle)
+      ends_word <- grepl("[[:alnum:]]$", needle)
+      left_ok <- !starts_word || !nzchar(before) || !grepl("[[:alnum:]]", before)
+      right_ok <- !ends_word || !nzchar(after) || !grepl("[[:alnum:]]", after)
+      if (left_ok && right_ok) {
+        k <- k + 1L
+        candidates[[k]] <- list(start=s,end=e,class=names(terms)[[i]],length=nchar(term))
+      }
       start_at <- s + 1L
       if (start_at > nchar(hay)) break
     }
@@ -382,7 +449,30 @@ field_pair <- function(a, b, char_level = FALSE) {
   token_lcs_matches(a, b, char_level = char_level)
 }
 
-record_card <- function(rec, label, fields, side = c("a","b")) {
+normalise_doi_value <- function(x) {
+  z <- gsub("[[:space:]]+", "", as.character(x %||% ""))
+  z <- sub("^https?://(dx\\.)?doi\\.org/", "", z, ignore.case=TRUE)
+  z <- sub("^doi:", "", z, ignore.case=TRUE)
+  trimws(z)
+}
+
+normalise_source_id_value <- function(x) {
+  gsub("[[:space:]]+", "", as.character(x %||% ""))
+}
+
+doi_link <- function(x, label = NULL) {
+  doi <- normalise_doi_value(x)
+  if (!nzchar(doi)) return("")
+  shown <- if (is.null(label)) doi else label
+  tags$a(
+    href = paste0("https://doi.org/", doi),
+    target = "_blank",
+    rel = "noopener noreferrer",
+    shown
+  )
+}
+
+record_card <- function(rec, label, fields, side = c("a","b"), abstract_editing = FALSE) {
   side <- match.arg(side)
   card(
     class = "h-100 record-card",
@@ -397,12 +487,55 @@ record_card <- function(rec, label, fields, side = c("a","b")) {
         tags$dt("Authors"), tags$dd(fields$authors[[side]]),
         tags$dt("Year"), tags$dd(fields$year[[side]]),
         tags$dt("Journal"), tags$dd(fields$journal[[side]]),
-        tags$dt("DOI"), tags$dd(fields$doi[[side]]),
+        tags$dt("DOI"), tags$dd(doi_link(rec$doi, fields$doi[[side]])),
         tags$dt("Source ID"), tags$dd(fields$source_record_id[[side]])
       ),
       tags$hr(class = "record-divider"),
       tags$h6(class = "abstract-heading", "Abstract"),
-      div(class = "abstract-text", fields$abstract[[side]])
+      if (isTRUE(abstract_editing)) {
+        tagList(
+          textAreaInput(
+            paste0("w01_abstract_", side),
+            NULL,
+            value = as.character(rec$display_abstract %||% rec$abstract %||% ""),
+            rows = 6,
+            width = "100%"
+          ),
+          div(
+            class = "d-flex align-items-center gap-2 flex-wrap",
+            actionButton(
+              paste0("save_w01_abstract_", side),
+              "Save abstract",
+              class = "btn-primary btn-sm"
+            ),
+            actionButton(
+              paste0("cancel_w01_abstract_", side),
+              "Cancel",
+              class = "btn-outline-secondary btn-sm"
+            )
+          )
+        )
+      } else {
+        tagList(
+          div(class = "abstract-text", fields$abstract[[side]]),
+          div(
+            class = "d-flex align-items-center gap-2 flex-wrap mt-2",
+            actionButton(
+              paste0("edit_w01_abstract_", side),
+              "Edit abstract",
+              class = "btn-outline-secondary btn-sm"
+            ),
+            actionButton(
+              paste0("delete_w01_abstract_", side),
+              "Delete abstract",
+              class = "btn-outline-danger btn-sm"
+            ),
+            if (isTRUE(rec$abstract_repair_saved)) {
+              tags$span(class = "text-success small", "Corrected abstract saved.")
+            }
+          )
+        )
+      }
     )
   )
 }
@@ -438,15 +571,65 @@ ui <- page_fillable(
           document.body.appendChild(overlay);
 
           let busyTimer = null;
+          let busyEligibleUntil = 0;
+
+          // Only show the blocking overlay for an explicit user action that
+          // remains busy long enough to warrant feedback. Background reactive
+          // refreshes must not interrupt screening or administration work.
+          document.addEventListener('click', function(ev) {
+            if (ev.target.closest('button, .action-button, .btn')) {
+              busyEligibleUntil = Date.now() + 10000;
+            }
+          }, true);
+
           $(document).on('shiny:busy', function() {
             clearTimeout(busyTimer);
+            if (Date.now() > busyEligibleUntil) return;
             busyTimer = setTimeout(function() {
-              overlay.classList.add('is-visible');
-            }, 180);
+              if (Date.now() <= busyEligibleUntil) {
+                overlay.classList.add('is-visible');
+              }
+            }, 900);
           });
           $(document).on('shiny:idle', function() {
             clearTimeout(busyTimer);
+            busyEligibleUntil = 0;
             overlay.classList.remove('is-visible');
+          });
+
+          document.addEventListener('click', function(ev) {
+            const drill = ev.target.closest('.lem-drill-number');
+            if (drill) {
+              ev.preventDefault();
+              Shiny.setInputValue('record_table_open', {
+                workflow: drill.dataset.workflow || '',
+                task_type: drill.dataset.taskType || '',
+                batch_id: drill.dataset.batchId || '',
+                metric: drill.dataset.metric || 'cases',
+                user_id: drill.dataset.userId || '',
+                label: drill.dataset.label || ''
+              }, {priority:'event'});
+              return;
+            }
+            const edit = ev.target.closest('.lem-record-edit');
+            if (edit) {
+              ev.preventDefault();
+              Shiny.setInputValue('record_table_edit', {
+                workflow: edit.dataset.workflow || '',
+                task_type: edit.dataset.taskType || '',
+                batch_id: edit.dataset.batchId || '',
+                case_id: edit.dataset.caseId || ''
+              }, {priority:'event'});
+              return;
+            }
+            const toggle = ev.target.closest('.lem-detail-toggle');
+            if (toggle) {
+              ev.preventDefault();
+              Shiny.setInputValue('record_table_toggle', {
+                case_id: toggle.dataset.caseId || '',
+                detail: toggle.dataset.detail || ''
+              }, {priority:'event'});
+            }
           });
         });
       })();
@@ -533,7 +716,29 @@ ui <- page_fillable(
       animation:lem-spin .8s linear infinite;
     }
     @keyframes lem-spin { to { transform:rotate(360deg); } }
-    .record-title { font-size:1.05rem; font-weight:700; line-height:1.25; margin-bottom:.45rem; }
+    .lem-drill-number {
+      appearance:none; border:0; background:transparent; padding:0; margin:0;
+      font:inherit; font-weight:inherit; color:inherit; line-height:inherit;
+      cursor:pointer;
+    }
+    .lem-drill-number:hover, .lem-drill-number:focus-visible { text-decoration:underline; }
+    .lem-record-table-wrap { overflow-x:auto; border:1px solid #dde3e8; border-radius:8px; background:#fff; }
+    .lem-record-table { width:100%; border-collapse:collapse; font-size:.92rem; }
+    .lem-record-table th, .lem-record-table td { padding:.55rem .65rem; border-bottom:1px solid #e8ecef; vertical-align:top; text-align:left; }
+    .lem-record-table th { background:#f7f8fa; white-space:nowrap; }
+    .lem-record-table tr:last-child td { border-bottom:0; }
+    .lem-record-cell { min-width:360px; max-width:620px; }
+    .lem-detail-toggle {
+      appearance:none; border:0; background:transparent; padding:0; margin:0;
+      color:inherit; cursor:pointer; text-align:left; font:inherit;
+    }
+    .lem-detail-toggle:hover, .lem-detail-toggle:focus-visible { text-decoration:underline; }
+    .lem-detail-row td { background:#fbfcfd; padding:.8rem 1rem 1rem 1rem; }
+    .lem-detail-text { max-width:1050px; line-height:1.45; white-space:normal; }
+    .lem-note-entry + .lem-note-entry { margin-top:.75rem; padding-top:.75rem; border-top:1px solid #e6eaed; }
+    .lem-table-toolbar { display:flex; gap:.75rem; align-items:end; flex-wrap:wrap; margin-bottom:.8rem; }
+    .lem-table-toolbar .form-group { margin-bottom:0; }
+        .record-title { font-size:1.05rem; font-weight:700; line-height:1.25; margin-bottom:.45rem; }
     .record-meta { display:grid; grid-template-columns:78px 1fr; gap:.08rem .55rem; margin:0; line-height:1.28; }
     .record-meta dt { color:#66727d; font-weight:600; }
     .record-meta dd { margin:0; overflow-wrap:anywhere; }
@@ -595,6 +800,7 @@ ui <- page_fillable(
     .decision-badge-neutral { background:#eef1f4 !important; color:#5f6973 !important; border:1px solid #d7dde2; }
     .assignment-summary { margin-bottom:1rem; border:1px solid #dde3e8; box-shadow:0 2px 10px rgba(22,33,43,.04); }
     .assignment-kpis { display:grid; grid-template-columns:repeat(5,minmax(100px,1fr)); gap:.5rem; margin-bottom:.75rem; }
+    .assignment-kpis.four { grid-template-columns:repeat(4,minmax(100px,1fr)); }
     .assignment-kpi { background:#f7f8fa; border:1px solid #e1e5e9; border-radius:8px; padding:.55rem .65rem; }
     .assignment-kpi span { display:block; color:#6a747d; font-size:.76rem; }
     .assignment-kpi strong { display:block; font-size:1.08rem; margin-top:.08rem; }
@@ -643,7 +849,10 @@ ui <- page_fillable(
     .pipeline-kpis { display:grid; grid-template-columns:repeat(5,minmax(145px,1fr)); gap:.5rem; margin-top:.15rem; }
     .pipeline-kpi { background:#f7f8fa; border:1px solid #e1e5e9; border-radius:8px; padding:.62rem .72rem .58rem .72rem; min-width:0; }
     .pipeline-kpi-label { display:block; color:#6a747d; font-size:.8rem; line-height:1.2; margin-bottom:.2rem; overflow-wrap:anywhere; }
-    .pipeline-kpi-value { display:block; font-size:1.12rem; line-height:1.2; font-weight:700; white-space:normal; overflow-wrap:anywhere; }
+    .pipeline-kpi-value-row { display:block; white-space:nowrap; }
+    .pipeline-kpi-value { display:block; font-size:1.12rem; line-height:1.2; font-weight:700; white-space:nowrap; }
+    .pipeline-kpi-value.compact { font-size:1rem; }
+    .pipeline-kpi-inline-note { display:block; color:#7c858d; font-size:.7rem; line-height:1.2; font-weight:600; white-space:nowrap; margin-top:.08rem; }
     .pipeline-kpi-sub { display:block; color:#7c858d; font-size:.74rem; line-height:1.2; margin-top:.12rem; overflow-wrap:anywhere; }
     .pipeline-kpi.pre-update {
       background:#fbfcfc;
@@ -669,16 +878,30 @@ ui <- page_fillable(
 
 
 read_authoritative_w08_metrics <- function(
-  registry_url = Sys.getenv(
-    "LEM_W08_REGISTRY_URL",
-    unset = "https://raw.githubusercontent.com/thesalmonandthetomato/LivingEvidenceMap/workflow01-final-architecture/docs/workflow08/zenodo_registry.csv"
+  registry_path = Sys.getenv(
+    "LEM_W08_REGISTRY_PATH",
+    unset = "docs/workflow08/zenodo_registry.csv"
   ),
   pointer_base = Sys.getenv(
-    "LEM_W08_POINTER_BASE",
-    unset = "https://raw.githubusercontent.com/thesalmonandthetomato/LivingEvidenceMap/workflow01-final-architecture/docs/workflow08/zenodo"
-  )
+    "LEM_W08_POINTER_BASE_PATH",
+    unset = "docs/workflow08/zenodo"
+  ),
+  ref = github_scoping_ref()
 ) {
-  reg <- utils::read.csv(registry_url, stringsAsFactors = FALSE, check.names = FALSE)
+  if (file.exists(registry_path)) {
+    reg <- utils::read.csv(
+      registry_path,
+      stringsAsFactors = FALSE,
+      check.names = FALSE
+    )
+  } else {
+    registry_text <- read_github_text_file(registry_path, ref = ref)
+    reg <- utils::read.csv(
+      text = registry_text,
+      stringsAsFactors = FALSE,
+      check.names = FALSE
+    )
+  }
   required <- c("source_run_id", "status")
   if (!all(required %in% names(reg))) stop("W08 registry contract mismatch", call. = FALSE)
 
@@ -689,13 +912,13 @@ read_authoritative_w08_metrics <- function(
   if (!grepl("^[0-9]+$", run_id)) stop("Invalid authoritative W08 source run ID", call. = FALSE)
 
   pointer_name <- paste0("run-", run_id, ".json")
-  pointer <- if (grepl("^https?://", pointer_base)) {
-    paste0(sub("/$", "", pointer_base), "/", pointer_name)
+  pointer_path <- file.path(pointer_base, pointer_name)
+  if (file.exists(pointer_path)) {
+    x <- jsonlite::fromJSON(pointer_path, simplifyVector = FALSE)
   } else {
-    file.path(pointer_base, pointer_name)
+    pointer_text <- read_github_text_file(pointer_path, ref = ref)
+    x <- jsonlite::fromJSON(pointer_text, simplifyVector = FALSE)
   }
-
-  x <- jsonlite::fromJSON(pointer, simplifyVector = FALSE)
   pointer_run <- as.character(x$source_github_run_id %||% "")
   n <- suppressWarnings(as.integer(x$canonical_records %||% NA_integer_))
   if (!identical(pointer_run, run_id)) stop("Authoritative W08 pointer/run mismatch", call. = FALSE)
@@ -722,7 +945,16 @@ server <- function(input, output, session) {
   test_queue_status <- reactiveVal("")
   w08_fresh_test_status <- reactiveVal("")
   w01_all_cases_rv <- reactiveVal(list())
+  w01_repairs_rv <- reactiveVal(list())
+  w01_abstract_edit_rv <- reactiveVal(NULL)
+  w01_abstract_delete_rv <- reactiveVal(NULL)
+  w01_export_requested_rv <- reactiveVal(FALSE)
+  w01_export_status_rv <- reactiveVal("")
   app_view <- reactiveVal("tasks")
+  record_table_context <- reactiveVal(NULL)
+  record_table_page <- reactiveVal(1L)
+  record_table_abstract_open <- reactiveVal(character())
+  record_table_notes_open <- reactiveVal(character())
   failed_attempts <- reactiveVal(0L)
   lock_until <- reactiveVal(as.POSIXct(NA))
   idx <- reactiveVal(1L)
@@ -742,6 +974,7 @@ server <- function(input, output, session) {
   w02_decisions <- reactiveVal(list())
   w02_batch_status_rv <- reactiveVal("")
   w02_status <- reactiveVal("")
+  w02_resume_requested_rv <- reactiveVal(FALSE)
 
   w04_all_cases_rv <- reactiveVal(list())
   w04_cases_rv <- reactiveVal(NULL)
@@ -749,24 +982,34 @@ server <- function(input, output, session) {
   w04_batch_id_rv <- reactiveVal("")
   w04_idx <- reactiveVal(1L)
   w04_decisions <- reactiveVal(list())
+  w04_screening_notes_rv <- reactiveVal(list())
+  w04_note_status <- reactiveVal("")
   w04_batch_status_rv <- reactiveVal("")
   w04_status <- reactiveVal("")
   w04_include_terms <- reactiveVal(character())
   w04_exclude_terms <- reactiveVal(character())
   w04_consistency_analyses_rv <- reactiveVal(list())
   w04_conflict_sets_rv <- reactiveVal(list())
+  w04_kappa_registry_rv <- reactiveVal(w04_empty_kappa_registry())
+  w04_human_kappa_registry_rv <- reactiveVal(w04_empty_human_kappa_registry())
+  w04_pending_human_kappa_delete <- reactiveVal("")
   w04_consistency_history_loaded <- reactiveVal(FALSE)
   w04_consistency_status <- reactiveVal("")
   w04_refresh_status <- reactiveVal("")
+  w04_validation_finalize_requested_rv <- reactiveVal(FALSE)
 
+  w04_resolution_all_cases_rv <- reactiveVal(list())
   w04_resolution_cases_rv <- reactiveVal(NULL)
   w04_resolution_queue_sha_rv <- reactiveVal("")
   w04_resolution_batch_id_rv <- reactiveVal("")
   w04_resolution_source_run_id_rv <- reactiveVal("")
   w04_resolution_idx <- reactiveVal(1L)
   w04_resolution_decisions <- reactiveVal(list())
+  w04_resolution_abstract_edits_rv <- reactiveVal(list())
+  w04_resolution_abstract_edit_rv <- reactiveVal(FALSE)
   w04_resolution_batch_status_rv <- reactiveVal("")
   w04_resolution_status <- reactiveVal("")
+  w04_resolution_resume_requested_rv <- reactiveVal(FALSE)
   w04_resolution_include_terms <- reactiveVal(character())
   w04_resolution_exclude_terms <- reactiveVal(character())
 
@@ -790,13 +1033,30 @@ server <- function(input, output, session) {
   w08_decisions <- reactiveVal(list())
   w08_batch_status_rv <- reactiveVal("")
   w08_status <- reactiveVal("")
+  w08_resume_requested_rv <- reactiveVal(FALSE)
   pipeline_status_rv <- reactiveVal(NULL)
   manual_screening_rv <- reactiveVal(NULL)
   authoritative_w08_rv <- reactiveVal(NULL)
+  backend_reset_status <- reactiveVal("")
+
+  search_scope_string_rv <- reactiveVal("")
+  search_scope_status_rv <- reactiveVal("")
+  search_scope_request_id_rv <- reactiveVal("")
+  search_scope_run_id_rv <- reactiveVal("")
+  search_scope_rows_rv <- reactiveVal(NULL)
+  search_scope_seen_artifacts_rv <- reactiveVal(character())
+  search_scope_job_sources_rv <- reactiveVal(character())
+  search_scope_catalogue_rv <- reactiveVal(NULL)
+  search_scope_progress_rv <- reactiveVal(list(completed=0L,total=0L,pct=0L,label=""))
+  search_scope_versions_rv <- reactiveVal(character())
+  search_scope_results_rv <- reactiveVal(list())
+  search_scope_active_version_rv <- reactiveVal("original")
+  search_scope_running_version_rv <- reactiveVal("")
 
   observe({
     req(authenticated())
     invalidateLater(30000, session)
+    if (!identical(app_view(), "tasks")) return()
     refreshed <- tryCatch(
       if(identical(storage_backend(),"google_sheets")) read_latest_pipeline_status() else NULL,
       error=function(e) NULL
@@ -853,6 +1113,20 @@ server <- function(input, output, session) {
     ids <- vapply(cs, function(x) as.character(x$review_case_id), character(1))
     which(!ids %in% w02_resolved_ids())
   }
+
+  observe({
+    req(authenticated())
+    invalidateLater(300000, session)
+    if (!identical(app_view(), "tasks")) return()
+    refreshed <- tryCatch(read_manual_screening_metrics(),error=function(e)e)
+    if (inherits(refreshed,"error")) {
+      if (session_can("manage_assignments")) {
+        w04_consistency_status(paste("Kappa registry integrity error:",conditionMessage(refreshed)))
+      }
+    } else {
+      manual_screening_rv(refreshed)
+    }
+  })
 
   load_w02_batch <- function() {
     if (!identical(storage_backend(), "google_sheets")) return(NULL)
@@ -921,6 +1195,35 @@ server <- function(input, output, session) {
     if (!identical(storage_backend(),"google_sheets")) return(NULL)
     read_sheet_w04_resolution_queue()
   }
+
+  observe({
+    req(authenticated())
+    batch_id <- as.character(w04_resolution_batch_id_rv() %||% "")
+    all_cases <- w04_resolution_all_cases_rv() %||% list()
+    user <- current_user()
+    if (!nzchar(batch_id) || !length(all_cases) || is.null(user)) {
+      w04_resolution_cases_rv(list())
+      return()
+    }
+    visible <- cases_for_assignment_user(
+      all_cases,
+      assignment_registry_rv(),
+      "04",
+      batch_id,
+      user,
+      task_type="model_uncertainty",
+      active_events=w04_resolution_decisions()
+    )
+    w04_resolution_cases_rv(visible)
+    unresolved <- if(length(visible)) {
+      ids <- vapply(visible,function(x)as.character(x$review_case_id %||% ""),character(1))
+      which(!ids %in% w04_resolution_decision_ids())
+    } else integer()
+    current <- suppressWarnings(as.integer(w04_resolution_idx()))
+    if (is.na(current) || current < 1L || current > max(1L,length(visible))) {
+      w04_resolution_idx(if(length(unresolved)) unresolved[[1L]] else 1L)
+    }
+  })
 
   observe({
     req(authenticated())
@@ -1029,6 +1332,21 @@ server <- function(input, output, session) {
       decisions = w04_decisions(),
       batch_id = w04_batch_id_rv(),
       task_type = "manual_screening"
+    )
+  })
+
+  w04_selected_human_consistency_scope <- reactive({
+    rater_ids <- unique(as.character(input$w04_consistency_raters %||% character()))
+    if (length(rater_ids) < 2L || "model" %in% rater_ids) return(NULL)
+    scope_type <- as.character(input$w04_consistency_scope %||% "partial")
+    if (!scope_type %in% c("partial","full")) scope_type <- "partial"
+    w04_human_consistency_scope(
+      outcomes=w04_blind_outcomes(),
+      assignments=assignment_registry_rv(),
+      batch_id=w04_batch_id_rv(),
+      rater_ids=rater_ids,
+      registry=w04_human_kappa_registry_rv(),
+      scope_type=scope_type
     )
   })
 
@@ -1220,17 +1538,27 @@ server <- function(input, output, session) {
     format(d,"%d %b %Y")
   }
 
+  fmt_pipeline_delta <- function(x) {
+    z <- suppressWarnings(as.numeric(as.character(x %||% "")))
+    if(is.na(z)) return(NULL)
+    paste0(if(z >= 0) "+" else "−", fmt_pipeline_n(abs(z)))
+  }
+
+  fmt_pipeline_pair_delta <- function(a,b) {
+    x <- fmt_pipeline_delta(a)
+    y <- fmt_pipeline_delta(b)
+    if(is.null(x) || is.null(y)) return(NULL)
+    paste0(x," / ",y)
+  }
+
   read_manual_screening_metrics <- function() {
-    url <- Sys.getenv(
-      "LEM_W04_AGREEMENT_URL",
-      unset = "https://raw.githubusercontent.com/thesalmonandthetomato/LivingEvidenceMap/workflow01-final-architecture/docs/workflow04/workflow04_agreement_summary.json"
-    )
-    x <- jsonlite::fromJSON(url, simplifyVector = FALSE)
-    list(
-      manually_screened = as.integer(x$historical_comparator_records),
-      kappa = as.numeric(x$consensus_vs_historical$substantive_binary$cohen_kappa),
-      kappa_n = as.integer(x$consensus_vs_historical$substantive_binary$n)
-    )
+    registry <- if (identical(storage_backend(),"google_sheets")) {
+      sync_w04_kappa_registry_from_github()
+    } else {
+      read_github_w04_kappa_registry()
+    }
+    w04_kappa_registry_rv(registry)
+    w04_kappa_registry_summary(registry)
   }
 
   pipeline_summary_ui <- function() {
@@ -1268,11 +1596,20 @@ server <- function(input, output, session) {
       div(class=cls,title=workflow_labels[[i]])
     })
 
-    kpi <- function(label,value,sub=NULL,class_extra=NULL) {
+    stage_complete <- function(position) {
+      !is.na(completed) && completed >= as.integer(position)
+    }
+
+    kpi <- function(label,value,sub=NULL,stage_position=NULL,class_extra=NULL,inline_note=NULL,compact_value=FALSE) {
+      stale_class <- if(!is.null(stage_position) && !stage_complete(stage_position)) "pre-update" else NULL
       div(
-        class=paste(c("pipeline-kpi", class_extra), collapse=" "),
+        class=paste(c("pipeline-kpi", stale_class, class_extra), collapse=" "),
         tags$span(class="pipeline-kpi-label",label),
-        tags$span(class="pipeline-kpi-value",value),
+        div(
+          class="pipeline-kpi-value-row",
+          tags$span(class=paste(c("pipeline-kpi-value",if(isTRUE(compact_value)) "compact" else NULL),collapse=" "),value)
+        ),
+        if(!is.null(inline_note)) tags$span(class="pipeline-kpi-inline-note",inline_note),
         if(!is.null(sub)) tags$span(class="pipeline-kpi-sub",sub)
       )
     }
@@ -1299,43 +1636,80 @@ server <- function(input, output, session) {
       ),
       div(
         class="pipeline-kpis",
-        kpi("Search results",fmt_pipeline_n(p$search_results_total),"W00"),
-        kpi("After dedup.",fmt_pipeline_n(p$deduplicated_records),"W01"),
-        kpi("Enriched",fmt_pipeline_n(p$enriched_records),"W02"),
-        kpi("Retracted",fmt_pipeline_n(p$retracted_records),"W03"),
+        kpi(
+          "Database searching",
+          fmt_pipeline_n(p$search_results_total),
+          "records",
+          stage_position=1L,
+          inline_note=if(stage_complete(1L)) fmt_pipeline_delta(p$search_results_update) else NULL
+        ),
+        kpi(
+          "After deduplication",
+          fmt_pipeline_n(p$deduplicated_records),
+          "records",
+          stage_position=2L,
+          inline_note=if(stage_complete(2L)) fmt_pipeline_delta(p$deduplicated_update) else NULL
+        ),
+        kpi(
+          "Enriched",
+          fmt_pipeline_n(p$enriched_records),
+          "records",
+          stage_position=3L,
+          inline_note=if(stage_complete(3L)) fmt_pipeline_delta(p$enriched_update) else NULL
+        ),
+        kpi(
+          "Retracted",
+          fmt_pipeline_n(p$retracted_records),
+          "records",
+          stage_position=4L,
+          inline_note=if(stage_complete(4L)) fmt_pipeline_delta(p$retracted_update) else NULL
+        ),
         {
           m <- manual_screening_rv()
           kpi(
             "Manually screened",
             if(is.null(m)) "—" else fmt_pipeline_n(m$manually_screened),
-            if(is.null(m) || is.na(m$kappa)) NULL else paste0("κ ",sprintf("%.3f",m$kappa))
+            if(is.null(m) || is.na(m$kappa)) NULL else paste0("κ ",sprintf("%.3f",m$kappa)),
+            stage_position=5L
           )
         },
         kpi(
           "Screened",
           paste0(fmt_pipeline_n(p$screened_include)," / ",fmt_pipeline_n(p$screened_exclude)),
-          "include / exclude"
+          "include / exclude",
+          stage_position=5L,
+          inline_note=if(stage_complete(5L)) fmt_pipeline_pair_delta(p$screened_include_update,p$screened_exclude_update) else NULL,
+          compact_value=TRUE
         ),
         kpi(
           "Species",
-          fmt_pipeline_n(p$screened_include),
-          "records processed"
+          fmt_pipeline_n(p$species_records),
+          "records processed",
+          stage_position=6L,
+          inline_note=if(stage_complete(6L)) fmt_pipeline_delta(p$species_update) else NULL
         ),
         kpi(
           "Geography",
           paste0(fmt_pipeline_n(p$geography_with)," / ",fmt_pipeline_n(p$geography_without)),
-          "with / without"
+          "with / without",
+          stage_position=7L,
+          inline_note=if(stage_complete(7L)) fmt_pipeline_pair_delta(p$geography_with_update,p$geography_without_update) else NULL,
+          compact_value=TRUE
         ),
         kpi(
           "Topics",
           paste0(fmt_pipeline_n(p$topic_with)," / ",fmt_pipeline_n(p$topic_without)),
-          "with / without"
+          "with / without",
+          stage_position=8L,
+          inline_note=if(stage_complete(8L)) fmt_pipeline_pair_delta(p$topic_with_update,p$topic_without_update) else NULL,
+          compact_value=TRUE
         ),
         kpi(
           "Canonical database",
           fmt_pipeline_n(canonical_value),
           if (isTRUE(canonical_current)) "current" else "pre-update",
-          if (isTRUE(canonical_current)) NULL else "pre-update"
+          stage_position=9L,
+          class_extra=if (isTRUE(canonical_current)) NULL else "pre-update"
         )
       ),
       div(class="workflow-line",segs),
@@ -1344,6 +1718,421 @@ server <- function(input, output, session) {
         lapply(workflow_labels,tags$span)
       )
     )
+  }
+
+
+  record_table_user_label <- function(user_id) {
+    uid <- as.character(user_id %||% "")
+    uid <- if (length(uid)) uid[[1L]] else ""
+    if (is.na(uid) || !nzchar(uid)) return("")
+    u <- tryCatch(
+      find_user_by_id(user_registry_rv(),uid,require_active=FALSE),
+      error=function(e) NULL
+    )
+    if (is.null(u)) return(uid)
+    label <- as.character(u$display_name %||% uid)
+    label <- if (length(label)) label[[1L]] else uid
+    if (is.na(label) || !nzchar(label)) uid else label
+  }
+
+  record_table_decision_label <- function(x) {
+    d <- as.character(x$decision %||% "")
+    d <- if (length(d)) d[[1L]] else ""
+    if (is.na(d)) d <- ""
+    d <- tolower(trimws(d))
+    if (nzchar(d)) {
+      return(c(
+        duplicate="Duplicate",
+        not_duplicate="Not duplicate",
+        retain="Include",
+        exclude="Exclude",
+        uncertain="Unsure",
+        accept_provider_field="Accept provider field",
+        reject_provider_field="Reject provider field",
+        reject_provider_match="Reject provider match"
+      )[[d]] %||% gsub("_"," ",d,fixed=TRUE))
+    }
+    issue_json <- as.character(x$issue_decisions_json %||% "")
+    issue_json <- if (length(issue_json)) issue_json[[1L]] else ""
+    if (!is.na(issue_json) && nzchar(trimws(issue_json))) return("Annotation saved")
+    ""
+  }
+
+  record_table_case_id <- function(z) {
+    as.character(z$review_case_id %||% z$case_id %||% z$record_id %||% "")
+  }
+
+  record_table_source_list <- function() {
+    out <- list()
+    add <- function(workflow,task_type,batch_id,cases,events) {
+      bid <- as.character(batch_id %||% "")
+      if (!nzchar(bid) || !length(cases %||% list())) return()
+      key <- paste(workflow,task_type,bid,sep="|")
+      out[[key]] <<- list(
+        workflow=as.character(workflow),
+        task_type=as.character(task_type),
+        batch_id=bid,
+        cases=cases %||% list(),
+        events=events %||% list(),
+        assignments=active_assignments_for_batch(
+          assignment_registry_rv(),workflow,bid,task_type
+        ),
+        all_assignments=assignments_for_batch(
+          assignment_registry_rv(),workflow,bid,task_type
+        )
+      )
+    }
+    add("01","deduplication",batch_id_rv(),w01_all_cases_rv(),decisions())
+    add("02","enrichment",w02_batch_id_rv(),w02_all_cases_rv(),w02_decisions())
+    add("04","manual_screening",w04_batch_id_rv(),w04_all_cases_rv(),w04_decisions())
+    add("04","conflict_resolution",w04_active_conflict_batch_id(),w04_all_conflict_cases(),w04_conflict_decisions())
+    add("04","model_uncertainty",w04_resolution_batch_id_rv(),w04_resolution_all_cases_rv(),w04_resolution_decisions())
+    add("08","annotation",w08_batch_id_rv(),w08_all_cases_rv(),w08_decisions())
+    out
+  }
+
+  record_table_source <- function(workflow,task_type,batch_id="") {
+    xs <- record_table_source_list()
+    if (identical(as.character(workflow),"all")) return(xs)
+    hits <- Filter(function(x) {
+      identical(x$workflow,as.character(workflow)) &&
+        identical(x$task_type,as.character(task_type)) &&
+        (!nzchar(as.character(batch_id %||% "")) || identical(x$batch_id,as.character(batch_id)))
+    },xs)
+    hits
+  }
+
+  record_table_completed_case_ids <- function(src) {
+    cases <- src$cases %||% list()
+    case_ids <- unique(vapply(cases,record_table_case_id,character(1)))
+    case_ids <- case_ids[nzchar(case_ids)]
+    if (!length(case_ids)) return(character())
+
+    events <- Filter(decision_resolves_case,src$events %||% list())
+    mode <- assignment_mode_for(src$workflow,src$task_type)
+
+    if (!identical(mode,ASSIGNMENT_MODES[["independent_blind_review"]])) {
+      resolved <- unique(vapply(events,decision_case_id,character(1)))
+      return(case_ids[case_ids %in% resolved])
+    }
+
+    formal <- active_assignments(src$assignments %||% list())
+    complete <- vapply(case_ids,function(cid) {
+      ca <- Filter(function(a) identical(normalise_assignment_row(a)$case_id,cid),formal)
+      ce <- Filter(function(e) identical(decision_case_id(e),cid),events)
+      if (!length(ca)) return(length(ce) > 0L)
+      required_users <- unique(vapply(ca,function(a)normalise_assignment_row(a)$user_id,character(1)))
+      completed_users <- unique(vapply(ce,decision_user_id,character(1)))
+      length(required_users) > 0L && all(required_users %in% completed_users)
+    },logical(1))
+    case_ids[complete]
+  }
+
+  record_table_outstanding_case_ids <- function(src) {
+    all_ids <- unique(vapply(src$cases %||% list(),record_table_case_id,character(1)))
+    all_ids <- all_ids[nzchar(all_ids)]
+    setdiff(all_ids,record_table_completed_case_ids(src))
+  }
+
+  record_table_case_fields <- function(z,workflow,task_type) {
+    work_id <- as.character(z$work_id %||% z$record_id %||% z$review_case_id %||% z$case_id %||% "")
+    title <- ""
+    year <- ""
+    doi <- ""
+    abstract <- ""
+
+    if (identical(workflow,"01")) {
+      a <- z$record_i %||% list()
+      b <- z$record_j %||% list()
+      one <- function(rec,label) {
+        rid <- as.character(rec$work_id %||% rec$record_id %||% rec$source_record_id %||% "")
+        yr <- as.character(rec$year %||% "")
+        ttl <- display_sentence_case_if_all_caps(rec$title %||% "")
+        sprintf("%s: %s%s%s",label,rid,if(nzchar(yr)) paste0(" (",yr,")") else "",if(nzchar(ttl)) paste0(" ",ttl) else "")
+      }
+      title <- paste(one(a,"A"),one(b,"B"),sep=" / ")
+      year <- ""
+      dois <- unique(Filter(nzchar,c(normalise_doi_value(a$doi %||% ""),normalise_doi_value(b$doi %||% ""))))
+      doi <- paste(dois,collapse="; ")
+      abstract <- paste(
+        if(nzchar(normalise_display_text(a$abstract %||% ""))) paste0("Record A: ",normalise_display_text(a$abstract)) else "",
+        if(nzchar(normalise_display_text(b$abstract %||% ""))) paste0("Record B: ",normalise_display_text(b$abstract)) else "",
+        sep=if(nzchar(normalise_display_text(a$abstract %||% "")) && nzchar(normalise_display_text(b$abstract %||% ""))) "\n\n" else ""
+      )
+    } else if (identical(workflow,"02")) {
+      b <- z$canonical %||% list()
+      work_id <- as.character(b$work_id %||% b$record_id %||% z$record_id %||% work_id)
+      title <- display_sentence_case_if_all_caps(b$title %||% "")
+      year <- as.character(b$year %||% "")
+      doi <- normalise_doi_value(b$doi %||% z$doi %||% "")
+      abstract <- display_sentence_case_if_all_caps(b$abstract %||% "")
+    } else if (identical(workflow,"04")) {
+      b <- z$bibliographic %||% list()
+      work_id <- as.character(z$work_id %||% z$record_id %||% b$work_id %||% work_id)
+      title <- display_sentence_case_if_all_caps(b$title %||% z$title %||% "")
+      year <- as.character(b$year %||% z$year %||% "")
+      doi <- normalise_doi_value(b$doi %||% z$doi %||% "")
+      abstract <- display_sentence_case_if_all_caps(b$abstract %||% z$abstract %||% "")
+    } else if (identical(workflow,"08")) {
+      work_id <- as.character(z$work_id %||% z$record_id %||% work_id)
+      title <- display_sentence_case_if_all_caps(z$title %||% "")
+      year <- as.character(z$year %||% "")
+      doi <- normalise_doi_value(z$doi %||% "")
+      abstract <- display_sentence_case_if_all_caps(z$abstract %||% "")
+    }
+
+    list(work_id=work_id,title=title,year=year,doi=doi,abstract=abstract)
+  }
+
+  record_table_effective_assignments <- function(src) {
+    xs <- src$assignments %||% list()
+    events <- src$events %||% list()
+    mode <- assignment_mode_for(src$workflow,src$task_type)
+
+    resolving_events <- Filter(decision_resolves_case,events)
+    if (length(resolving_events)) {
+      existing <- src$all_assignments %||% list()
+      existing_keys <- if(length(existing)) vapply(existing,function(raw) {
+        a <- normalise_assignment_row(raw)
+        paste(a$case_id,a$user_id,sep="|")
+      },character(1)) else character()
+      implicit <- list()
+      for (e in resolving_events) {
+        cid <- decision_case_id(e)
+        uid <- decision_user_id(e)
+        key <- paste(cid,uid,sep="|")
+        if (!nzchar(cid) || !nzchar(uid) || key %in% existing_keys) next
+        implicit[[length(implicit)+1L]] <- list(
+          assignment_id=paste0("implicit-table-",substr(digest::digest(
+            paste(src$workflow,src$task_type,src$batch_id,cid,uid,sep="|"),
+            algo="sha256",serialize=FALSE
+          ),1L,24L)),
+          workflow=src$workflow,
+          task_type=src$task_type,
+          batch_id=src$batch_id,
+          case_id=cid,
+          user_id=uid,
+          blind_group="implicit-table",
+          status="assigned"
+        )
+        existing_keys <- c(existing_keys,key)
+      }
+      xs <- c(xs,implicit)
+    }
+    if (!length(xs)) return(list())
+
+    lapply(xs,function(raw) {
+      a <- normalise_assignment_row(raw)
+      if (identical(mode,ASSIGNMENT_MODES[["independent_blind_review"]])) {
+        hit <- Filter(function(e) {
+          identical(decision_case_id(e),a$case_id) &&
+            identical(decision_user_id(e),a$user_id) &&
+            decision_resolves_case(e)
+        },events)
+        a$effective_status <- if(length(hit)) "complete" else "assigned"
+      } else {
+        resolved <- case_authoritative_event(events,a$case_id)
+        a$effective_status <- if(is.null(resolved)) {
+          "assigned"
+        } else if(identical(decision_user_id(resolved),a$user_id)) {
+          "complete"
+        } else {
+          "resolved_elsewhere"
+        }
+      }
+      a
+    })
+  }
+
+  record_table_notes_for <- function(case_id,workflow,task_type) {
+    if (!identical(workflow,"04") || identical(task_type,"model_uncertainty")) return(list())
+    Filter(function(n) {
+      identical(as.character(n$review_case_id %||% ""),as.character(case_id)) &&
+        nzchar(trimws(as.character(n$note %||% "")))
+    },w04_screening_notes_rv() %||% list())
+  }
+
+  record_table_rows_for_source <- function(src,metric="cases",user_id="") {
+    cases <- src$cases %||% list()
+    events <- src$events %||% list()
+    eff <- record_table_effective_assignments(src)
+    metric <- as.character(metric %||% "cases")
+    uid <- as.character(user_id %||% "")
+
+    relevant_assignments <- if (nzchar(uid)) {
+      Filter(function(a) identical(a$user_id,uid),eff)
+    } else eff
+
+    status_case_ids <- function(status) {
+      unique(vapply(
+        Filter(function(a) identical(a$effective_status,status),relevant_assignments),
+        function(a)a$case_id,
+        character(1)
+      ))
+    }
+    assigned_ids <- unique(vapply(relevant_assignments,function(a)a$case_id,character(1)))
+    all_ids <- vapply(cases,record_table_case_id,character(1))
+    keep_ids <- switch(
+      metric,
+      cases=all_ids,
+      assignments=assigned_ids,
+      completed=status_case_ids("complete"),
+      closed=status_case_ids("resolved_elsewhere"),
+      outstanding=status_case_ids("assigned"),
+      resolved_cases=record_table_completed_case_ids(src),
+      outstanding_cases=record_table_outstanding_case_ids(src),
+      unassigned=setdiff(
+        setdiff(all_ids,record_table_completed_case_ids(src)),
+        unique(vapply(eff,function(a)a$case_id,character(1)))
+      ),
+      all_ids
+    )
+    keep_ids <- unique(keep_ids[nzchar(keep_ids)])
+    selected <- Filter(function(z) record_table_case_id(z) %in% keep_ids,cases)
+
+    rows <- lapply(selected,function(z) {
+      cid <- record_table_case_id(z)
+      fields <- record_table_case_fields(z,src$workflow,src$task_type)
+      ca <- Filter(function(a) identical(a$case_id,cid),eff)
+      ce <- Filter(function(e) identical(decision_case_id(e),cid),events)
+      if (nzchar(uid)) {
+        ca_view <- Filter(function(a) identical(a$user_id,uid),ca)
+        ce_view <- Filter(function(e) identical(decision_user_id(e),uid),ce)
+      } else {
+        ca_view <- ca
+        ce_view <- ce
+      }
+      assigned_users <- unique(vapply(ca_view,function(a)a$user_id,character(1)))
+      assigned_names <- vapply(assigned_users,record_table_user_label,character(1))
+      decision_text <- if(length(ce_view)) {
+        paste(vapply(ce_view,function(e) {
+          who <- record_table_user_label(decision_user_id(e))
+          lab <- record_table_decision_label(e)
+          if(nzchar(who)) paste0(who,": ",lab) else lab
+        },character(1)),collapse="; ")
+      } else ""
+      statuses <- unique(vapply(ca_view,function(a)a$effective_status,character(1)))
+      status <- if(!length(ca_view)) {
+        "Unassigned"
+      } else if(length(statuses)==1L) {
+        c(complete="Completed",assigned="Outstanding",resolved_elsewhere="Resolved elsewhere")[[statuses[[1L]]]] %||% statuses[[1L]]
+      } else {
+        paste(
+          sum(vapply(ca_view,function(a)identical(a$effective_status,"complete"),logical(1))),"completed ·",
+          sum(vapply(ca_view,function(a)identical(a$effective_status,"assigned"),logical(1))),"outstanding ·",
+          sum(vapply(ca_view,function(a)identical(a$effective_status,"resolved_elsewhere"),logical(1))),"resolved elsewhere"
+        )
+      }
+      last_activity <- ""
+      if(length(ce)) {
+        times <- vapply(ce,function(e)as.character(e$event_at_utc %||% e$resolved_at_utc %||% ""),character(1))
+        times <- times[nzchar(times)]
+        if(length(times)) last_activity <- max(times)
+      }
+      notes <- record_table_notes_for(cid,src$workflow,src$task_type)
+      list(
+        key=paste(src$workflow,src$task_type,cid,sep="|"),
+        case_id=cid,
+        workflow=src$workflow,
+        task_type=src$task_type,
+        work_id=fields$work_id,
+        year=fields$year,
+        title=fields$title,
+        doi=fields$doi,
+        abstract=fields$abstract,
+        status=status,
+        assigned=paste(assigned_names[nzchar(assigned_names)],collapse=", "),
+        decisions=decision_text,
+        notes=notes,
+        last_activity=last_activity
+      )
+    })
+    list(
+      rows=rows,
+      matched_assignments=length(Filter(function(a) {
+        a$case_id %in% keep_ids &&
+          (!nzchar(uid) || identical(a$user_id,uid)) &&
+          (
+            metric %in% c("cases","assignments","unassigned","resolved_cases","outstanding_cases") ||
+            identical(
+              a$effective_status,
+              c(completed="complete",closed="resolved_elsewhere",outstanding="assigned")[[metric]] %||% ""
+            )
+          )
+      },eff))
+    )
+  }
+
+  record_table_data <- reactive({
+    ctx <- record_table_context()
+    if (is.null(ctx)) return(list(rows=list(),matched_assignments=0L))
+    sources <- record_table_source(ctx$workflow,ctx$task_type,ctx$batch_id)
+    parts <- lapply(sources,function(src) {
+      record_table_rows_for_source(src,ctx$metric,ctx$user_id)
+    })
+    list(
+      rows=unlist(lapply(parts,`[[`,"rows"),recursive=FALSE),
+      matched_assignments=sum(vapply(parts,function(x)as.integer(x$matched_assignments),integer(1)))
+    )
+  })
+
+  record_table_filtered_rows <- reactive({
+    rows <- record_table_data()$rows %||% list()
+    q <- tolower(trimws(as.character(input$record_table_search %||% "")))
+    if (!nzchar(q) || !length(rows)) return(rows)
+    Filter(function(r) {
+      hay <- tolower(paste(
+        r$work_id,r$year,r$title,r$doi,r$status,r$assigned,r$decisions,
+        paste(vapply(r$notes %||% list(),function(n)as.character(n$note %||% ""),character(1)),collapse=" "),
+        sep=" "
+      ))
+      grepl(q,hay,fixed=TRUE)
+    },rows)
+  })
+
+  record_table_link <- function(value,workflow,task_type,batch_id,metric,user_id="",label="") {
+    tags$button(
+      type="button",
+      class="lem-drill-number",
+      `data-workflow`=as.character(workflow),
+      `data-task-type`=as.character(task_type),
+      `data-batch-id`=as.character(batch_id),
+      `data-metric`=as.character(metric),
+      `data-user-id`=as.character(user_id),
+      `data-label`=as.character(label),
+      title="View records",
+      as.character(value)
+    )
+  }
+
+  record_table_batch_dispatched <- function(workflow,task_type,batch_id) {
+    workflow <- as.character(workflow %||% "")
+    task_type <- as.character(task_type %||% "")
+    batch_id <- as.character(batch_id %||% "")
+
+    if (identical(workflow,"01") && identical(task_type,"deduplication") && identical(batch_id,batch_id_rv())) {
+      return(isTRUE(w01_export_requested_rv()))
+    }
+    if (identical(workflow,"02") && identical(task_type,"enrichment") && identical(batch_id,w02_batch_id_rv())) {
+      return(isTRUE(w02_resume_requested_rv()))
+    }
+    if (identical(workflow,"04") && identical(task_type,"manual_screening") && identical(batch_id,w04_batch_id_rv())) {
+      return(isTRUE(w04_validation_finalize_requested_rv()))
+    }
+    if (identical(workflow,"04") && identical(task_type,"model_uncertainty") && identical(batch_id,w04_resolution_batch_id_rv())) {
+      return(isTRUE(w04_resolution_resume_requested_rv()))
+    }
+    if (identical(workflow,"08") && identical(task_type,"annotation") && identical(batch_id,w08_batch_id_rv())) {
+      return(isTRUE(w08_resume_requested_rv()))
+    }
+    FALSE
+  }
+
+  record_table_preview <- function(text,n=5L) {
+    x <- strsplit(normalise_display_text(text),"[[:space:]]+",perl=TRUE)[[1L]]
+    x <- x[nzchar(x)]
+    if(!length(x)) return("")
+    paste(head(x,n),collapse=" ")
   }
 
   output$root_ui <- renderUI({
@@ -1364,6 +2153,31 @@ server <- function(input, output, session) {
           actionButton("login", "Continue", class = "btn-primary"),
           tags$div(class = "mt-2 text-danger", textOutput("login_status"))
         )
+      ))
+    }
+
+    if (identical(app_view(), "record_table")) {
+      return(div(
+        class="app-shell",
+        div(
+          class="d-flex justify-content-between align-items-center mb-3 gap-3 flex-wrap",
+          div(
+            tags$h2("Record table",class="mb-0"),
+            tags$div(class="text-secondary",uiOutput("record_table_context_label"))
+          ),
+          div(
+            class="d-flex align-items-center gap-2",
+            uiOutput("session_identity"),
+            actionButton("record_table_back","Back to main page",class="btn-outline-secondary btn-sm")
+          )
+        ),
+        div(
+          class="lem-table-toolbar",
+          textInput("record_table_search","Search",value="",placeholder="Search citation, ID, reviewer, decision or note"),
+          selectInput("record_table_page_size","Rows per page",choices=c("25"=25,"50"=50,"100"=100),selected=50,width="150px")
+        ),
+        uiOutput("record_table_body"),
+        uiOutput("record_table_pager")
       ))
     }
 
@@ -1393,9 +2207,22 @@ server <- function(input, output, session) {
       w04_remaining <- if (w04_total) length(w04_unresolved_indices()) else 0L
       w04_completed <- max(0L, w04_total - w04_remaining)
 
-      w04_resolution_total <- length(w04_resolution_cases_rv() %||% list())
-      w04_resolution_remaining <- if (w04_resolution_total) length(w04_resolution_unresolved_indices()) else 0L
-      w04_resolution_completed <- max(0L, w04_resolution_total - w04_resolution_remaining)
+      w04_resolution_user_total <- length(w04_resolution_cases_rv() %||% list())
+      w04_resolution_user_remaining <- if (w04_resolution_user_total) length(w04_resolution_unresolved_indices()) else 0L
+      if (session_can("manage_assignments")) {
+        w04_resolution_total <- length(w04_resolution_all_cases_rv() %||% list())
+        w04_resolution_all_ids <- if (w04_resolution_total) vapply(
+          w04_resolution_all_cases_rv(),
+          function(x) as.character(x$review_case_id %||% ""),
+          character(1)
+        ) else character()
+        w04_resolution_completed <- sum(w04_resolution_all_ids %in% w04_resolution_decision_ids())
+        w04_resolution_remaining <- max(0L, w04_resolution_total - w04_resolution_completed)
+      } else {
+        w04_resolution_total <- w04_resolution_user_total
+        w04_resolution_remaining <- w04_resolution_user_remaining
+        w04_resolution_completed <- max(0L, w04_resolution_total - w04_resolution_remaining)
+      }
 
       w04_conflict_user_total <- length(w04_active_conflict_cases())
       w04_conflict_user_remaining <- if (w04_conflict_user_total) length(w04_conflict_unresolved_indices()) else 0L
@@ -1481,12 +2308,13 @@ server <- function(input, output, session) {
         div(
           class = "d-flex justify-content-between align-items-end mb-3",
           div(
-            tags$h2("Human verification", class = "mb-1"),
-            tags$div("Records remaining at each verification stage.", class = "text-secondary")
+            tags$h2("Living Evidence Map", class = "mb-1"),
+            tags$div("Project management for computer-driven/computer-assisted living evidence maps", class = "text-secondary")
           ),
           uiOutput("session_identity")
         ),
         pipeline_summary_ui(),
+        uiOutput("configure_review"),
         uiOutput("assignment_progress"),
         div(
           class = "row g-3",
@@ -1516,7 +2344,7 @@ server <- function(input, output, session) {
               w02_batch_status_rv(),
               can_open = w02_user_remaining > 0L,
               idle_text = if (!nzchar(w02_batch_id_rv())) {
-                "No active queue"
+                "No records awaiting review"
               } else if (
                 w02_remaining > 0L && session_can("manage_assignments") && w02_user_remaining == 0L
               ) {
@@ -1542,19 +2370,6 @@ server <- function(input, output, session) {
           div(
             class = "col-12 col-lg-6",
             stage_card(
-              "Model uncertainty resolution",
-              "Workflow 04",
-              "Records unresolved after model consensus passes requiring a final human include/exclude decision.",
-              w04_resolution_total, w04_resolution_completed, w04_resolution_remaining,
-              if (w04_resolution_remaining > 0L) "open_w04_resolution" else NULL,
-              "Resolve model uncertainty",
-              w04_resolution_batch_id_rv(),
-              w04_resolution_batch_status_rv()
-            )
-          ),
-          div(
-            class = "col-12 col-lg-6",
-            stage_card(
               "Reviewer conflict resolution",
               "Workflow 04",
               "Human–machine or human–human screening conflicts awaiting adjudication.",
@@ -1565,13 +2380,38 @@ server <- function(input, output, session) {
               w04_active_conflict_batch_status(),
               can_open = w04_conflict_user_remaining > 0L,
               idle_text = if (w04_conflict_total == 0L) {
-                "No reviewer conflicts"
+                "No records awaiting review"
               } else if (w04_conflict_user_remaining == 0L && session_can("manage_assignments")) {
                 "Conflicts exist and are awaiting assignment"
               } else if (w04_conflict_user_remaining == 0L) {
                 "No conflicts assigned to you"
               } else {
-                "No reviewer conflicts"
+                "No records awaiting review"
+              }
+            )
+          ),
+          div(
+            class = "col-12 col-lg-6",
+            stage_card(
+              "Model uncertainty resolution",
+              "Workflow 04",
+              "Records unresolved after model consensus passes requiring a final human include/exclude decision.",
+              w04_resolution_total, w04_resolution_completed, w04_resolution_remaining,
+              if (w04_resolution_remaining > 0L) "open_w04_resolution" else NULL,
+              "Resolve model uncertainty",
+              w04_resolution_batch_id_rv(),
+              w04_resolution_batch_status_rv(),
+              can_open = w04_resolution_user_remaining > 0L,
+              idle_text = if (!nzchar(w04_resolution_batch_id_rv())) {
+                "No records awaiting review"
+              } else if (
+                w04_resolution_remaining > 0L && session_can("manage_assignments") && w04_resolution_user_remaining == 0L
+              ) {
+                "Active cases are awaiting assignment"
+              } else if (w04_resolution_user_remaining == 0L) {
+                "No records assigned to you"
+              } else {
+                "No records awaiting review"
               }
             )
           ),
@@ -1588,7 +2428,7 @@ server <- function(input, output, session) {
               w08_batch_status_rv(),
               can_open = w08_user_remaining > 0L,
               idle_text = if (!nzchar(w08_batch_id_rv())) {
-                "No active queue"
+                "No records awaiting review"
               } else if (
                 annotation_remaining > 0L && session_can("manage_assignments") && w08_user_remaining == 0L
               ) {
@@ -1821,6 +2661,313 @@ server <- function(input, output, session) {
   login_status <- reactiveVal("")
   output$login_status <- renderText(login_status())
 
+
+  observeEvent(input$record_table_open,{
+    req(authenticated())
+    if (!session_can("manage_assignments")) {
+      showNotification("Administrator permission is required to open record tables.",type="error")
+      return()
+    }
+    z <- input$record_table_open
+    if (is.null(z)) return()
+    workflow <- as.character(z$workflow %||% "")
+    task_type <- as.character(z$task_type %||% "")
+    batch_id <- as.character(z$batch_id %||% "")
+    metric <- as.character(z$metric %||% "cases")
+    allowed_metrics <- c("cases","assignments","completed","closed","outstanding","resolved_cases","outstanding_cases","unassigned")
+    if (!metric %in% allowed_metrics) return()
+    sources <- record_table_source(workflow,task_type,batch_id)
+    if (!length(sources)) {
+      showNotification("No active records are available for this table view.",type="warning")
+      return()
+    }
+    record_table_context(list(
+      workflow=workflow,
+      task_type=task_type,
+      batch_id=batch_id,
+      metric=metric,
+      user_id=as.character(z$user_id %||% ""),
+      label=as.character(z$label %||% "")
+    ))
+    record_table_page(1L)
+    record_table_abstract_open(character())
+    record_table_notes_open(character())
+    app_view("record_table")
+  })
+
+  observeEvent(input$record_table_back,{
+    record_table_context(NULL)
+    record_table_page(1L)
+    record_table_abstract_open(character())
+    record_table_notes_open(character())
+    app_view("tasks")
+  })
+
+  observeEvent(input$record_table_edit,{
+    req(authenticated())
+    if (!session_can("manage_assignments")) {
+      showNotification("Administrator permission is required to edit completed records.",type="error")
+      return()
+    }
+    z <- input$record_table_edit
+    if (is.null(z)) return()
+    workflow <- as.character(z$workflow %||% "")
+    task_type <- as.character(z$task_type %||% "")
+    batch_id <- as.character(z$batch_id %||% "")
+    case_id <- as.character(z$case_id %||% "")
+    if (!nzchar(case_id)) return()
+    if (record_table_batch_dispatched(workflow,task_type,batch_id)) {
+      showNotification(
+        "This batch has already been sent to GitHub. Completed responses can no longer be edited in Shiny.",
+        type="warning"
+      )
+      record_table_context(NULL)
+      app_view("tasks")
+      return()
+    }
+
+    open_case <- function(cases,set_cases,set_index,view,status_value="") {
+      if (nzchar(status_value) && identical(status_value,"consumed")) {
+        showNotification("This batch has already been consumed by GitHub and is read-only.",type="warning")
+        return(FALSE)
+      }
+      ids <- vapply(cases,record_table_case_id,character(1))
+      hit <- match(case_id,ids)
+      if (is.na(hit)) {
+        showNotification("The selected record is no longer available in the active batch.",type="warning")
+        return(FALSE)
+      }
+      set_cases(cases)
+      set_index(hit)
+      record_table_context(NULL)
+      app_view(view)
+      TRUE
+    }
+
+    if (identical(workflow,"01") && identical(task_type,"deduplication") && identical(batch_id,batch_id_rv())) {
+      complete(FALSE)
+      open_case(w01_all_cases_rv(),cases_rv,idx,"w01",batch_status_rv())
+    } else if (identical(workflow,"02") && identical(task_type,"enrichment") && identical(batch_id,w02_batch_id_rv())) {
+      open_case(w02_all_cases_rv(),w02_cases_rv,w02_idx,"w02",w02_batch_status_rv())
+    } else if (identical(workflow,"04") && identical(task_type,"manual_screening") && identical(batch_id,w04_batch_id_rv())) {
+      open_case(w04_all_cases_rv(),w04_cases_rv,w04_idx,"w04",w04_batch_status_rv())
+    } else if (identical(workflow,"04") && identical(task_type,"model_uncertainty") && identical(batch_id,w04_resolution_batch_id_rv())) {
+      open_case(w04_resolution_all_cases_rv(),w04_resolution_cases_rv,w04_resolution_idx,"w04_resolution",w04_resolution_batch_status_rv())
+    } else if (identical(workflow,"04") && identical(task_type,"conflict_resolution") && identical(batch_id,w04_active_conflict_batch_id())) {
+      cases <- w04_all_conflict_cases()
+      ids <- vapply(cases,record_table_case_id,character(1))
+      hit <- match(case_id,ids)
+      if (is.na(hit)) {
+        showNotification("The selected record is no longer available in the active conflict batch.",type="warning")
+      } else {
+        w04_conflict_idx(hit)
+        record_table_context(NULL)
+        app_view("w04_conflict")
+      }
+    } else if (identical(workflow,"08") && identical(task_type,"annotation") && identical(batch_id,w08_batch_id_rv())) {
+      open_case(w08_all_cases_rv(),w08_cases_rv,w08_idx,"w08",w08_batch_status_rv())
+    } else {
+      showNotification("This completed record is no longer part of an active editable batch.",type="warning")
+    }
+  })
+
+  observeEvent(input$record_table_toggle,{
+    z <- input$record_table_toggle
+    key <- as.character(z$case_id %||% "")
+    detail <- as.character(z$detail %||% "")
+    if (!nzchar(key)) return()
+    if (identical(detail,"abstract")) {
+      cur <- record_table_abstract_open()
+      record_table_abstract_open(if(key %in% cur) setdiff(cur,key) else c(cur,key))
+    } else if (identical(detail,"notes")) {
+      cur <- record_table_notes_open()
+      record_table_notes_open(if(key %in% cur) setdiff(cur,key) else c(cur,key))
+    }
+  })
+
+  observeEvent(input$record_table_search,{
+    record_table_page(1L)
+  },ignoreInit=TRUE)
+
+  observeEvent(input$record_table_page_size,{
+    record_table_page(1L)
+  },ignoreInit=TRUE)
+
+  observeEvent(input$record_table_prev,{
+    record_table_page(max(1L,record_table_page()-1L))
+  })
+
+  observeEvent(input$record_table_next,{
+    size <- suppressWarnings(as.integer(input$record_table_page_size %||% 50L))
+    if (is.na(size) || size < 1L) size <- 50L
+    total <- length(record_table_filtered_rows())
+    pages <- max(1L,ceiling(total/size))
+    record_table_page(min(pages,record_table_page()+1L))
+  })
+
+  output$record_table_context_label <- renderUI({
+    ctx <- record_table_context()
+    if (is.null(ctx)) return(NULL)
+    metric_label <- c(
+      cases="Cases",
+      assignments="Assignments",
+      completed="Completed",
+      closed="Resolved elsewhere",
+      outstanding="Outstanding",
+      resolved_cases="Completed",
+      outstanding_cases="Outstanding",
+      unassigned="Unassigned cases"
+    )[[ctx$metric]] %||% ctx$metric
+    who <- if(nzchar(ctx$user_id)) paste0(" · ",record_table_user_label(ctx$user_id)) else ""
+    label <- if(nzchar(ctx$label)) ctx$label else paste0(
+      if(identical(ctx$workflow,"all")) "All workflows" else paste0("W",ctx$workflow),
+      if(nzchar(ctx$task_type) && !identical(ctx$task_type,"all")) paste0(" · ",gsub("_"," ",ctx$task_type,fixed=TRUE)) else "",
+      " · ",metric_label,who
+    )
+    rows <- length(record_table_filtered_rows())
+    matched <- record_table_data()$matched_assignments
+    suffix <- if(ctx$metric %in% c("assignments","completed","closed","outstanding") && matched != rows) {
+      sprintf(" · %d assignments across %d records",matched,rows)
+    } else {
+      sprintf(" · %d record%s",rows,if(rows==1L)"" else "s")
+    }
+    tags$span(label,suffix)
+  })
+
+  output$record_table_body <- renderUI({
+    rows <- record_table_filtered_rows()
+    if (!length(rows)) {
+      return(tags$div(class="p-3 border rounded bg-white text-secondary","No records match this view."))
+    }
+    size <- suppressWarnings(as.integer(input$record_table_page_size %||% 50L))
+    if (is.na(size) || size < 1L) size <- 50L
+    pages <- max(1L,ceiling(length(rows)/size))
+    page <- min(max(1L,record_table_page()),pages)
+    if (!identical(page,record_table_page())) record_table_page(page)
+    idx <- seq.int((page-1L)*size+1L,min(page*size,length(rows)))
+    shown <- rows[idx]
+    ctx <- record_table_context()
+    allow_edit <- !is.null(ctx) &&
+      identical(as.character(ctx$metric %||% ""),"resolved_cases") &&
+      session_can("manage_assignments") &&
+      !identical(as.character(ctx$workflow %||% ""),"all") &&
+      !record_table_batch_dispatched(ctx$workflow,ctx$task_type,ctx$batch_id)
+
+    render_record <- function(r) {
+      citation <- tagList(
+        tags$span(class="fw-semibold",as.character(r$work_id %||% "")),
+        if(nzchar(r$year)) tags$span(paste0(" (",r$year,") ")) else " ",
+        tags$span(as.character(r$title %||% "")),
+        if(nzchar(r$doi)) tagList(
+          tags$span(". "),
+          tags$a(
+            href=paste0("https://doi.org/",normalise_doi_value(r$doi)),
+            target="_blank",rel="noopener noreferrer",
+            normalise_doi_value(r$doi)
+          )
+        ) else NULL
+      )
+      abstract_open <- r$key %in% record_table_abstract_open()
+      notes_open <- r$key %in% record_table_notes_open()
+      abstract_preview <- record_table_preview(r$abstract,5L)
+      note_count <- length(r$notes %||% list())
+
+      main <- tags$tr(
+        tags$td(class="lem-record-cell",citation),
+        tags$td(
+          if(nzchar(abstract_preview)) tags$button(
+            type="button",class="lem-detail-toggle",
+            `data-case-id`=r$key,`data-detail`="abstract",
+            paste0(abstract_preview,"… ",if(abstract_open)"▴" else "▾")
+          ) else tags$span(class="text-secondary","No abstract")
+        ),
+        tags$td(r$status),
+        tags$td(if(nzchar(r$assigned)) r$assigned else tags$span(class="text-secondary","—")),
+        tags$td(if(nzchar(r$decisions)) r$decisions else tags$span(class="text-secondary","—")),
+        tags$td(
+          if(note_count) tags$button(
+            type="button",class="lem-detail-toggle",
+            `data-case-id`=r$key,`data-detail`="notes",
+            sprintf("%d note%s %s",note_count,if(note_count==1L)"" else "s",if(notes_open)"▴" else "▾")
+          ) else tags$span(class="text-secondary","—")
+        ),
+        tags$td(if(nzchar(r$last_activity)) r$last_activity else tags$span(class="text-secondary","—")),
+        if (allow_edit) tags$td(
+          tags$button(
+            type="button",
+            class="btn btn-outline-primary btn-sm lem-record-edit",
+            `data-workflow`=r$workflow,
+            `data-task-type`=r$task_type,
+            `data-batch-id`=ctx$batch_id,
+            `data-case-id`=r$case_id,
+            "Edit"
+          )
+        ) else NULL
+      )
+
+      detail <- if(abstract_open || notes_open) {
+        tags$tr(
+          class="lem-detail-row",
+          tags$td(
+            colspan=if(allow_edit) "8" else "7",
+            if(abstract_open) div(
+              class="lem-detail-text",
+              tags$div(class="fw-semibold mb-1","Abstract"),
+              tags$div(style="white-space:pre-wrap;",as.character(r$abstract %||% ""))
+            ),
+            if(notes_open && note_count) div(
+              class=paste("lem-detail-text",if(abstract_open)"mt-3 pt-3 border-top" else ""),
+              tags$div(class="fw-semibold mb-1","Notes"),
+              tagList(lapply(r$notes,function(n) {
+                div(
+                  class="lem-note-entry",
+                  tags$div(class="fw-semibold",record_table_user_label(as.character(n$reviewer %||% ""))),
+                  tags$div(as.character(n$note %||% ""))
+                )
+              }))
+            )
+          )
+        )
+      } else NULL
+      tagList(main,detail)
+    }
+
+    div(
+      class="lem-record-table-wrap",
+      tags$table(
+        class="lem-record-table",
+        tags$thead(tags$tr(
+          tags$th("Record"),
+          tags$th("Abstract"),
+          tags$th("Status"),
+          tags$th("Assigned reviewer(s)"),
+          tags$th("Decision(s)"),
+          tags$th("Notes"),
+          tags$th("Last activity"),
+          if (allow_edit) tags$th("Edit") else NULL
+        )),
+        tags$tbody(tagList(lapply(shown,render_record)))
+      )
+    )
+  })
+
+  output$record_table_pager <- renderUI({
+    rows <- record_table_filtered_rows()
+    size <- suppressWarnings(as.integer(input$record_table_page_size %||% 50L))
+    if (is.na(size) || size < 1L) size <- 50L
+    pages <- max(1L,ceiling(length(rows)/size))
+    page <- min(max(1L,record_table_page()),pages)
+    div(
+      class="d-flex align-items-center justify-content-between gap-2 mt-2 flex-wrap",
+      tags$span(class="text-secondary small",sprintf("Page %d of %d",page,pages)),
+      div(
+        class="d-flex gap-2",
+        actionButton("record_table_prev","← Previous",class="btn-outline-secondary btn-sm",disabled=if(page<=1L)NA else NULL),
+        actionButton("record_table_next","Next →",class="btn-outline-secondary btn-sm",disabled=if(page>=pages)NA else NULL)
+      )
+    )
+  })
+
   output$session_identity <- renderUI({
     req(authenticated(), current_user())
     u <- current_user()
@@ -1845,6 +2992,747 @@ server <- function(input, output, session) {
     user_can(current_user(), permission)
   }
 
+  search_scope_pretty_source <- function(slug) {
+    slug <- as.character(slug %||% "")
+    catalogue <- search_scope_catalogue_rv()
+    if (!is.null(catalogue) && nrow(catalogue)) {
+      hit <- match(slug, as.character(catalogue$source_slug))
+      if (!is.na(hit)) return(as.character(catalogue$source[[hit]]))
+    }
+    x <- sub("^ebsco_", "", slug)
+    tools::toTitleCase(gsub("_", " ", x, fixed=TRUE))
+  }
+
+  search_scope_display_status <- function(x) {
+    x <- tolower(trimws(as.character(x %||% "")))
+    if (!nzchar(x)) return("Queued")
+    if (grepl("fail|error", x)) return("Failed")
+    if (x %in% c("queued","waiting","pending")) return("Queued")
+    if (x %in% c("in_progress","running")) return("Running")
+    "Complete"
+  }
+
+  search_scope_counts_resolved <- function(rows = search_scope_rows_rv()) {
+    if (is.null(rows) || !nrow(rows) || !"status" %in% names(rows)) return(FALSE)
+    states <- vapply(rows$status,search_scope_display_status,character(1))
+    !any(states %in% c("Queued","Running"))
+  }
+
+  search_scope_change_summary <- function(original, revised) {
+    original <- as.character(original %||% "")
+    revised <- as.character(revised %||% "")
+    if (identical(original, revised)) return("No change from original.")
+    a <- strsplit(original, "", fixed=TRUE)[[1L]]
+    b <- strsplit(revised, "", fixed=TRUE)[[1L]]
+    max_prefix <- min(length(a), length(b))
+    prefix <- 0L
+    if (max_prefix > 0L) {
+      while (prefix < max_prefix && identical(a[[prefix + 1L]], b[[prefix + 1L]])) prefix <- prefix + 1L
+    }
+    max_suffix <- min(length(a) - prefix, length(b) - prefix)
+    suffix <- 0L
+    if (max_suffix > 0L) {
+      while (
+        suffix < max_suffix &&
+        identical(a[[length(a) - suffix]], b[[length(b) - suffix]])
+      ) suffix <- suffix + 1L
+    }
+    old_end <- length(a) - suffix
+    new_end <- length(b) - suffix
+    old_mid <- if (old_end >= prefix + 1L) paste0(a[(prefix + 1L):old_end], collapse="") else ""
+    new_mid <- if (new_end >= prefix + 1L) paste0(b[(prefix + 1L):new_end], collapse="") else ""
+    old_mid <- trimws(old_mid)
+    new_mid <- trimws(new_mid)
+    if (!nzchar(old_mid)) return(sprintf("Added relative to original: %s", new_mid))
+    if (!nzchar(new_mid)) return(sprintf("Removed relative to original: %s", old_mid))
+    sprintf("Changed relative to original: %s  ->  %s", old_mid, new_mid)
+  }
+
+  search_scope_result_rows <- function(version) {
+    results <- search_scope_results_rv() %||% list()
+    rows <- results[[version]]
+    if (
+      identical(version, search_scope_active_version_rv()) &&
+      !is.null(search_scope_rows_rv())
+    ) rows <- search_scope_rows_rv()
+    rows
+  }
+
+  search_scope_total_for_version <- function(version) {
+    rows <- search_scope_result_rows(version)
+    if (is.null(rows) || !nrow(rows) || !"hits" %in% names(rows)) return(NA_integer_)
+    hits <- suppressWarnings(as.integer(rows$hits))
+    if (all(is.na(hits))) return(NA_integer_)
+    sum(hits, na.rm=TRUE)
+  }
+
+  observe({
+    req(authenticated())
+    if (!session_can("run_search_scoping")) return()
+    if (nzchar(search_scope_string_rv())) return()
+    x <- tryCatch(
+      read_github_text_file("user_input/scoping_search_string.txt"),
+      error=function(e) structure("", error=conditionMessage(e))
+    )
+    if (nzchar(as.character(x))) {
+      original <- trimws(as.character(x))
+      search_scope_string_rv(original)
+      if (!length(search_scope_versions_rv())) {
+        search_scope_versions_rv(stats::setNames(original, "original"))
+        search_scope_active_version_rv("original")
+      }
+      catalogue <- tryCatch(read_w00_scoping_source_catalogue(), error=function(e) NULL)
+      if (!is.null(catalogue) && nrow(catalogue)) {
+        search_scope_catalogue_rv(catalogue)
+      }
+    } else {
+      search_scope_status_rv(paste(
+        "Could not load scoping search string:",
+        attr(x, "error") %||% "unknown GitHub read error"
+      ))
+    }
+  })
+
+  output$configure_review <- renderUI({
+    req(authenticated())
+    if (!session_can("run_search_scoping")) return(NULL)
+
+    request_active <- nzchar(as.character(search_scope_request_id_rv() %||% ""))
+    counts_resolved <- search_scope_counts_resolved()
+    original_rows <- (search_scope_results_rv() %||% list())[["original"]]
+    original_complete <- search_scope_counts_resolved(original_rows)
+    card(
+      class="assignment-summary",
+      tags$details(
+        class="assignment-disclosure",
+        `data-accordion-key`="configure-review",
+        tags$summary(
+          div(
+            class="d-inline-flex flex-wrap align-items-center gap-2 p-3",
+            tags$strong("Configure review"),
+            tags$span(class="task-badge","Search scoping")
+          )
+        ),
+        div(
+          class="px-3 pb-3",
+          div(
+            class="d-flex align-items-center justify-content-between gap-2 flex-wrap",
+            div(
+              class="d-inline-flex align-items-center gap-2",
+              tags$h6(class="mb-0","Search string"),
+              tags$span(class="task-badge", search_scope_active_version_rv())
+            ),
+            if (!request_active && isTRUE(original_complete)) actionButton(
+              "edit_search_scope",
+              "Edit search string",
+              class="btn-outline-secondary btn-sm"
+            )
+          ),
+          tags$pre(
+            class="border rounded bg-light p-3 small mt-2",
+            style="white-space:pre-wrap;overflow-wrap:anywhere;",
+            if (nzchar(search_scope_string_rv())) search_scope_string_rv() else "Loading search string…"
+          ),
+          if (!isTRUE(original_complete) && identical(search_scope_active_version_rv(),"original")) {
+            tags$div(
+              class="saved-note mb-2",
+              "Run the original scoping search before editing version 2"
+            )
+          },
+          if (length(search_scope_versions_rv()) > 1L) {
+            tags$div(
+              class="saved-note mb-2",
+              paste("Temporary versions in this session:", paste(names(search_scope_versions_rv()), collapse=", "))
+            )
+          },
+          div(
+            class="d-flex align-items-center gap-2 flex-wrap mb-2",
+            if (request_active && !counts_resolved) {
+              tags$span(class="saved-note fw-semibold","Scoping search running…")
+            } else if (request_active && counts_resolved) {
+              tags$span(class="saved-note fw-semibold","Scoping search complete.")
+            } else {
+              actionButton(
+                "run_search_scope",
+                sprintf("Run scoping search %s", search_scope_active_version_rv()),
+                class="btn-primary btn-sm"
+              )
+            },
+            tags$span(class="saved-note", search_scope_status_rv())
+          ),
+          uiOutput("search_scope_progress"),
+          uiOutput("search_scope_table"),
+          uiOutput("search_scope_report_download")
+        )
+      )
+    )
+  })
+
+  output$search_scope_progress <- renderUI({
+    p <- search_scope_progress_rv() %||% list(completed=0L,total=0L,pct=0L,label="")
+    total <- as.integer(p$total %||% 0L)
+    completed <- as.integer(p$completed %||% 0L)
+    pct <- as.integer(p$pct %||% 0L)
+    if (pct < 1L && total < 1L && !nzchar(search_scope_run_id_rv())) return(NULL)
+    label <- as.character(p$label %||% "")
+    if (!nzchar(label)) {
+      label <- if (total > 0L) {
+        sprintf("Searching databases: %d of %d complete",completed,total)
+      } else {
+        "Preparing scoping search…"
+      }
+    }
+    div(
+      class="mt-3 mb-3",
+      tags$div(class="d-flex justify-content-between small mb-1",
+               tags$span(label),tags$span(sprintf("%d%%",pct))),
+      div(
+        class="progress",
+        div(
+          class="progress-bar",
+          role="progressbar",
+          style=sprintf("width:%d%%",pct),
+          `aria-valuenow`=pct,
+          `aria-valuemin`=0,
+          `aria-valuemax`=100
+        )
+      )
+    )
+  })
+
+  observeEvent(input$edit_search_scope, {
+    req(authenticated())
+    if (!session_can("run_search_scoping")) return()
+    if (nzchar(search_scope_request_id_rv())) return()
+    versions <- search_scope_versions_rv()
+    if (!length(versions)) return()
+    next_version <- paste0("v", length(versions) + 1L)
+    showModal(modalDialog(
+      title=sprintf("Edit search string - create %s", next_version),
+      textAreaInput(
+        "search_scope_edit_text",
+        "Search string",
+        value=search_scope_string_rv(),
+        rows=8,
+        width="100%"
+      ),
+      tags$p(
+        class="saved-note",
+        "This creates a temporary scoping version in the app. It does not replace the GitHub search string."
+      ),
+      easyClose=FALSE,
+      footer=tagList(
+        modalButton("Cancel"),
+        actionButton("save_search_scope_edit","Save new version",class="btn-primary")
+      )
+    ))
+  })
+
+  observeEvent(input$save_search_scope_edit, {
+    req(authenticated())
+    if (!session_can("run_search_scoping")) return()
+    proposed <- trimws(as.character(input$search_scope_edit_text %||% ""))
+    if (!nzchar(proposed)) {
+      showNotification("Search string cannot be empty.", type="error")
+      return()
+    }
+    versions <- search_scope_versions_rv()
+    if (!length(versions)) return()
+    if (identical(proposed, as.character(tail(versions,1L)))) {
+      showNotification("No change was made, so no new version was created.", type="message")
+      return()
+    }
+    version <- paste0("v", length(versions) + 1L)
+    versions[[version]] <- proposed
+    search_scope_versions_rv(versions)
+    search_scope_active_version_rv(version)
+    search_scope_string_rv(proposed)
+    search_scope_rows_rv(NULL)
+    search_scope_seen_artifacts_rv(character())
+    search_scope_job_sources_rv(character())
+    search_scope_progress_rv(list(completed=0L,total=0L,pct=0L,label=""))
+    search_scope_run_id_rv("")
+    search_scope_request_id_rv("")
+    search_scope_running_version_rv("")
+    search_scope_status_rv(sprintf(
+      "%s saved temporarily in this app session. Run scoping to compare it with the original.",
+      version
+    ))
+    removeModal()
+  })
+
+  output$search_scope_report_download <- renderUI({
+    results <- search_scope_results_rv() %||% list()
+    active_rows <- search_scope_rows_rv()
+    has_completed <- any(vapply(results, search_scope_counts_resolved, logical(1)))
+    if (!has_completed && !search_scope_counts_resolved(active_rows)) return(NULL)
+    downloadButton(
+      "download_search_scope_report",
+      "Download scoping report",
+      class="btn-outline-secondary btn-sm mt-3"
+    )
+  })
+
+  output$download_search_scope_report <- downloadHandler(
+    filename=function() sprintf("search-scoping-report-%s.pdf",format(Sys.Date(),"%Y-%m-%d")),
+    content=function(file) {
+      versions <- search_scope_versions_rv()
+      req(length(versions) > 0L)
+      results <- search_scope_results_rv() %||% list()
+      active_version <- search_scope_active_version_rv()
+      if (!is.null(search_scope_rows_rv())) results[[active_version]] <- search_scope_rows_rv()
+
+      catalogue <- search_scope_catalogue_rv()
+      source_slugs <- if (!is.null(catalogue) && nrow(catalogue)) as.character(catalogue$source_slug) else {
+        unique(unlist(lapply(results,function(x) if(is.null(x)) character() else as.character(x$source_slug)),use.names=FALSE))
+      }
+      source_labels <- if (!is.null(catalogue) && nrow(catalogue)) {
+        stats::setNames(as.character(catalogue$source),as.character(catalogue$source_slug))
+      } else {
+        vals <- unlist(lapply(results,function(x) {
+          if(is.null(x) || !nrow(x)) return(character())
+          stats::setNames(as.character(x$source),as.character(x$source_slug))
+        }),use.names=TRUE)
+        vals[!duplicated(names(vals))]
+      }
+
+      version_hits <- lapply(names(versions),function(v) {
+        rows <- results[[v]]
+        out <- stats::setNames(rep(NA_integer_,length(source_slugs)),source_slugs)
+        if (!is.null(rows) && nrow(rows) && "source_slug" %in% names(rows)) {
+          idx <- match(source_slugs,as.character(rows$source_slug))
+          ok <- !is.na(idx)
+          out[ok] <- suppressWarnings(as.integer(rows$hits[idx[ok]]))
+        }
+        out
+      })
+      names(version_hits) <- names(versions)
+      totals <- vapply(version_hits,function(x) if(all(is.na(x))) NA_integer_ else sum(x,na.rm=TRUE),integer(1))
+      baseline_total <- totals[["original"]]
+
+      grDevices::pdf(file,width=8.27,height=11.69,onefile=TRUE,useDingbats=FALSE)
+      on.exit(grDevices::dev.off(),add=TRUE)
+
+      graphics::plot.new()
+      graphics::text(0.06,0.95,"Search scoping report",adj=c(0,1),family="sans",font=2,cex=1.45)
+      graphics::text(
+        0.06,0.91,
+        sprintf("Scoping date: %s",format(Sys.Date(),"%d-%m-%Y")),
+        adj=c(0,1),family="sans",cex=0.9
+      )
+      graphics::text(
+        0.06,0.865,
+        "This report records count-only scoping searches. No bibliographic records or raw API responses were retained.",
+        adj=c(0,1),family="sans",cex=0.82
+      )
+      y <- 0.81
+      original <- as.character(versions[["original"]])
+
+      for (v in names(versions)) {
+        heading <- if (identical(v,"original")) "Search string original" else sprintf("Search string %s",v)
+        if (y < 0.18) {
+          graphics::plot.new()
+          y <- 0.94
+        }
+        graphics::text(0.06,y,heading,adj=c(0,1),family="sans",font=2,cex=1.02)
+        y <- y-0.035
+        q_lines <- unlist(strwrap(as.character(versions[[v]]),width=105),use.names=FALSE)
+        for (line in q_lines) {
+          if (y < 0.10) {
+            graphics::plot.new()
+            graphics::text(0.06,0.95,paste(heading,"(continued)"),adj=c(0,1),family="sans",font=2,cex=0.95)
+            y <- 0.90
+          }
+          graphics::text(0.06,y,line,adj=c(0,1),family="mono",cex=0.68)
+          y <- y-0.022
+        }
+        if (!identical(v,"original")) {
+          diff_lines <- unlist(strwrap(search_scope_change_summary(original,versions[[v]]),width=100),use.names=FALSE)
+          y <- y-0.006
+          for (line in diff_lines) {
+            graphics::text(0.06,y,line,adj=c(0,1),family="sans",cex=0.72,col="red3")
+            y <- y-0.022
+          }
+        }
+        y <- y-0.035
+      }
+
+      graphics::plot.new()
+      graphics::text(0.06,0.95,"Database counts",adj=c(0,1),family="sans",font=2,cex=1.15)
+
+      version_names <- names(versions)
+      n_versions <- length(version_names)
+      db_x <- 0.06
+      status_x <- 0.88
+      result_left <- 0.57
+      result_right <- 0.84
+      result_x <- if (n_versions == 1L) 0.76 else seq(result_left,result_right,length.out=n_versions)
+      graphics::text(db_x,0.91,"Database",adj=c(0,1),family="sans",font=2,cex=0.78)
+      for (j in seq_along(version_names)) {
+        graphics::text(result_x[[j]],0.91,version_names[[j]],adj=c(0.5,1),family="sans",font=2,cex=0.76)
+      }
+      graphics::text(status_x,0.91,"Status",adj=c(0,1),family="sans",font=2,cex=0.76)
+      graphics::segments(0.06,0.885,0.96,0.885)
+      y <- 0.865
+
+      active_rows <- results[[active_version]]
+      for (slug in source_slugs) {
+        label <- as.character(source_labels[[slug]] %||% search_scope_pretty_source(slug))
+        label_lines <- strwrap(label,width=55)
+        if (y < 0.10) {
+          graphics::plot.new()
+          graphics::text(0.06,0.95,"Database counts (continued)",adj=c(0,1),family="sans",font=2,cex=1.0)
+          y <- 0.90
+        }
+        graphics::text(db_x,y,label_lines[[1L]],adj=c(0,1),family="sans",cex=0.70)
+        for (j in seq_along(version_names)) {
+          val <- version_hits[[version_names[[j]]]][[slug]]
+          txt <- if(is.na(val)) "-" else format(val,big.mark=",",scientific=FALSE)
+          graphics::text(result_x[[j]],y,txt,adj=c(0.5,1),family="sans",cex=0.70)
+        }
+        st <- ""
+        if (!is.null(active_rows) && nrow(active_rows) && "source_slug" %in% names(active_rows)) {
+          hit <- which(as.character(active_rows$source_slug)==slug)
+          if(length(hit)) st <- search_scope_display_status(active_rows$status[[hit[[1L]]]])
+        }
+        graphics::text(status_x,y,st,adj=c(0,1),family="sans",cex=0.68)
+        if (length(label_lines)>1L) {
+          for (extra in label_lines[-1L]) {
+            y <- y-0.019
+            graphics::text(db_x,y,extra,adj=c(0,1),family="sans",cex=0.70)
+          }
+        }
+        y <- y-0.027
+      }
+
+      graphics::segments(0.06,y+0.009,0.96,y+0.009)
+      total_y <- y-0.008
+      graphics::text(db_x,total_y,"Total",adj=c(0,1),family="sans",font=2,cex=0.78)
+      for (j in seq_along(version_names)) {
+        v <- version_names[[j]]
+        total <- totals[[v]]
+        txt <- if(is.na(total)) "-" else format(total,big.mark=",",scientific=FALSE)
+        graphics::text(result_x[[j]],total_y,txt,adj=c(0.5,1),family="sans",font=2,cex=0.76)
+        if (!identical(v,"original") && !is.na(total) && !is.na(baseline_total)) {
+          delta <- total-baseline_total
+          delta_txt <- sprintf("(%s%s)",if(delta>=0) "+" else "",format(delta,big.mark=",",scientific=FALSE))
+          graphics::text(result_x[[j]],total_y-0.022,delta_txt,adj=c(0.5,1),family="sans",cex=0.66,col="red3")
+        }
+      }
+      graphics::text(
+        0.06,0.045,
+        "Counts are totals reported by each live-searchable database/API at the time of each scoping run.",
+        adj=c(0,0),family="sans",cex=0.7
+      )
+    },
+    contentType="application/pdf"
+  )
+
+  output$search_scope_table <- renderUI({
+    versions <- search_scope_versions_rv()
+    if (!length(versions)) return(NULL)
+    results <- search_scope_results_rv() %||% list()
+    active_version <- search_scope_active_version_rv()
+    active_rows <- search_scope_rows_rv()
+    if (!is.null(active_rows)) results[[active_version]] <- active_rows
+
+    catalogue <- search_scope_catalogue_rv()
+    job_sources <- search_scope_job_sources_rv() %||% character()
+    source_slugs <- if (!is.null(catalogue) && nrow(catalogue)) {
+      as.character(catalogue$source_slug)
+    } else if (length(job_sources)) {
+      as.character(job_sources)
+    } else {
+      unique(unlist(lapply(results,function(x) if(is.null(x)) character() else as.character(x$source_slug)),use.names=FALSE))
+    }
+    if (!length(source_slugs)) return(NULL)
+    source_slugs <- source_slugs[order(tolower(vapply(source_slugs,search_scope_pretty_source,character(1))))]
+    baseline_total <- search_scope_total_for_version("original")
+
+    value_cell <- function(version, slug) {
+      rows <- results[[version]]
+      if (is.null(rows) || !nrow(rows) || !"source_slug" %in% names(rows)) return("—")
+      hit <- which(as.character(rows$source_slug)==slug)
+      if (!length(hit)) return("—")
+      value <- suppressWarnings(as.integer(rows$hits[[hit[[1L]]]]))
+      if (is.na(value)) "—" else format(value,big.mark=",",scientific=FALSE)
+    }
+
+    total_cell <- function(version) {
+      total <- search_scope_total_for_version(version)
+      if (is.na(total)) return("—")
+      main <- tags$strong(format(total,big.mark=",",scientific=FALSE))
+      if (identical(version,"original") || is.na(baseline_total)) return(main)
+      delta <- total-baseline_total
+      tagList(
+        main,
+        tags$div(
+          class="small text-danger",
+          sprintf("(%s%s)",if(delta>=0) "+" else "",format(delta,big.mark=",",scientific=FALSE))
+        )
+      )
+    }
+
+    tags$div(
+      class="table-responsive mt-2",
+      tags$table(
+        class="table table-sm align-middle mb-0",
+        tags$thead(tags$tr(
+          tags$th("Database"),
+          lapply(names(versions),function(v) tags$th(class="text-end",v)),
+          tags$th("Status")
+        )),
+        tags$tbody(tagList(
+          lapply(source_slugs,function(slug) {
+            st <- ""
+            rows <- results[[active_version]]
+            if (!is.null(rows) && nrow(rows) && "source_slug" %in% names(rows)) {
+              hit <- which(as.character(rows$source_slug)==slug)
+              if(length(hit)) st <- search_scope_display_status(rows$status[[hit[[1L]]]])
+            }
+            tags$tr(
+              tags$td(search_scope_pretty_source(slug)),
+              lapply(names(versions),function(v) tags$td(class="text-end",value_cell(v,slug))),
+              tags$td(st)
+            )
+          }),
+          tags$tr(
+            class="fw-semibold border-top",
+            tags$td("Total"),
+            lapply(names(versions),function(v) tags$td(class="text-end",total_cell(v))),
+            tags$td("")
+          )
+        ))
+      )
+    )
+  })
+
+  observeEvent(input$run_search_scope, {
+    req(authenticated())
+    if (!session_can("control_workflows")) {
+      search_scope_status_rv("Search scoping permission is required.")
+      return()
+    }
+    if (nzchar(search_scope_request_id_rv())) return()
+
+    stamp <- format(Sys.time(),tz="UTC",format="%Y%m%dT%H%M%SZ")
+    request_id <- paste0(
+      "shiny-",stamp,"-",
+      substr(digest::digest(
+        paste(stamp,session_reviewer_id(),search_scope_string_rv(),sep="|"),
+        algo="sha256",serialize=FALSE
+      ),1L,10L)
+    )
+    catalogue <- search_scope_catalogue_rv()
+    if (is.null(catalogue) || !nrow(catalogue)) {
+      catalogue <- tryCatch(read_w00_scoping_source_catalogue(), error=function(e) NULL)
+      if (!is.null(catalogue) && nrow(catalogue)) search_scope_catalogue_rv(catalogue)
+    }
+    if (!is.null(catalogue) && nrow(catalogue)) {
+      search_scope_job_sources_rv(as.character(catalogue$source_slug))
+      search_scope_rows_rv(data.frame(
+        source_slug=as.character(catalogue$source_slug),
+        source=as.character(catalogue$source),
+        hits=NA_integer_,
+        status="Queued",
+        stringsAsFactors=FALSE
+      ))
+      search_scope_progress_rv(list(completed=0L,total=nrow(catalogue),pct=2L,label="Preparing scoping search…"))
+    } else {
+      search_scope_rows_rv(NULL)
+      search_scope_job_sources_rv(character())
+      search_scope_progress_rv(list(completed=0L,total=0L,pct=2L,label="Preparing scoping search…"))
+    }
+    search_scope_seen_artifacts_rv(character())
+    search_scope_run_id_rv("")
+    running_version <- search_scope_active_version_rv()
+    search_scope_running_version_rv(running_version)
+    search_scope_status_rv(sprintf("Dispatching count-only scoping search %s…",running_version))
+
+    ok <- tryCatch({
+      dispatch_w00_scoping(request_id, search_string=search_scope_string_rv())
+      TRUE
+    },error=function(e) {
+      search_scope_status_rv(paste("Scoping dispatch failed:",conditionMessage(e)))
+      FALSE
+    })
+    if (ok) {
+      search_scope_request_id_rv(request_id)
+      search_scope_status_rv("Scoping search queued in GitHub Actions.")
+    }
+  })
+
+  observe({
+    req(authenticated())
+    request_id <- as.character(search_scope_request_id_rv() %||% "")
+    if (!nzchar(request_id)) return()
+    invalidateLater(3000, session)
+
+    run <- tryCatch(find_w00_scoping_run(request_id),error=function(e)e)
+    if (inherits(run,"error")) {
+      search_scope_status_rv(paste("Could not read scoping run:",conditionMessage(run)))
+      return()
+    }
+    if (is.null(run)) {
+      search_scope_progress_rv(list(
+        completed=0L,
+        total=as.integer((search_scope_progress_rv() %||% list(total=0L))$total %||% 0L),
+        pct=4L,
+        label="Preparing scoping search…"
+      ))
+      search_scope_status_rv("Waiting for GitHub Actions to create the scoping run…")
+      return()
+    }
+
+    run_id <- as.character(run$id %||% "")
+    search_scope_run_id_rv(run_id)
+    jobs <- tryCatch(w00_scoping_run_jobs(run_id),error=function(e)e)
+    if (inherits(jobs,"error")) {
+      search_scope_status_rv(paste("Could not read scoping job progress:",conditionMessage(jobs)))
+      return()
+    }
+
+    count_jobs <- Filter(function(j) startsWith(as.character(j$name %||% ""),"count / "), jobs)
+    sources <- vapply(count_jobs,function(j) sub("^count / ","",as.character(j$name %||% "")),character(1))
+    if (length(sources) && is.null(search_scope_catalogue_rv())) search_scope_job_sources_rv(sources)
+
+    completed <- sum(vapply(count_jobs,function(j) identical(as.character(j$status %||% ""),"completed"),logical(1)))
+    catalogue <- search_scope_catalogue_rv()
+    total <- if (!is.null(catalogue) && nrow(catalogue)) nrow(catalogue) else length(count_jobs)
+
+    prepare_jobs <- Filter(function(j) identical(as.character(j$name %||% ""),"prepare"), jobs)
+    merge_jobs <- Filter(function(j) identical(as.character(j$name %||% ""),"merge"), jobs)
+    prepare_status <- if (length(prepare_jobs)) as.character(prepare_jobs[[1L]]$status %||% "") else ""
+    merge_status <- if (length(merge_jobs)) as.character(merge_jobs[[1L]]$status %||% "") else ""
+
+    if (!length(count_jobs)) {
+      pct <- if (identical(prepare_status,"in_progress")) 7L else if (identical(prepare_status,"completed")) 10L else 5L
+      progress_label <- "Preparing scoping search…"
+    } else if (total > 0L && completed < total) {
+      pct <- 10L + round(80L * completed / total)
+      progress_label <- sprintf("Searching databases: %d of %d complete",completed,total)
+    } else if (total > 0L && completed >= total) {
+      pct <- if (identical(merge_status,"in_progress")) 96L else 92L
+      progress_label <- "Finalising scoping report…"
+    } else {
+      pct <- 10L
+      progress_label <- "Preparing scoping search…"
+    }
+    search_scope_progress_rv(list(completed=completed,total=total,pct=pct,label=progress_label))
+
+    current <- search_scope_rows_rv()
+    if (is.null(current) && length(sources)) {
+      current <- data.frame(
+        source_slug=sources,
+        source=vapply(sources,search_scope_pretty_source,character(1)),
+        hits=NA_integer_,
+        status=vapply(count_jobs,function(j) {
+          st <- as.character(j$status %||% "")
+          if (identical(st,"in_progress")) "Running" else if (identical(st,"completed")) {
+            if (identical(as.character(j$conclusion %||% ""),"success")) "Complete" else "Failed"
+          } else "Queued"
+        },character(1)),
+        stringsAsFactors=FALSE
+      )
+    } else if (!is.null(current) && length(sources)) {
+      for (k in seq_along(sources)) {
+        slug <- sources[[k]]
+        hit <- which(as.character(current$source_slug)==slug)
+        if (!length(hit)) {
+          current <- rbind(current,data.frame(
+            source_slug=slug,source=search_scope_pretty_source(slug),hits=NA_integer_,
+            status="Queued",stringsAsFactors=FALSE
+          ))
+          hit <- nrow(current)
+        }
+        if (is.na(suppressWarnings(as.integer(current$hits[[hit[[1L]]]])))) {
+          st <- as.character(count_jobs[[k]]$status %||% "")
+          current$status[[hit[[1L]]]] <- if (identical(st,"in_progress")) "Running" else if (identical(st,"completed")) {
+            if (identical(as.character(count_jobs[[k]]$conclusion %||% ""),"success")) "Complete" else "Failed"
+          } else "Queued"
+        }
+      }
+    }
+
+    artifacts <- tryCatch(w00_scoping_run_artifacts(run_id),error=function(e) list())
+    seen <- search_scope_seen_artifacts_rv() %||% character()
+    count_artifacts <- Filter(function(a) startsWith(as.character(a$name %||% ""),"workflow00-scope-count-"), artifacts)
+    for (a in count_artifacts) {
+      aid <- as.character(a$id %||% "")
+      if (!nzchar(aid) || aid %in% seen) next
+      row <- tryCatch(read_w00_scoping_count_artifact(a),error=function(e) NULL)
+      if (is.null(row)) next
+      slug <- as.character(row$source_slug %||% "")
+      if (!nzchar(slug)) next
+      if (is.null(current)) current <- data.frame(source_slug=character(),source=character(),hits=integer(),status=character(),stringsAsFactors=FALSE)
+      current <- current[as.character(current$source_slug)!=slug,,drop=FALSE]
+      current <- rbind(current,data.frame(
+        source_slug=slug,
+        source=search_scope_pretty_source(slug),
+        hits=suppressWarnings(as.integer(row$hits %||% NA_integer_)),
+        status=search_scope_display_status(row$status),
+        stringsAsFactors=FALSE
+      ))
+      seen <- c(seen,aid)
+    }
+    search_scope_seen_artifacts_rv(unique(seen))
+
+    if (!is.null(current)) {
+      catalogue <- search_scope_catalogue_rv()
+      order_slugs <- if (!is.null(catalogue) && nrow(catalogue)) {
+        as.character(catalogue$source_slug)
+      } else sources
+      if (nrow(current)) {
+        current <- current[order(tolower(current$source)),,drop=FALSE]
+        rownames(current) <- NULL
+      }
+    }
+    if (!is.null(current)) search_scope_rows_rv(current)
+
+    run_status <- as.character(run$status %||% "")
+    run_conclusion <- as.character(run$conclusion %||% "")
+    if (identical(run_status,"completed")) {
+      final_art <- Filter(function(a) startsWith(as.character(a$name %||% ""),"workflow00-search-scoping-"), artifacts)
+      if (length(final_art)) {
+        final_rows <- tryCatch(read_w00_scoping_final_artifact(final_art[[1L]]),error=function(e) NULL)
+        if (!is.null(final_rows)) {
+          final_rows$status <- vapply(final_rows$status,search_scope_display_status,character(1))
+          if ("source_slug" %in% names(final_rows)) {
+            final_rows$source <- vapply(final_rows$source_slug,search_scope_pretty_source,character(1))
+          }
+          final_rows <- final_rows[order(tolower(final_rows$source)),,drop=FALSE]
+          rownames(final_rows) <- NULL
+          search_scope_rows_rv(final_rows)
+          completed_version <- as.character(search_scope_running_version_rv() %||% search_scope_active_version_rv())
+          if (!nzchar(completed_version)) completed_version <- search_scope_active_version_rv()
+          results <- search_scope_results_rv() %||% list()
+          results[[completed_version]] <- final_rows
+          search_scope_results_rv(results)
+          failed_n <- sum(final_rows$status=="Failed")
+          search_scope_progress_rv(list(completed=nrow(final_rows),total=nrow(final_rows),pct=100L,label="Scoping search complete"))
+          search_scope_status_rv(if (failed_n) {
+            sprintf("Scoping search complete with %d failed database%s.",failed_n,if(failed_n==1L)"" else "s")
+          } else "Scoping search complete.")
+        } else {
+          search_scope_status_rv("Scoping search finished, but the final count artefact could not be read.")
+        }
+      } else {
+        search_scope_status_rv(paste0(
+          "Scoping search finished",
+          if(nzchar(run_conclusion)) paste0(" with status: ",run_conclusion) else "."
+        ))
+      }
+      search_scope_request_id_rv("")
+      search_scope_running_version_rv("")
+    } else {
+      if (total > 0L && completed >= total && search_scope_counts_resolved(current)) {
+        search_scope_status_rv("All database searches complete. Finalising GitHub report artefact…")
+      } else {
+        search_scope_status_rv(if(total > 0L) sprintf("Scoping search running: %d of %d databases complete.",completed,total) else "Preparing database count jobs…")
+      }
+    }
+  })
+
   w01_active_assignment_events <- function() {
     decisions() %||% list()
   }
@@ -1864,6 +3752,16 @@ server <- function(input, output, session) {
     )
     identical(progress$remaining, 0L)
   }
+
+  w01_resolution_ready <- reactive({
+    cs <- w01_all_cases_rv()
+    if (!length(cs) || !nzchar(batch_id_rv()) || !nzchar(queue_sha_rv())) return(FALSE)
+    ids <- vapply(cs,function(x)as.character(x$review_case_id %||% ""),character(1))
+    ds <- decisions() %||% list()
+    final <- Filter(function(x)as.character(x$decision %||% "") %in% c("duplicate","not_duplicate"),ds)
+    dids <- unique(vapply(final,function(x)as.character(x$review_case_id %||% ""),character(1)))
+    setequal(ids,dids) && w01_all_assignments_complete()
+  })
 
 
   w02_active_assignment_events <- function() {
@@ -1904,6 +3802,30 @@ server <- function(input, output, session) {
     identical(progress$remaining, 0L)
   }
 
+  w02_handoff_ready <- reactive({
+    cs <- w02_all_cases_rv() %||% list()
+    if (!length(cs) || !nzchar(as.character(w02_batch_id_rv() %||% ""))) return(FALSE)
+    ids <- vapply(cs,function(x)as.character(x$review_case_id %||% ""),character(1))
+    resolved <- w02_resolved_ids(w02_decisions())
+    length(ids) > 0L && all(nzchar(ids)) && all(ids %in% resolved)
+  })
+
+  w04_resolution_handoff_ready <- reactive({
+    cs <- w04_resolution_all_cases_rv() %||% list()
+    if (!length(cs) || !nzchar(as.character(w04_resolution_batch_id_rv() %||% ""))) return(FALSE)
+    ids <- vapply(cs,function(x)as.character(x$review_case_id %||% ""),character(1))
+    resolved <- w04_resolution_decision_ids(w04_resolution_decisions())
+    length(ids) > 0L && all(nzchar(ids)) && all(ids %in% resolved)
+  })
+
+  w08_handoff_ready <- reactive({
+    cs <- w08_all_cases_rv() %||% list()
+    if (!length(cs) || !nzchar(as.character(w08_batch_id_rv() %||% ""))) return(FALSE)
+    ids <- vapply(cs,function(x)as.character(x$record_id %||% ""),character(1))
+    resolved <- w08_decision_ids(w08_decisions())
+    length(ids) > 0L && all(nzchar(ids)) && all(ids %in% resolved)
+  })
+
   output$assignment_progress <- renderUI({
     req(authenticated())
     if (!session_can("manage_assignments")) return(NULL)
@@ -1912,6 +3834,7 @@ server <- function(input, output, session) {
     has_w01_batch <- nzchar(as.character(batch_id_rv())) && length(w01_all_cases_rv()) > 0L
     has_w02_batch <- nzchar(as.character(w02_batch_id_rv())) && length(w02_all_cases_rv()) > 0L
     has_w04_batch <- nzchar(as.character(w04_batch_id_rv())) && length(w04_all_cases_rv()) > 0L
+    has_w04_resolution_batch <- nzchar(as.character(w04_resolution_batch_id_rv())) && length(w04_resolution_all_cases_rv()) > 0L
     has_w04_conflict_batch <- nzchar(as.character(w04_active_conflict_batch_id())) && length(w04_all_conflict_cases()) > 0L
     has_w08_batch <- nzchar(as.character(w08_batch_id_rv())) && length(w08_all_cases_rv()) > 0L
     task_labels <- c(
@@ -1953,6 +3876,9 @@ server <- function(input, output, session) {
       if (identical(workflow, "04") && identical(task_type, "manual_screening")) {
         return(if (has_w04_batch) as.character(w04_batch_id_rv()) else "")
       }
+      if (identical(workflow, "04") && identical(task_type, "model_uncertainty")) {
+        return(if (has_w04_resolution_batch) as.character(w04_resolution_batch_id_rv()) else "")
+      }
       if (identical(workflow, "04") && identical(task_type, "conflict_resolution")) {
         return(if (has_w04_conflict_batch) as.character(w04_active_conflict_batch_id()) else "")
       }
@@ -1987,6 +3913,11 @@ server <- function(input, output, session) {
         identical(z$task_type, "manual_screening") &&
         identical(z$batch_id, w04_batch_id_rv())
       ) return(w04_active_assignment_events())
+      if (
+        identical(z$workflow, "04") &&
+        identical(z$task_type, "model_uncertainty") &&
+        identical(z$batch_id, w04_resolution_batch_id_rv())
+      ) return(w04_resolution_decisions())
       if (
         identical(z$workflow, "04") &&
         identical(z$task_type, "conflict_resolution") &&
@@ -2036,7 +3967,11 @@ server <- function(input, output, session) {
       }
     }
 
-    if (has_w01_batch) add_empty_group("01","deduplication",batch_id_rv(),ASSIGNMENT_MODES[["shared_work_pool"]])
+    add_empty_group(
+      "01","deduplication",
+      if (has_w01_batch) batch_id_rv() else "no-active-queue",
+      ASSIGNMENT_MODES[["shared_work_pool"]]
+    )
     add_empty_group(
       "02","enrichment",
       if (has_w02_batch) w02_batch_id_rv() else "no-active-queue",
@@ -2047,13 +3982,16 @@ server <- function(input, output, session) {
       if (has_w04_batch) w04_batch_id_rv() else "no-active-queue",
       ASSIGNMENT_MODES[["independent_blind_review"]]
     )
-    if (has_w04_conflict_batch) {
-      add_empty_group(
-        "04","conflict_resolution",
-        w04_active_conflict_batch_id(),
-        ASSIGNMENT_MODES[["single_reviewer"]]
-      )
-    }
+    add_empty_group(
+      "04","conflict_resolution",
+      if (has_w04_conflict_batch) w04_active_conflict_batch_id() else "no-active-queue",
+      ASSIGNMENT_MODES[["single_reviewer"]]
+    )
+    add_empty_group(
+      "04","model_uncertainty",
+      if (has_w04_resolution_batch) w04_resolution_batch_id_rv() else "no-active-queue",
+      ASSIGNMENT_MODES[["single_reviewer"]]
+    )
     add_empty_group(
       "08","annotation",
       if (has_w08_batch) w08_batch_id_rv() else "no-active-queue",
@@ -2070,8 +4008,8 @@ server <- function(input, output, session) {
         deduplication=1L,
         enrichment=1L,
         manual_screening=1L,
-        model_uncertainty=2L,
-        conflict_resolution=3L,
+        conflict_resolution=2L,
+        model_uncertainty=3L,
         annotation=1L
       )
       task_order <- vapply(
@@ -2082,10 +4020,22 @@ server <- function(input, output, session) {
       group_progress <- group_progress[order(workflow_order, task_order, names(group_progress))]
     }
 
-    total_assigned <- sum(vapply(group_progress, function(x) x$progress$assigned, integer(1)))
-    total_completed <- sum(vapply(group_progress, function(x) x$progress$completed, integer(1)))
-    total_released <- sum(vapply(group_progress, function(x) x$progress$resolved_elsewhere, integer(1)))
-    total_remaining <- sum(vapply(group_progress, function(x) x$progress$remaining, integer(1)))
+    active_sources_for_summary <- record_table_source_list()
+    total_assigned <- sum(vapply(
+      active_sources_for_summary,
+      function(src) length(active_assignments(src$assignments %||% list())),
+      integer(1)
+    ))
+    total_completed_cases <- sum(vapply(
+      active_sources_for_summary,
+      function(src) length(record_table_completed_case_ids(src)),
+      integer(1)
+    ))
+    total_outstanding_cases <- sum(vapply(
+      active_sources_for_summary,
+      function(src) length(record_table_outstanding_case_ids(src)),
+      integer(1)
+    ))
 
     assignment_manager_ui <- function(z) {
       cfg <- if (
@@ -2111,6 +4061,13 @@ server <- function(input, output, session) {
              events=w04_active_assignment_events(), label="W04")
       } else if (
         identical(z$workflow, "04") &&
+        identical(z$task_type, "model_uncertainty") &&
+        identical(z$batch_id, w04_resolution_batch_id_rv())
+      ) {
+        list(prefix="w04resolution", workflow="04", task_type="model_uncertainty", batch_id=w04_resolution_batch_id_rv(),
+             events=w04_resolution_decisions(), label="W04 model uncertainty")
+      } else if (
+        identical(z$workflow, "04") &&
         identical(z$task_type, "conflict_resolution") &&
         identical(z$batch_id, w04_active_conflict_batch_id())
       ) {
@@ -2127,24 +4084,23 @@ server <- function(input, output, session) {
 
       if (is.null(cfg)) {
         if (
+          identical(z$workflow, "01") &&
+          identical(z$task_type, "deduplication") &&
+          identical(z$batch_id, "no-active-queue")
+        ) {
+          return(tags$div(
+            class = "mt-2",
+            tags$div(class = "text-secondary small mb-2", "No active W01 deduplication queue is loaded.")
+          ))
+        }
+        if (
           identical(z$workflow, "02") &&
           identical(z$task_type, "enrichment") &&
           identical(z$batch_id, "no-active-queue")
         ) {
           return(tags$div(
             class = "mt-2",
-            tags$div(class = "text-secondary small mb-2", "No active W02 queue is loaded."),
-            tagList(
-              actionButton(
-                "create_test_w02_queue_inline",
-                "Create W02 test queue",
-                class = "btn-outline-secondary btn-sm"
-              ),
-              tags$div(
-                class = "saved-note mt-2",
-                textOutput("test_queue_status_w02", inline = TRUE)
-              )
-            )
+            tags$div(class = "text-secondary small mb-2", "No active W02 queue is loaded.")
           ))
         }
         if (
@@ -2154,21 +4110,27 @@ server <- function(input, output, session) {
         ) {
           return(tags$div(
             class = "mt-2",
-            tags$div(
-              class = "text-secondary small mb-2",
-              "No active W04 manual-screening queue is loaded. Create an isolated synthetic W04 batch to test reviewer-consistency and validation-set assignment modes."
-            ),
-            tagList(
-              actionButton(
-                "create_test_w04_queue_inline",
-                "Create W04 test queue",
-                class = "btn-outline-secondary btn-sm"
-              ),
-              tags$div(
-                class = "saved-note mt-2",
-                textOutput("test_queue_status_w04", inline = TRUE)
-              )
-            )
+            tags$div(class = "text-secondary small mb-2", "No active W04 manual-screening queue is loaded.")
+          ))
+        }
+        if (
+          identical(z$workflow, "04") &&
+          identical(z$task_type, "model_uncertainty") &&
+          identical(z$batch_id, "no-active-queue")
+        ) {
+          return(tags$div(
+            class = "mt-2",
+            tags$div(class = "text-secondary small mb-2", "No active W04 model-uncertainty queue is loaded.")
+          ))
+        }
+        if (
+          identical(z$workflow, "04") &&
+          identical(z$task_type, "conflict_resolution") &&
+          identical(z$batch_id, "no-active-queue")
+        ) {
+          return(tags$div(
+            class = "mt-2",
+            tags$div(class = "text-secondary small mb-2", "No active W04 conflict-resolution queue is loaded.")
           ))
         }
         if (
@@ -2178,18 +4140,7 @@ server <- function(input, output, session) {
         ) {
           return(tags$div(
             class = "mt-2",
-            tags$div(class = "text-secondary small mb-2", "No active W08 queue is loaded."),
-            tagList(
-              actionButton(
-                "create_test_w08_queue_inline",
-                "Create W08 test queue",
-                class = "btn-outline-secondary btn-sm"
-              ),
-              tags$div(
-                class = "saved-note mt-2",
-                textOutput("test_queue_status_w08", inline = TRUE)
-              )
-            )
+            tags$div(class = "text-secondary small mb-2", "No active W08 queue is loaded.")
           ))
         }
         return(NULL)
@@ -2371,6 +4322,9 @@ server <- function(input, output, session) {
         identical(z$workflow,"04") && identical(z$task_type,"manual_screening") &&
         identical(z$batch_id,w04_batch_id_rv())
       ) w04_all_cases_rv() else if (
+        identical(z$workflow,"04") && identical(z$task_type,"model_uncertainty") &&
+        identical(z$batch_id,w04_resolution_batch_id_rv())
+      ) w04_resolution_all_cases_rv() else if (
         identical(z$workflow,"04") && identical(z$task_type,"conflict_resolution") &&
         identical(z$batch_id,w04_active_conflict_batch_id())
       ) w04_all_conflict_cases() else if (
@@ -2391,8 +4345,14 @@ server <- function(input, output, session) {
         function(x) normalise_assignment_row(x)$case_id,
         character(1)
       )) else character()
+      src_now <- record_table_source(z$workflow,z$task_type,z$batch_id)
+      completed_case_ids <- if (length(src_now)) record_table_completed_case_ids(src_now[[1L]]) else character()
+      case_total <- length(all_case_ids[nzchar(all_case_ids)])
+      case_completed <- sum(all_case_ids %in% completed_case_ids)
+      case_outstanding <- max(0L,case_total-case_completed)
+      formal_assignments <- length(active_group_assignments)
       unassigned <- if (length(all_case_ids)) {
-        sum(nzchar(all_case_ids) & !all_case_ids %in% assigned_case_ids)
+        sum(nzchar(all_case_ids) & !all_case_ids %in% assigned_case_ids & !all_case_ids %in% completed_case_ids)
       } else 0L
 
       rows <- lapply(p$by_user, function(x) {
@@ -2401,10 +4361,10 @@ server <- function(input, output, session) {
         tags$tr(
           tags$td(x$display_name),
           tags$td(role_label),
-          tags$td(x$assigned),
-          tags$td(x$completed),
-          tags$td(x$resolved_elsewhere),
-          tags$td(x$remaining),
+          tags$td(record_table_link(x$assigned,z$workflow,z$task_type,z$batch_id,"assignments",x$user_id,paste(workflow_label,task_label,x$display_name,"Assigned",sep=" · "))),
+          tags$td(record_table_link(x$completed,z$workflow,z$task_type,z$batch_id,"completed",x$user_id,paste(workflow_label,task_label,x$display_name,"Completed",sep=" · "))),
+          tags$td(record_table_link(x$resolved_elsewhere,z$workflow,z$task_type,z$batch_id,"closed",x$user_id,paste(workflow_label,task_label,x$display_name,"Resolved elsewhere",sep=" · "))),
+          tags$td(record_table_link(x$remaining,z$workflow,z$task_type,z$batch_id,"outstanding",x$user_id,paste(workflow_label,task_label,x$display_name,"Outstanding",sep=" · "))),
           tags$td(
             tags$span(
               class = "assignment-progress-bar",
@@ -2438,9 +4398,9 @@ server <- function(input, output, session) {
             tags$span(
               class = "text-secondary small",
               if (identical(z$batch_id, "no-active-queue")) {
-                "No active queue"
+                "No records awaiting review"
               } else {
-                sprintf("%d cases · %d remaining assignments", p$cases, p$remaining)
+                sprintf("%d cases · %d outstanding", case_total, case_outstanding)
               }
             )
           )
@@ -2480,15 +4440,30 @@ server <- function(input, output, session) {
             )
           },
           div(
-            class = "assignment-kpis",
-            div(class = "assignment-kpi", tags$span("Cases"), tags$strong(p$cases)),
-            div(class = "assignment-kpi", tags$span("Assignments"), tags$strong(p$assigned)),
-            div(class = "assignment-kpi", tags$span("Completed"), tags$strong(p$completed)),
-            div(class = "assignment-kpi", tags$span("Closed"), tags$strong(p$resolved_elsewhere)),
-            div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(p$remaining))
+            class = "assignment-kpis four",
+            div(class = "assignment-kpi", tags$span("Cases"), tags$strong(record_table_link(case_total,z$workflow,z$task_type,z$batch_id,"cases",label=paste(workflow_label,task_label,"Cases",sep=" · ")))),
+            div(class = "assignment-kpi", tags$span("Assignments"), tags$strong(record_table_link(formal_assignments,z$workflow,z$task_type,z$batch_id,"assignments",label=paste(workflow_label,task_label,"Assignments",sep=" · ")))),
+            div(
+              class = "assignment-kpi",
+              tags$span("Completed"),
+              tags$strong(record_table_link(case_completed,z$workflow,z$task_type,z$batch_id,"resolved_cases",label=paste(workflow_label,task_label,"Completed",sep=" · ")))
+            ),
+            div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(record_table_link(case_outstanding,z$workflow,z$task_type,z$batch_id,"outstanding_cases",label=paste(workflow_label,task_label,"Outstanding",sep=" · "))))
+          ),
+          tags$div(
+            class = "text-secondary small mb-2",
+            if (record_table_batch_dispatched(z$workflow,z$task_type,z$batch_id)) {
+              "Click on 'Completed' to view the responses. This batch has been sent to GitHub and is read-only."
+            } else {
+              "Click on 'Completed' to manually edit the responses."
+            }
           ),
           if (unassigned > 0L) {
-            tags$div(class = "small mb-2", paste0("Unassigned cases: ", unassigned))
+            tags$div(
+              class = "small mb-2",
+              "Unassigned cases: ",
+              record_table_link(unassigned,z$workflow,z$task_type,z$batch_id,"unassigned",label=paste(workflow_label,task_label,"Unassigned cases",sep=" · "))
+            )
           },
           div(
             class = "assignment-table-wrap",
@@ -2499,7 +4474,7 @@ server <- function(input, output, session) {
                 tags$th("Role"),
                 tags$th("Assigned"),
                 tags$th("Completed"),
-                tags$th("Closed"),
+                tags$th("Resolved elsewhere"),
                 tags$th("Outstanding"),
                 tags$th("Resolved"),
                 tags$th("Last activity")
@@ -2523,11 +4498,111 @@ server <- function(input, output, session) {
                   "Every queue case has exactly one assignment and one valid decision with the expected queue SHA."
                 )
               ),
-              actionButton(
-                "w04_finalize_validation",
-                "Send validation set to GitHub",
-                class = "btn-primary btn-sm"
-              )
+              if (isTRUE(w04_validation_finalize_requested_rv())) {
+                tags$div(
+                  class="text-success small fw-semibold",
+                  "Sent to GitHub. Workflow 04 validation finalisation has been requested."
+                )
+              } else {
+                actionButton(
+                  "w04_finalize_validation",
+                  "Send validation set to GitHub",
+                  class = "btn-primary btn-sm"
+                )
+              }
+            )
+          },
+          if (
+            identical(z$workflow, "01") &&
+            identical(z$task_type, "deduplication") &&
+            isTRUE(w01_resolution_ready()) &&
+            session_can("control_workflows")
+          ) {
+            tags$div(
+              class = "d-flex flex-wrap align-items-center gap-2 mt-3 p-2 border rounded bg-light",
+              tags$div(
+                tags$strong(if (identical(batch_status_rv(),"review_complete")) "W01 ready to send" else "W01 review complete"),
+                tags$div(
+                  class = "text-secondary small",
+                  if (identical(batch_status_rv(),"review_complete")) {
+                    "All deduplication cases are complete. Send the reviewed batch back to GitHub for integrity checks and resume."
+                  } else {
+                    "All deduplication cases have final decisions. Marking W01 as resolved will send the reviewed batch back to GitHub for integrity checks and resume."
+                  }
+                )
+              ),
+              if (isTRUE(w01_export_requested_rv())) {
+                tags$div(
+                  class = "text-success small fw-semibold",
+                  w01_export_status_rv()
+                )
+              } else {
+                actionButton(
+                  "w01_mark_resolved",
+                  if (identical(batch_status_rv(),"review_complete")) "Send W01 to GitHub" else "Mark W01 as resolved",
+                  class = "btn-primary btn-sm"
+                )
+              }
+            )
+          },
+          if (
+            identical(z$workflow, "02") &&
+            identical(z$task_type, "enrichment") &&
+            isTRUE(w02_handoff_ready()) &&
+            session_can("control_workflows")
+          ) {
+            tags$div(
+              class="d-flex flex-wrap align-items-center gap-2 mt-3 p-2 border rounded bg-light",
+              tags$div(
+                tags$strong("W02 review complete"),
+                tags$div(class="text-secondary small","All enrichment cases have final decisions. Send the reviewed queue to GitHub to resume Workflow 02.")
+              ),
+              if (isTRUE(w02_resume_requested_rv())) {
+                tags$div(class="text-success small fw-semibold","Sent to GitHub. Workflow 02 resume has been requested.")
+              } else {
+                actionButton("w02_send_github","Send W02 to GitHub",class="btn-primary btn-sm")
+              }
+            )
+          },
+          if (
+            identical(z$workflow, "04") &&
+            identical(z$task_type, "model_uncertainty") &&
+            isTRUE(w04_resolution_handoff_ready()) &&
+            session_can("control_workflows")
+          ) {
+            tags$div(
+              class="d-flex flex-wrap align-items-center gap-2 mt-3 p-2 border rounded bg-light",
+              tags$div(
+                tags$strong("Model uncertainty review complete"),
+                tags$div(class="text-secondary small","All model-uncertainty cases have final decisions. Send the reviewed queue to GitHub to finalise Workflow 04.")
+              ),
+              if (isTRUE(w04_resolution_resume_requested_rv())) {
+                tags$div(
+                  class="text-success small fw-semibold",
+                  "Sent to GitHub. Workflow 04 finalisation has been requested."
+                )
+              } else {
+                actionButton("w04_resolution_send_github","Send W04 to GitHub",class="btn-primary btn-sm")
+              }
+            )
+          },
+          if (
+            identical(z$workflow, "08") &&
+            identical(z$task_type, "annotation") &&
+            isTRUE(w08_handoff_ready()) &&
+            session_can("control_workflows")
+          ) {
+            tags$div(
+              class="d-flex flex-wrap align-items-center gap-2 mt-3 p-2 border rounded bg-light",
+              tags$div(
+                tags$strong("W08 review complete"),
+                tags$div(class="text-secondary small","All annotation records have final decisions. Send the reviewed queue to GitHub to resume Workflow 08.")
+              ),
+              if (isTRUE(w08_resume_requested_rv())) {
+                tags$div(class="text-success small fw-semibold","Sent to GitHub. Workflow 08 resume has been requested.")
+              } else {
+                actionButton("w08_send_github","Send W08 to GitHub",class="btn-primary btn-sm")
+              }
             )
           },
           assignment_manager_ui(z)
@@ -2567,10 +4642,15 @@ server <- function(input, output, session) {
         available_raters
       )
     }
-    w04_selected_analysis <- w04_consistency_analysis(
-      w04_outcomes_now,
-      selected_raters
-    )
+    human_scope_now <- if (
+      length(selected_raters) >= 2L &&
+      !"model" %in% selected_raters
+    ) w04_selected_human_consistency_scope() else NULL
+    w04_selected_analysis <- if (!is.null(human_scope_now)) {
+      human_scope_now$analysis
+    } else {
+      w04_consistency_analysis(w04_outcomes_now,selected_raters)
+    }
 
     pairwise_rows <- lapply(w04_selected_analysis$pairwise,function(x) {
       directional <- x$directional %||% list()
@@ -2597,7 +4677,10 @@ server <- function(input, output, session) {
       tags$tr(tags$td(x$pattern),tags$td(x$n))
     })
 
-    w04_results_panel <- if (has_w04_batch) {
+    w04_results_panel <- if (
+      session_can("manage_assignments") &&
+      (has_w04_batch || nrow(w04_kappa_registry_rv()) > 0L || nrow(w04_human_kappa_registry_rv()) > 0L)
+    ) {
       tags$details(
         class="assignment-workflow assignment-submenu wf-w04 mb-2",
         `data-accordion-key`="w04-consistency-checking",
@@ -2608,7 +4691,9 @@ server <- function(input, output, session) {
             tags$span(class="task-badge","Administrator only"),
             tags$span(
               class="text-secondary small",
-              if (length(selected_raters) < 2L) {
+              if (!has_w04_batch) {
+                "Historical validation agreement"
+              } else if (length(selected_raters) < 2L) {
                 "Select at least two raters"
               } else if (w04_selected_analysis$complete < 1L) {
                 "No complete cases for selected raters"
@@ -2626,6 +4711,16 @@ server <- function(input, output, session) {
         ),
         div(
           class="pt-2",
+          uiOutput("w04_kappa_history"),
+          tags$hr(),
+          uiOutput("w04_human_kappa_history"),
+          if (!has_w04_batch) {
+            tags$div(
+              class="text-secondary small",
+              "No active W04 manual-screening batch. Historical kappa data remain available above."
+            )
+          } else tagList(
+          tags$hr(),
           tags$p(
             class="text-secondary small mb-1",
             "Select any combination of human raters and the model. Statistics use complete cases for the selected raters only; no raw decisions are altered."
@@ -2653,6 +4748,43 @@ server <- function(input, output, session) {
             selected=selected_raters,
             inline=TRUE
           ),
+          if (
+            length(selected_raters) >= 2L &&
+            !"model" %in% selected_raters
+          ) {
+            tagList(
+              radioButtons(
+                "w04_consistency_scope",
+                "Consistency set",
+                choices=c(
+                  "Since last saved check (Partial)"="partial",
+                  "Entire assignment (Full)"="full"
+                ),
+                selected=as.character(input$w04_consistency_scope %||% "partial"),
+                inline=TRUE
+              ),
+              if (!is.null(human_scope_now)) {
+                tags$div(
+                  class="text-secondary small mb-2",
+                  if (identical(human_scope_now$scope_type,"partial")) {
+                    sprintf(
+                      "%d jointly assigned · %d complete · %d previously saved · %d new records in this Partial check.",
+                      human_scope_now$assigned_n %||% 0L,
+                      human_scope_now$complete_n %||% 0L,
+                      human_scope_now$previously_saved_n %||% 0L,
+                      length(human_scope_now$target_case_ids %||% character())
+                    )
+                  } else {
+                    sprintf(
+                      "%d jointly assigned · %d complete. A Full result can be saved only when all jointly assigned records are complete.",
+                      human_scope_now$assigned_n %||% 0L,
+                      human_scope_now$complete_n %||% 0L
+                    )
+                  }
+                )
+              }
+            )
+          },
           if (length(selected_raters) < 2L) {
             tags$div(
               class="p-2 border rounded bg-light text-secondary small",
@@ -2722,8 +4854,12 @@ server <- function(input, output, session) {
                 class="d-flex align-items-center gap-2 mt-2",
                 actionButton(
                   "w04_save_consistency_analysis",
-                  "Save analysis",
-                  class="btn-primary btn-sm"
+                  if (
+                    length(selected_raters) >= 2L &&
+                    !"model" %in% selected_raters
+                  ) "Save consistency result" else "Save analysis",
+                  class="btn-primary btn-sm",
+                  disabled=if (!is.null(human_scope_now)) !isTRUE(human_scope_now$save_ready) else FALSE
                 ),
                 tags$span(
                   class="saved-note",
@@ -2741,6 +4877,7 @@ server <- function(input, output, session) {
               )
             )
           }
+          )
         )
       )
     } else NULL
@@ -2772,227 +4909,170 @@ server <- function(input, output, session) {
             tags$span(class = "task-badge", paste0(length(group_progress), " workflow section", if (length(group_progress) == 1L) "" else "s")),
             tags$span(
               class = "text-secondary small",
-              sprintf("%d assignments · %d resolved · %d remaining", total_assigned, total_completed + total_released, total_remaining)
+              sprintf("%d assignments · %d completed cases · %d outstanding cases", total_assigned, total_completed_cases, total_outstanding_cases)
             )
           )
         ),
         div(
           class = "px-3 pb-3",
           div(
-            class = "assignment-kpis",
-            div(class = "assignment-kpi", tags$span("Assignments"), tags$strong(total_assigned)),
-            div(class = "assignment-kpi", tags$span("Completed"), tags$strong(total_completed)),
-            div(class = "assignment-kpi", tags$span("Closed"), tags$strong(total_released)),
-            div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(total_remaining)),
-            div(class = "assignment-kpi", tags$span("Conflicts"), tags$strong(length(w04_all_conflict_cases())))
+            class = "assignment-kpis four",
+            div(class = "assignment-kpi", tags$span("Assignments"), tags$strong(record_table_link(total_assigned,"all","all","","assignments",label="All workflows · Assignments"))),
+            div(class = "assignment-kpi", tags$span("Completed"), tags$strong(record_table_link(total_completed_cases,"all","all","","resolved_cases",label="All workflows · Completed"))),
+            div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(record_table_link(total_outstanding_cases,"all","all","","outstanding_cases",label="All workflows · Outstanding"))),
+            div(class = "assignment-kpi", tags$span("Conflicts"), tags$strong(record_table_link(length(w04_all_conflict_cases()),"04","conflict_resolution",w04_active_conflict_batch_id(),"cases",label="W04 · Reviewer conflict resolution · Cases")))
           ),
-          if (!has_w02_batch || !has_w08_batch) {
-            tags$details(
-              class = "assignment-workflow mb-2",
-              `data-accordion-key` = "test-queue-setup",
-              tags$summary(tags$strong("Test queue setup")),
+          workflow_sections_display,
+          tags$hr(class = "my-3"),
+          tags$details(
+            class = "assignment-workflow border rounded",
+            `data-accordion-key` = "backend-maintenance",
+            tags$summary(
               div(
-                class = "pt-2",
-                tags$p(
-                  class = "text-secondary small mb-2",
-                  "Create small synthetic W02/W08 queues in this isolated Google Sheet for assignment smoke testing. Existing queue tabs are never overwritten."
-                ),
-                div(
-                  class = "d-flex flex-wrap gap-2",
-                  if (!has_w02_batch) actionButton(
-                    "create_test_w02_queue",
-                    "Create W02 test queue",
-                    class = "btn-outline-secondary btn-sm"
-                  ),
-                  if (!has_w08_batch) actionButton(
-                    "create_test_w08_queue",
-                    "Create W08 test queue",
-                    class = "btn-outline-secondary btn-sm"
-                  )
-                ),
-                tags$div(
-                  class = "saved-note mt-2",
-                  textOutput("test_queue_status", inline = TRUE)
-                )
+                class = "d-inline-flex flex-wrap align-items-center gap-2",
+                tags$strong("Backend maintenance"),
+                tags$span(class = "task-badge", "Administrator only")
+              )
+            ),
+            div(
+              class = "pt-2 px-3 pb-3",
+              tags$p(
+                class = "text-secondary small mb-2",
+                "Archive the transient adjudication backend to restricted Zenodo and reset all operational queue, decision, assignment and status tabs for the next update. Production queues that are not marked consumed block the reset."
+              ),
+              actionButton(
+                "reset_backend_queue",
+                "Reset backend queue",
+                class = "btn-outline-danger btn-sm"
+              ),
+              tags$div(
+                class = "saved-note mt-2",
+                textOutput("backend_reset_status", inline = TRUE)
               )
             )
-          },
-          workflow_sections_display
+          )
         )
       )
     )
   })
 
-  w01_assignment_plan <- reactive({
-    req(authenticated())
-    if (!session_can("manage_assignments")) {
-      return(list(error = "Administrator permission is required."))
-    }
-    selected <- as.character(input$w01_assignment_users %||% character())
-    strategy <- as.character(input$w01_assignment_strategy %||% "split")
-    type <- as.character(input$w01_assignment_type %||% "number")
-    amount <- input$w01_assignment_amount %||% NA_real_
-
-    tryCatch(
-      plan_shared_pool_assignment(
-        cases = w01_all_cases_rv(),
-        assignments = assignment_registry_rv(),
-        active_events = w01_active_assignment_events(),
-        workflow = "01",
-        batch_id = batch_id_rv(),
-        task_type = "deduplication",
-        user_ids = selected,
-        allocation_type = type,
-        amount = amount,
-        allocation_strategy = strategy
-      ),
-      error = function(e) list(error = conditionMessage(e))
-    )
-  })
-
-  output$w01_assignment_preview <- renderUI({
-    req(authenticated())
-    plan <- w01_assignment_plan()
-    if (!is.null(plan$error)) {
-      return(tags$div(class = "text-secondary small", plan$error))
-    }
-
-    selected <- as.character(input$w01_assignment_users %||% character())
-    registry <- user_registry_rv()
-    current_assignments <- active_assignments_for_batch(
-      assignment_registry_rv(),
-      "01",
-      batch_id_rv(),
-      "deduplication"
-    )
-    reviewer_lines <- lapply(selected, function(uid) {
-      u <- find_user_by_id(registry, uid, require_active = FALSE)
-      label <- if (is.null(u)) uid else u$display_name
-      n_new <- as.integer(plan$by_user[[uid]] %||% 0L)
-      current_for_user <- Filter(
-        function(x) identical(normalise_assignment_row(x)$user_id, uid),
-        current_assignments
-      )
-      current_unresolved <- sum(vapply(
-        current_for_user,
-        function(x) is.null(case_authoritative_event(w01_active_assignment_events(), normalise_assignment_row(x)$case_id)),
-        logical(1)
-      ))
-      tags$li(sprintf(
-        "%s: %d current + %d new = %d active case%s",
-        label,
-        current_unresolved,
-        n_new,
-        current_unresolved + n_new,
-        if ((current_unresolved + n_new) == 1L) "" else "s"
-      ))
-    })
-
+  output$backend_reset_status <- renderText(backend_reset_status())
+  output$backend_reset_modal_status <- renderUI({
+    msg <- trimws(as.character(backend_reset_status() %||% ""))
+    if (!nzchar(msg)) return(NULL)
     div(
-      class = "p-2 border rounded bg-light",
-      tags$strong("Preview"),
-      tags$div(
-        class = "small",
-        sprintf(
-          "%d unresolved case%s available; %d case%s selected, creating %d assignment%s.",
-          plan$available,
-          if (plan$available == 1L) "" else "s",
-          plan$selected_cases %||% length(plan$case_ids %||% character()),
-          if ((plan$selected_cases %||% length(plan$case_ids %||% character())) == 1L) "" else "s",
-          plan$allocated,
-          if (plan$allocated == 1L) "" else "s"
-        )
-      ),
-      if (length(reviewer_lines)) tags$ul(class = "small mb-0 mt-1", reviewer_lines)
+      class = if (grepl("^Reset refused|^Reset cancelled|permission", msg, ignore.case = TRUE)) "alert alert-danger mt-3 mb-0" else "alert alert-info mt-3 mb-0",
+      style = "white-space: pre-wrap;",
+      msg
     )
   })
 
-  output$w01_assignment_status <- renderText(assignment_manage_status())
-
-  observeEvent(input$w01_apply_assignments, {
+  observeEvent(input$reset_backend_queue, {
     req(authenticated())
-    if (!session_can("manage_assignments")) {
-      assignment_manage_status("You do not have permission to manage assignments.")
+    if (!session_can("control_workflows")) {
+      backend_reset_status("Administrator permission is required.")
       return()
     }
-    plan <- w01_assignment_plan()
-    if (!is.null(plan$error)) {
-      assignment_manage_status(plan$error)
-      return()
-    }
-    if (!length(plan$new_assignments)) {
-      assignment_manage_status("No eligible cases to assign.")
-      return()
-    }
-
-    updated <- c(assignment_registry_rv(), plan$new_assignments)
-    persisted <- tryCatch(
-      save_assignment_registry(
-        updated,
-        assignment_path,
-        actor_user_id = session_reviewer_id(),
-        expected_current_signature = assignment_registry_signature(assignment_registry_rv())
+    backend_reset_status("")
+    showModal(modalDialog(
+      title = "Reset backend queue",
+      tags$p(
+        "This will first archive the operational Google Sheets backend to a restricted Zenodo record, then delete the transient operational tabs."
       ),
-      error = function(e) {
-        assignment_manage_status(paste("Assignment save failed:", conditionMessage(e)))
-        NULL
-      }
-    )
-    if (is.null(persisted)) return()
-
-    assignment_registry_rv(persisted)
-    assignment_manage_status(sprintf(
-      "Added %d new case%s.",
-      plan$allocated,
-      if (plan$allocated == 1L) "" else "s"
+      tags$p(
+        class = "text-danger",
+        tags$strong("Any non-test production queue that is not marked consumed will block the reset.")
+      ),
+      tags$p(
+        class = "text-secondary small",
+        'Normal reset: type "RESET". For the current controlled integrity repair only, type "RESET REPAIR"; this can ignore only the exact obsolete W08 batch w08-run-37553444492 and no other live production queue.'
+      ),
+      textInput(
+        "backend_reset_confirmation",
+        'Type "RESET" or "RESET REPAIR" to confirm',
+        value = ""
+      ),
+      uiOutput("backend_reset_modal_status"),
+      footer = tagList(
+        modalButton("Cancel"),
+        actionButton("confirm_backend_reset", "Archive and reset", class = "btn-danger")
+      ),
+      easyClose = FALSE
     ))
   })
 
-  observeEvent(input$w01_remove_assignments, {
+  observeEvent(input$confirm_backend_reset, {
     req(authenticated())
-    if (!session_can("manage_assignments")) {
-      assignment_manage_status("You do not have permission to manage assignments.")
+    if (!session_can("control_workflows")) {
+      backend_reset_status("Administrator permission is required.")
+      removeModal()
       return()
     }
-    selected_user <- as.character(input$w01_remove_assignment_user %||% "")
+    confirmation <- trimws(as.character(input$backend_reset_confirmation %||% ""))
+    repair_reset <- identical(confirmation, "RESET REPAIR")
+    if (!confirmation %in% c("RESET", "RESET REPAIR")) {
+      backend_reset_status('Reset cancelled: type "RESET" or "RESET REPAIR" exactly to confirm.')
+      return()
+    }
+
+    p <- pipeline_status_rv()
+    active <- suppressWarnings(as.integer(as.character((p %||% list())$active_workflow %||% "")))
+    completed <- suppressWarnings(as.integer(as.character((p %||% list())$completed_through %||% "")))
+    status_label <- tolower(trimws(as.character((p %||% list())$status_label %||% "")))
+    update_complete <- !is.null(p) &&
+      is.na(active) &&
+      !is.na(completed) && completed >= 11L &&
+      grepl("complete|final", status_label)
+
+    if (!isTRUE(update_complete) && !repair_reset) {
+      backend_reset_status('Reset refused: the current update is not recorded as complete. For the controlled integrity-repair reset, type "RESET REPAIR".')
+      return()
+    }
+
+    repair_override <- if (repair_reset) {
+      list(list(
+        stage = "08",
+        tab = Sys.getenv("LEM_W08_QUEUE_TAB", unset = "queue_w08_active"),
+        batch_id = "w08-run-37553444492",
+        queue_sha256 = "6d1d4ccb24c3e929eb4357b58f53e25a56438c749c32428ca812e51637766f85"
+      ))
+    } else list()
+
+    backend_reset_status("Archiving backend to Zenodo before reset…")
     result <- tryCatch(
-      cancel_user_assignments(
-        assignment_registry_rv(),
-        selected_user,
-        w01_active_assignment_events(),
-        "01",
-        batch_id_rv(),
-        "deduplication"
+      reset_backend_queue_state(
+        created_by = session_reviewer_id(),
+        allowed_obsolete_batches = repair_override
       ),
       error = function(e) e
     )
     if (inherits(result, "error")) {
-      assignment_manage_status(conditionMessage(result))
+      backend_reset_status(paste("Reset refused:", conditionMessage(result)))
       return()
     }
 
-    persisted <- tryCatch(
-      save_assignment_registry(
-        result$assignments,
-        assignment_path,
-        actor_user_id = session_reviewer_id(),
-        expected_current_signature = assignment_registry_signature(assignment_registry_rv())
-      ),
-      error = function(e) {
-        assignment_manage_status(paste("Assignment removal failed:", conditionMessage(e)))
-        NULL
-      }
+    removeModal()
+    assignment_registry_rv(list())
+    w01_all_cases_rv(list()); cases_rv(NULL); decisions(list()); batch_id_rv(""); queue_sha_rv(""); batch_status_rv("")
+    w02_all_cases_rv(list()); w02_cases_rv(NULL); w02_decisions(list()); w02_batch_id_rv(""); w02_queue_sha_rv(""); w02_batch_status_rv(""); w02_resume_requested_rv(FALSE)
+    w04_all_cases_rv(list()); w04_cases_rv(NULL); w04_decisions(list()); w04_batch_id_rv(""); w04_queue_sha_rv(""); w04_batch_status_rv(""); w04_validation_finalize_requested_rv(FALSE)
+    w04_resolution_cases_rv(NULL); w04_resolution_decisions(list()); w04_resolution_batch_id_rv(""); w04_resolution_queue_sha_rv(""); w04_resolution_resume_requested_rv(FALSE)
+    w04_conflict_cases_rv(NULL); w04_conflict_decisions(list()); w04_conflict_batch_id_rv(""); w04_conflict_queue_sha_rv("")
+    w04_consistency_analyses_rv(list()); w04_conflict_sets_rv(list()); w04_consistency_history_loaded(FALSE)
+    w08_all_cases_rv(list()); w08_cases_rv(NULL); w08_decisions(list()); w08_batch_id_rv(""); w08_queue_sha_rv(""); w08_batch_status_rv(""); w08_resume_requested_rv(FALSE)
+
+    doi <- as.character(result$archived$doi %||% "")
+    record_id <- as.character(result$archived$record_id %||% "")
+    archive_label <- if (nzchar(doi)) doi else paste0("Zenodo record ", record_id)
+    backend_reset_status(
+      sprintf(
+        "Backend reset complete. Archived %d operational tab(s) as %s; deleted %d transient tab(s).",
+        length(result$archived$tabs %||% character()),
+        archive_label,
+        length(result$deleted_tabs %||% character())
+      )
     )
-    if (is.null(persisted)) return()
-
-    assignment_registry_rv(persisted)
-    assignment_manage_status(sprintf(
-      "Removed %d unfinished assignment%s.",
-      result$cancelled,
-      if (result$cancelled == 1L) "" else "s"
-    ))
   })
-
 
   workflow_assignment_plan <- function(prefix, cases, events, workflow, batch_id, task_type) {
     selected <- as.character(input[[paste0(prefix, "_assignment_users")]] %||% character())
@@ -3199,6 +5279,34 @@ server <- function(input, output, session) {
     invisible(TRUE)
   }
 
+  w01_assignment_plan <- reactive({
+    req(authenticated())
+    workflow_assignment_plan(
+      "w01", w01_all_cases_rv(), w01_active_assignment_events(),
+      "01", batch_id_rv(), "deduplication"
+    )
+  })
+  output$w01_assignment_preview <- renderUI({
+    req(authenticated())
+    workflow_assignment_preview(
+      w01_assignment_plan(), "w01", "01", batch_id_rv(),
+      "deduplication", w01_active_assignment_events()
+    )
+  })
+  output$w01_assignment_status <- renderText(assignment_manage_status())
+  observeEvent(input$w01_apply_assignments, {
+    apply_workflow_assignments(w01_assignment_plan())
+  })
+  observeEvent(input$w01_remove_assignments, {
+    remove_workflow_user_assignments(
+      input$w01_remove_assignment_user,
+      w01_active_assignment_events(),
+      "01",
+      batch_id_rv(),
+      "deduplication"
+    )
+  })
+
   w02_assignment_plan <- reactive({
     req(authenticated())
     workflow_assignment_plan(
@@ -3240,6 +5348,7 @@ server <- function(input, output, session) {
     loaded <- tryCatch(
       list(
         analyses=read_w04_consistency_analyses(),
+        human_kappa=read_w04_human_kappa_registry(),
         conflict_sets=read_w04_conflict_sets()
       ),
       error=function(e)e
@@ -3250,6 +5359,7 @@ server <- function(input, output, session) {
       return()
     }
     w04_consistency_analyses_rv(loaded$analyses)
+    w04_human_kappa_registry_rv(loaded$human_kappa)
     w04_conflict_sets_rv(loaded$conflict_sets)
 
     current_sets <- Filter(
@@ -3274,117 +5384,215 @@ server <- function(input, output, session) {
 
   output$w04_refresh_status <- renderText(w04_refresh_status())
 
-  output$w04_consistency_history <- renderUI({
+  output$w04_kappa_history <- renderUI({
     req(authenticated())
     if (!session_can("manage_assignments")) return(NULL)
-    xs <- w04_consistency_analyses_rv() %||% list()
-    if (length(xs)) {
-      xs <- Filter(
-        function(x) identical(as.character(x$batch_id %||% ""),as.character(w04_batch_id_rv())),
-        xs
+    x <- w04_kappa_registry_rv()
+    x <- tryCatch(w04_normalise_kappa_registry(x),error=function(e)w04_empty_kappa_registry())
+    if (!nrow(x)) {
+      return(tags$div(class="text-secondary small mb-2","No W04 kappa history yet."))
+    }
+    summary <- w04_kappa_registry_summary(x)
+    fmt_date <- function(z) {
+      d <- suppressWarnings(as.Date(as.character(z)))
+      if (is.na(d)) as.character(z) else format(d,"%d-%m-%Y")
+    }
+    fmt_num <- function(z) {
+      v <- suppressWarnings(as.numeric(as.character(z)))
+      if (is.na(v)) "—" else sprintf("%.3f",v)
+    }
+    rows <- list()
+    ord <- order(as.character(x$date),as.character(x$created_at_utc),decreasing=FALSE)
+    for (i in ord) {
+      rows[[length(rows)+1L]] <- tags$tr(
+        tags$td(fmt_date(x$date[[i]])),
+        tags$td(format(suppressWarnings(as.integer(x$records_reviewed[[i]])),big.mark=",")),
+        tags$td(fmt_num(x$human_model_kappa[[i]])),
+        tags$td(fmt_num(x$humans_model_fleiss_kappa[[i]]))
       )
     }
-    if (!length(xs)) {
-      return(tags$div(class="text-secondary small mt-2","No saved analyses for this batch yet."))
-    }
-    xs <- rev(xs)
-    xs <- xs[seq_len(min(length(xs),5L))]
-    rows <- lapply(xs,function(x) {
-      raters <- tryCatch(
-        as.character(jsonlite::fromJSON(as.character(x$rater_ids_json %||% "[]"))),
-        error=function(e) character()
-      )
-      labels <- if(length(raters)) vapply(raters,function(uid) {
-        if(identical(uid,"model")) return("Model")
-        u <- find_user_by_id(user_registry_rv(),uid,require_active=FALSE)
-        if(is.null(u)) uid else u$display_name
-      },character(1)) else character()
-      raw <- suppressWarnings(as.numeric(as.character(x$raw_agreement %||% NA_character_)))
-      kap <- suppressWarnings(as.numeric(as.character(x$kappa %||% NA_character_)))
-      tags$tr(
-        tags$td(as.character(x$analysis_id %||% "")),
-        tags$td(paste(labels,collapse=", ")),
-        tags$td(as.character(x$complete_n %||% "0")),
-        tags$td(if(is.na(raw))"—" else sprintf("%.1f%%",100*raw)),
-        tags$td(as.character(x$metric %||% "")),
-        tags$td(if(is.na(kap))"—" else sprintf("%.3f",kap)),
-        tags$td(as.character(x$created_at_utc %||% ""))
-      )
-    })
+    rows[[length(rows)+1L]] <- tags$tr(
+      tags$td(tags$em("Cumulative")),
+      tags$td(tags$em(format(summary$manually_screened,big.mark=","))),
+      tags$td(tags$em(if(is.na(summary$kappa))"—" else sprintf("%.3f",summary$kappa))),
+      tags$td(tags$em("—"))
+    )
     tagList(
-      tags$strong("Saved analyses"),
+      tags$strong("Model validation history"),
+      tags$p(
+        class="text-secondary small mb-1",
+        "The cumulative human–model kappa is recalculated from the stored contingency counts; archived individual decisions are not loaded."
+      ),
       div(
-        class="assignment-table-wrap mt-1",
+        class="assignment-table-wrap mb-2",
         tags$table(
           class="assignment-table",
           tags$thead(tags$tr(
-            tags$th("Analysis ID"),tags$th("Raters"),tags$th("N"),
-            tags$th("Agreement"),tags$th("Metric"),tags$th("κ"),tags$th("Saved")
+            tags$th("Date"),tags$th("Records"),tags$th("Human–model κ"),
+            tags$th("Humans–model Fleiss κ")
           )),
           tags$tbody(rows)
         )
+      )
+    )
+  })
+
+  output$w04_human_kappa_history <- renderUI({
+    req(authenticated())
+    if (!session_can("manage_assignments")) return(NULL)
+    x <- tryCatch(
+      w04_normalise_human_kappa_registry(w04_human_kappa_registry_rv()),
+      error=function(e)w04_empty_human_kappa_registry()
+    )
+    fmt_date <- function(z) {
+      d <- suppressWarnings(as.Date(as.character(z)))
+      if (is.na(d)) as.character(z) else format(d,"%d-%m-%Y")
+    }
+    fmt_num <- function(z) {
+      v <- suppressWarnings(as.numeric(as.character(z)))
+      if (is.na(v)) "—" else sprintf("%.3f",v)
+    }
+    fmt_pct <- function(z) {
+      v <- suppressWarnings(as.numeric(as.character(z)))
+      if (is.na(v)) "—" else sprintf("%.1f%%",100*v)
+    }
+    if (!nrow(x)) {
+      return(tagList(
+        tags$strong("Human consistency history"),
+        tags$div(class="text-secondary small mb-2","No saved human–human consistency results yet.")
+      ))
+    }
+    ord <- order(as.character(x$date),as.character(x$created_at_utc),decreasing=FALSE)
+    rows <- lapply(ord,function(i) {
+      labels <- w04_human_registry_json_chars(x$rater_labels_json[[i]])
+      if(!length(labels)) labels <- w04_human_registry_json_chars(x$rater_ids_json[[i]])
+      id <- as.character(x$consistency_id[[i]])
+      tags$tr(
+        tags$td(fmt_date(x$date[[i]])),
+        tags$td(paste(labels,collapse=", ")),
+        tags$td(if(identical(x$scope_type[[i]],"full"))"Full" else "Partial"),
+        tags$td(format(suppressWarnings(as.integer(x$records_n[[i]])),big.mark=",")),
+        tags$td(fmt_pct(x$raw_agreement[[i]])),
+        tags$td(as.character(x$metric[[i]])),
+        tags$td(fmt_num(x$kappa[[i]])),
+        tags$td(
+          tags$button(
+            type="button",
+            class="btn btn-link btn-sm p-0 text-secondary",
+            title="Delete saved consistency result",
+            `aria-label`="Delete saved consistency result",
+            onclick=sprintf(
+              "Shiny.setInputValue('w04_delete_human_kappa','%s',{priority:'event'})",
+              id
+            ),
+            HTML("&#128465;")
+          )
+        )
+      )
+    })
+    cumulatives <- w04_human_registry_cumulative_all(x)
+    cumulative_rows <- lapply(cumulatives,function(z) {
+      labels <- z$rater_labels %||% z$rater_ids %||% character()
+      tags$tr(
+        tags$td(tags$em("Cumulative")),
+        tags$td(tags$em(paste(labels,collapse=", "))),
+        tags$td(tags$em("—")),
+        tags$td(tags$em(if(isTRUE(z$valid))format(z$n,big.mark=",") else "—")),
+        tags$td(tags$em(if(isTRUE(z$valid))fmt_pct(z$raw_agreement) else "—")),
+        tags$td(tags$em(if(isTRUE(z$valid))z$metric else "—")),
+        tags$td(tags$em(if(isTRUE(z$valid))fmt_num(z$kappa) else "—")),
+        tags$td("")
+      )
+    })
+    errors <- unique(vapply(
+      Filter(function(z)!isTRUE(z$valid),cumulatives),
+      function(z)as.character(z$error %||% ""),
+      character(1)
+    ))
+    tagList(
+      tags$strong("Human consistency history"),
+      tags$p(
+        class="text-secondary small mb-1",
+        "Partial rows are non-overlapping saved tranches. A Full row supersedes contained Partial rows in the cumulative calculation, while the earlier rows remain visible."
+      ),
+      div(
+        class="assignment-table-wrap mb-2",
+        tags$table(
+          class="assignment-table",
+          tags$thead(tags$tr(
+            tags$th("Date"),tags$th("Reviewers"),tags$th("Scope"),tags$th("Records"),
+            tags$th("Agreement"),tags$th("Metric"),tags$th("κ"),tags$th("")
+          )),
+          tags$tbody(c(rows,cumulative_rows))
+        )
+      ),
+      if(length(errors)) tags$div(
+        class="text-danger small mb-2",
+        paste(errors,collapse=" ")
+      )
+    )
+  })
+
+  output$w04_consistency_history <- renderUI({
+    req(authenticated())
+    if (!session_can("manage_assignments")) return(NULL)
+    all_saved <- Filter(
+      function(x) identical(
+        as.character(x$batch_id %||% ""),
+        as.character(w04_batch_id_rv())
+      ),
+      w04_consistency_analyses_rv() %||% list()
+    )
+    conflict_ready <- Filter(
+      function(x) {
+        n <- suppressWarnings(as.integer(as.character(x$conflict_n %||% "0")))
+        !is.na(n) && n > 0L
+      },
+      all_saved
+    )
+    if (!length(conflict_ready)) {
+      return(tags$div(
+        class="text-secondary small mt-2",
+        "No saved consistency result currently contains conflicts."
+      ))
+    }
+    ids <- vapply(conflict_ready,function(x)as.character(x$analysis_id %||% ""),character(1))
+    labels <- vapply(conflict_ready,function(x) {
+      sprintf(
+        "%s · %s conflict%s",
+        as.character(x$analysis_id %||% ""),
+        as.character(x$conflict_n %||% "0"),
+        if (identical(as.character(x$conflict_n %||% "0"),"1")) "" else "s"
+      )
+    },character(1))
+    tagList(
+      tags$hr(),
+      tags$strong("Conflict resolution"),
+      tags$p(
+        class="text-secondary small mb-2",
+        "Create a conflict set from one saved consistency result. The exact raters and conflicting records are preserved as provenance."
+      ),
+      selectInput(
+        "w04_conflict_analysis_id",
+        "Saved consistency result",
+        choices=stats::setNames(ids,labels),
+        selected=ids[[length(ids)]]
+      ),
+      actionButton(
+        "w04_create_conflict_set",
+        "Create conflict set",
+        class="btn-outline-primary btn-sm"
       ),
       {
-        all_saved <- Filter(
-          function(x) identical(
-            as.character(x$batch_id %||% ""),
-            as.character(w04_batch_id_rv())
-          ),
-          w04_consistency_analyses_rv() %||% list()
-        )
-        conflict_ready <- Filter(
-          function(x) {
-            n <- suppressWarnings(as.integer(as.character(x$conflict_n %||% "0")))
-            !is.na(n) && n > 0L
-          },
-          all_saved
-        )
-        if (length(conflict_ready)) {
-          ids <- vapply(conflict_ready,function(x)as.character(x$analysis_id %||% ""),character(1))
-          labels <- vapply(conflict_ready,function(x) {
-            sprintf(
-              "%s · %s conflict%s",
-              as.character(x$analysis_id %||% ""),
-              as.character(x$conflict_n %||% "0"),
-              if (identical(as.character(x$conflict_n %||% "0"),"1")) "" else "s"
-            )
-          },character(1))
-          tagList(
-            tags$hr(),
-            tags$strong("Conflict resolution"),
-            tags$p(
-              class="text-secondary small mb-2",
-              "Create a conflict set from one saved analysis. The exact raters and conflicting records are preserved as provenance."
-            ),
-            selectInput(
-              "w04_conflict_analysis_id",
-              "Saved analysis",
-              choices=stats::setNames(ids,labels),
-              selected=ids[[length(ids)]]
-            ),
-            actionButton(
-              "w04_create_conflict_set",
-              "Create conflict set",
-              class="btn-outline-primary btn-sm"
-            ),
-            {
-              active_set <- w04_active_consistency_conflict_set()
-              if (!is.null(active_set)) {
-                tags$div(
-                  class="text-secondary small mt-2",
-                  sprintf(
-                    "Current conflict set: %s · source analysis: %s",
-                    as.character(active_set$conflict_set_id %||% ""),
-                    as.character(active_set$analysis_id %||% "")
-                  )
-                )
-              }
-            }
-          )
-        } else {
+        active_set <- w04_active_consistency_conflict_set()
+        if (!is.null(active_set)) {
           tags$div(
             class="text-secondary small mt-2",
-            "No saved analysis currently contains conflicts."
+            sprintf(
+              "Current conflict set: %s · source analysis: %s",
+              as.character(active_set$conflict_set_id %||% ""),
+              as.character(active_set$analysis_id %||% "")
+            )
           )
         }
       }
@@ -3402,11 +5610,6 @@ server <- function(input, output, session) {
       w04_consistency_status("Select at least two raters before saving.")
       return()
     }
-    analysis <- w04_consistency_analysis(w04_blind_outcomes(),rater_ids)
-    if (analysis$complete < 1L) {
-      w04_consistency_status("There are no complete cases for the selected raters.")
-      return()
-    }
     if (!identical(storage_backend(),"google_sheets")) {
       w04_consistency_status("Saving consistency analyses is available with the Google Sheets backend.")
       return()
@@ -3420,7 +5623,7 @@ server <- function(input, output, session) {
       function(x) normalise_assignment_row(x)$blind_group,
       character(1)
     ))
-    review_mode <- if ("w04-reviewer-consistency" %in% groups) {
+    review_mode <- if (any(startsWith(groups,"w04-reviewer-consistency"))) {
       "reviewer_consistency"
     } else if ("w04-validation-set" %in% groups) {
       "validation_set"
@@ -3428,6 +5631,99 @@ server <- function(input, output, session) {
       ""
     }
 
+    human_only <- !"model" %in% rater_ids
+    if (human_only) {
+      scope <- w04_selected_human_consistency_scope()
+      if (is.null(scope) || !isTRUE(scope$valid)) {
+        w04_consistency_status(if(is.null(scope))"Human consistency scope is unavailable." else scope$reason)
+        return()
+      }
+      if (!isTRUE(scope$save_ready)) {
+        w04_consistency_status(scope$reason %||% "This consistency set is not ready to save.")
+        return()
+      }
+      analysis <- scope$analysis
+      if (analysis$complete < 1L) {
+        w04_consistency_status("There are no complete cases for the selected reviewers.")
+        return()
+      }
+      labels <- vapply(scope$rater_ids,function(uid) {
+        u <- find_user_by_id(user_registry_rv(),uid,require_active=FALSE)
+        if(is.null(u)) uid else u$display_name
+      },character(1))
+
+      row <- tryCatch(
+        w04_human_registry_row(
+          analysis=analysis,
+          record_ids=scope$target_case_ids,
+          batch_id=w04_batch_id_rv(),
+          queue_sha256=w04_queue_sha_rv(),
+          assignment_scope_id=scope$assignment_scope_id,
+          scope_type=scope$scope_type,
+          rater_labels=labels,
+          created_by=session_reviewer_id()
+        ),
+        error=function(e)e
+      )
+      if (inherits(row,"error")) {
+        w04_consistency_status(paste("Save failed:",conditionMessage(row)))
+        return()
+      }
+      analysis_id <- as.character(row$consistency_id[[1L]])
+      row$analysis_id <- analysis_id
+
+      saved_analysis <- tryCatch(
+        append_w04_consistency_analysis(
+          analysis=analysis,
+          batch_id=w04_batch_id_rv(),
+          queue_sha256=w04_queue_sha_rv(),
+          review_mode=review_mode,
+          created_by=session_reviewer_id(),
+          analysis_id_override=analysis_id
+        ),
+        error=function(e)e
+      )
+      if (inherits(saved_analysis,"error")) {
+        w04_consistency_status(paste("Save failed:",conditionMessage(saved_analysis)))
+        return()
+      }
+
+      saved_row <- tryCatch(
+        append_w04_human_kappa_registry(row),
+        error=function(e)e
+      )
+      if (inherits(saved_row,"error")) {
+        w04_consistency_status(paste("Save failed:",conditionMessage(saved_row)))
+        return()
+      }
+
+      existing_human <- w04_human_kappa_registry_rv()
+      existing_ids <- as.character(existing_human$consistency_id %||% character())
+      if (!analysis_id %in% existing_ids) {
+        w04_human_kappa_registry_rv(rbind(existing_human,saved_row))
+      }
+      existing_analyses <- w04_consistency_analyses_rv() %||% list()
+      analysis_ids <- vapply(
+        existing_analyses,
+        function(x)as.character(x$analysis_id %||% ""),
+        character(1)
+      )
+      if (!analysis_id %in% analysis_ids) {
+        w04_consistency_analyses_rv(c(existing_analyses,list(saved_analysis)))
+      }
+      w04_consistency_status(sprintf(
+        "Saved %s human consistency result for %d records.",
+        if(identical(scope$scope_type,"full"))"Full" else "Partial",
+        length(scope$target_case_ids)
+      ))
+      return()
+    }
+
+    analysis <- w04_consistency_analysis(w04_blind_outcomes(),rater_ids)
+    if (analysis$complete < 1L) {
+      w04_consistency_status("There are no complete cases for the selected raters.")
+      return()
+    }
     saved <- tryCatch(
       append_w04_consistency_analysis(
         analysis=analysis,
@@ -3444,6 +5740,87 @@ server <- function(input, output, session) {
     }
     w04_consistency_analyses_rv(c(w04_consistency_analyses_rv(),list(saved)))
     w04_consistency_status(paste("Saved",as.character(saved$analysis_id %||% "analysis")))
+  })
+
+  observeEvent(input$w04_delete_human_kappa,{
+    req(authenticated())
+    if (!session_can("manage_assignments")) return()
+    id <- as.character(input$w04_delete_human_kappa %||% "")
+    if (!grepl("^w04-human-kappa-[0-9a-f]{24}$",id)) return()
+    x <- w04_human_kappa_registry_rv()
+    hit <- x[x$consistency_id==id,,drop=FALSE]
+    if (nrow(hit)!=1L) {
+      w04_consistency_status("Saved human consistency result could not be found.")
+      return()
+    }
+    conflict_refs <- vapply(
+      w04_conflict_sets_rv() %||% list(),
+      function(z)as.character(z$analysis_id %||% ""),
+      character(1)
+    )
+    if (id %in% conflict_refs) {
+      w04_consistency_status("This saved result has already been used to create a conflict set and cannot be deleted.")
+      return()
+    }
+    labels <- w04_human_registry_json_chars(hit$rater_labels_json[[1L]])
+    w04_pending_human_kappa_delete(id)
+    showModal(modalDialog(
+      title="Delete saved consistency result?",
+      tags$p(sprintf(
+        "%s · %s · %s records · %s.",
+        format(as.Date(hit$date[[1L]]),"%d-%m-%Y"),
+        paste(labels,collapse=", "),
+        as.character(hit$records_n[[1L]]),
+        if(identical(hit$scope_type[[1L]],"full"))"Full" else "Partial"
+      )),
+      tags$p(
+        class="text-secondary small",
+        "This removes the saved milestone from the human consistency registry and from cumulative reporting. Screening decisions are not changed."
+      ),
+      footer=tagList(
+        modalButton("Cancel"),
+        actionButton(
+          "w04_confirm_delete_human_kappa",
+          "Delete result",
+          class="btn-danger"
+        )
+      ),
+      easyClose=TRUE
+    ))
+  })
+
+  observeEvent(input$w04_confirm_delete_human_kappa,{
+    req(authenticated())
+    if (!session_can("manage_assignments")) return()
+    id <- as.character(w04_pending_human_kappa_delete() %||% "")
+    if (!grepl("^w04-human-kappa-[0-9a-f]{24}$",id)) return()
+    conflict_refs <- vapply(
+      w04_conflict_sets_rv() %||% list(),
+      function(z)as.character(z$analysis_id %||% ""),
+      character(1)
+    )
+    if (id %in% conflict_refs) {
+      removeModal()
+      w04_consistency_status("Deletion refused because this result is linked to a conflict set.")
+      return()
+    }
+    deleted <- tryCatch({
+      delete_w04_consistency_analysis_row(id)
+      delete_w04_human_kappa_registry_row(id)
+    },error=function(e)e)
+    if (inherits(deleted,"error")) {
+      removeModal()
+      w04_consistency_status(paste("Delete failed:",conditionMessage(deleted)))
+      return()
+    }
+    w04_human_kappa_registry_rv(deleted)
+    w04_consistency_analyses_rv(Filter(
+      function(x)!identical(as.character(x$analysis_id %||% ""),id),
+      w04_consistency_analyses_rv() %||% list()
+    ))
+    w04_pending_human_kappa_delete("")
+    removeModal()
+    w04_consistency_status("Saved human consistency result deleted; cumulative statistics recalculated.")
   })
 
   observeEvent(input$w04_create_conflict_set,{
@@ -3533,6 +5910,34 @@ server <- function(input, output, session) {
       "04",
       w04_batch_id_rv(),
       "manual_screening"
+    )
+  })
+
+  w04resolution_assignment_plan <- reactive({
+    req(authenticated())
+    workflow_assignment_plan(
+      "w04resolution", w04_resolution_all_cases_rv(), w04_resolution_decisions(),
+      "04", w04_resolution_batch_id_rv(), "model_uncertainty"
+    )
+  })
+  output$w04resolution_assignment_preview <- renderUI({
+    req(authenticated())
+    workflow_assignment_preview(
+      w04resolution_assignment_plan(), "w04resolution", "04", w04_resolution_batch_id_rv(),
+      "model_uncertainty", w04_resolution_decisions()
+    )
+  })
+  output$w04resolution_assignment_status <- renderText(assignment_manage_status())
+  observeEvent(input$w04resolution_apply_assignments, {
+    apply_workflow_assignments(w04resolution_assignment_plan())
+  })
+  observeEvent(input$w04resolution_remove_assignments, {
+    remove_workflow_user_assignments(
+      input$w04resolution_remove_assignment_user,
+      w04_resolution_decisions(),
+      "04",
+      w04_resolution_batch_id_rv(),
+      "model_uncertainty"
     )
   })
 
@@ -3916,10 +6321,16 @@ server <- function(input, output, session) {
     assignment_manage_status("")
     test_queue_status("")
     w01_all_cases_rv(list())
+    w01_repairs_rv(list())
     w02_all_cases_rv(list())
     w04_all_cases_rv(list())
+    w04_screening_notes_rv(list())
+    w04_note_status("")
     w04_consistency_analyses_rv(list())
     w04_conflict_sets_rv(list())
+    w04_kappa_registry_rv(w04_empty_kappa_registry())
+    w04_human_kappa_registry_rv(w04_empty_human_kappa_registry())
+    w04_pending_human_kappa_delete("")
     w04_consistency_history_loaded(FALSE)
     w04_refresh_status("")
     w08_all_cases_rv(list())
@@ -3960,12 +6371,15 @@ server <- function(input, output, session) {
         }
         assignment_registry_rv(loaded_assignments)
         pipeline_status_rv(if(identical(storage_backend(),"google_sheets")) read_latest_pipeline_status() else NULL)
-        manual_screening_rv(tryCatch(read_manual_screening_metrics(),error=function(e)NULL))
+        manual_screening_rv(read_manual_screening_metrics())
         batch <- load_batch()
         current_decisions <- list()
         if (!is.null(batch)) {
           all_decisions <- read_active_decisions(decision_path)
           current_decisions <- filter_batch_decisions(all_decisions, batch$queue_sha256)
+          w01_repairs_rv(read_active_w01_repairs(w01_repair_path, batch$queue_sha256))
+        } else {
+          w01_repairs_rv(list())
         }
         w02_batch <- load_w02_batch()
 
@@ -4018,6 +6432,15 @@ server <- function(input, output, session) {
           w02_batch_id_rv(w02_batch$batch_id)
           w02_batch_status_rv(w02_batch$batch_status %||% "")
           w02_decisions(w02_batch_decisions)
+          w02_resume_requested_rv(
+            tryCatch(
+              w02_resume_request_exists(
+                w02_batch$queue_sha256,
+                sub("^w02-run-", "", as.character(w02_batch$batch_id %||% ""))
+              ),
+              error=function(e) FALSE
+            )
+          )
           w02_unresolved <- w02_unresolved_indices()
           w02_idx(if (length(w02_unresolved)) w02_unresolved[[1L]] else max(1L, length(w02_visible_cases)))
           if(
@@ -4036,7 +6459,14 @@ server <- function(input, output, session) {
         } else {
           w02_all_cases_rv(list())
           w02_cases_rv(NULL)
+          w02_resume_requested_rv(FALSE)
         }
+
+        w04_screening_notes_rv(
+          if (identical(storage_backend(),"google_sheets")) {
+            tryCatch(active_sheet_w04_screening_notes(), error=function(e) list())
+          } else list()
+        )
 
         w04_batch <- load_w04_batch()
         if (!is.null(w04_batch) && identical(as.character(w04_batch$review_mode %||% ""), "resolution")) {
@@ -4062,6 +6492,15 @@ server <- function(input, output, session) {
           w04_include_terms(w04_batch$highlight_include %||% character())
           w04_exclude_terms(w04_batch$highlight_exclude %||% character())
           w04_decisions(w04_batch_decisions)
+          w04_validation_finalize_requested_rv(
+            tryCatch(
+              w04_validation_finalize_request_exists(
+                w04_batch$queue_sha256,
+                w04_batch$batch_id
+              ),
+              error=function(e) FALSE
+            )
+          )
           w04_unresolved <- w04_unresolved_indices()
           w04_idx(if (length(w04_unresolved)) w04_unresolved[[1L]] else max(1L,length(w04_visible_cases)))
           validation_state <- w04_validation_state()
@@ -4086,7 +6525,7 @@ server <- function(input, output, session) {
         w04_resolution_batch <- load_w04_resolution_batch()
         if (!is.null(w04_resolution_batch)) {
           all_res <- active_sheet_w04_resolution_decisions()
-          w04_resolution_cases_rv(w04_resolution_batch$cases)
+          w04_resolution_all_cases_rv(w04_resolution_batch$cases)
           w04_resolution_queue_sha_rv(w04_resolution_batch$queue_sha256)
           w04_resolution_batch_id_rv(w04_resolution_batch$batch_id)
           w04_resolution_source_run_id_rv(w04_resolution_batch$source_run_id %||% "")
@@ -4094,8 +6533,41 @@ server <- function(input, output, session) {
           w04_resolution_include_terms(w04_resolution_batch$highlight_include %||% character())
           w04_resolution_exclude_terms(w04_resolution_batch$highlight_exclude %||% character())
           w04_resolution_decisions(w04_filter_batch_decisions(all_res,w04_resolution_batch$queue_sha256))
+          w04_resolution_resume_requested_rv(
+            tryCatch(
+              w04_resolution_resume_request_exists(
+                w04_resolution_batch$queue_sha256,
+                w04_resolution_batch$source_run_id %||% "",
+                w04_resolution_batch$batch_id
+              ),
+              error=function(e) FALSE
+            )
+          )
+          w04_resolution_abstract_edits_rv(
+            tryCatch(
+              active_sheet_w04_resolution_abstract_edits(w04_resolution_batch$queue_sha256),
+              error=function(e) list()
+            )
+          )
+          w04_resolution_abstract_edit_rv(FALSE)
+          w04_resolution_visible <- cases_for_assignment_user(
+            w04_resolution_batch$cases,
+            assignment_registry_rv(),
+            "04",
+            w04_resolution_batch$batch_id,
+            login_user,
+            task_type = "model_uncertainty",
+            active_events = w04_resolution_decisions()
+          )
+          w04_resolution_cases_rv(w04_resolution_visible)
           rr <- w04_resolution_unresolved_indices()
-          w04_resolution_idx(if(length(rr)) rr[[1L]] else max(1L,length(w04_resolution_batch$cases)))
+          w04_resolution_idx(if(length(rr)) rr[[1L]] else max(1L,length(w04_resolution_visible)))
+        } else {
+          w04_resolution_all_cases_rv(list())
+          w04_resolution_cases_rv(NULL)
+          w04_resolution_resume_requested_rv(FALSE)
+          w04_resolution_abstract_edits_rv(list())
+          w04_resolution_abstract_edit_rv(FALSE)
         }
 
         w04_conflict_batch <- load_w04_conflict_batch()
@@ -4158,6 +6630,16 @@ server <- function(input, output, session) {
           w08_species_options(species_opts)
           w08_topic_options(w08_batch$topic_options %||% list())
           w08_decisions(w08_batch_decisions)
+          w08_resume_requested_rv(
+            tryCatch(
+              w08_resume_request_exists(
+                w08_batch$queue_sha256,
+                w08_batch$source_run_id %||% "",
+                w08_batch$batch_id
+              ),
+              error=function(e) FALSE
+            )
+          )
           w08_unresolved <- w08_unresolved_indices()
           w08_idx(if(length(w08_unresolved)) w08_unresolved[[1L]] else max(1L,length(w08_visible_cases)))
           if(
@@ -4176,6 +6658,7 @@ server <- function(input, output, session) {
         } else {
           w08_all_cases_rv(list())
           w08_cases_rv(NULL)
+          w08_resume_requested_rv(FALSE)
         }
 
         if (!is.null(batch)) {
@@ -4193,6 +6676,21 @@ server <- function(input, output, session) {
           queue_sha_rv(batch$queue_sha256)
           batch_id_rv(batch$batch_id)
           decisions(current_decisions)
+          requested <- if (identical(storage_backend(),"google_sheets")) {
+            w01_export_request_exists(batch$queue_sha256,batch$batch_id)
+          } else FALSE
+          # Compatibility for the live W01 batch that was dispatched immediately
+          # before persistent export-request logging was introduced.
+          legacy_dispatched_batch <- identical(
+            as.character(batch$batch_id %||% ""),
+            "w01-run-37347666369"
+          ) && identical(
+            tolower(as.character(batch$queue_sha256 %||% "")),
+            "6a7bcd415f8fd9fc4b3c4eaf36776c898702cd590303c12f39d68bdab90c6778"
+          ) && identical(as.character(batch$batch_status %||% ""), "review_complete")
+          requested <- isTRUE(requested) || isTRUE(legacy_dispatched_batch)
+          w01_export_requested_rv(isTRUE(requested))
+          w01_export_status_rv(if(isTRUE(requested)) "Sent to GitHub. The reviewed batch is queued for integrity checks and resume." else "")
 
           ids <- vapply(visible_cases, function(x) as.character(x$review_case_id), character(1))
           done_ids <- if (length(current_decisions)) {
@@ -4206,10 +6704,8 @@ server <- function(input, output, session) {
           } else {
             idx(max(1L,length(visible_cases)))
             complete(TRUE)
-            if(!identical(batch_status_rv(),"review_complete") &&
-               user_can(login_user,"control_workflows") &&
-               w01_all_assignments_complete()) {
-              mark_review_complete("01",batch_id_rv(),queue_sha_rv(),batch_status_rv)
+            if(user_can(login_user,"control_workflows") && w01_all_assignments_complete()) {
+              status("All W01 assignments are complete. An administrator can mark W01 as resolved.")
             }
           }
         } else {
@@ -4219,6 +6715,8 @@ server <- function(input, output, session) {
           batch_id_rv("")
           batch_status_rv("")
           decisions(list())
+          w01_export_requested_rv(FALSE)
+          w01_export_status_rv("")
           idx(1L)
           complete(FALSE)
         }
@@ -4322,27 +6820,66 @@ server <- function(input, output, session) {
         list(label="Classifier", value=ev$classifier_decision %||% ""),
         list(label="Classifier rule", value=ev$classifier_rule %||% "")
       ))
+    repair_for <- function(rec) {
+      hits <- Filter(function(x) {
+        identical(as.character(x$source %||% ""), as.character(rec$source %||% "")) &&
+          identical(as.character(x$source_record_id %||% ""), as.character(rec$source_record_id %||% "")) &&
+          as.character(x$action %||% "") %in% c("replace_abstract","strip_abstract")
+      }, w01_repairs_rv() %||% list())
+      if (length(hits)) hits[[1L]] else NULL
+    }
+    effective_abstract <- function(rec, repair) {
+      if (is.null(repair)) return(normalise_display_text(rec$abstract))
+      action <- as.character(repair$action %||% "")
+      if (identical(action, "strip_abstract")) return("")
+      normalise_display_text(repair$value)
+    }
+    repair_i <- repair_for(z$record_i)
+    repair_j <- repair_for(z$record_j)
+    abstract_i <- effective_abstract(z$record_i, repair_i)
+    abstract_j <- effective_abstract(z$record_j, repair_j)
+    record_i_view <- z$record_i
+    record_j_view <- z$record_j
+    record_i_view$display_abstract <- abstract_i
+    record_j_view$display_abstract <- abstract_j
+    record_i_view$abstract_repair_saved <- !is.null(repair_i)
+    record_j_view$abstract_repair_saved <- !is.null(repair_j)
     fields <- list(
       source = field_pair(z$record_i$source, z$record_j$source),
-      title = field_pair(z$record_i$title, z$record_j$title),
+      title = field_pair(
+        display_sentence_case_if_all_caps(z$record_i$title),
+        display_sentence_case_if_all_caps(z$record_j$title)
+      ),
       authors = field_pair(z$record_i$authors, z$record_j$authors),
       year = field_pair(z$record_i$year, z$record_j$year),
       journal = field_pair(z$record_i$journal, z$record_j$journal),
-      doi = field_pair(z$record_i$doi, z$record_j$doi, char_level = TRUE),
-      source_record_id = field_pair(z$record_i$source_record_id, z$record_j$source_record_id, char_level = TRUE),
+      doi = field_pair(normalise_doi_value(z$record_i$doi), normalise_doi_value(z$record_j$doi), char_level = TRUE),
+      source_record_id = field_pair(
+        normalise_source_id_value(z$record_i$source_record_id),
+        normalise_source_id_value(z$record_j$source_record_id),
+        char_level = TRUE
+      ),
       abstract = field_pair(
-        normalise_display_text(z$record_i$abstract),
-        normalise_display_text(z$record_j$abstract)
+        display_sentence_case_if_all_caps(abstract_i),
+        display_sentence_case_if_all_caps(abstract_j)
       )
     )
     fields$source$a <- tags$span(class = "source-badge", fields$source$a)
     fields$source$b <- tags$span(class = "source-badge", fields$source$b)
 
+    edit_state <- w01_abstract_edit_rv()
+    editing_a <- !is.null(edit_state) &&
+      identical(as.character(edit_state$review_case_id), as.character(z$review_case_id)) &&
+      identical(as.character(edit_state$side), "a")
+    editing_b <- !is.null(edit_state) &&
+      identical(as.character(edit_state$review_case_id), as.character(z$review_case_id)) &&
+      identical(as.character(edit_state$side), "b")
+
     tagList(
       layout_columns(
         col_widths = c(6,6),
-        record_card(z$record_i, "Record A", fields, "a"),
-        record_card(z$record_j, "Record B", fields, "b")
+        record_card(record_i_view, "Record A", fields, "a", abstract_editing = editing_a),
+        record_card(record_j_view, "Record B", fields, "b", abstract_editing = editing_b)
       ),
       card(
         class="mt-3",
@@ -4462,10 +6999,10 @@ server <- function(input, output, session) {
     field <- as.character(z$field %||% z$conflict$field %||% "")
     reason <- as.character(z$reason %||% z$conflict$reason %||% "")
     returned_doi <- as.character(z$returned_doi %||% z$conflict$returned_doi %||% pr$returned_doi %||% "")
-    provider_title <- as.character(pr$title %||% "")
-    provider_abstract <- normalise_display_text(pr$abstract %||% "")
-    can_title <- as.character(can$title %||% "")
-    can_abstract <- normalise_display_text(can$abstract %||% "")
+    provider_title <- display_sentence_case_if_all_caps(pr$title %||% "")
+    provider_abstract <- display_sentence_case_if_all_caps(pr$abstract %||% "")
+    can_title <- display_sentence_case_if_all_caps(can$title %||% "")
+    can_abstract <- display_sentence_case_if_all_caps(can$abstract %||% "")
     can_doi <- as.character(can$doi %||% z$doi %||% "")
 
     title_pair <- field_pair(can_title, provider_title)
@@ -4497,7 +7034,7 @@ server <- function(input, output, session) {
             div(class="record-title",title_pair$a),
             tags$dl(
               class="record-meta",
-              tags$dt("DOI"),tags$dd(doi_pair$a)
+              tags$dt("DOI"),tags$dd(doi_link(can_doi, doi_pair$a))
             ),
             tags$hr(class="record-divider"),
             tags$h6(class="abstract-heading","Abstract"),
@@ -4512,7 +7049,7 @@ server <- function(input, output, session) {
             div(class="record-title",title_pair$b),
             tags$dl(
               class="record-meta",
-              tags$dt("Returned DOI"),tags$dd(doi_pair$b),
+              tags$dt("Returned DOI"),tags$dd(doi_link(returned_doi, doi_pair$b)),
               tags$dt("EID"),tags$dd(pr$eid %||% z$conflict$eid %||% ""),
               tags$dt("Keywords"),tags$dd(provider_keywords)
             ),
@@ -4590,13 +7127,74 @@ server <- function(input, output, session) {
     TRUE
   }
 
+  observeEvent(input$w01_mark_resolved, {
+    req(authenticated())
+    if(!session_can("control_workflows")) {
+      status("You do not have permission to resolve Workflow 01.")
+      return()
+    }
+    if(!isTRUE(w01_resolution_ready())) {
+      status("Workflow 01 cannot be resolved because one or more cases or assignments are incomplete.")
+      return()
+    }
+    if (isTRUE(w01_export_requested_rv()) ||
+        (identical(storage_backend(),"google_sheets") &&
+         w01_export_request_exists(queue_sha_rv(),batch_id_rv()))) {
+      w01_export_requested_rv(TRUE)
+      w01_export_status_rv("Sent to GitHub.")
+      status("W01 export has already been requested.")
+      return()
+    }
+    dispatched <- tryCatch({
+      if (!identical(batch_status_rv(),"review_complete")) {
+        mark_review_complete("01",batch_id_rv(),queue_sha_rv(),batch_status_rv)
+      }
+      if (identical(storage_backend(),"google_sheets")) {
+        append_w01_export_request(queue_sha_rv(),batch_id_rv(),"dispatching")
+      }
+      dispatch_w01_export(batch_id_rv(),queue_sha_rv())
+      if (identical(storage_backend(),"google_sheets")) {
+        append_w01_export_request(queue_sha_rv(),batch_id_rv(),"dispatched")
+      }
+      TRUE
+    },error=function(e){
+      if (identical(storage_backend(),"google_sheets")) {
+        try(append_w01_export_request(queue_sha_rv(),batch_id_rv(),"failed",conditionMessage(e)),silent=TRUE)
+      }
+      status(paste("W01 resolution failed:",conditionMessage(e)))
+      FALSE
+    })
+    if(dispatched) {
+      w01_export_requested_rv(TRUE)
+      w01_export_status_rv("Sent to GitHub. The reviewed batch is queued for integrity checks and resume.")
+      status("W01 sent to GitHub.")
+    }
+  })
+  observeEvent(input$w02_send_github, {
+    req(authenticated())
+    dispatch_completed_w02()
+  })
+
+  observeEvent(input$w04_resolution_send_github, {
+    req(authenticated())
+    dispatch_completed_w04_resolution()
+  })
+
+  observeEvent(input$w08_send_github, {
+    req(authenticated())
+    dispatch_completed_w08()
+  })
+
+
   dispatch_completed_w02 <- function() {
     if(!session_can("control_workflows")) {
       w02_status("Review complete. Awaiting an administrator to resume Workflow 02.")
       return(FALSE)
     }
-    unresolved <- w02_unresolved_indices()
-    if (length(unresolved)) return(FALSE)
+    if (!isTRUE(w02_handoff_ready())) {
+      w02_status("Workflow 02 is not ready to send to GitHub because one or more cases remain unresolved.")
+      return(FALSE)
+    }
 
     active <- w02_decisions()
     if (!length(active)) return(FALSE)
@@ -4621,15 +7219,20 @@ server <- function(input, output, session) {
     )
     if (is.na(already)) return(FALSE)
     if (isTRUE(already)) {
+      w02_resume_requested_rv(TRUE)
       w02_status("Workflow 02 resume has already been requested for this batch.")
       return(TRUE)
     }
 
     tryCatch({
+      if (!identical(w02_batch_status_rv(),"review_complete")) {
+        mark_review_complete("02",w02_batch_id_rv(),w02_queue_sha_rv(),w02_batch_status_rv)
+      }
       append_w02_resume_request(queue_sha, source_run_id, "dispatching")
       dispatch_w02_resume(source_run_id, publish = TRUE)
       append_w02_resume_request(queue_sha, source_run_id, "dispatched")
-      w02_status("All cases complete. Workflow 02 resumed automatically.")
+      w02_resume_requested_rv(TRUE)
+      w02_status("Sent to GitHub. Workflow 02 resume requested.")
       TRUE
     }, error = function(e) {
       try(
@@ -4644,11 +7247,12 @@ server <- function(input, output, session) {
   advance_w02 <- function() {
     unresolved <- w02_unresolved_indices()
     if (!length(unresolved)) {
-      if(session_can("control_workflows")) {
-        mark_review_complete("02",w02_batch_id_rv(),w02_queue_sha_rv(),w02_batch_status_rv)
-        dispatch_completed_w02()
+      if (isTRUE(w02_handoff_ready()) && session_can("control_workflows")) {
+        w02_status("Review complete. Use Send W02 to GitHub in Administration & assignments.")
+      } else if (isTRUE(w02_handoff_ready())) {
+        w02_status("Review complete. Awaiting an administrator to send Workflow 02 to GitHub.")
       } else {
-        w02_status("Review complete. Awaiting an administrator to resume Workflow 02.")
+        w02_status("Your assigned enrichment review is complete. Other assigned or unassigned cases remain.")
       }
       app_view("tasks")
       return(invisible(TRUE))
@@ -4657,6 +7261,36 @@ server <- function(input, output, session) {
     w02_idx(if (length(later)) later[[1L]] else unresolved[[1L]])
     invisible(TRUE)
   }
+
+  w04_screening_note_for <- function(review_case_id, user_id, queue_sha256 = "") {
+    notes <- w04_screening_notes_rv() %||% list()
+    if (!length(notes)) return(NULL)
+    hits <- Filter(function(x) {
+      same_case <- identical(
+        as.character(x$review_case_id %||% ""),
+        as.character(review_case_id %||% "")
+      )
+      same_user <- identical(
+        as.character(x$reviewer %||% ""),
+        as.character(user_id %||% "")
+      )
+      note_sha <- tolower(as.character(x$queue_sha256 %||% ""))
+      want_sha <- tolower(as.character(queue_sha256 %||% ""))
+      same_sha <- !nzchar(want_sha) || identical(note_sha,want_sha)
+      same_case && same_user && same_sha
+    }, notes)
+    if (!length(hits)) NULL else hits[[1L]]
+  }
+
+  w04_current_note_text <- reactive({
+    z <- w04_current_case()
+    note <- w04_screening_note_for(
+      z$review_case_id,
+      session_reviewer_id(),
+      w04_queue_sha_rv()
+    )
+    as.character(note$note %||% "")
+  })
 
   w04_current_case <- reactive({
     req(authenticated(), w04_cases_rv())
@@ -4734,8 +7368,12 @@ server <- function(input, output, session) {
       div(
         class="compact-record-body w04-text",
         div(
-          class="record-title",
-          highlight_screening_text(b$title %||% "",w04_include_terms(),w04_exclude_terms())
+          class="d-flex align-items-start justify-content-between gap-2",
+          div(
+            class="record-title flex-grow-1",
+            highlight_screening_text(display_sentence_case_if_all_caps(b$title %||% ""),w04_include_terms(),w04_exclude_terms())
+          ),
+          google_scholar_button(b$title %||% "")
         ),
         div(
           class="w04-citation-grid",
@@ -4745,23 +7383,40 @@ server <- function(input, output, session) {
           div(class="w04-citation-item",span(class="w04-citation-label","Volume"),span(class="w04-citation-value",b$volume %||% "")),
           div(class="w04-citation-item",span(class="w04-citation-label","Pages"),span(class="w04-citation-value",b$pages %||% ""))
         ),
-        div(class="w04-doi",tags$strong("DOI: "),b$doi %||% ""),
+        div(class="w04-doi",tags$strong("DOI: "),doi_link(b$doi %||% "")),
         tags$h6(class="abstract-heading","Abstract"),
         div(
           class="abstract-text",
-          highlight_screening_text(b$abstract %||% "",w04_include_terms(),w04_exclude_terms())
+          highlight_screening_text(display_sentence_case_if_all_caps(b$abstract %||% ""),w04_include_terms(),w04_exclude_terms())
         ),
 
         div(
           class="w04-keywords",
           tags$strong("Keywords: "),
           highlight_screening_text(b$keywords %||% "",w04_include_terms(),w04_exclude_terms())
+        ),
+        div(
+          class="mt-3 pt-3 border-top",
+          textAreaInput(
+            "w04_note",
+            "Notes",
+            value=w04_current_note_text(),
+            rows=3,
+            width="100%",
+            placeholder="Optional note for this record"
+          ),
+          div(
+            class="d-flex align-items-center gap-2 flex-wrap",
+            actionButton("w04_save_note","Save note",class="btn-outline-secondary btn-sm"),
+            tags$span(class="saved-note",textOutput("w04_note_status",inline=TRUE))
+          )
         )
       )
     )
   })
 
   output$w04_save_status <- renderText(w04_status())
+  output$w04_note_status <- renderText(w04_note_status())
 
   dispatch_completed_w04_validation <- function() {
     if (!session_can("control_workflows")) {
@@ -4779,6 +7434,17 @@ server <- function(input, output, session) {
       return(FALSE)
     }
 
+    already <- tryCatch(
+      w04_validation_finalize_request_exists(w04_queue_sha_rv(), w04_batch_id_rv()),
+      error=function(e){w04_status(paste("Validation finalise status check failed:",conditionMessage(e)));NA}
+    )
+    if (is.na(already)) return(FALSE)
+    if (isTRUE(already)) {
+      w04_validation_finalize_requested_rv(TRUE)
+      w04_status("Validation set has already been sent to GitHub for finalisation.")
+      return(TRUE)
+    }
+
     mark_review_complete(
       "04",
       w04_batch_id_rv(),
@@ -4786,12 +7452,24 @@ server <- function(input, output, session) {
       w04_batch_status_rv
     )
     dispatched <- tryCatch({
+      append_w04_validation_finalize_request(
+        w04_queue_sha_rv(), w04_batch_id_rv(), "dispatching"
+      )
       dispatch_w04_validation_finalize(
         w04_batch_id_rv(),
         w04_queue_sha_rv()
       )
+      append_w04_validation_finalize_request(
+        w04_queue_sha_rv(), w04_batch_id_rv(), "dispatched"
+      )
       TRUE
     }, error = function(e) {
+      try(
+        append_w04_validation_finalize_request(
+          w04_queue_sha_rv(), w04_batch_id_rv(), "failed", conditionMessage(e)
+        ),
+        silent=TRUE
+      )
       w04_status(paste(
         "Validation is complete, but W04 finalisation dispatch failed:",
         conditionMessage(e)
@@ -4799,6 +7477,7 @@ server <- function(input, output, session) {
       FALSE
     })
     if (dispatched) {
+      w04_validation_finalize_requested_rv(TRUE)
       w04_status("Validation set sent to GitHub for Workflow 04 finalisation.")
     }
     dispatched
@@ -4806,6 +7485,56 @@ server <- function(input, output, session) {
 
   observeEvent(input$w04_finalize_validation, {
     dispatch_completed_w04_validation()
+  })
+
+  observeEvent(input$w04_save_note, {
+    req(authenticated())
+    if (!session_can("adjudicate_assigned")) {
+      w04_note_status("You do not have permission to save notes.")
+      return()
+    }
+    if (!identical(storage_backend(),"google_sheets")) {
+      w04_note_status("Notes are available in the production Google Sheets backend.")
+      return()
+    }
+
+    z <- w04_current_case()
+    note_text <- trimws(as.character(input$w04_note %||% ""))
+    if (!nzchar(note_text)) {
+      w04_note_status("Enter a note before saving.")
+      return()
+    }
+
+    prior <- w04_screening_note_for(
+      z$review_case_id,
+      session_reviewer_id(),
+      w04_queue_sha_rv()
+    )
+    item <- list(
+      review_case_id=as.character(z$review_case_id),
+      record_id=as.character(z$record_id %||% ""),
+      note=note_text,
+      reviewer=session_reviewer_id(),
+      saved_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
+      queue_sha256=w04_queue_sha_rv()
+    )
+    saved <- tryCatch(
+      append_sheet_w04_screening_note(item,prior_note=prior),
+      error=function(e){w04_note_status(paste("Note save failed:",conditionMessage(e)));NULL}
+    )
+    if (is.null(saved)) return()
+
+    notes <- w04_screening_notes_rv() %||% list()
+    notes <- Filter(function(x) !(
+      identical(as.character(x$review_case_id %||% ""),as.character(z$review_case_id)) &&
+      identical(as.character(x$reviewer %||% ""),session_reviewer_id()) &&
+      identical(
+        tolower(as.character(x$queue_sha256 %||% "")),
+        tolower(as.character(w04_queue_sha_rv() %||% ""))
+      )
+    ),notes)
+    w04_screening_notes_rv(c(notes,list(saved)))
+    w04_note_status(sprintf("Note saved at %s",format(Sys.time(),"%H:%M:%S")))
   })
 
   save_w04_choice <- function(choice) {
@@ -4907,6 +7636,26 @@ server <- function(input, output, session) {
     as.character(hit[[1L]]$decision %||% "")
   })
 
+  w04_resolution_current_abstract_edit <- reactive({
+    z <- w04_resolution_current_case()
+    edits <- w04_resolution_abstract_edits_rv() %||% list()
+    hits <- Filter(
+      function(x) identical(as.character(x$review_case_id %||% ""), as.character(z$review_case_id %||% "")),
+      edits
+    )
+    if (!length(hits)) return(NULL)
+    hits[[1L]]
+  })
+
+  w04_resolution_effective_abstract <- reactive({
+    edit <- w04_resolution_current_abstract_edit()
+    if (!is.null(edit) && nzchar(trimws(as.character(edit$abstract %||% "")))) {
+      return(as.character(edit$abstract))
+    }
+    z <- w04_resolution_current_case()
+    as.character((z$bibliographic %||% list())$abstract %||% "")
+  })
+
   output$w04_resolution_decision_buttons <- renderUI({
     choice <- w04_resolution_current_saved_choice()
     div(
@@ -4946,7 +7695,11 @@ server <- function(input, output, session) {
         tags$span(class="task-badge",sprintf("Record %d",w04_resolution_idx()))
       )),
       div(class="compact-record-body w04-text",
-        div(class="record-title",highlight_screening_text(b$title %||% "",w04_resolution_include_terms(),w04_resolution_exclude_terms())),
+        div(
+          class="d-flex align-items-start justify-content-between gap-2",
+          div(class="record-title flex-grow-1",highlight_screening_text(display_sentence_case_if_all_caps(b$title %||% ""),w04_resolution_include_terms(),w04_resolution_exclude_terms())),
+          google_scholar_button(b$title %||% "")
+        ),
         div(class="w04-citation-grid",
           div(class="w04-citation-item",span(class="w04-citation-label","Authors"),span(class="w04-citation-value",b$authors %||% "")),
           div(class="w04-citation-item",span(class="w04-citation-label","Year"),span(class="w04-citation-value",b$year %||% "")),
@@ -4954,9 +7707,45 @@ server <- function(input, output, session) {
           div(class="w04-citation-item",span(class="w04-citation-label","Volume"),span(class="w04-citation-value",b$volume %||% "")),
           div(class="w04-citation-item",span(class="w04-citation-label","Pages"),span(class="w04-citation-value",b$pages %||% ""))
         ),
-        div(class="w04-doi",tags$strong("DOI: "),b$doi %||% ""),
-        tags$h6(class="abstract-heading","Abstract"),
-        div(class="abstract-text",highlight_screening_text(b$abstract %||% "",w04_resolution_include_terms(),w04_resolution_exclude_terms())),
+        div(class="w04-doi",tags$strong("DOI: "),doi_link(b$doi %||% "")),
+        div(
+          class="d-flex justify-content-between align-items-center mt-2",
+          tags$h6(class="abstract-heading mb-0","Abstract"),
+          div(
+            class="d-flex align-items-center gap-2",
+            if (isTRUE(w04_resolution_abstract_edit_rv())) {
+              actionButton("w04_resolution_save_abstract","Save abstract",class="btn-sm btn-primary")
+            },
+            actionButton(
+              "w04_resolution_edit_abstract",
+              if (isTRUE(w04_resolution_abstract_edit_rv())) "Cancel edit" else "Edit abstract",
+              class="btn-sm btn-outline-secondary"
+            )
+          )
+        ),
+        if (isTRUE(w04_resolution_abstract_edit_rv())) {
+          tagList(
+            textAreaInput(
+              "w04_resolution_abstract_text",
+              label=NULL,
+              value=w04_resolution_effective_abstract(),
+              rows=10,
+              width="100%",
+              placeholder="Paste or correct the abstract here."
+            ),
+            tags$div(
+              class="text-secondary small mb-2",
+              "Saved abstracts are carried into the canonical record when W04 is sent to GitHub."
+            )
+          )
+        } else {
+          tagList(
+            div(class="abstract-text",highlight_screening_text(display_sentence_case_if_all_caps(w04_resolution_effective_abstract()),w04_resolution_include_terms(),w04_resolution_exclude_terms())),
+            if (!is.null(w04_resolution_current_abstract_edit())) {
+              tags$div(class="text-secondary small mt-1","Manually edited abstract saved for this W04 resolution.")
+            }
+          )
+        },
         div(class="mt-3 p-2 border rounded",
           tags$strong("Model decisions: "),
           if(length(votes)) tagList(lapply(seq_along(votes),function(i)tags$span(class="task-badge me-1",sprintf("Pass %d: %s",i,votes[[i]])))) else tags$span(class="text-secondary","No model vote provenance available")
@@ -4966,6 +7755,49 @@ server <- function(input, output, session) {
     )
   })
   output$w04_resolution_save_status <- renderText(w04_resolution_status())
+
+  observeEvent(input$w04_resolution_edit_abstract, {
+    w04_resolution_abstract_edit_rv(!isTRUE(w04_resolution_abstract_edit_rv()))
+  })
+
+  observeEvent(input$w04_resolution_save_abstract, {
+    if(!session_can("adjudicate_assigned")) {
+      w04_resolution_status("You do not have permission to edit this record.")
+      return()
+    }
+    z <- w04_resolution_current_case()
+    value <- trimws(as.character(input$w04_resolution_abstract_text %||% ""))
+    if (!nzchar(value)) {
+      w04_resolution_status("Abstract cannot be empty.")
+      return()
+    }
+    current <- w04_resolution_abstract_edits_rv() %||% list()
+    hits <- Filter(
+      function(x) identical(as.character(x$review_case_id %||% ""),as.character(z$review_case_id %||% "")),
+      current
+    )
+    prior <- if(length(hits)) hits[[1L]] else NULL
+    edit <- list(
+      review_case_id=as.character(z$review_case_id),
+      record_id=as.character(z$record_id),
+      abstract=value,
+      reviewer=session_reviewer_id(),
+      saved_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
+      queue_sha256=w04_resolution_queue_sha_rv()
+    )
+    saved <- tryCatch(
+      append_sheet_w04_resolution_abstract_edit(edit, prior_edit=prior),
+      error=function(e){w04_resolution_status(paste("Abstract save failed:",conditionMessage(e)));NULL}
+    )
+    if(is.null(saved)) return()
+    remaining <- Filter(
+      function(x)!identical(as.character(x$review_case_id %||% ""),as.character(z$review_case_id %||% "")),
+      current
+    )
+    w04_resolution_abstract_edits_rv(c(remaining,list(saved)))
+    w04_resolution_abstract_edit_rv(FALSE)
+    w04_resolution_status(sprintf("Saved abstract at %s. Choose Include or Exclude to resolve the record.",format(Sys.time(),"%H:%M:%S")))
+  })
 
   save_w04_resolution_choice <- function(choice) {
     if(!session_can("adjudicate_assigned")) {
@@ -4984,16 +7816,56 @@ server <- function(input, output, session) {
     w04_resolution_status(sprintf("Saved %s at %s",choice,format(Sys.time(),"%H:%M:%S")));TRUE
   }
 
+  dispatch_completed_w04_resolution <- function() {
+    if (!session_can("control_workflows")) {
+      w04_resolution_status("Review complete. Awaiting an administrator to send Workflow 04 to GitHub.")
+      return(FALSE)
+    }
+    if (!isTRUE(w04_resolution_handoff_ready())) {
+      w04_resolution_status("Workflow 04 model-uncertainty review is not ready to send to GitHub.")
+      return(FALSE)
+    }
+
+    source_run_id <- as.character(w04_resolution_source_run_id_rv())
+    batch_id <- as.character(w04_resolution_batch_id_rv())
+    queue_sha <- as.character(w04_resolution_queue_sha_rv())
+    already <- tryCatch(
+      w04_resolution_resume_request_exists(queue_sha,source_run_id,batch_id),
+      error=function(e){w04_resolution_status(paste("Resume status check failed:",conditionMessage(e)));NA}
+    )
+    if (is.na(already)) return(FALSE)
+    if (isTRUE(already)) {
+      w04_resolution_resume_requested_rv(TRUE)
+      w04_resolution_status("Workflow 04 has already been sent to GitHub for this model-uncertainty batch.")
+      return(TRUE)
+    }
+
+    tryCatch({
+      if (!identical(w04_resolution_batch_status_rv(),"review_complete")) {
+        mark_review_complete("04",batch_id,queue_sha,w04_resolution_batch_status_rv)
+      }
+      append_w04_resolution_resume_request(queue_sha,source_run_id,batch_id,"dispatching")
+      dispatch_w04_resolution_resume(source_run_id,batch_id,queue_sha)
+      append_w04_resolution_resume_request(queue_sha,source_run_id,batch_id,"dispatched")
+      w04_resolution_resume_requested_rv(TRUE)
+      w04_resolution_status("Sent to GitHub. Workflow 04 finalisation requested.")
+      TRUE
+    },error=function(e){
+      try(append_w04_resolution_resume_request(queue_sha,source_run_id,batch_id,"failed",conditionMessage(e)),silent=TRUE)
+      w04_resolution_status(paste("Workflow 04 send failed:",conditionMessage(e)))
+      FALSE
+    })
+  }
+
   advance_w04_resolution <- function() {
     unresolved<-w04_resolution_unresolved_indices()
     if(!length(unresolved)){
-      if(session_can("control_workflows")) {
-        mark_review_complete("04",w04_resolution_batch_id_rv(),w04_resolution_queue_sha_rv(),w04_resolution_batch_status_rv)
-        dispatched<-tryCatch({dispatch_w04_resolution_resume(w04_resolution_source_run_id_rv(),w04_resolution_batch_id_rv(),w04_resolution_queue_sha_rv());TRUE},
-          error=function(e){w04_resolution_status(paste("Review complete, but W04 resume dispatch failed:",conditionMessage(e)));FALSE})
-        if(dispatched)w04_resolution_status("Review complete. Workflow 04 finalisation dispatched.")
+      if (isTRUE(w04_resolution_handoff_ready()) && session_can("control_workflows")) {
+        w04_resolution_status("Review complete. Use Send W04 to GitHub in Administration & assignments.")
+      } else if (isTRUE(w04_resolution_handoff_ready())) {
+        w04_resolution_status("Review complete. Awaiting an administrator to send Workflow 04 to GitHub.")
       } else {
-        w04_resolution_status("Review complete. Awaiting an administrator to resume Workflow 04.")
+        w04_resolution_status("Your assigned model-uncertainty records are complete. Other assigned or unassigned records remain.")
       }
       app_view("tasks");return(invisible(TRUE))
     }
@@ -5110,6 +7982,33 @@ server <- function(input, output, session) {
       "selected raters"
     }
 
+    human_ids <- setdiff(as.character(comparison_ids %||% character()),"model")
+    parent_sha <- {
+      set <- w04_active_consistency_conflict_set()
+      if (!is.null(set)) {
+        as.character(set$parent_queue_sha256 %||% "")
+      } else {
+        as.character(w04_queue_sha_rv() %||% "")
+      }
+    }
+    case_notes <- if (length(human_ids) >= 2L) {
+      Filter(function(x) {
+        identical(
+          as.character(x$review_case_id %||% ""),
+          as.character(z$review_case_id %||% "")
+        ) &&
+        as.character(x$reviewer %||% "") %in% human_ids &&
+        (
+          !nzchar(parent_sha) ||
+          identical(
+            tolower(as.character(x$queue_sha256 %||% "")),
+            tolower(parent_sha)
+          )
+        ) &&
+        nzchar(trimws(as.character(x$note %||% "")))
+      }, w04_screening_notes_rv() %||% list())
+    } else list()
+
     card(
       class="record-card",
       card_header(
@@ -5121,7 +8020,11 @@ server <- function(input, output, session) {
       ),
       div(
         class="compact-record-body w04-text",
-        div(class="record-title",highlight_screening_text(b$title %||% "",w04_include_terms(),w04_exclude_terms())),
+        div(
+          class="d-flex align-items-start justify-content-between gap-2",
+          div(class="record-title flex-grow-1",highlight_screening_text(display_sentence_case_if_all_caps(b$title %||% ""),w04_include_terms(),w04_exclude_terms())),
+          google_scholar_button(b$title %||% "")
+        ),
         div(
           class="w04-citation-grid",
           div(class="w04-citation-item",span(class="w04-citation-label","Authors"),span(class="w04-citation-value",b$authors %||% "")),
@@ -5129,12 +8032,25 @@ server <- function(input, output, session) {
           div(class="w04-citation-item",span(class="w04-citation-label","Journal"),span(class="w04-citation-value",b$journal %||% ""))
         ),
         tags$h6(class="abstract-heading","Abstract"),
-        div(class="abstract-text",highlight_screening_text(b$abstract %||% "",w04_include_terms(),w04_exclude_terms())),
+        div(class="abstract-text",highlight_screening_text(display_sentence_case_if_all_caps(b$abstract %||% ""),w04_include_terms(),w04_exclude_terms())),
         if (length(reviewer_badges)) {
           div(
             class="mt-3 p-2 border rounded",
             tags$strong("Decisions for this case: "),
             tagList(reviewer_badges)
+          )
+        },
+        if (length(case_notes)) {
+          div(
+            class="mt-3 p-2 border rounded",
+            tags$strong("Reviewer notes"),
+            tagList(lapply(case_notes,function(n) {
+              div(
+                class="mt-2",
+                tags$div(class="fw-semibold",rater_label(as.character(n$reviewer %||% ""))),
+                tags$div(class="text-body",as.character(n$note %||% ""))
+              )
+            }))
           )
         },
         div(class="w04-keywords",tags$strong("Keywords: "),highlight_screening_text(b$keywords %||% "",w04_include_terms(),w04_exclude_terms()))
@@ -5298,10 +8214,10 @@ server <- function(input, output, session) {
       assign_named_species="Assign named species",
       assign_unspecified_species="Assign unspecified species",
       exclude_record="Exclude record",
-      assign_country_set="Assign country set",
+      assign_country_set="Enter geography",
       assign_none="Assign no country",
       accept_model="Accept model geography",
-      override_country_set="Override country set",
+      override_country_set="Enter geography",
       accept_retained_topics="Accept retained topics",
       replace_topic_set="Replace topic set",
       no_code="Retain with no topic code",
@@ -5386,13 +8302,16 @@ server <- function(input, output, session) {
         )
       },
       geography_model_failure = tagList(
-        selectizeInput(
-          paste0("w08_geo_",j),
-          "Countries",
-          choices = w08_country_choices(),
-          selected = toupper(as.character(unlist(saved_value$iso3c %||% character(), use.names = FALSE))),
-          multiple = TRUE,
-          options = list(create = FALSE, persist = FALSE)
+        conditionalPanel(
+          condition = sprintf("input.w08_decision_%d == 'assign_country_set'", j),
+          selectizeInput(
+            paste0("w08_geo_",j),
+            "Countries",
+            choices = w08_country_choices(),
+            selected = toupper(as.character(unlist(saved_value$iso3c %||% character(), use.names = FALSE))),
+            multiple = TRUE,
+            options = list(create = FALSE, persist = FALSE)
+          )
         )
       ),
       geography_unresolved = {
@@ -5401,24 +8320,30 @@ server <- function(input, output, session) {
           use.names = FALSE
         )))
         tagList(
-          selectizeInput(
-            paste0("w08_geo_",j),
-            "Override countries",
-            choices = w08_country_choices(),
-            selected = model_selected[nzchar(model_selected)],
-            multiple = TRUE,
-            options = list(create = FALSE, persist = FALSE)
+          conditionalPanel(
+            condition = sprintf("input.w08_decision_%d == 'override_country_set'", j),
+            selectizeInput(
+              paste0("w08_geo_",j),
+              "Countries",
+              choices = w08_country_choices(),
+              selected = model_selected[nzchar(model_selected)],
+              multiple = TRUE,
+              options = list(create = FALSE, persist = FALSE)
+            )
           )
         )
       },
       geography_evidence_unvalidated = tagList(
-        selectizeInput(
-          paste0("w08_geo_",j),
-          "Override countries",
-          choices = w08_country_choices(),
-          selected = toupper(as.character(unlist(saved_value$iso3c %||% character(), use.names = FALSE))),
-          multiple = TRUE,
-          options = list(create = FALSE, persist = FALSE)
+        conditionalPanel(
+          condition = sprintf("input.w08_decision_%d == 'override_country_set'", j),
+          selectizeInput(
+            paste0("w08_geo_",j),
+            "Countries",
+            choices = w08_country_choices(),
+            selected = toupper(as.character(unlist(saved_value$iso3c %||% character(), use.names = FALSE))),
+            multiple = TRUE,
+            options = list(create = FALSE, persist = FALSE)
+          )
         )
       ),
       topic_extreme_disagreement = {
@@ -5575,13 +8500,25 @@ server <- function(input, output, session) {
         div(
           class="w08-review-evidence",
           div(
-            class="record-title",
-            highlight_named_terms(z$title %||% "",highlight_terms)
+            class="d-flex align-items-start justify-content-between gap-2",
+            div(
+              class="record-title flex-grow-1",
+              highlight_named_terms(display_sentence_case_if_all_caps(z$title %||% ""),highlight_terms)
+            ),
+            google_scholar_button(z$title %||% "")
           ),
+          div(class="w04-citation-grid",
+            div(class="w04-citation-item",span(class="w04-citation-label","Authors"),span(class="w04-citation-value",z$authors %||% "")),
+            div(class="w04-citation-item",span(class="w04-citation-label","Year"),span(class="w04-citation-value",z$year %||% "")),
+            div(class="w04-citation-item",span(class="w04-citation-label","Journal"),span(class="w04-citation-value",z$journal %||% "")),
+            div(class="w04-citation-item",span(class="w04-citation-label","Volume"),span(class="w04-citation-value",z$volume %||% "")),
+            div(class="w04-citation-item",span(class="w04-citation-label","Pages"),span(class="w04-citation-value",z$pages %||% ""))
+          ),
+          div(class="w04-doi",tags$strong("DOI: "),doi_link(z$doi %||% "")),
           tags$h6(class="abstract-heading","Abstract"),
           div(
             class="abstract-text",
-            highlight_named_terms(z$abstract %||% "",highlight_terms)
+            highlight_named_terms(display_sentence_case_if_all_caps(z$abstract %||% ""),highlight_terms)
           )
         ),
         div(
@@ -5607,19 +8544,11 @@ server <- function(input, output, session) {
     z <- w08_current_case()
     rid <- as.character(z$record_id)
 
-    if (
-      session_can("manage_assignments") &&
-      !user_has_active_assignment(
-        assignment_registry_rv(), "08", w08_batch_id_rv(), "annotation",
-        rid, session_reviewer_id()
-      )
-    ) {
-      ensure_direct_assignment(
-        "08", w08_batch_id_rv(), "annotation",
-        z, rid, w08_active_assignment_events()
-      )
-    }
-
+    # Administrators may adjudicate W08 records directly. Do not create a
+    # per-record assignment as a side effect of Save: that rewrites the shared
+    # assignment registry and is unnecessary because the W08 decision event
+    # itself records reviewer/provenance. Explicit assignments remain enforced
+    # for non-administrators below.
     if (
       assignment_mode_active(assignment_registry_rv(), "08", w08_batch_id_rv(), "annotation") &&
       !session_can("manage_assignments") &&
@@ -5795,21 +8724,56 @@ server <- function(input, output, session) {
     TRUE
   }
 
+  dispatch_completed_w08 <- function() {
+    if (!session_can("control_workflows")) {
+      w08_status("Review complete. Awaiting an administrator to send Workflow 08 to GitHub.")
+      return(FALSE)
+    }
+    if (!isTRUE(w08_handoff_ready())) {
+      w08_status("Workflow 08 is not ready to send to GitHub because one or more records remain unresolved.")
+      return(FALSE)
+    }
+
+    source_run_id <- as.character(w08_source_run_id_rv())
+    batch_id <- as.character(w08_batch_id_rv())
+    queue_sha <- as.character(w08_queue_sha_rv())
+    already <- tryCatch(
+      w08_resume_request_exists(queue_sha,source_run_id,batch_id),
+      error=function(e){w08_status(paste("Resume status check failed:",conditionMessage(e)));NA}
+    )
+    if (is.na(already)) return(FALSE)
+    if (isTRUE(already)) {
+      w08_resume_requested_rv(TRUE)
+      w08_status("Workflow 08 has already been sent to GitHub for this batch.")
+      return(TRUE)
+    }
+
+    tryCatch({
+      if (!identical(w08_batch_status_rv(),"review_complete")) {
+        mark_review_complete("08",batch_id,queue_sha,w08_batch_status_rv)
+      }
+      append_w08_resume_request(queue_sha,source_run_id,batch_id,"dispatching")
+      dispatch_w08_resume(source_run_id,batch_id,queue_sha)
+      append_w08_resume_request(queue_sha,source_run_id,batch_id,"dispatched")
+      w08_resume_requested_rv(TRUE)
+      w08_status("Sent to GitHub. Workflow 08 resume requested.")
+      TRUE
+    },error=function(e){
+      try(append_w08_resume_request(queue_sha,source_run_id,batch_id,"failed",conditionMessage(e)),silent=TRUE)
+      w08_status(paste("Workflow 08 send failed:",conditionMessage(e)))
+      FALSE
+    })
+  }
+
   advance_w08 <- function() {
     unresolved <- w08_unresolved_indices()
     if(!length(unresolved)) {
-      if(session_can("control_workflows")) {
-        mark_review_complete("08",w08_batch_id_rv(),w08_queue_sha_rv(),w08_batch_status_rv)
-        dispatched <- tryCatch({
-          dispatch_w08_resume(w08_source_run_id_rv(),w08_batch_id_rv(),w08_queue_sha_rv())
-          TRUE
-        }, error=function(e){
-          w08_status(paste("Review complete, but W08 resume dispatch failed:",conditionMessage(e)))
-          FALSE
-        })
-        if(dispatched) w08_status("Review complete. Workflow 08 resume dispatched.")
+      if (isTRUE(w08_handoff_ready()) && session_can("control_workflows")) {
+        w08_status("Review complete. Use Send W08 to GitHub in Administration & assignments.")
+      } else if (isTRUE(w08_handoff_ready())) {
+        w08_status("Review complete. Awaiting an administrator to send Workflow 08 to GitHub.")
       } else {
-        w08_status("Review complete. Awaiting an administrator to resume Workflow 08.")
+        w08_status("Your assigned annotation review is complete. Other assigned or unassigned records remain.")
       }
       app_view("tasks")
       return(invisible(TRUE))
@@ -5818,6 +8782,137 @@ server <- function(input, output, session) {
     w08_idx(if(length(later)) later[[1L]] else unresolved[[1L]])
     invisible(TRUE)
   }
+
+  save_w01_abstract_repair <- function(side = c("a","b"), explicit_action = NULL, explicit_value = NULL) {
+    side <- match.arg(side)
+    req(authenticated())
+    if(!session_can("adjudicate_assigned")) {
+      status("You do not have permission to edit W01 record metadata.")
+      return(invisible(FALSE))
+    }
+    z <- current_case()
+    rec <- if (identical(side,"a")) z$record_i else z$record_j
+    if (is.null(explicit_action)) {
+      value <- trimws(as.character(if (identical(side,"a")) input$w01_abstract_a else input$w01_abstract_b))
+      action <- if (nzchar(value)) "replace_abstract" else "strip_abstract"
+    } else {
+      action <- as.character(explicit_action)
+      value <- as.character(explicit_value %||% "")
+    }
+    original <- trimws(as.character(rec$abstract %||% ""))
+    active <- w01_repairs_rv() %||% list()
+    hits <- Filter(function(x) {
+      identical(as.character(x$source %||% ""), as.character(rec$source %||% "")) &&
+        identical(as.character(x$source_record_id %||% ""), as.character(rec$source_record_id %||% ""))
+    }, active)
+    prior <- if (length(hits)) hits[[1L]] else NULL
+    if (identical(value, original) && is.null(prior)) {
+      status("No abstract change to save.")
+      return(invisible(FALSE))
+    }
+    repair <- list(
+      review_case_id=as.character(z$review_case_id),
+      source=as.character(rec$source),
+      source_record_id=as.character(rec$source_record_id),
+      action=action,
+      value=value,
+      reason=if (identical(action,"strip_abstract")) "human_abstract_removal_during_deduplication" else "human_abstract_correction_during_deduplication",
+      reviewer=session_reviewer_id(),
+      saved_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
+      queue_sha256=queue_sha_rv()
+    )
+    saved <- tryCatch(
+      save_active_w01_repair(repair, w01_repair_path, prior_repair=prior),
+      error=function(e) {
+        status(paste("Abstract correction save failed:", conditionMessage(e)))
+        NULL
+      }
+    )
+    if (is.null(saved)) return(invisible(FALSE))
+    remaining <- Filter(function(x) !(
+      identical(as.character(x$source %||% ""), as.character(rec$source %||% "")) &&
+      identical(as.character(x$source_record_id %||% ""), as.character(rec$source_record_id %||% ""))
+    ), active)
+    w01_repairs_rv(c(remaining,list(saved)))
+    w01_abstract_edit_rv(NULL)
+    status(sprintf(
+      "%s abstract for Record %s.",
+      if (identical(action,"strip_abstract")) "Removed" else "Saved corrected",
+      toupper(side)
+    ))
+    invisible(TRUE)
+  }
+
+  observeEvent(input$edit_w01_abstract_a, {
+    z <- current_case()
+    w01_abstract_edit_rv(list(review_case_id=as.character(z$review_case_id),side="a"))
+  })
+  observeEvent(input$edit_w01_abstract_b, {
+    z <- current_case()
+    w01_abstract_edit_rv(list(review_case_id=as.character(z$review_case_id),side="b"))
+  })
+  observeEvent(input$cancel_w01_abstract_a, {
+    w01_abstract_edit_rv(NULL)
+  })
+  observeEvent(input$cancel_w01_abstract_b, {
+    w01_abstract_edit_rv(NULL)
+  })
+
+  request_w01_abstract_delete <- function(side = c("a","b")) {
+    side <- match.arg(side)
+    z <- current_case()
+    rec <- if (identical(side,"a")) z$record_i else z$record_j
+    w01_abstract_delete_rv(list(
+      review_case_id=as.character(z$review_case_id),
+      side=side,
+      source=as.character(rec$source %||% ""),
+      source_record_id=as.character(rec$source_record_id %||% "")
+    ))
+    showModal(modalDialog(
+      title = paste0("Delete abstract from Record ", toupper(side), "?"),
+      "This will remove the abstract from this source record and save the change as an audited data-quality repair.",
+      footer = tagList(
+        modalButton("Cancel"),
+        actionButton("confirm_w01_delete_abstract", "Delete abstract", class="btn-danger")
+      ),
+      easyClose = TRUE
+    ))
+  }
+
+  observeEvent(input$delete_w01_abstract_a, {
+    request_w01_abstract_delete("a")
+  })
+  observeEvent(input$delete_w01_abstract_b, {
+    request_w01_abstract_delete("b")
+  })
+
+  observeEvent(input$confirm_w01_delete_abstract, {
+    pending <- w01_abstract_delete_rv()
+    req(pending)
+    z <- current_case()
+    if (!identical(as.character(pending$review_case_id), as.character(z$review_case_id))) {
+      removeModal()
+      w01_abstract_delete_rv(NULL)
+      status("Delete cancelled because the active W01 case changed.")
+      return()
+    }
+    side <- as.character(pending$side)
+    ok <- save_w01_abstract_repair(
+      side,
+      explicit_action="strip_abstract",
+      explicit_value=""
+    )
+    removeModal()
+    w01_abstract_delete_rv(NULL)
+    if (isTRUE(ok)) w01_abstract_edit_rv(NULL)
+  })
+
+    observeEvent(input$save_w01_abstract_a, {
+    save_w01_abstract_repair("a")
+  })
+  observeEvent(input$save_w01_abstract_b, {
+    save_w01_abstract_repair("b")
+  })
 
   save_choice <- function(choice) {
     req(authenticated())
@@ -5892,9 +8987,9 @@ server <- function(input, output, session) {
       if (assignments_active && !w01_all_assignments_complete()) {
         status("Your assigned review is complete. Waiting for other assigned reviewers.")
       } else if(session_can("control_workflows")) {
-        mark_review_complete("01",batch_id_rv(),queue_sha_rv(),batch_status_rv)
+        status("All W01 assignments are complete. Use Mark W01 as resolved in Administration & assignments.")
       } else {
-        status("Review complete. Awaiting an administrator to continue Workflow 01.")
+        status("Review complete. Awaiting an administrator to mark Workflow 01 as resolved.")
       }
       complete(TRUE)
       return(invisible(TRUE))
@@ -5930,13 +9025,24 @@ server <- function(input, output, session) {
   observeEvent(input$open_w04_resolution, {
     unresolved<-w04_resolution_unresolved_indices()
     if(length(unresolved))w04_resolution_idx(unresolved[[1L]])
+    w04_resolution_abstract_edit_rv(FALSE)
     app_view("w04_resolution")
   })
   observeEvent(input$back_to_tasks_w04_resolution, app_view("tasks"))
   observeEvent(input$w04_resolution_retain, {if(save_w04_resolution_choice("retain"))advance_w04_resolution()})
   observeEvent(input$w04_resolution_exclude, {if(save_w04_resolution_choice("exclude"))advance_w04_resolution()})
-  observeEvent(input$w04_resolution_previous, if(w04_resolution_idx()>1L)w04_resolution_idx(w04_resolution_idx()-1L))
-  observeEvent(input$w04_resolution_next, if(w04_resolution_idx()<length(w04_resolution_cases_rv()))w04_resolution_idx(w04_resolution_idx()+1L))
+  observeEvent(input$w04_resolution_previous, {
+    if(w04_resolution_idx()>1L) {
+      w04_resolution_idx(w04_resolution_idx()-1L)
+      w04_resolution_abstract_edit_rv(FALSE)
+    }
+  })
+  observeEvent(input$w04_resolution_next, {
+    if(w04_resolution_idx()<length(w04_resolution_cases_rv())) {
+      w04_resolution_idx(w04_resolution_idx()+1L)
+      w04_resolution_abstract_edit_rv(FALSE)
+    }
+  })
   observeEvent(input$open_w04_conflict, {
     unresolved <- w04_conflict_unresolved_indices()
     if(length(unresolved)) w04_conflict_idx(unresolved[[1L]])
@@ -5998,15 +9104,45 @@ server <- function(input, output, session) {
     app_view("tasks")
   })
 
+  observeEvent(app_view(), {
+    req(authenticated())
+    if (!identical(app_view(), "tasks")) return()
+
+    refreshed <- tryCatch(
+      if(identical(storage_backend(),"google_sheets")) read_latest_pipeline_status() else NULL,
+      error=function(e) NULL
+    )
+    if(!is.null(refreshed)) {
+      pipeline_status_rv(refreshed)
+      if (w08_status_is_final(refreshed)) {
+        authoritative_w08_rv(tryCatch(
+          read_authoritative_w08_metrics(),
+          error=function(e) NULL
+        ))
+      } else {
+        authoritative_w08_rv(NULL)
+      }
+    }
+
+    screening <- tryCatch(read_manual_screening_metrics(), error=function(e)e)
+    if (!inherits(screening,"error")) {
+      manual_screening_rv(screening)
+    }
+  }, ignoreInit=TRUE)
+
   observeEvent(input$back_to_tasks_complete, {
     complete(FALSE)
     app_view("tasks")
   })
 
   observeEvent(input$duplicate, {
+    w01_abstract_edit_rv(NULL)
+    w01_abstract_delete_rv(NULL)
     if (save_choice("duplicate")) advance_after_save()
   })
   observeEvent(input$not_duplicate, {
+    w01_abstract_edit_rv(NULL)
+    w01_abstract_delete_rv(NULL)
     if (save_choice("not_duplicate")) advance_after_save()
   })
   observeEvent(input$uncertain, {

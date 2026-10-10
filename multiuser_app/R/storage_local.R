@@ -127,6 +127,49 @@ write_local_decision <- function(path, decision) {
 }
 
 
+read_local_w01_repairs <- function(path, queue_sha256 = "") {
+  if (is.null(path) || !nzchar(as.character(path)) || !file.exists(path)) return(list())
+  lines <- readLines(path, warn=FALSE, encoding="UTF-8")
+  lines <- lines[nzchar(trimws(lines))]
+  if (!length(lines)) return(list())
+  rows <- lapply(lines, jsonlite::fromJSON, simplifyVector=FALSE)
+  if (nzchar(as.character(queue_sha256))) {
+    rows <- Filter(function(x) identical(
+      tolower(as.character(x$queue_sha256 %||% "")),
+      tolower(as.character(queue_sha256))
+    ), rows)
+  }
+  if (!length(rows)) return(list())
+  keys <- vapply(rows, function(x) paste(
+    as.character(x$source %||% ""), as.character(x$source_record_id %||% ""), sep="::"
+  ), character(1))
+  tm <- vapply(rows, function(x) as.character(x$saved_at_utc %||% ""), character(1))
+  ord <- order(tm, seq_along(rows), decreasing=TRUE)
+  rows <- rows[ord]; keys <- keys[ord]
+  rows[!duplicated(keys)]
+}
+
+write_local_w01_repair <- function(path, repair, prior_repair = NULL) {
+  if (is.null(path) || !nzchar(as.character(path))) stop("Local W01 repair path is missing", call.=FALSE)
+  action <- as.character(repair$action %||% "")
+  if (!(action %in% c("replace_abstract","strip_abstract"))) stop("Unsupported local W01 repair action", call.=FALSE)
+  if (identical(action,"replace_abstract") && !nzchar(trimws(as.character(repair$value %||% "")))) stop("Replacement abstract must not be empty", call.=FALSE)
+  saved_at <- as.character(repair$saved_at_utc %||% format(Sys.time(), tz="UTC", format="%Y-%m-%dT%H:%M:%SZ"))
+  event <- repair
+  event$saved_at_utc <- saved_at
+  event$supersedes_repair_id <- if (is.null(prior_repair)) "" else as.character(prior_repair$repair_id %||% "")
+  event$repair_id <- paste0("w01-repair-", substr(digest::digest(
+    paste(event$review_case_id,event$source,event$source_record_id,event$value,event$reviewer,saved_at,sep="|"),
+    algo="sha256",serialize=FALSE
+  ),1L,24L))
+  dir.create(dirname(path),recursive=TRUE,showWarnings=FALSE)
+  con <- file(path,"at",encoding="UTF-8")
+  on.exit(close(con),add=TRUE)
+  writeLines(jsonlite::toJSON(event,auto_unbox=TRUE,null="null",na="null"),con,useBytes=TRUE)
+  event
+}
+
+
 read_local_assignments <- function(path) {
   if (is.null(path) || !nzchar(as.character(path)) || !file.exists(path)) return(list())
   lines <- readLines(path, warn = FALSE, encoding = "UTF-8")

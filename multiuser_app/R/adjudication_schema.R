@@ -13,12 +13,14 @@ ADJUDICATION_PERMISSIONS <- list(
     "resolve_conflicts",
     "manage_assignments",
     "control_workflows",
+    "run_search_scoping",
     "export_to_github",
     "manage_users"
   ),
   reviewer = c(
     "adjudicate_assigned",
-    "resolve_conflicts"
+    "resolve_conflicts",
+    "run_search_scoping"
   )
 )
 

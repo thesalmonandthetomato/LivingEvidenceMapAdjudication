@@ -11,7 +11,7 @@ assignment_mode_for <- function(workflow, task_type) {
   if (identical(workflow, "04") && identical(task_type, "manual_screening")) {
     return(ASSIGNMENT_MODES[["independent_blind_review"]])
   }
-  if (task_type %in% c("deduplication", "enrichment", "annotation")) {
+  if (task_type %in% c("deduplication", "enrichment", "annotation", "model_uncertainty")) {
     return(ASSIGNMENT_MODES[["shared_work_pool"]])
   }
   ASSIGNMENT_MODES[["single_reviewer"]]
@@ -132,12 +132,18 @@ cases_for_assignment_user <- function(
 ) {
   if (!length(cases)) return(list())
   mode <- assignment_mode_for(workflow, task_type %||% "")
-  explicit_user_scope <- identical(mode, ASSIGNMENT_MODES[["independent_blind_review"]]) ||
-    identical(as.character(task_type %||% ""), "conflict_resolution")
+  explicit_user_scope <- !identical(mode, ASSIGNMENT_MODES[["shared_work_pool"]])
 
   batch_assignments <- active_assignments_for_batch(assignments, workflow, batch_id, task_type)
   if (!length(batch_assignments)) {
-    if (isTRUE(explicit_user_scope)) return(list())
+    # Before assignment begins, administrators retain access to the full queue
+    # so existing adjudication work does not disappear from the app. Reviewers
+    # remain blocked until cases are explicitly assigned. Once any assignment
+    # exists, single-reviewer queues are scoped normally for every user.
+    if (isTRUE(explicit_user_scope)) {
+      if (user_can(user, "manage_assignments")) return(cases)
+      return(list())
+    }
     return(cases)
   }
 
