@@ -1161,7 +1161,7 @@ read_github_w04_kappa_registry <- function() {
   )
   ref <- Sys.getenv(
     "LEM_W04_KAPPA_REGISTRY_REF",
-    unset = "workflow01-final-architecture"
+    unset = "main"
   )
   path <- Sys.getenv(
     "LEM_W04_KAPPA_REGISTRY_PATH",
@@ -1808,7 +1808,7 @@ read_latest_pipeline_status <- function() {
   val <- function(x) if (is.null(x) || !length(x)) "" else as.character(x[[1L]])
 
   # Production KPI values must come from the canonical current-run status on
-  # workflow01-final-architecture. Do not fall back to pipeline_run_status:
+  # main. Do not fall back to pipeline_run_status:
   # that Sheet is an operational event log and historical schema migrations
   # can leave older rows positionally incompatible with current KPI columns.
   current <- tryCatch(
