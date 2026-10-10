@@ -13,3 +13,11 @@ local({
   stopifnot(identical(err, "LEM_GOOGLE_SHEET_ID is not configured"))
   cat("PASS: configured Google Sheet ID required, trimmed, and never hard-coded\n")
 })
+
+# No deployed integration code may target the legacy salmon-farming branch.
+for (path in c("R/github_dispatch.R", "R/storage_sheets.R",
+               "multiuser_app/R/github_dispatch.R", "multiuser_app/R/storage_sheets.R")) {
+  lines <- readLines(path, warn = FALSE)
+  stopifnot(!any(grepl("workflow01-final-architecture", lines, fixed = TRUE)))
+}
+cat("PASS: no legacy workflow branch targets in Shiny integration modules\\n")
