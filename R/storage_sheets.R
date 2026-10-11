@@ -315,12 +315,19 @@ append_sheet_decision <- function(decision, prior_decision = NULL) {
     supersedes_decision_id=if(is.null(prior_decision)) "" else as.character(prior_decision$decision_id %||% ""),
     stringsAsFactors=FALSE
   )
-  # One write attempt only. A failed response may mean an accepted write;
-  # resolve its outcome with a read before permitting another action.
+  # A successful Sheets append response is the write acknowledgement.
+  # A second full-sheet read on every success causes avoidable API quota pressure.
+  # On an ambiguous HTTP failure, verify the deterministic decision ID before retry.
   append_error <- tryCatch({
     googlesheets4::sheet_append(ss, data=row, sheet=tab)
     NULL
   }, error=function(e) conditionMessage(e))
+  if (is.null(append_error)) {
+    return(invisible(normalise_saved_decision_event(
+      as.list(row[1L, , drop=FALSE]), prior_decision=prior_decision,
+      case_fields=c("case_id", "review_case_id")
+    )))
+  }
   verified <- tryCatch(
     w01_lookup_persisted_decision(ss, tab, decision_id),
     error=function(e) e
@@ -331,11 +338,8 @@ append_sheet_decision <- function(decision, prior_decision = NULL) {
                 conditionMessage(verified)), call. = FALSE)
   }
   if (is.null(verified)) {
-    if (!is.null(append_error)) {
-      stop(paste0("W01 decision not found after Google Sheets write error: ",
-                  append_error, ". Try again after checking the saved decision."), call. = FALSE)
-    }
-    stop("W01 decision write was not found in Google Sheets; refresh and check before retrying", call. = FALSE)
+    stop(paste0("W01 decision not found after Google Sheets write error: ",
+                append_error, ". Check the decision before retrying."), call. = FALSE)
   }
   invisible(normalise_saved_decision_event(
     verified, prior_decision=prior_decision,
