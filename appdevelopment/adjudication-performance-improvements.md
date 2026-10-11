@@ -51,3 +51,9 @@ Pilot on W01 after comprehensive concurrency/failure tests, then extend to W02, 
 ## Dependencies and scheduling
 
 **Do not implement during pipeline functional validation.** Resume this app-development task only when the complete pipeline, including Shiny adjudication handoff and downstream workflows, has passed the agreed end-to-end tests. No performance optimisation should be used to conceal or work around a failing pipeline workflow.
+
+## Consistent end-of-review messages (deferred UI development)
+
+Review the completion and submission messages shown after screening/adjudication in all workflow blocks (W01 deduplication, W02 enrichment, W04 screening, W08 annotation). Use consistent terminology, wording, layout, and confirmation states. Distinguish clearly between all decisions saved, review batch submitted, successful GitHub handover, workflow processing resumed, and any error or pending state. Verify the messages against actual backend status rather than implying a handover succeeded before confirmation. Apply the change consistently to the root and multiuser Shiny implementations, where relevant.
+
+**Timing:** Address during post-validation app development, not during the current pipeline functional test.
