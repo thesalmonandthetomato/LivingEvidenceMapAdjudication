@@ -3582,7 +3582,8 @@ server <- function(input, output, session) {
     invalidateLater(10000,session)
     request_id <- as.character(search_formal_request_id_rv() %||% "")
     if (!nzchar(request_id)) return()
-    run <- tryCatch(w00_formal_recent_run(request_id),error=function(e)e)
+    run <- tryCatch(w00_formal_recent_run(request_id,
+      as.character(search_formal_run_id_rv() %||% "")),error=function(e)e)
     if (inherits(run,"error")) {
       search_formal_monitor_rv(list(error=conditionMessage(run)))
       return()
