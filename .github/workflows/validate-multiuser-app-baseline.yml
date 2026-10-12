@@ -45,6 +45,10 @@ jobs:
           needed <- c("digest","jsonlite")
           missing <- needed[!vapply(needed,requireNamespace,logical(1),quietly=TRUE)]
           if(length(missing)) install.packages(missing)
+      - name: Test blank administrator-editable scoping controls
+        working-directory: multiuser_app
+        shell: bash
+        run: Rscript tests/test_scoping_editable_input.R
       - name: Test canonical W00 source group selection offline
         working-directory: multiuser_app
         shell: bash
