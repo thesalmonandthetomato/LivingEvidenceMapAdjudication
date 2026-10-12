@@ -3174,14 +3174,14 @@ server <- function(input, output, session) {
               actionButton("search_formal_save", "Save draft", class="btn-outline-secondary btn-sm"),
               textOutput("search_formal_draft_message"),
               textOutput("search_formal_validation_message"),
-              if (identical(as.character(current_user()$role %||% ""), "administrator")) tagList(
-                actionButton("search_formal_finalise", "Finalise strategy version", class="btn-primary btn-sm"),
-                textOutput("search_formal_finalisation_message")
-              ),
               uiOutput("search_source_group_controls"),
               textOutput("search_source_selection_preview"),
+              if (identical(as.character(current_user()$role %||% ""), "administrator")) tagList(
+                actionButton("search_formal_finalise", "Finalise strategy version", class="btn-primary btn-sm mt-2"),
+                textOutput("search_formal_finalisation_message")
+              ),
               tags$p(class="saved-note",
-                "Database selection is a preview only; it is not yet stored or dispatched.")
+                "Database selection is a preview only; it is not yet stored or dispatched. Finalising a strategy does not start a search.")
             )
           ),
           tags$details(
@@ -3247,12 +3247,18 @@ server <- function(input, output, session) {
     }
   })
 
+  search_source_selected <- reactive({
+    groups <- search_source_groups_rv()
+    if (is.null(groups)) return(character())
+    unique(unlist(lapply(names(groups),function(id)
+      as.character(input[[paste0("search_group_sources_",id)]] %||% character())),
+      use.names=FALSE))
+  })
+
   output$search_source_selection_preview <- renderText({
     groups <- search_source_groups_rv()
     if (is.null(groups)) return("")
-    resolved <- unique(unlist(lapply(names(groups),function(id)
-      as.character(input[[paste0("search_group_sources_",id)]] %||% character())),
-      use.names=FALSE))
+    resolved <- search_source_selected()
     if(!length(resolved)) return("No databases selected.")
     paste0(length(resolved)," unique W00 database(s): ",paste(resolved,collapse=", "))
   })
@@ -3375,6 +3381,10 @@ server <- function(input, output, session) {
     if (!identical(as.character(current_user()$role),"administrator") ||
         !session_can("run_search_scoping")) return()
     query <- as.character(input$search_formal_text %||% "")
+    if (!length(search_source_selected())) {
+      search_formal_finalisation_message_rv("Cannot finalise: select at least one database.")
+      return()
+    }
     validation <- search_formal_live_validation()
     if (!isTRUE(validation$valid)) {
       search_formal_finalisation_message_rv(paste("Cannot finalise:",validation$message))
