@@ -25,6 +25,7 @@ source("R/search_draft_storage.R", local = TRUE)
 source("R/search_strategy_versions.R", local = TRUE)
 source("R/search_source_selection.R", local = TRUE)
 source("R/manual_ris.R", local = TRUE)
+source("R/manual_search_storage.R", local = TRUE)
 
 queue_path <- Sys.getenv("LEM_W01_QUEUE", unset = "fixtures/w01_real_sample_2.jsonl")
 decision_path <- Sys.getenv("LEM_W01_DECISIONS", unset = "local_state/w01_decisions.jsonl")
@@ -1048,6 +1049,7 @@ server <- function(input, output, session) {
   search_formal_draft_rv <- reactiveVal("")
   search_manual_preview_rv <- reactiveVal(NULL)
   search_manual_status_rv <- reactiveVal("")
+  search_manual_busy_rv <- reactiveVal(FALSE)
   search_formal_validation_rv <- reactiveVal(NULL)
   search_formal_expected_version_rv <- reactiveVal(NULL)
   search_formal_finalisation_message_rv <- reactiveVal("")
@@ -3212,8 +3214,17 @@ server <- function(input, output, session) {
               actionButton("search_manual_check","Check RIS files",class="btn-outline-secondary btn-sm"),
               textOutput("search_manual_message"),
               tableOutput("search_manual_file_preview"),
+              if(identical(as.character(current_user()$role %||% ""),"administrator"))
+                actionButton("search_manual_submit","Publish RIS submission",
+                  class="btn-primary btn-sm",
+                  disabled=if(!nzchar(Sys.getenv("ZENODO_ACCESS_TOKEN",unset=""))) "disabled" else NULL),
               tags$p(class="saved-note",
-                "Publication to restricted Zenodo will be enabled after the review-specific upload credential and archive contract are validated. No files are published at this stage.")
+                if(nzchar(Sys.getenv("ZENODO_ACCESS_TOKEN",unset="")))
+                  "Each submission is published to a separate restricted Zenodo record, with its original RIS files and search manifest."
+                else "Manual publication requires ZENODO_ACCESS_TOKEN in the private Shiny deployment environment."),
+              tags$hr(),
+              downloadButton("download_search_history","Download search history (CSV)",
+                class="btn-outline-secondary btn-sm")
             )
           ),
           tags$details(
@@ -3276,6 +3287,125 @@ server <- function(input, output, session) {
       Records=vapply(x$files,`[[`,integer(1),"records"),
       check.names=FALSE)
   },striped=TRUE)
+
+  observeEvent(input$search_manual_submit,{
+    req(authenticated(),current_user())
+    if(!identical(as.character(current_user()$role),"administrator")) return()
+    if(isTRUE(search_manual_busy_rv())) return()
+    result <- tryCatch(manual_ris_prepare(input$search_manual_files,
+      as.character(input$search_manual_database %||% ""),
+      as.character(input$search_manual_platform %||% ""),
+      as.character(input$search_manual_query %||% ""),
+      as.character(input$search_manual_date %||% ""),
+      suppressWarnings(as.numeric(input$search_manual_reported %||% NA_real_))),
+      error=function(e)e)
+    if(inherits(result,"error")) {
+      search_manual_status_rv(conditionMessage(result))
+      return()
+    }
+    id <- paste0("manual-",format(Sys.time(),"%Y%m%dT%H%M%SZ",tz="UTC"),"-",
+      substr(digest::digest(paste(Sys.time(),result$database,result$search_string),
+        algo="sha256",serialize=FALSE),1L,10L))
+    showModal(modalDialog(title="Confirm restricted RIS publication",
+      tags$p(sprintf("Publish %d RIS file(s), containing %d records, for %s?",
+        length(result$files),result$imported_records,result$database)),
+      tags$p("This creates a new restricted Zenodo record; it cannot be undone automatically."),
+      easyClose=FALSE,
+      footer=tagList(modalButton("Cancel"),
+        actionButton("search_manual_confirm_publish","Confirm publication",
+          class="btn-primary"))))
+    search_manual_preview_rv(list(prepared=result,files=input$search_manual_files,submission_id=id))
+  })
+  observeEvent(input$search_manual_confirm_publish,{
+    req(authenticated(),current_user())
+    if(!identical(as.character(current_user()$role),"administrator") ||
+      isTRUE(search_manual_busy_rv())) return()
+    submission <- search_manual_preview_rv()
+    if(is.null(submission$prepared)) return()
+    search_manual_busy_rv(TRUE)
+    removeModal()
+    on.exit(search_manual_busy_rv(FALSE),add=TRUE)
+    result <- tryCatch({
+      review <- search_formal_review_id()
+      key <- search_strategy_review_key(review)
+      if(nrow(manual_search_registry(key)) &&
+         submission$submission_id %in% manual_search_registry(key)$submission_id)
+        stop("This manual search submission is already registered",call.=FALSE)
+      receipt <- manual_search_zenodo_publish(review,submission$submission_id,
+        submission$prepared,submission$files)
+      p <- submission$prepared
+      row <- list(review_key=key,submission_id=submission$submission_id,
+        database=p$database,platform=p$platform,search_date=p$search_date,
+        search_string=p$search_string,
+        results_reported=if(is.null(p$reported_hits)) "" else as.character(p$reported_hits),
+        records_downloaded=as.character(p$imported_records),
+        file_count=as.character(length(p$files)),
+        files_json=as.character(jsonlite::toJSON(receipt$files,auto_unbox=TRUE)),
+        zenodo_record_id=receipt$zenodo_record_id,
+        zenodo_receipt_json=as.character(jsonlite::toJSON(receipt,auto_unbox=TRUE)),
+        created_at_utc=format(Sys.time(),"%Y-%m-%dT%H:%M:%SZ",tz="UTC"))
+      manual_search_append(row)
+      receipt
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      search_manual_status_rv(paste("Publication or registration failed:",
+        conditionMessage(result),
+        "If a Zenodo draft or publication ID is shown, reconcile it before retrying."))
+    } else {
+      search_manual_status_rv(paste("Restricted Zenodo publication complete:",
+        result$zenodo_record_id,". Search registry updated."))
+      search_manual_preview_rv(NULL)
+    }
+  })
+  output$download_search_history <- downloadHandler(
+    filename=function()sprintf("search-history-%s.csv",format(Sys.Date(),"%Y-%m-%d")),
+    content=function(file) {
+      req(authenticated())
+      review <- search_formal_review_id()
+      key <- search_strategy_review_key(review)
+      manual <- manual_search_registry(key)
+      registry <- w00_monitor_events(key)
+      run_ids <- if(nrow(registry)) as.character(registry$run_id) else character()
+      run_ids <- unique(run_ids[!is.na(run_ids)&grepl("^[0-9]+$",run_ids)])
+      recent <- tryCatch(w00_formal_review_run(),error=function(e)NULL)
+      if(!is.null(recent)) run_ids <- unique(c(run_ids,recent$run_id))
+      rows <- list()
+      add_row <- function(search_id,type,database,platform,date,query,reported,downloaded,
+        count,zenodo,github) {
+        rows[[length(rows)+1L]] <<- data.frame(search_id=search_id,
+          search_type=type,database=database,platform=platform,
+          search_date=date,search_string=query,
+          results_reported=as.character(reported),
+          records_downloaded=as.character(downloaded),
+          file_count=as.character(count),zenodo_record_id=zenodo,
+          github_run_id=github,stringsAsFactors=FALSE)
+      }
+      for(run in run_ids) {
+        records <- manual_search_api_history(run)
+        for(record in records) {
+          name <- search_scope_pretty_source(record$source)
+          platform <- if(grepl(", via ",name,fixed=TRUE))
+            sub("^.*?, via ","",name) else ""
+          database <- sub(", via .*","",name)
+          add_row(paste0("W00:",run,":",record$source),"API",
+            database,platform,record$search_date,record$search_string,
+            record$reported,record$downloaded,"", "",run)
+        }
+      }
+      if(nrow(manual)) for(i in seq_len(nrow(manual))) {
+        x <- manual[i,,drop=FALSE]
+        add_row(as.character(x$submission_id),"manual",
+          as.character(x$database),as.character(x$platform),
+          as.character(x$search_date),as.character(x$search_string),
+          as.character(x$results_reported),as.character(x$records_downloaded),
+          as.character(x$file_count),as.character(x$zenodo_record_id),"")
+      }
+      if(!length(rows))stop("No completed API or manual search history is available",call.=FALSE)
+      out <- do.call(rbind,rows)
+      out <- out[order(out$search_date,out$database),,drop=FALSE]
+      utils::write.csv(out,file,row.names=FALSE,na="")
+    }
+  )
 
   output$search_source_group_controls <- renderUI({
     groups <- search_source_groups_rv()
