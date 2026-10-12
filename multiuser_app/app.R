@@ -1050,6 +1050,8 @@ server <- function(input, output, session) {
   search_manual_preview_rv <- reactiveVal(NULL)
   search_manual_pending_rv <- reactiveVal(NULL)
   search_manual_status_rv <- reactiveVal("")
+  search_manual_success_rv <- reactiveVal(NULL)
+  search_manual_file_reset_rv <- reactiveVal(0L)
   search_manual_busy_rv <- reactiveVal(FALSE)
   search_formal_validation_rv <- reactiveVal(NULL)
   search_formal_expected_version_rv <- reactiveVal(NULL)
@@ -3210,10 +3212,9 @@ server <- function(input, output, session) {
               dateInput("search_manual_date","Date searched",value=Sys.Date(),format="dd-mm-yyyy"),
               textAreaInput("search_manual_query","Database-specific search string",rows=5),
               numericInput("search_manual_reported","Hits reported (optional)",value=NA,min=0,step=1),
-              fileInput("search_manual_files","RIS exports (multiple files for one search)",
-                multiple=TRUE,accept=c(".ris")),
+              uiOutput("search_manual_files_control"),
               actionButton("search_manual_check","Check RIS files",class="btn-outline-secondary btn-sm"),
-              textOutput("search_manual_message"),
+              uiOutput("search_manual_message"),
               tableOutput("search_manual_file_preview"),
               if(identical(as.character(current_user()$role %||% ""),"administrator"))
                 actionButton("search_manual_submit","Publish RIS submission",
@@ -3261,6 +3262,12 @@ server <- function(input, output, session) {
     }
   })
 
+  output$search_manual_files_control <- renderUI({
+    search_manual_file_reset_rv()
+    fileInput("search_manual_files","RIS exports (multiple files for one search)",
+      multiple=TRUE,accept=c(".ris"))
+  })
+
   observeEvent(input$search_manual_check,{
     req(authenticated())
     if(!session_can("run_search_scoping")) return()
@@ -3280,7 +3287,20 @@ server <- function(input, output, session) {
         length(result$files),result$imported_records))
     }
   })
-  output$search_manual_message <- renderText(search_manual_status_rv())
+  output$search_manual_message <- renderUI({
+    success <- search_manual_success_rv()
+    if(!is.null(success)) return(
+      div(class="alert alert-success mt-3",role="status",
+        tags$strong("RIS upload successful"),
+        tags$p(sprintf("%s: %s records across %s RIS files published to restricted Zenodo.",
+          success$database,format(success$records,big.mark=","),
+          success$file_count),class="mb-1"),
+        tags$p(tags$a(href=success$url,target="_blank",rel="noopener noreferrer",
+          paste("View Zenodo record",success$record_id)),class="mb-0")
+      ))
+    message <- search_manual_status_rv()
+    if(nzchar(message)) tags$p(class="saved-note",message) else NULL
+  })
   output$search_manual_file_preview <- renderTable({
     x <- search_manual_preview_rv()
     if(is.null(x)) return(NULL)
@@ -3291,6 +3311,7 @@ server <- function(input, output, session) {
 
   observeEvent(input$search_manual_submit,{
     req(authenticated(),current_user())
+    search_manual_success_rv(NULL)
     if(!identical(as.character(current_user()$role),"administrator")) return()
     if(isTRUE(search_manual_busy_rv())) return()
     result <- tryCatch(manual_ris_prepare(input$search_manual_files,
@@ -3349,14 +3370,27 @@ server <- function(input, output, session) {
       receipt
     },error=function(e)e)
     if(inherits(result,"error")) {
+      search_manual_success_rv(NULL)
       search_manual_status_rv(paste("Publication or registration failed:",
         conditionMessage(result),
         "If a Zenodo draft or publication ID is shown, reconcile it before retrying."))
     } else {
-      search_manual_status_rv(paste("Restricted Zenodo publication complete:",
-        result$zenodo_record_id,". Search registry updated."))
+      search_manual_status_rv("")
+      search_manual_success_rv(list(
+        database=submission$prepared$database,
+        records=submission$prepared$imported_records,
+        file_count=length(submission$prepared$files),
+        record_id=result$zenodo_record_id,url=result$record_url))
+      updateTextInput(session,"search_manual_database",value="")
+      updateTextInput(session,"search_manual_platform",value="")
+      updateDateInput(session,"search_manual_date",value=Sys.Date())
+      updateTextAreaInput(session,"search_manual_query",value="")
+      updateNumericInput(session,"search_manual_reported",value=NA_real_)
+      search_manual_file_reset_rv(isolate(search_manual_file_reset_rv())+1L)
       search_manual_preview_rv(NULL)
       search_manual_pending_rv(NULL)
+      showNotification("RIS upload successful. Fields cleared for the next search.",
+        type="message",duration=10)
     }
   })
   output$download_search_history <- downloadHandler(
