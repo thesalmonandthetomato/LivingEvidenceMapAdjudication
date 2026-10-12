@@ -1048,6 +1048,7 @@ server <- function(input, output, session) {
   search_formal_validation_rv <- reactiveVal(NULL)
   search_formal_expected_version_rv <- reactiveVal(NULL)
   search_formal_finalisation_message_rv <- reactiveVal("")
+  search_formal_launched_rv <- reactiveVal(FALSE)
   search_formal_loaded_key_rv <- reactiveVal("")
   search_formal_draft_message_rv <- reactiveVal("")
   search_source_groups_rv <- reactiveVal(NULL)
@@ -3177,11 +3178,11 @@ server <- function(input, output, session) {
               uiOutput("search_source_group_controls"),
               textOutput("search_source_selection_preview"),
               if (identical(as.character(current_user()$role %||% ""), "administrator")) tagList(
-                actionButton("search_formal_finalise", "Finalise strategy version", class="btn-primary btn-sm mt-2"),
+                if (!search_formal_launched_rv()) actionButton("search_formal_start", "Start search", class="btn-primary btn-sm mt-2"),
                 textOutput("search_formal_finalisation_message")
               ),
               tags$p(class="saved-note",
-                "Database selection is a preview only; it is not yet stored or dispatched. Finalising a strategy does not start a search.")
+                "Start search validates the query and database selection, saves the strategy version, and launches W00 on the development main branch.")
             )
           ),
           tags$details(
@@ -3376,18 +3377,45 @@ server <- function(input, output, session) {
     search_boolean_validate(as.character(input$search_formal_text %||% ""))
   })
 
-  observeEvent(input$search_formal_finalise, {
+  observeEvent(input$search_formal_start, {
     req(authenticated(),current_user())
     if (!identical(as.character(current_user()$role),"administrator") ||
-        !session_can("run_search_scoping")) return()
+        !session_can("run_search_scoping") || search_formal_launched_rv()) return()
     query <- as.character(input$search_formal_text %||% "")
-    if (!length(search_source_selected())) {
-      search_formal_finalisation_message_rv("Cannot finalise: select at least one database.")
-      return()
-    }
     validation <- search_formal_live_validation()
     if (!isTRUE(validation$valid)) {
-      search_formal_finalisation_message_rv(paste("Cannot finalise:",validation$message))
+      search_formal_finalisation_message_rv(paste("Cannot start:",validation$message))
+      return()
+    }
+    sources <- search_source_selected()
+    if (!length(sources)) {
+      search_formal_finalisation_message_rv("Cannot start: select at least one database.")
+      return()
+    }
+    showModal(modalDialog(
+      title="Confirm full database search",
+      tags$p("Start a new full W00 search using the currently entered search string and these databases?"),
+      tags$p(paste(sources,collapse=", ")),
+      tags$p("This will call live database APIs. W01 will not be dispatched automatically."),
+      easyClose=TRUE,
+      footer=tagList(modalButton("Cancel"),
+        actionButton("search_formal_confirm_start","Confirm and start search",class="btn-primary"))
+    ))
+  })
+
+  observeEvent(input$search_formal_confirm_start, {
+    req(authenticated(),current_user())
+    removeModal()
+    if (!identical(as.character(current_user()$role),"administrator") ||
+        !session_can("run_search_scoping") || search_formal_launched_rv()) return()
+    query <- as.character(input$search_formal_text %||% "")
+    if (!isTRUE(search_boolean_validate(query)$valid)) {
+      search_formal_finalisation_message_rv("Search string changed or is invalid. Review it and start again.")
+      return()
+    }
+    sources <- search_source_selected()
+    if (!length(sources)) {
+      search_formal_finalisation_message_rv("Select at least one database.")
       return()
     }
     review <- tryCatch(search_formal_review_id(),error=function(e)e)
@@ -3395,21 +3423,46 @@ server <- function(input, output, session) {
       search_formal_finalisation_message_rv(paste("Cannot resolve review storage:",conditionMessage(review)))
       return()
     }
-    version <- tryCatch(nrow(search_strategy_versions(search_strategy_review_key(review))),
-      error=function(e)e)
-    if (inherits(version,"error")) {
-      search_formal_finalisation_message_rv(paste("Cannot read strategy history:",conditionMessage(version)))
+    existing <- tryCatch(search_strategy_versions(search_strategy_review_key(review)),error=function(e)e)
+    if (inherits(existing,"error")) {
+      search_formal_finalisation_message_rv(paste("Cannot read strategy history:",conditionMessage(existing)))
       return()
     }
-    outcome <- tryCatch({
-      search_review_require_sole_admin(user_registry_rv(),as.character(current_user()$user_id))
-      search_strategy_finalise(search_strategy_review_key(review),query,
-        as.character(current_user()$user_id),expected_version=as.integer(version))
-    },error=function(e)e)
-    if (inherits(outcome,"error")) {
-      search_formal_finalisation_message_rv(paste("Finalisation not confirmed:",conditionMessage(outcome)))
+    query_hash <- digest::digest(query,algo="sha256",serialize=FALSE)
+    last_hash <- if(nrow(existing)) as.character(tail(existing$strategy_sha256,1L)) else ""
+    # Reuse an already-finalised identical search; never append it twice.
+    if (!identical(query_hash,last_hash)) {
+      saved <- tryCatch({
+        search_review_require_sole_admin(user_registry_rv(),as.character(current_user()$user_id))
+        search_strategy_finalise(search_strategy_review_key(review),query,
+          as.character(current_user()$user_id),expected_version=nrow(existing))
+      },error=function(e)e)
+      if (inherits(saved,"error")) {
+        search_formal_finalisation_message_rv(paste("Cannot save strategy:",conditionMessage(saved)))
+        return()
+      }
     } else {
-      search_formal_finalisation_message_rv(paste("Strategy version",outcome$version,"finalised and verified. No search launched."))
+      authorised <- tryCatch(
+        search_review_require_sole_admin(user_registry_rv(),as.character(current_user()$user_id)),
+        error=function(e)e)
+      if (inherits(authorised,"error")) {
+        search_formal_finalisation_message_rv(paste("Not authorised:",conditionMessage(authorised)))
+        return()
+      }
+    }
+    request_id <- paste0("formal-",format(Sys.time(),tz="UTC",format="%Y%m%dT%H%M%SZ"),"-",
+      substr(digest::digest(paste(review,query_hash,paste(sort(sources),collapse=","),sep="|"),
+        algo="sha256",serialize=FALSE),1L,10L))
+    outcome <- tryCatch(dispatch_w00_formal(query,sources,request_id),error=function(e)e)
+    if (inherits(outcome,"error")) {
+      search_formal_finalisation_message_rv(paste("W00 launch not confirmed:",conditionMessage(outcome),
+        "Check GitHub Actions before trying again."))
+    } else {
+      search_formal_launched_rv(TRUE)
+      search_formal_finalisation_message_rv(paste(
+        "W00 full search dispatch accepted for",length(sources),"databases.",
+        "Check LivingEvidenceMap Actions → Workflow 00 - Search orchestrator (main).",
+        "No W01 dispatch requested."))
     }
   })
 
