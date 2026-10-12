@@ -1594,37 +1594,36 @@ server <- function(input, output, session) {
   }
 
   pipeline_summary_ui <- function() {
-    if(identical(storage_backend(),"google_sheets")) {
+    review_mode <- identical(storage_backend(),"google_sheets")
+    if(review_mode) {
       counts <- search_formal_counts_rv()
-      api <- if(length(counts)) sum(vapply(counts,function(x)
-        as.numeric(x$downloaded),numeric(1)),na.rm=TRUE) else NA_real_
-      manual <- search_manual_history_data()
-      manual_count <- if(inherits(manual,"error")) NA_real_ else
-        if(nrow(manual)) sum(suppressWarnings(as.numeric(manual$records_downloaded)),
-          na.rm=TRUE) else 0
       m <- search_formal_monitor_rv()
-      verified <- !is.null(m) && identical(as.character(m$conclusion %||% ""),"success") &&
+      verified <- !is.null(m) &&
+        identical(as.character(m$conclusion %||% ""),"success") &&
         identical(as.character(m$status %||% ""),"completed")
-      title <- if(verified) "W00 search completed" else "W00 review search status"
-      figure <- function(label,value) div(class="pipeline-kpi",
-        tags$span(class="pipeline-kpi-label",label),
-        tags$span(class="pipeline-kpi-value",
-          if(is.na(value)) "—" else format(value,big.mark=",",scientific=FALSE)))
-      return(div(class="pipeline-summary",
-        div(class="pipeline-summary-top",
-          tags$strong(title),
-          tags$span(class="text-secondary small ms-2",
-            "Review-specific figures; before deduplication")),
-        div(class="pipeline-kpis",
-          figure("API records retrieved",api),
-          figure("Manual RIS records",manual_count),
-          figure("Combined records",if(verified && !is.na(api) && !is.na(manual_count))
-            api+manual_count else NA_real_)),
-        tags$p(class="saved-note",
-          "W01–W10 figures are not yet available for this review. Legacy salmon-farming figures are excluded.")
-      ))
-    }
+      source_jobs <- if(is.null(m)) list() else Filter(function(j)
+        grepl("^search-sources \\([^)]+\\) / search$",
+          as.character(j$name %||% "")),m$jobs %||% list())
+      sources <- vapply(source_jobs,function(j)
+        sub("^search-sources \\(([^)]+)\\) / search$","\\1",
+          as.character(j$name %||% "")),character(1))
+      api_complete <- verified && length(sources)>0L &&
+        all(vapply(sources,function(source)!is.null(counts[[source]]),logical(1)))
+      manual <- search_manual_history_data()
+      manual_values <- if(inherits(manual,"error")) NA_real_ else if(nrow(manual))
+        suppressWarnings(as.numeric(manual$records_downloaded)) else numeric()
+      manual_complete <- all(is.finite(manual_values))
+      total <- if(api_complete && manual_complete) {
+        sum(vapply(sources,function(source)as.numeric(counts[[source]]$downloaded),
+          numeric(1)))+sum(manual_values)
+      } else NA_real_
+      p <- list(status_label=if(verified) "W00 completed" else "W00 pending",
+        update_id=if(!is.null(m)) as.character(m$id %||% "") else "",
+        last_search_date="",completed_through=if(verified) 1L else 0L,
+        active_workflow="",search_results_total=total)
+    } else {
     p <- pipeline_status_rv()
+    }
     if(is.null(p)) {
       return(div(
         class="pipeline-summary",
@@ -1639,7 +1638,7 @@ server <- function(input, output, session) {
     status_label <- tolower(trimws(as.character(p$status_label %||% "")))
     update_finalised <- is.na(active) &&
       grepl("(^|\\b)(complete|completed|final|finalised|finalized)(\\b|$)", status_label)
-    w08_finalised <- w08_status_is_final(p)
+    w08_finalised <- !review_mode && w08_status_is_final(p)
     w08_authoritative <- authoritative_w08_rv()
     canonical_current <- w08_finalised &&
       !is.null(w08_authoritative) &&
@@ -1727,7 +1726,7 @@ server <- function(input, output, session) {
           inline_note=if(stage_complete(4L)) fmt_pipeline_delta(p$retracted_update) else NULL
         ),
         {
-          m <- manual_screening_rv()
+          m <- if(review_mode) NULL else manual_screening_rv()
           kpi(
             "Manually screened",
             if(is.null(m)) "—" else fmt_pipeline_n(m$manually_screened),
@@ -1744,7 +1743,7 @@ server <- function(input, output, session) {
           compact_value=TRUE
         ),
         kpi(
-          "Species",
+          "Deterministic",
           fmt_pipeline_n(p$species_records),
           "records processed",
           stage_position=6L,
@@ -1769,9 +1768,9 @@ server <- function(input, output, session) {
         kpi(
           "Canonical database",
           fmt_pipeline_n(canonical_value),
-          if (isTRUE(canonical_current)) "current" else "pre-update",
+          if (isTRUE(canonical_current)) "current" else if(review_mode) NULL else "pre-update",
           stage_position=9L,
-          class_extra=if (isTRUE(canonical_current)) NULL else "pre-update"
+          class_extra=if (isTRUE(canonical_current) || review_mode) NULL else "pre-update"
         )
       ),
       div(class="workflow-line",segs),
