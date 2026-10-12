@@ -348,7 +348,9 @@ read_w00_formal_record_artifact <- function(artifact) {
   downloaded <- suppressWarnings(as.integer(record$successfully_downloaded_results))
   if(!grepl("^[a-z][a-z0-9_]*$",source) || is.na(reported) || is.na(downloaded))
     stop("Invalid W00 record counts",call.=FALSE)
-  list(source=source,reported=reported,downloaded=downloaded)
+  list(source=source,reported=reported,downloaded=downloaded,
+    search_string=as.character(record$search_string %||% ""),
+    search_date=substr(as.character(record$recorded_at_utc %||% ""),1L,10L))
 }
 
 read_w00_scoping_count_artifact <- function(artifact) {
