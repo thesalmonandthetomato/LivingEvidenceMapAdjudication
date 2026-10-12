@@ -3238,17 +3238,48 @@ server <- function(input, output, session) {
   output$search_source_group_controls <- renderUI({
     groups <- search_source_groups_rv()
     if (is.null(groups)) return(tags$p(class="saved-note",search_source_error_rv()))
-    checkboxGroupInput("search_source_group_ids","Database groups",
-      choices=search_source_groups_choices(groups),selected=character())
+    tagList(
+      tags$h6("Database groups"),
+      lapply(names(groups),function(id) {
+        group <- groups[[id]]
+        ids <- unlist(group$sources,use.names=FALSE)
+        tags$details(
+          class="assignment-disclosure border rounded mb-2",
+          tags$summary(class="p-2 fw-semibold",as.character(group$display_name)),
+          div(class="px-3 pb-2",
+            checkboxInput(paste0("search_group_all_",id),"Select all in this group",FALSE),
+            checkboxGroupInput(paste0("search_group_sources_",id),NULL,
+              choices=stats::setNames(ids,ids),selected=character())
+          )
+        )
+      })
+    )
+  })
+
+  observe({
+    groups <- search_source_groups_rv()
+    req(authenticated(),groups)
+    for(id in names(groups)) {
+      local({
+        group_id <- id
+        source_ids <- unlist(groups[[group_id]]$sources,use.names=FALSE)
+        observeEvent(input[[paste0("search_group_all_",group_id)]], {
+          chosen <- isTRUE(input[[paste0("search_group_all_",group_id)]])
+          updateCheckboxGroupInput(session,paste0("search_group_sources_",group_id),
+            selected=if(chosen) source_ids else character())
+        },ignoreInit=TRUE)
+      })
+    }
   })
 
   output$search_source_selection_preview <- renderText({
     groups <- search_source_groups_rv()
     if (is.null(groups)) return("")
-    selected <- as.character(input$search_source_group_ids %||% character())
-    resolved <- search_source_groups_resolve(groups,selected)
-    if(!length(resolved)) return("No database groups selected.")
-    paste0(length(resolved)," unique W00 source(s): ",paste(resolved,collapse=", "))
+    resolved <- unique(unlist(lapply(names(groups),function(id)
+      as.character(input[[paste0("search_group_sources_",id)]] %||% character())),
+      use.names=FALSE))
+    if(!length(resolved)) return("No databases selected.")
+    paste0(length(resolved)," unique W00 database(s): ",paste(resolved,collapse=", "))
   })
 
   observeEvent(input$search_scope_finalise_to_searching, {
