@@ -23,6 +23,7 @@ source("R/github_dispatch.R", local = TRUE)
 source("R/search_boolean_validation.R", local = TRUE)
 source("R/search_draft_storage.R", local = TRUE)
 source("R/search_strategy_versions.R", local = TRUE)
+source("R/search_source_selection.R", local = TRUE)
 
 queue_path <- Sys.getenv("LEM_W01_QUEUE", unset = "fixtures/w01_real_sample_2.jsonl")
 decision_path <- Sys.getenv("LEM_W01_DECISIONS", unset = "local_state/w01_decisions.jsonl")
@@ -1049,6 +1050,8 @@ server <- function(input, output, session) {
   search_formal_finalisation_message_rv <- reactiveVal("")
   search_formal_loaded_key_rv <- reactiveVal("")
   search_formal_draft_message_rv <- reactiveVal("")
+  search_source_groups_rv <- reactiveVal(NULL)
+  search_source_error_rv <- reactiveVal("")
   search_scope_status_rv <- reactiveVal("")
   search_scope_request_id_rv <- reactiveVal("")
   search_scope_run_id_rv <- reactiveVal("")
@@ -3200,8 +3203,10 @@ server <- function(input, output, session) {
                 actionButton("search_formal_finalise", "Finalise strategy version", class="btn-primary btn-sm"),
                 textOutput("search_formal_finalisation_message")
               ),
+              uiOutput("search_source_group_controls"),
+              textOutput("search_source_selection_preview"),
               tags$p(class="saved-note",
-                "Editable draft only. No strategy has been finalised, saved or dispatched.")
+                "Database selection is a preview only; it is not yet stored or dispatched.")
             )
           ),
           tags$details(
@@ -3213,6 +3218,37 @@ server <- function(input, output, session) {
         )
       )
     )
+  })
+
+  observe({
+    req(authenticated())
+    if (!session_can("run_search_scoping")) return()
+    if (!is.null(search_source_groups_rv())) return()
+    cfg <- tryCatch(
+      search_source_groups_parse(read_github_text_file("config/workflow00_source_groups.json")),
+      error=function(e)e)
+    if (inherits(cfg,"error")) {
+      search_source_error_rv(paste("Unable to load W00 source groups:",conditionMessage(cfg)))
+    } else {
+      search_source_groups_rv(cfg)
+      search_source_error_rv("")
+    }
+  })
+
+  output$search_source_group_controls <- renderUI({
+    groups <- search_source_groups_rv()
+    if (is.null(groups)) return(tags$p(class="saved-note",search_source_error_rv()))
+    checkboxGroupInput("search_source_group_ids","Database groups",
+      choices=search_source_groups_choices(groups),selected=character())
+  })
+
+  output$search_source_selection_preview <- renderText({
+    groups <- search_source_groups_rv()
+    if (is.null(groups)) return("")
+    selected <- as.character(input$search_source_group_ids %||% character())
+    resolved <- search_source_groups_resolve(groups,selected)
+    if(!length(resolved)) return("No database groups selected.")
+    paste0(length(resolved)," unique W00 source(s): ",paste(resolved,collapse=", "))
   })
 
   observeEvent(input$search_scope_finalise_to_searching, {
