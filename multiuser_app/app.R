@@ -21,6 +21,7 @@ source("R/storage_backend.R", local = TRUE)
 source("R/auth.R", local = TRUE)
 source("R/github_dispatch.R", local = TRUE)
 source("R/search_boolean_validation.R", local = TRUE)
+source("R/search_draft_storage.R", local = TRUE)
 
 queue_path <- Sys.getenv("LEM_W01_QUEUE", unset = "fixtures/w01_real_sample_2.jsonl")
 decision_path <- Sys.getenv("LEM_W01_DECISIONS", unset = "local_state/w01_decisions.jsonl")
@@ -1043,6 +1044,8 @@ server <- function(input, output, session) {
   search_scope_string_rv <- reactiveVal("")
   search_formal_draft_rv <- reactiveVal("")
   search_formal_validation_rv <- reactiveVal(NULL)
+  search_formal_loaded_key_rv <- reactiveVal("")
+  search_formal_draft_message_rv <- reactiveVal("")
   search_scope_status_rv <- reactiveVal("")
   search_scope_request_id_rv <- reactiveVal("")
   search_scope_run_id_rv <- reactiveVal("")
@@ -3185,6 +3188,8 @@ server <- function(input, output, session) {
                 value=search_formal_draft_rv(), rows=8, width="100%"),
               fileInput("search_formal_upload", "Upload search string (.txt)",
                 accept=c(".txt","text/plain")),
+              actionButton("search_formal_save", "Save draft", class="btn-outline-secondary btn-sm"),
+              textOutput("search_formal_draft_message"),
               actionButton("search_formal_validate", "Validate Boolean syntax",
                 class="btn-outline-primary btn-sm"),
               textOutput("search_formal_validation_message"),
@@ -3215,6 +3220,50 @@ server <- function(input, output, session) {
     search_formal_validation_rv(NULL)
     updateTextAreaInput(session, "search_formal_text", value=query)
     showNotification("Scoping query copied to Searching as an editable draft.", type="message")
+  })
+
+  search_formal_key <- function() {
+    u <- current_user()
+    if (is.null(u)) return("")
+    review_id <- Sys.getenv("LEM_SEARCH_REVIEW_ID",unset="")
+    if (!nzchar(review_id)) return("")
+    search_draft_key(review_id,as.character(u$user_id))
+  }
+
+  observe({
+    req(authenticated(),current_user())
+    key <- search_formal_key()
+    if (!nzchar(key)) {
+      search_formal_draft_message_rv("Draft persistence requires LEM_SEARCH_REVIEW_ID.")
+      return()
+    }
+    if (identical(search_formal_loaded_key_rv(),key)) return()
+    record <- tryCatch(search_draft_read(key),error=function(e)e)
+    if (inherits(record,"error")) {
+      search_formal_draft_message_rv(paste("Unable to restore draft:",conditionMessage(record)))
+      return()
+    }
+    search_formal_loaded_key_rv(key)
+    if (is.null(record)) return()
+    query <- as.character(record$search_string[[1L]])
+    search_formal_draft_rv(query)
+    search_formal_validation_rv(NULL)
+    updateTextAreaInput(session,"search_formal_text",value=query)
+    search_formal_draft_message_rv("Saved draft restored.")
+  })
+
+  observeEvent(input$search_formal_save, {
+    req(authenticated(),current_user())
+    if (!session_can("run_search_scoping")) return()
+    key <- search_formal_key()
+    if (!nzchar(key)) {
+      search_formal_draft_message_rv("Draft not saved: configure LEM_SEARCH_REVIEW_ID.")
+      return()
+    }
+    value <- as.character(input$search_formal_text %||% "")
+    result <- tryCatch(search_draft_save(key,value),error=function(e)e)
+    search_formal_draft_message_rv(if(inherits(result,"error"))
+      paste("Draft not confirmed:",conditionMessage(result)) else "Draft saved and verified.")
   })
 
   observeEvent(input$search_formal_text, {
