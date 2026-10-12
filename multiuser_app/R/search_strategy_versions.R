@@ -90,3 +90,19 @@ search_strategy_finalise <- function(review_key, search_string, created_by, expe
     stop("Finalisation write could not be verified; do not retry blindly.",call.=FALSE)
   row
 }
+
+# Each deployed review has one user registry. Require precisely one active
+# administrator for configuration finalisation without changing adjudication roles.
+search_review_require_sole_admin <- function(users, actor_id) {
+  validate_user_registry(users)
+  admins <- Filter(function(u) {
+    u <- normalise_user_row(u)
+    identical(u$role,"administrator") && isTRUE(u$active)
+  },users)
+  ids <- vapply(admins,function(u) as.character(normalise_user_row(u)$user_id),character(1))
+  if(length(ids)!=1L)
+    stop("Search finalisation requires exactly one active administrator for this review.",call.=FALSE)
+  if(!identical(as.character(actor_id),ids[[1L]]))
+    stop("Only the review administrator can finalise a search strategy.",call.=FALSE)
+  invisible(TRUE)
+}
