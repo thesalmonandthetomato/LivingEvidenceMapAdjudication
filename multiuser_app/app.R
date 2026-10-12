@@ -3151,8 +3151,14 @@ server <- function(input, output, session) {
           ),
           uiOutput("search_scope_progress"),
           uiOutput("search_scope_table"),
-          uiOutput("search_scope_report_download"),
-          if (isTRUE(counts_resolved)) actionButton("search_scope_finalise_to_searching", "Finalise search string", class="btn-outline-primary btn-sm mt-2")
+          div(
+            class="d-flex align-items-center flex-wrap gap-2 mt-3",
+            uiOutput("search_scope_report_download"),
+            if (isTRUE(counts_resolved)) actionButton(
+              "search_scope_finalise_to_searching", "Finalise search string",
+              class="btn-outline-primary btn-sm"
+            )
+          )
             )
           ),
           tags$details(
@@ -3511,7 +3517,7 @@ server <- function(input, output, session) {
     downloadButton(
       "download_search_scope_report",
       "Download scoping report",
-      class="btn-outline-secondary btn-sm mt-3"
+      class="btn-outline-secondary btn-sm"
     )
   })
 
@@ -3562,12 +3568,44 @@ server <- function(input, output, session) {
         sprintf("Scoping date: %s",format(Sys.Date(),"%d-%m-%Y")),
         adj=c(0,1),family="sans",cex=0.9
       )
-      graphics::text(
-        0.06,0.865,
+      # Fit text to the actual graphics device width, rather than an
+      # estimated character count (which can overflow in the PDF).
+      fit_pdf_lines <- function(text, max_width=0.88, family="sans", cex=0.82) {
+        words <- unlist(strsplit(as.character(text), "[[:space:]]+"))
+        words <- words[nzchar(words)]
+        lines <- character()
+        line <- ""
+        for (word in words) {
+          proposal <- if(nzchar(line)) paste(line,word) else word
+          if (graphics::strwidth(proposal,units="user",family=family,cex=cex) <= max_width) {
+            line <- proposal
+          } else {
+            if(nzchar(line)) lines <- c(lines,line)
+            line <- ""
+            # Break exceptionally long unspaced tokens as well.
+            for(ch in strsplit(word,"",fixed=TRUE)[[1L]]) {
+              if(nzchar(line) &&
+                 graphics::strwidth(paste0(line,ch),units="user",family=family,cex=cex)>max_width) {
+                lines <- c(lines,line)
+                line <- ""
+              }
+              line <- paste0(line,ch)
+            }
+          }
+        }
+        if(nzchar(line)) lines <- c(lines,line)
+        lines
+      }
+      intro <- fit_pdf_lines(
         "This report records count-only scoping searches. No bibliographic records or raw API responses were retained.",
-        adj=c(0,1),family="sans",cex=0.82
+        family="sans",cex=0.82
       )
-      y <- 0.81
+      intro_y <- 0.865
+      for(line in intro) {
+        graphics::text(0.06,intro_y,line,adj=c(0,1),family="sans",cex=0.82)
+        intro_y <- intro_y-0.025
+      }
+      y <- intro_y-0.055
       original <- as.character(versions[["original"]])
 
       for (v in names(versions)) {
@@ -3578,7 +3616,7 @@ server <- function(input, output, session) {
         }
         graphics::text(0.06,y,heading,adj=c(0,1),family="sans",font=2,cex=1.02)
         y <- y-0.035
-        q_lines <- unlist(strwrap(as.character(versions[[v]]),width=105),use.names=FALSE)
+        q_lines <- fit_pdf_lines(versions[[v]],family="mono",cex=0.68)
         for (line in q_lines) {
           if (y < 0.10) {
             graphics::plot.new()
@@ -3589,7 +3627,7 @@ server <- function(input, output, session) {
           y <- y-0.022
         }
         if (!identical(v,"original")) {
-          diff_lines <- unlist(strwrap(search_scope_change_summary(original,versions[[v]]),width=100),use.names=FALSE)
+          diff_lines <- fit_pdf_lines(search_scope_change_summary(original,versions[[v]]),family="sans",cex=0.72)
           y <- y-0.006
           for (line in diff_lines) {
             graphics::text(0.06,y,line,adj=c(0,1),family="sans",cex=0.72,col="red3")
