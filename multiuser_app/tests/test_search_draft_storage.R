@@ -1,0 +1,20 @@
+source("R/search_draft_storage.R")
+storage_backend <- function() "local"
+path <- tempfile(fileext=".jsonl")
+Sys.setenv(LEM_SEARCH_DRAFT_LOG=path)
+on.exit(unlink(path),add=TRUE)
+key_a <- search_draft_key("review-1","user-a")
+key_b <- search_draft_key("review-1","user-b")
+key_c <- search_draft_key("review-2","user-a")
+stopifnot(length(unique(c(key_a,key_b,key_c)))==3L)
+stopifnot(is.null(search_draft_read(key_a)))
+search_draft_save(key_a,"salmon AND farm*")
+search_draft_save(key_b,"tomato OR pepper")
+search_draft_save(key_a,"salmon AND feed")
+stopifnot(identical(as.character(search_draft_read(key_a)$search_string[[1L]]),
+                    "salmon AND feed"))
+stopifnot(identical(as.character(search_draft_read(key_b)$search_string[[1L]]),
+                    "tomato OR pepper"))
+stopifnot(is.null(search_draft_read(key_c)))
+stopifnot(inherits(try(search_draft_key("","user-a"),silent=TRUE),"try-error"))
+cat("PASS: offline search draft save/restore, append ordering and user/review isolation\n")
