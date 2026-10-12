@@ -3400,12 +3400,18 @@ server <- function(input, output, session) {
       review <- search_formal_review_id()
       key <- search_strategy_review_key(review)
       manual <- manual_search_registry(key)
-      registry <- w00_monitor_events(key)
+      registry <- tryCatch(w00_monitor_events(key),error=function(e)e)
+      if(inherits(registry,"error")) {
+        showNotification(paste("Monitoring history could not be read:",conditionMessage(registry)),
+          type="warning",duration=12)
+        registry <- data.frame()
+      }
       run_ids <- if(nrow(registry)) as.character(registry$run_id) else character()
       run_ids <- unique(run_ids[!is.na(run_ids)&grepl("^[0-9]+$",run_ids)])
       recent <- tryCatch(w00_formal_review_run(),error=function(e)NULL)
       if(!is.null(recent)) run_ids <- unique(c(run_ids,recent$run_id))
       rows <- list()
+      omissions <- character()
       add_row <- function(search_id,type,database,platform,date,query,reported,downloaded,
         count,zenodo,github) {
         rows[[length(rows)+1L]] <<- data.frame(search_id=search_id,
@@ -3417,7 +3423,17 @@ server <- function(input, output, session) {
           github_run_id=github,stringsAsFactors=FALSE)
       }
       for(run in run_ids) {
-        records <- manual_search_api_history(run)
+        run_info <- tryCatch(w00_formal_recent_run("",run),error=function(e)e)
+        if(inherits(run_info,"error") || is.null(run_info) ||
+          !identical(as.character(run_info$conclusion %||% ""),"success")) {
+          omissions <- c(omissions,paste0("W00 run ",run," (not confirmed successful)"))
+          next
+        }
+        records <- tryCatch(manual_search_api_history(run),error=function(e)e)
+        if(inherits(records,"error")) {
+          omissions <- c(omissions,paste0("W00 run ",run,": ",conditionMessage(records)))
+          next
+        }
         for(record in records) {
           name <- search_scope_pretty_source(record$source)
           platform <- if(grepl(", via ",name,fixed=TRUE))
@@ -3436,7 +3452,13 @@ server <- function(input, output, session) {
           as.character(x$results_reported),as.character(x$records_downloaded),
           as.character(x$file_count),as.character(x$zenodo_record_id),"")
       }
-      if(!length(rows))stop("No completed API or manual search history is available",call.=FALSE)
+      if(length(omissions)) showNotification(
+        paste("Search history CSV omits unavailable or unsuccessful runs:",
+          paste(omissions,collapse="; ")),type="warning",duration=20)
+      if(!length(rows))stop(paste(
+        "No completed API or manual search records are available.",
+        if(length(omissions)) paste("Unavailable:",paste(omissions,collapse="; ")) else ""),
+        call.=FALSE)
       out <- do.call(rbind,rows)
       out <- out[order(out$search_date,out$database),,drop=FALSE]
       utils::write.csv(out,file,row.names=FALSE,na="")
@@ -3942,7 +3964,29 @@ server <- function(input, output, session) {
                 count <- search_formal_counts_rv()[[source_id]]
                 if(is.null(count)) "—" else format(as.integer(count$downloaded),big.mark=",",scientific=FALSE)
               }))
-          }))
+          })),
+          tags$tfoot(tags$tr(class="fw-semibold",
+            tags$td("Total"),
+            tags$td(sprintf("%d of %d databases with retrieval counts",
+              sum(vapply(source_jobs,function(j) {
+                source_id <- sub("^search-sources \\(([^)]+)\\) / search$","\\1",
+                  as.character(j$name %||% ""))
+                !is.null(search_formal_counts_rv()[[source_id]])
+              },logical(1))),n_total)),
+            tags$td({
+              counts <- search_formal_counts_rv()
+              sources <- vapply(source_jobs,function(j)
+                sub("^search-sources \\(([^)]+)\\) / search$","\\1",
+                  as.character(j$name %||% "")),character(1))
+              values <- vapply(sources,function(source) {
+                x <- counts[[source]]
+                if(is.null(x)) return(NA_real_)
+                as.numeric(x$downloaded)
+              },numeric(1))
+              if(all(is.na(values))) "—"
+              else format(sum(values,na.rm=TRUE),big.mark=",",scientific=FALSE)
+            })
+          ))
         ))
       else if(run_finished) tags$p(class="saved-note",
         "No database jobs were started. Check the failed preparation step in GitHub Actions.")
