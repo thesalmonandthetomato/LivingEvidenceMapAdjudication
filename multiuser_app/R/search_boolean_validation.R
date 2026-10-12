@@ -53,7 +53,7 @@ search_boolean_validate <- function(value) {
       depth <- depth-1L
       if (depth < 0L) return(fail(sprintf("Unexpected ')' at character %d.",pos)))
       expecting_operand <- FALSE
-    } else if (token %in% c("AND","OR","NOT")) {
+    } else if (op %in% c("AND","OR","NOT")) {
       if (op == "NOT") {
         if (!expecting_operand) return(fail(sprintf("Missing operator before NOT at character %d.",pos)))
       } else {
