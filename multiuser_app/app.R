@@ -1051,6 +1051,8 @@ server <- function(input, output, session) {
   search_formal_launched_rv <- reactiveVal(FALSE)
   search_formal_monitor_rv <- reactiveVal(NULL)
   search_formal_request_id_rv <- reactiveVal("")
+  search_formal_run_id_rv <- reactiveVal("")
+  search_formal_monitor_restored_rv <- reactiveVal(FALSE)
   search_formal_loaded_key_rv <- reactiveVal("")
   search_formal_draft_message_rv <- reactiveVal("")
   search_source_groups_rv <- reactiveVal(NULL)
@@ -3537,13 +3539,40 @@ server <- function(input, output, session) {
         "Check GitHub Actions before trying again."))
     } else {
       search_formal_request_id_rv(request_id)
+      search_formal_run_id_rv("")
       search_formal_monitor_rv(NULL)
+      persisted <- tryCatch({
+        w00_monitor_record(search_strategy_review_key(review),request_id)
+        TRUE
+      },error=function(e)e)
+      if(inherits(persisted,"error"))
+        search_formal_finalisation_message_rv(paste("W00 dispatched, but monitoring could not be saved:",
+          conditionMessage(persisted)))
       search_formal_launched_rv(TRUE)
-      search_formal_finalisation_message_rv(paste(
+      if(!inherits(persisted,"error")) search_formal_finalisation_message_rv(paste(
         "W00 full search dispatch accepted for",length(sources),"databases.",
         "Check LivingEvidenceMap Actions → Workflow 00 - Search orchestrator (main).",
         "No W01 dispatch requested."))
     }
+  })
+
+  # Restore the review's latest formal W00 request after Shiny reload.
+  observe({
+    req(authenticated())
+    if(isTRUE(search_formal_monitor_restored_rv())) return()
+    review <- tryCatch(search_formal_review_id(),error=function(e)e)
+    if(inherits(review,"error")) return()
+    saved <- tryCatch(w00_monitor_latest(search_strategy_review_key(review)),error=function(e)e)
+    if(inherits(saved,"error")) {
+      search_formal_finalisation_message_rv(paste("Unable to restore W00 monitoring:",conditionMessage(saved)))
+      return()
+    }
+    if(!is.null(saved) && !nzchar(search_formal_request_id_rv())) {
+      search_formal_request_id_rv(saved$request_id)
+      search_formal_run_id_rv(saved$run_id)
+      search_formal_launched_rv(TRUE)
+    }
+    search_formal_monitor_restored_rv(TRUE)
   })
 
   # Read-only progress: recover latest single-review W00 dispatch after
@@ -3563,6 +3592,22 @@ server <- function(input, output, session) {
       return()
     }
     id <- as.character(run$id %||% "")
+    bound <- as.character(search_formal_run_id_rv() %||% "")
+    if(nzchar(bound) && !identical(bound,id)) {
+      search_formal_monitor_rv(list(error="Stored GitHub run ID differs from the matched W00 request."))
+      return()
+    }
+    if(!nzchar(bound)) {
+      search_formal_run_id_rv(id)
+      saved <- tryCatch({
+        review <- search_formal_review_id()
+        w00_monitor_record(search_strategy_review_key(review),request_id,id)
+        TRUE
+      },error=function(e)e)
+      if(inherits(saved,"error"))
+        search_formal_finalisation_message_rv(paste("W00 progress available, but run ID could not be saved:",
+          conditionMessage(saved)))
+    }
     jobs <- tryCatch(w00_formal_run_jobs(id),error=function(e)e)
     if (inherits(jobs,"error")) {
       search_formal_monitor_rv(list(id=id,url=as.character(run$html_url %||% ""),
