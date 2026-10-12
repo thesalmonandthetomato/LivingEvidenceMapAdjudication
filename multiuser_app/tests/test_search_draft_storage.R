@@ -2,7 +2,6 @@ source("R/search_draft_storage.R")
 storage_backend <- function() "local"
 path <- tempfile(fileext=".jsonl")
 Sys.setenv(LEM_SEARCH_DRAFT_LOG=path)
-on.exit(unlink(path),add=TRUE)
 key_a <- search_draft_key("review-1","user-a")
 key_b <- search_draft_key("review-1","user-b")
 key_c <- search_draft_key("review-2","user-a")
