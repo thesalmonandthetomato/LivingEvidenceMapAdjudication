@@ -1048,6 +1048,7 @@ server <- function(input, output, session) {
   search_scope_string_rv <- reactiveVal("")
   search_formal_draft_rv <- reactiveVal("")
   search_manual_preview_rv <- reactiveVal(NULL)
+  search_manual_pending_rv <- reactiveVal(NULL)
   search_manual_status_rv <- reactiveVal("")
   search_manual_busy_rv <- reactiveVal(FALSE)
   search_formal_validation_rv <- reactiveVal(NULL)
@@ -3314,13 +3315,13 @@ server <- function(input, output, session) {
       footer=tagList(modalButton("Cancel"),
         actionButton("search_manual_confirm_publish","Confirm publication",
           class="btn-primary"))))
-    search_manual_preview_rv(list(prepared=result,files=input$search_manual_files,submission_id=id))
+    search_manual_pending_rv(list(prepared=result,files=input$search_manual_files,submission_id=id))
   })
   observeEvent(input$search_manual_confirm_publish,{
     req(authenticated(),current_user())
     if(!identical(as.character(current_user()$role),"administrator") ||
       isTRUE(search_manual_busy_rv())) return()
-    submission <- search_manual_preview_rv()
+    submission <- search_manual_pending_rv()
     if(is.null(submission$prepared)) return()
     search_manual_busy_rv(TRUE)
     removeModal()
@@ -3331,7 +3332,7 @@ server <- function(input, output, session) {
       if(nrow(manual_search_registry(key)) &&
          submission$submission_id %in% manual_search_registry(key)$submission_id)
         stop("This manual search submission is already registered",call.=FALSE)
-      receipt <- manual_search_zenodo_publish(review,submission$submission_id,
+      receipt <- manual_search_zenodo_publish(manual_search_review_id(),submission$submission_id,
         submission$prepared,submission$files)
       p <- submission$prepared
       row <- list(review_key=key,submission_id=submission$submission_id,
@@ -3355,6 +3356,7 @@ server <- function(input, output, session) {
       search_manual_status_rv(paste("Restricted Zenodo publication complete:",
         result$zenodo_record_id,". Search registry updated."))
       search_manual_preview_rv(NULL)
+      search_manual_pending_rv(NULL)
     }
   })
   output$download_search_history <- downloadHandler(
