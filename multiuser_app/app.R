@@ -3515,16 +3515,7 @@ server <- function(input, output, session) {
       review <- search_formal_review_id()
       key <- search_strategy_review_key(review)
       manual <- manual_search_registry(key)
-      registry <- tryCatch(w00_monitor_events(key),error=function(e)e)
-      if(inherits(registry,"error")) {
-        showNotification(paste("Monitoring history could not be read:",conditionMessage(registry)),
-          type="warning",duration=12)
-        registry <- data.frame()
-      }
-      run_ids <- if(nrow(registry)) as.character(registry$run_id) else character()
-      run_ids <- unique(run_ids[!is.na(run_ids)&grepl("^[0-9]+$",run_ids)])
-      recent <- tryCatch(w00_formal_review_run(),error=function(e)NULL)
-      if(!is.null(recent)) run_ids <- unique(c(run_ids,recent$run_id))
+      run_ids <- manual_search_successful_runs()
       rows <- list()
       omissions <- character()
       add_row <- function(search_id,type,database,platform,date,query,reported,downloaded,
@@ -3538,21 +3529,6 @@ server <- function(input, output, session) {
           github_run_id=github,stringsAsFactors=FALSE)
       }
       for(run in run_ids) {
-        matches <- if(nrow(registry)) registry[
-          !is.na(registry$run_id) & as.character(registry$run_id)==run,,drop=FALSE
-        ] else data.frame()
-        request_id <- if(nrow(matches)) as.character(tail(matches$request_id,1L))
-          else if(!is.null(recent) && identical(as.character(recent$run_id),run))
-            as.character(recent$request_id) else ""
-        run_info <- tryCatch(
-          if(nzchar(request_id)) w00_formal_recent_run(request_id,run)
-          else stop("Missing verified Shiny request ID",call.=FALSE),
-          error=function(e)e)
-        if(inherits(run_info,"error") || is.null(run_info) ||
-          !identical(as.character(run_info$conclusion %||% ""),"success")) {
-          omissions <- c(omissions,paste0("W00 run ",run," (not confirmed successful)"))
-          next
-        }
         records <- tryCatch(manual_search_api_history(run),error=function(e)e)
         if(inherits(records,"error")) {
           omissions <- c(omissions,paste0("W00 run ",run,": ",conditionMessage(records)))
@@ -3576,9 +3552,9 @@ server <- function(input, output, session) {
           as.character(x$results_reported),as.character(x$records_downloaded),
           as.character(x$file_count),as.character(x$zenodo_record_id),"")
       }
-      if(length(omissions)) showNotification(
-        paste("Search history CSV omits unavailable or unsuccessful runs:",
-          paste(omissions,collapse="; ")),type="warning",duration=20)
+      if(length(omissions)) stop(paste(
+        "Complete search history cannot be exported because published API search records are unavailable:",
+        paste(omissions,collapse="; ")),call.=FALSE)
       if(!length(rows))stop(paste(
         "No completed API or manual search records are available.",
         if(length(omissions)) paste("Unavailable:",paste(omissions,collapse="; ")) else ""),
