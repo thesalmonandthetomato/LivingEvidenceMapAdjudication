@@ -99,11 +99,21 @@ read_w00_scoping_source_catalogue <- function(ref = github_scoping_ref()) {
 # user_input file is edited and no global review environment is changed.
 # Read-only discovery for the current single-review development deployment.
 # Finds recent main-branch W00 orchestrator runs after page reload.
-w00_formal_recent_run <- function(request_id) {
+w00_formal_recent_run <- function(request_id, run_id = "") {
   assert_development_github_target()
   if (!is.character(request_id) || length(request_id)!=1L ||
       !grepl("^[A-Za-z0-9._-]{8,80}$",request_id))
     stop("Valid W00 request ID is required for monitoring",call.=FALSE)
+  if(nzchar(run_id)) {
+    if(!grepl("^[0-9]+$",run_id)) stop("Invalid stored W00 run ID",call.=FALSE)
+    endpoint <- sprintf("https://api.github.com/repos/%s/actions/runs/%s",
+      github_dispatch_repo(),run_id)
+    candidate <- github_api_get_json(endpoint)
+    if(!identical(as.character(candidate$display_title %||% ""),
+      paste("W00 Shiny",request_id)))
+      stop("Stored W00 run does not match this Shiny request",call.=FALSE)
+    return(candidate)
+  }
   url <- sprintf(
     "https://api.github.com/repos/%s/actions/workflows/workflow_00_search_orchestrator.yml/runs?branch=main&event=workflow_dispatch&per_page=100",
     github_dispatch_repo())
