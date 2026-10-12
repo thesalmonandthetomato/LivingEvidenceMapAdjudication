@@ -24,6 +24,7 @@ source("R/search_boolean_validation.R", local = TRUE)
 source("R/search_draft_storage.R", local = TRUE)
 source("R/search_strategy_versions.R", local = TRUE)
 source("R/search_source_selection.R", local = TRUE)
+source("R/manual_ris.R", local = TRUE)
 
 queue_path <- Sys.getenv("LEM_W01_QUEUE", unset = "fixtures/w01_real_sample_2.jsonl")
 decision_path <- Sys.getenv("LEM_W01_DECISIONS", unset = "local_state/w01_decisions.jsonl")
@@ -1045,6 +1046,8 @@ server <- function(input, output, session) {
 
   search_scope_string_rv <- reactiveVal("")
   search_formal_draft_rv <- reactiveVal("")
+  search_manual_preview_rv <- reactiveVal(NULL)
+  search_manual_status_rv <- reactiveVal("")
   search_formal_validation_rv <- reactiveVal(NULL)
   search_formal_expected_version_rv <- reactiveVal(NULL)
   search_formal_finalisation_message_rv <- reactiveVal("")
@@ -3196,6 +3199,25 @@ server <- function(input, output, session) {
           ),
           tags$details(
             class="assignment-disclosure",
+            `data-accordion-key`="configure-review-manual",
+            tags$summary(tags$strong("Manual database searches (RIS)")),
+            div(class="px-3 pb-3",
+              textInput("search_manual_database","Database name"),
+              textInput("search_manual_platform","Search platform (optional)"),
+              dateInput("search_manual_date","Date searched",value=Sys.Date(),format="dd-mm-yyyy"),
+              textAreaInput("search_manual_query","Database-specific search string",rows=5),
+              numericInput("search_manual_reported","Hits reported (optional)",value=NA,min=0,step=1),
+              fileInput("search_manual_files","RIS exports (multiple files for one search)",
+                multiple=TRUE,accept=c(".ris")),
+              actionButton("search_manual_check","Check RIS files",class="btn-outline-secondary btn-sm"),
+              textOutput("search_manual_message"),
+              tableOutput("search_manual_file_preview"),
+              tags$p(class="saved-note",
+                "Publication to restricted Zenodo will be enabled after the review-specific upload credential and archive contract are validated. No files are published at this stage.")
+            )
+          ),
+          tags$details(
+            class="assignment-disclosure",
             `data-accordion-key`="configure-review-scheduling",
             tags$summary(tags$strong("Scheduling")),
             div(class="px-3 pb-3 saved-note","Scheduled searching currently disabled")
@@ -3226,6 +3248,34 @@ server <- function(input, output, session) {
       }
     }
   })
+
+  observeEvent(input$search_manual_check,{
+    req(authenticated())
+    if(!session_can("run_search_scoping")) return()
+    result <- tryCatch(manual_ris_prepare(input$search_manual_files,
+      as.character(input$search_manual_database %||% ""),
+      as.character(input$search_manual_platform %||% ""),
+      as.character(input$search_manual_query %||% ""),
+      as.character(input$search_manual_date %||% ""),
+      suppressWarnings(as.numeric(input$search_manual_reported %||% NA_real_))),
+      error=function(e)e)
+    if(inherits(result,"error")) {
+      search_manual_preview_rv(NULL)
+      search_manual_status_rv(conditionMessage(result))
+    } else {
+      search_manual_preview_rv(result)
+      search_manual_status_rv(sprintf("%d RIS file(s), %d records validated. Upload not yet enabled.",
+        length(result$files),result$imported_records))
+    }
+  })
+  output$search_manual_message <- renderText(search_manual_status_rv())
+  output$search_manual_file_preview <- renderTable({
+    x <- search_manual_preview_rv()
+    if(is.null(x)) return(NULL)
+    data.frame(File=vapply(x$files,`[[`,character(1),"name"),
+      Records=vapply(x$files,`[[`,integer(1),"records"),
+      check.names=FALSE)
+  },striped=TRUE)
 
   output$search_source_group_controls <- renderUI({
     groups <- search_source_groups_rv()
