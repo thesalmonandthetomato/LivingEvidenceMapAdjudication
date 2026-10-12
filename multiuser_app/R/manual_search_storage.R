@@ -1,3 +1,18 @@
+manual_search_review_id <- function() {
+  if(!identical(storage_backend(),"google_sheets"))
+    return(gsub("[^A-Za-z0-9._-]","-",Sys.getenv("LEM_SEARCH_REVIEW_ID",
+      unset="local-review")))
+  gs4_auth_from_env()
+  meta <- as.data.frame(googlesheets4::read_sheet(sheet_id_from_env(),
+    sheet="review_metadata",col_types="cc"))
+  i <- match("review_id",as.character(meta$key))
+  if(is.na(i)) stop("Review metadata is missing review_id",call.=FALSE)
+  id <- as.character(meta$value[[i]])
+  if(is.na(id) || !grepl("^[A-Za-z0-9][A-Za-z0-9._-]{3,127}$",id))
+    stop("Invalid review-specific metadata ID",call.=FALSE)
+  id
+}
+
 # Review-specific manual W00 searches: restricted Zenodo files and Sheet provenance.
 # This module never dispatches W01 or writes RIS research records into GitHub.
 manual_search_columns <- c("review_key","submission_id","database","platform","search_date",
