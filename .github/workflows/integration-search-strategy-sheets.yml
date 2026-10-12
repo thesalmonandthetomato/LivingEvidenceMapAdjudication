@@ -1,0 +1,47 @@
+name: Integration test - search strategy Google Sheets
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/integration-search-strategy-sheets.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-search-strategy-sheets
+  cancel-in-progress: false
+
+jobs:
+  test-existing-sheet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      LEM_ALLOW_SEARCH_SHEETS_TEST: 'YES'
+      LEM_GOOGLE_SHEET_ID: ${{ secrets.LEM_GOOGLE_SHEET_ID }}
+      LEM_GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.LEM_GOOGLE_SERVICE_ACCOUNT_JSON }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require existing spreadsheet credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$LEM_GOOGLE_SHEET_ID" ] || [ -z "$LEM_GOOGLE_SERVICE_ACCOUNT_JSON" ]; then
+            echo 'Missing existing Google Sheet ID or service account secret in GitHub Actions. No write attempted.'
+            exit 1
+          fi
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+          use-public-rspm: true
+      - name: Install R dependencies
+        shell: Rscript {0}
+        run: install.packages(c("googlesheets4","digest","jsonlite"))
+      - name: Run isolated test against existing strategy history tab
+        shell: bash
+        working-directory: multiuser_app
+        run: Rscript tests/integration_search_strategy_sheets.R
