@@ -1064,6 +1064,7 @@ server <- function(input, output, session) {
   search_scope_progress_rv <- reactiveVal(list(completed=0L,total=0L,pct=0L,label=""))
   search_scope_versions_rv <- reactiveVal(character())
   search_scope_results_rv <- reactiveVal(list())
+  search_scope_history_loaded_rv <- reactiveVal(FALSE)
   search_scope_active_version_rv <- reactiveVal("original")
   search_scope_running_version_rv <- reactiveVal("")
 
@@ -3280,6 +3281,35 @@ server <- function(input, output, session) {
     showNotification("Scoping query copied to Searching as an editable draft.", type="message")
   })
 
+
+  # Restore completed scoping evidence from the review storage backend.
+  observe({
+    req(authenticated())
+    if (!session_can("run_search_scoping") || isTRUE(search_scope_history_loaded_rv())) return()
+    review <- tryCatch(search_formal_review_id(),error=function(e)e)
+    if (inherits(review,"error")) return()
+    history <- tryCatch(search_scoping_history(search_strategy_review_key(review)),error=function(e)e)
+    if (inherits(history,"error")) {
+      search_scope_status_rv(paste("Unable to restore saved scoping:",conditionMessage(history)))
+      return()
+    }
+    if (nrow(history)) {
+      latest <- history[nrow(history),,drop=FALSE]
+      rows <- tryCatch(jsonlite::fromJSON(as.character(latest$counts_json[[1L]]),
+        simplifyDataFrame=TRUE),error=function(e)NULL)
+      if (is.data.frame(rows) && nrow(rows)) {
+        query <- as.character(latest$query[[1L]])
+        search_scope_versions_rv(c(original=query))
+        search_scope_results_rv(list(original=rows))
+        search_scope_rows_rv(rows)
+        search_scope_string_rv(query)
+        search_scope_active_version_rv("original")
+        search_scope_status_rv("Previous completed scoping results restored from review storage.")
+      }
+    }
+    search_scope_history_loaded_rv(TRUE)
+  })
+
   # Temporary single-review identity. Uses the existing per-deployment Sheet ID
   # instead of requiring a second environment variable. No registry is created.
   search_formal_review_id <- function() {
@@ -4177,9 +4207,19 @@ server <- function(input, output, session) {
           results <- search_scope_results_rv() %||% list()
           results[[completed_version]] <- final_rows
           search_scope_results_rv(results)
+          saved_scope <- tryCatch({
+            review <- search_formal_review_id()
+            versions <- search_scope_versions_rv()
+            scoped_query <- as.character(versions[[completed_version]] %||% search_scope_string_rv())
+            search_scoping_save(search_strategy_review_key(review),run_id,scoped_query,final_rows)
+            TRUE
+          },error=function(e)e)
+          if (inherits(saved_scope,"error"))
+            search_scope_status_rv(paste("Scoping completed, but persistence failed:",
+              conditionMessage(saved_scope)))
           failed_n <- sum(final_rows$status=="Failed")
           search_scope_progress_rv(list(completed=nrow(final_rows),total=nrow(final_rows),pct=100L,label="Scoping search complete"))
-          search_scope_status_rv(if (failed_n) {
+          if (!inherits(saved_scope,"error")) search_scope_status_rv(if (failed_n) {
             sprintf("Scoping search complete with %d failed database%s.",failed_n,if(failed_n==1L)"" else "s")
           } else "Scoping search complete.")
         } else {
