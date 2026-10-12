@@ -3277,6 +3277,16 @@ server <- function(input, output, session) {
             `data-accordion-key`="configure-review-scheduling",
             tags$summary(tags$strong("Scheduling")),
             div(class="px-3 pb-3 saved-note","Scheduled searching currently disabled")
+          ),
+          tags$details(
+            class="assignment-disclosure",
+            `data-accordion-key`="configure-review-deduplication",
+            tags$summary(tags$strong("Deduplication (W01)")),
+            div(class="px-3 pb-3",
+              tags$p("Preparation only. W01 is not enabled or dispatched."),
+              tags$p(class="saved-note",
+                "Planned: read the review-specific API and manual RIS archives from restricted Zenodo, assemble a provenance-preserving search corpus, identify and resolve duplicate records, and send ambiguous cases to the existing human adjudication queue. Results will be archived separately for this review.")
+            )
           )
         )
       )
