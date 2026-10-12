@@ -341,8 +341,20 @@ read_w00_formal_record_artifact <- function(artifact) {
   download_github_artifact_zip(as.character(artifact$id),file.path(td,"record.zip"))
   utils::unzip(file.path(td,"record.zip"),exdir=td)
   paths <- list.files(td,pattern="\\.json$",recursive=TRUE,full.names=TRUE)
-  if(length(paths)!=1L) stop("Expected one JSON W00 search record",call.=FALSE)
-  record <- jsonlite::fromJSON(paths[[1L]],simplifyVector=FALSE)
+  expected_source <- sub("^workflow00-search-record-(.+)-[0-9]+$","\\1",name)
+  # The archive may contain supplementary JSON provenance. Locate the actual
+  # search record by schema fields and the source encoded in the artifact name.
+  candidates <- lapply(paths,function(p) tryCatch(
+    jsonlite::fromJSON(p,simplifyVector=FALSE),error=function(e) NULL))
+  valid <- vapply(candidates,function(x) is.list(x) &&
+    identical(as.character(x$source %||% ""),expected_source) &&
+    !is.null(x$reported_search_results) &&
+    !is.null(x$successfully_downloaded_results) &&
+    !is.null(x$search_string),logical(1))
+  if(sum(valid)!=1L) stop(sprintf(
+    "Expected one matching W00 search record for %s; found %d among %d JSON files",
+    expected_source,sum(valid),length(paths)),call.=FALSE)
+  record <- candidates[[which(valid)]]
   source <- as.character(record$source %||% "")
   reported <- suppressWarnings(as.integer(record$reported_search_results))
   downloaded <- suppressWarnings(as.integer(record$successfully_downloaded_results))
