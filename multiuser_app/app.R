@@ -3508,7 +3508,8 @@ server <- function(input, output, session) {
     n_done <- sum(vapply(source_jobs,function(j)
       identical(as.character(j$status %||% ""),"completed"),logical(1)))
     run_finished <- identical(as.character(m$status %||% ""),"completed")
-    pct <- if(run_finished) 100L else if(n_total) min(95L,round(10+85*n_done/n_total)) else 5L
+    successful <- run_finished && identical(as.character(m$conclusion %||% ""),"success")
+    pct <- if(successful) 100L else if(n_total) min(95L,round(10+85*n_done/n_total)) else 5L
     overview <- if(run_finished) paste("W00 finished:",m$conclusion) else if(n_total) {
       sprintf("Database jobs: %d of %d finished",n_done,n_total)
     } else "W00 preparing search and database jobs…"
@@ -3531,6 +3532,8 @@ server <- function(input, output, session) {
               tags$td("—"))
           }))
         ))
+      else if(run_finished) tags$p(class="saved-note",
+        "No database jobs were started. Check the failed preparation step in GitHub Actions.")
       else tags$p(class="saved-note","Waiting for GitHub to create database jobs.")
     )
   })
