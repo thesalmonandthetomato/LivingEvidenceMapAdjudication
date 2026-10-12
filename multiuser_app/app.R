@@ -3115,6 +3115,12 @@ server <- function(input, output, session) {
         ),
         div(
           class="px-3 pb-3",
+          tags$details(
+            class="assignment-disclosure",
+            `data-accordion-key`="configure-review-scoping",
+            tags$summary(tags$strong("Scoping")),
+            div(
+              class="px-3 pb-3",
           div(
             class="d-flex align-items-center justify-content-between gap-2 flex-wrap",
             div(
@@ -3163,6 +3169,21 @@ server <- function(input, output, session) {
           uiOutput("search_scope_progress"),
           uiOutput("search_scope_table"),
           uiOutput("search_scope_report_download")
+            )
+          ),
+          tags$details(
+            class="assignment-disclosure",
+            `data-accordion-key`="configure-review-searching",
+            tags$summary(tags$strong("Searching")),
+            div(class="px-3 pb-3 saved-note",
+                "Search configuration controls will be added after validation of this interface checkpoint.")
+          ),
+          tags$details(
+            class="assignment-disclosure",
+            `data-accordion-key`="configure-review-scheduling",
+            tags$summary(tags$strong("Scheduling")),
+            div(class="px-3 pb-3 saved-note","Scheduled searching currently disabled")
+          )
         )
       )
     )
