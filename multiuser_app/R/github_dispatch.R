@@ -136,7 +136,7 @@ dispatch_w00_formal <- function(search_string, sources, request_id) {
               "social_sciences","education","regional","media_communication",
               "humanities","sport_tourism","grey_preprints")
   inputs <- list(
-    execution_pathway="shiny",first_run="true",dispatch_w01="false",run_type="full",
+    execution_pathway="shiny",review_sheet_id=sheet_id_from_env(),first_run="true",dispatch_w01="false",run_type="full",
     additional_sources=paste(sources,collapse=","),
     strategy_json_b64=strategy_b64
   )
