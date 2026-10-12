@@ -94,6 +94,50 @@ read_w00_scoping_source_catalogue <- function(ref = github_scoping_ref()) {
   out[order(tolower(out$source)),,drop=FALSE]
 }
 
+# Launch the main W00 orchestrator from an explicit Shiny user action.
+# The strategy and exact source set are passed together; no repository
+# user_input file is edited and no global review environment is changed.
+dispatch_w00_formal <- function(search_string, sources, request_id) {
+  assert_development_github_target()
+  if (!is.character(search_string) || length(search_string)!=1L ||
+      !nzchar(trimws(search_string))) stop("Search string is empty",call.=FALSE)
+  sources <- unique(as.character(sources))
+  if (!length(sources) || any(!grepl("^[a-z][a-z0-9_]*$",sources)))
+    stop("Select valid source IDs before dispatch",call.=FALSE)
+  if (!grepl("^[A-Za-z0-9._-]{8,80}$",request_id))
+    stop("Invalid formal search request ID",call.=FALSE)
+  strategy <- list(
+    search_version=paste0("shiny-",request_id),
+    advanced_boolean=search_string
+  )
+  strategy_b64 <- jsonlite::base64_enc(charToRaw(enc2utf8(
+    jsonlite::toJSON(strategy,auto_unbox=TRUE))))
+  groups <- c("core_multidisciplinary","health_medicine","environment_agriculture",
+              "social_sciences","education","regional","media_communication",
+              "humanities","sport_tourism","grey_preprints")
+  inputs <- list(
+    first_run="true",dispatch_w01="false",run_type="full",
+    additional_sources=paste(sources,collapse=","),
+    strategy_json_b64=strategy_b64
+  )
+  for (g in groups) inputs[[paste0("group_",g)]] <- "false"
+  endpoint <- sprintf("https://api.github.com/repos/%s/actions/workflows/workflow_00_search_orchestrator.yml/dispatches",
+    github_dispatch_repo())
+  req <- httr2::request(endpoint) |>
+    httr2::req_method("POST") |>
+    httr2::req_headers(
+      Authorization=paste("Bearer",github_dispatch_token()),
+      Accept="application/vnd.github+json",
+      `X-GitHub-Api-Version`="2022-11-28",
+      `User-Agent`="LivingEvidenceMap-Adjudication"
+    ) |>
+    httr2::req_body_json(list(ref=github_scoping_ref(),inputs=inputs))
+  resp <- httr2::req_perform(req)
+  if (!identical(httr2::resp_status(resp),204L))
+    stop(sprintf("Formal W00 dispatch returned HTTP %d",httr2::resp_status(resp)),call.=FALSE)
+  invisible(TRUE)
+}
+
 dispatch_w00_scoping <- function(request_id, search_string = NULL, search_string_path = "user_input/scoping_search_string.txt") {
   request_id <- trimws(as.character(request_id))
   if (!grepl("^[A-Za-z0-9._-]{8,80}$", request_id)) {
