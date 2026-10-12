@@ -167,3 +167,74 @@ search_scoping_save <- function(review_key,run_id,query,counts) {
     stop("Scoping result write could not be verified",call.=FALSE)
   invisible(TRUE)
 }
+
+# Append-only, review-scoped W00 monitoring registry.
+w00_monitor_columns <- c("review_key","request_id","run_id","event_type","timestamp_utc")
+w00_monitor_path <- function() Sys.getenv("LEM_W00_MONITOR_LOG",
+  unset="local_state/w00_monitor_events.jsonl")
+w00_monitor_events <- function(review_key) {
+  if (identical(storage_backend(),"google_sheets")) {
+    gs4_auth_from_env()
+    ss <- sheet_id_from_env()
+    if (!"w00_monitor_events" %in% sheet_names_cached(ss)) return(data.frame())
+    rows <- googlesheets4::read_sheet(ss,sheet="w00_monitor_events",col_types="c")
+  } else {
+    path <- w00_monitor_path()
+    if(!file.exists(path)) return(data.frame())
+    lines <- readLines(path,warn=FALSE)
+    if(!length(lines)) return(data.frame())
+    rows <- do.call(rbind,lapply(lines,function(x)
+      as.data.frame(jsonlite::fromJSON(x),stringsAsFactors=FALSE)))
+  }
+  if(!all(w00_monitor_columns%in%names(rows)))
+    stop("Incompatible W00 monitoring schema",call.=FALSE)
+  rows[!is.na(rows$review_key)&rows$review_key==review_key,,drop=FALSE]
+}
+w00_monitor_record <- function(review_key,request_id,run_id="") {
+  if(length(request_id)!=1L || is.na(request_id) ||
+      !grepl("^[A-Za-z0-9._-]{8,80}$",request_id))
+    stop("Invalid W00 request ID",call.=FALSE)
+  if(length(run_id)!=1L || is.na(run_id) ||
+      (nzchar(run_id) && !grepl("^[0-9]+$",run_id)))
+    stop("Invalid W00 run ID",call.=FALSE)
+  history <- w00_monitor_events(review_key)
+  if(nrow(history) && any(as.character(history$request_id)==request_id &
+      as.character(history$run_id)==run_id)) return(invisible(FALSE))
+  if(nzchar(run_id) && (!nrow(history) ||
+      !any(as.character(history$request_id)==request_id)))
+    stop("W00 run cannot be linked without a recorded request",call.=FALSE)
+  row <- list(review_key=review_key,request_id=request_id,run_id=run_id,
+    event_type=if(nzchar(run_id)) "matched" else "dispatched",
+    timestamp_utc=format(Sys.time(),"%Y-%m-%dT%H:%M:%SZ",tz="UTC"))
+  if(identical(storage_backend(),"google_sheets")) {
+    gs4_auth_from_env()
+    ss <- sheet_id_from_env()
+    if(!"w00_monitor_events"%in%sheet_names_cached(ss)) {
+      empty <- as.data.frame(setNames(replicate(length(w00_monitor_columns),
+        character(),simplify=FALSE),w00_monitor_columns),stringsAsFactors=FALSE)
+      googlesheets4::sheet_write(empty,ss=ss,sheet="w00_monitor_events")
+      invalidate_sheet_names_cache(ss)
+    }
+    googlesheets4::sheet_append(ss,
+      data=as.data.frame(row,stringsAsFactors=FALSE),sheet="w00_monitor_events")
+  } else {
+    path <- w00_monitor_path()
+    dir.create(dirname(path),recursive=TRUE,showWarnings=FALSE)
+    cat(as.character(jsonlite::toJSON(row,auto_unbox=TRUE)),"\\n",
+      file=path,append=TRUE,sep="")
+  }
+  verify <- w00_monitor_events(review_key)
+  if(!any(as.character(verify$request_id)==request_id &
+      as.character(verify$run_id)==run_id))
+    stop("W00 monitoring persistence could not be verified",call.=FALSE)
+  invisible(TRUE)
+}
+w00_monitor_latest <- function(review_key) {
+  history <- w00_monitor_events(review_key)
+  if(!nrow(history)) return(NULL)
+  request_id <- as.character(tail(history$request_id,1L))
+  rows <- history[as.character(history$request_id)==request_id,,drop=FALSE]
+  ids <- as.character(rows$run_id)
+  ids <- ids[!is.na(ids)&grepl("^[0-9]+$",ids)]
+  list(request_id=request_id,run_id=if(length(ids)) tail(ids,1L) else "")
+}
