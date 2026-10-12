@@ -1809,6 +1809,9 @@ pipeline_status_tab <- function() {
 }
 
 read_latest_pipeline_status <- function() {
+  # Review-backed Shiny execution must never inherit the legacy GitHub
+  # current-run KPI state from another review.
+  if(identical(storage_backend(),"google_sheets")) return(NULL)
   val <- function(x) if (is.null(x) || !length(x)) "" else as.character(x[[1L]])
 
   # Production KPI values must come from the canonical current-run status on
