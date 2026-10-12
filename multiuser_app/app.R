@@ -3423,7 +3423,16 @@ server <- function(input, output, session) {
           github_run_id=github,stringsAsFactors=FALSE)
       }
       for(run in run_ids) {
-        run_info <- tryCatch(w00_formal_recent_run("",run),error=function(e)e)
+        matches <- if(nrow(registry)) registry[
+          !is.na(registry$run_id) & as.character(registry$run_id)==run,,drop=FALSE
+        ] else data.frame()
+        request_id <- if(nrow(matches)) as.character(tail(matches$request_id,1L))
+          else if(!is.null(recent) && identical(as.character(recent$run_id),run))
+            as.character(recent$request_id) else ""
+        run_info <- tryCatch(
+          if(nzchar(request_id)) w00_formal_recent_run(request_id,run)
+          else stop("Missing verified Shiny request ID",call.=FALSE),
+          error=function(e)e)
         if(inherits(run_info,"error") || is.null(run_info) ||
           !identical(as.character(run_info$conclusion %||% ""),"success")) {
           omissions <- c(omissions,paste0("W00 run ",run," (not confirmed successful)"))
