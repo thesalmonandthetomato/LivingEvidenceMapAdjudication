@@ -3271,10 +3271,20 @@ server <- function(input, output, session) {
     showNotification("Scoping query copied to Searching as an editable draft.", type="message")
   })
 
+  # Temporary single-review identity. Uses the existing per-deployment Sheet ID
+  # instead of requiring a second environment variable. No registry is created.
+  search_formal_review_id <- function() {
+    configured <- trimws(Sys.getenv("LEM_SEARCH_REVIEW_ID",unset=""))
+    if (nzchar(configured)) return(configured)
+    if (identical(storage_backend(),"google_sheets"))
+      return(paste0("single-review-sheet:",sheet_id_from_env()))
+    "single-review-local"
+  }
+
   search_formal_key <- function() {
     u <- current_user()
     if (is.null(u)) return("")
-    review_id <- Sys.getenv("LEM_SEARCH_REVIEW_ID",unset="")
+    review_id <- tryCatch(search_formal_review_id(),error=function(e) "")
     if (!nzchar(review_id)) return("")
     search_draft_key(review_id,as.character(u$user_id))
   }
@@ -3283,7 +3293,7 @@ server <- function(input, output, session) {
     req(authenticated(),current_user())
     key <- search_formal_key()
     if (!nzchar(key)) {
-      search_formal_draft_message_rv("Draft persistence requires LEM_SEARCH_REVIEW_ID.")
+      search_formal_draft_message_rv("Draft storage is not configured for this deployment.")
       return()
     }
     if (identical(search_formal_loaded_key_rv(),key)) return()
@@ -3306,7 +3316,7 @@ server <- function(input, output, session) {
     if (!session_can("run_search_scoping")) return()
     key <- search_formal_key()
     if (!nzchar(key)) {
-      search_formal_draft_message_rv("Draft not saved: configure LEM_SEARCH_REVIEW_ID.")
+      search_formal_draft_message_rv("Draft not saved: review storage is not configured.")
       return()
     }
     value <- as.character(input$search_formal_text %||% "")
@@ -3370,9 +3380,9 @@ server <- function(input, output, session) {
       search_formal_finalisation_message_rv(paste("Cannot finalise:",validation$message))
       return()
     }
-    review <- trimws(Sys.getenv("LEM_SEARCH_REVIEW_ID",unset=""))
-    if (!nzchar(review)) {
-      search_formal_finalisation_message_rv("Cannot finalise: LEM_SEARCH_REVIEW_ID is not configured.")
+    review <- tryCatch(search_formal_review_id(),error=function(e)e)
+    if (inherits(review,"error")) {
+      search_formal_finalisation_message_rv(paste("Cannot resolve review storage:",conditionMessage(review)))
       return()
     }
     version <- tryCatch(nrow(search_strategy_versions(search_strategy_review_key(review))),
