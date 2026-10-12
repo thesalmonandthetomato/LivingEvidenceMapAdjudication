@@ -3234,7 +3234,7 @@ server <- function(input, output, session) {
           div(class="px-3 pb-2",
             checkboxInput(paste0("search_group_all_",id),"Select all in this group",FALSE),
             checkboxGroupInput(paste0("search_group_sources_",id),NULL,
-              choices=stats::setNames(ids,ids),selected=character())
+              choices=stats::setNames(ids,vapply(ids,search_scope_pretty_source,character(1))),selected=character())
           )
         )
       })
@@ -3283,12 +3283,12 @@ server <- function(input, output, session) {
       submitted <- search_formal_selected_sources_rv()
       if (length(submitted))
         return(paste0("Databases submitted for W00 (",length(submitted),"): ",
-          paste(submitted,collapse=", ")))
+          paste(vapply(submitted,search_scope_pretty_source,character(1)),collapse=", ")))
       return("W00 search submitted. Database selection is no longer editable.")
     }
     resolved <- search_source_selected()
     if(!length(resolved)) return("No databases selected.")
-    paste0(length(resolved)," unique W00 database(s): ",paste(resolved,collapse=", "))
+    paste0(length(resolved)," unique W00 database(s): ",paste(vapply(resolved,search_scope_pretty_source,character(1)),collapse=", "))
   })
 
   observeEvent(input$search_scope_finalise_to_searching, {
@@ -3479,7 +3479,7 @@ server <- function(input, output, session) {
     showModal(modalDialog(
       title="Confirm full database search",
       tags$p("Start a new full W00 search using the currently entered search string and these databases?"),
-      tags$p(paste(sources,collapse=", ")),
+      tags$p(paste(vapply(sources,search_scope_pretty_source,character(1)),collapse=", ")),
       tags$p("This will call live database APIs. W01 will not be dispatched automatically."),
       easyClose=TRUE,
       footer=tagList(modalButton("Cancel"),
@@ -3672,8 +3672,19 @@ server <- function(input, output, session) {
           tags$tbody(lapply(source_jobs,function(j) {
             st <- as.character(j$status %||% "queued")
             outcome <- as.character(j$conclusion %||% "")
-            tags$tr(tags$td(as.character(j$name %||% "")),
-              tags$td(if(identical(st,"completed") && nzchar(outcome)) outcome else st),
+            raw_name <- as.character(j$name %||% "")
+            source_id <- sub("^search-sources \\(([^)]+)\\) / search$","\\1",raw_name)
+            label <- if(!identical(source_id,raw_name)) search_scope_pretty_source(source_id) else raw_name
+            status_label <- if(identical(st,"completed")) {
+              if(identical(outcome,"success")) "Complete"
+              else if(identical(outcome,"skipped")) "Skipped"
+              else if(identical(outcome,"cancelled")) "Cancelled"
+              else "Failed"
+            } else if(identical(st,"in_progress")) "Searching…"
+              else if(identical(st,"queued") || identical(st,"waiting")) "Queued"
+              else tools::toTitleCase(gsub("_"," ",st,fixed=TRUE))
+            tags$tr(tags$td(label),
+              tags$td(status_label),
               tags$td("—"))
           }))
         ))
