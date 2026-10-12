@@ -170,7 +170,18 @@ manual_search_successful_runs <- function() {
     events$event_type=="zenodo_published"
   matched[is.na(matched)] <- FALSE
   ids <- unique(as.character(events$github_run_id[matched]))
-  ids[!is.na(ids)&grepl("^[0-9]+$",ids)]
+  ids <- ids[!is.na(ids)&grepl("^[0-9]+$",ids)]
+  # The reviewed receipt also records its authoritative successful W00 run.
+  # This is a review-scoped fallback when the append-only event is unavailable.
+  status <- as.character(metadata$value[match("latest_w00_status",metadata$key)])
+  latest <- as.character(metadata$value[match("latest_w00_run_id",metadata$key)])
+  zenodo <- as.character(metadata$value[match("latest_w00_zenodo_record_id",metadata$key)])
+  if(length(status)==1L && !is.na(status) &&
+     identical(tolower(trimws(status)),"success") &&
+     length(latest)==1L && !is.na(latest) && grepl("^[0-9]+$",latest) &&
+     length(zenodo)==1L && !is.na(zenodo) && grepl("^[0-9]+$",zenodo))
+    ids <- unique(c(ids,latest))
+  ids
 }
 
 manual_search_api_history <- function(run_id) {
