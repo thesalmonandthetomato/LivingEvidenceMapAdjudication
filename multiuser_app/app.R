@@ -1091,6 +1091,7 @@ server <- function(input, output, session) {
       if(identical(storage_backend(),"google_sheets")) read_latest_pipeline_status() else NULL,
       error=function(e) NULL
     )
+    if(identical(storage_backend(),"google_sheets")) pipeline_status_rv(NULL)
     if(!is.null(refreshed)) {
       pipeline_status_rv(refreshed)
       if (w08_status_is_final(refreshed)) {
@@ -1592,6 +1593,36 @@ server <- function(input, output, session) {
   }
 
   pipeline_summary_ui <- function() {
+    if(identical(storage_backend(),"google_sheets")) {
+      counts <- search_formal_counts_rv()
+      api <- if(length(counts)) sum(vapply(counts,function(x)
+        as.numeric(x$downloaded),numeric(1)),na.rm=TRUE) else NA_real_
+      manual <- search_manual_history_data()
+      manual_count <- if(inherits(manual,"error")) NA_real_ else
+        if(nrow(manual)) sum(suppressWarnings(as.numeric(manual$records_downloaded)),
+          na.rm=TRUE) else 0
+      m <- search_formal_monitor_rv()
+      verified <- !is.null(m) && identical(as.character(m$conclusion %||% ""),"success") &&
+        identical(as.character(m$status %||% ""),"completed")
+      title <- if(verified) "W00 search completed" else "W00 review search status"
+      figure <- function(label,value) div(class="pipeline-kpi",
+        tags$span(class="pipeline-kpi-label",label),
+        tags$span(class="pipeline-kpi-value",
+          if(is.na(value)) "—" else format(value,big.mark=",",scientific=FALSE)))
+      return(div(class="pipeline-summary",
+        div(class="pipeline-summary-top",
+          tags$strong(title),
+          tags$span(class="text-secondary small ms-2",
+            "Review-specific figures; before deduplication")),
+        div(class="pipeline-kpis",
+          figure("API records retrieved",api),
+          figure("Manual RIS records",manual_count),
+          figure("Combined records",if(verified && !is.na(api) && !is.na(manual_count))
+            api+manual_count else NA_real_)),
+        tags$p(class="saved-note",
+          "W01–W10 figures are not yet available for this review. Legacy salmon-farming figures are excluded.")
+      ))
+    }
     p <- pipeline_status_rv()
     if(is.null(p)) {
       return(div(
