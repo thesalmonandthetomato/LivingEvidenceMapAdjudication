@@ -6,6 +6,9 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/validate-multiuser-app-baseline.yml'
+      - 'multiuser_app/app.R'
+      - 'multiuser_app/R/**'
+      - 'multiuser_app/tests/**'
 
 permissions:
   contents: read
