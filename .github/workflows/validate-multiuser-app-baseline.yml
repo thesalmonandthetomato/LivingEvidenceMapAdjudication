@@ -1,0 +1,45 @@
+name: Validate multiuser Shiny baseline
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/validate-multiuser-app-baseline.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  offline-r-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out adjudication main
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+          use-public-rspm: true
+      - name: Parse all multiuser application R files
+        shell: Rscript {0}
+        run: |
+          paths <- c("multiuser_app/app.R",
+            list.files("multiuser_app/R", pattern="\\.R$", full.names=TRUE, recursive=TRUE))
+          stopifnot(length(paths) > 2L, file.exists("multiuser_app/app.R"))
+          for (path in paths) {
+            tryCatch(parse(file=path, keep.source=FALSE),
+              error=function(e) stop(sprintf("R parse failed: %s: %s",path, conditionMessage(e))))
+            cat("PASS parse:", path, "\\n")
+          }
+          cat(sprintf("PASS: parsed %d application files\\n",length(paths)))
+      - name: Validate deployment target is explicitly main
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'LEM_GITHUB_SCOPING_REF=main' multiuser_app/R/github_dispatch.R
+          grep -Fq 'workflow01-final-architecture' /dev/null && exit 1 || true
+          echo 'PASS: Shiny scoping target guard present; no dispatch executed'
