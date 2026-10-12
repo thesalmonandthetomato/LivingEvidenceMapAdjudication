@@ -6,7 +6,7 @@ search_source_groups_parse <- function(json_text) {
     stop("Unsupported W00 source group catalogue",call.=FALSE)
   for(id in names(cfg$groups)) {
     entry <- cfg$groups[[id]]
-    if(!nzchar(as.character(entry$display_name %||% "")) ||
+    if(is.null(entry$display_name) || !nzchar(as.character(entry$display_name)) ||
        !is.character(unlist(entry$sources,use.names=FALSE)) ||
        !length(entry$sources))
       stop(paste("Invalid source group",id),call.=FALSE)
