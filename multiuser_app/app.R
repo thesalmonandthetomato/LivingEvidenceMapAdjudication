@@ -3218,6 +3218,7 @@ server <- function(input, output, session) {
     groups <- search_source_groups_rv()
     if (is.null(groups)) return(tags$p(class="saved-note",search_source_error_rv()))
     tagList(
+      checkboxInput("search_all_databases","All databases",FALSE),
       tags$h6("Database groups"),
       lapply(names(groups),function(id) {
         group <- groups[[id]]
@@ -3250,6 +3251,17 @@ server <- function(input, output, session) {
       })
     }
   })
+
+  observeEvent(input$search_all_databases, {
+    groups <- search_source_groups_rv()
+    req(authenticated(),groups)
+    selected <- isTRUE(input$search_all_databases)
+    for (id in names(groups)) {
+      updateCheckboxInput(session,paste0("search_group_all_",id),value=selected)
+      updateCheckboxGroupInput(session,paste0("search_group_sources_",id),
+        selected=if(selected) unlist(groups[[id]]$sources,use.names=FALSE) else character())
+    }
+  },ignoreInit=TRUE)
 
   search_source_selected <- reactive({
     groups <- search_source_groups_rv()
