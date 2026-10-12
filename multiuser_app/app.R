@@ -3178,6 +3178,10 @@ server <- function(input, output, session) {
               textOutput("search_formal_validation_message"),
               uiOutput("search_source_group_controls"),
               textOutput("search_source_selection_preview"),
+              textAreaInput("search_formal_openalex_oql",
+                "OpenAlex OQL (required only when OpenAlex is selected)",
+                value="", rows=3, width="100%",
+                placeholder="works where title/abstract has (\"example\")"),
               if (identical(as.character(current_user()$role %||% ""), "administrator")) tagList(
                 if (!search_formal_launched_rv()) actionButton("search_formal_start", "Start search", class="btn-primary btn-sm mt-2"),
                 textOutput("search_formal_finalisation_message")
@@ -3455,7 +3459,7 @@ server <- function(input, output, session) {
     request_id <- paste0("formal-",format(Sys.time(),tz="UTC",format="%Y%m%dT%H%M%SZ"),"-",
       substr(digest::digest(paste(review,query_hash,paste(sort(sources),collapse=","),sep="|"),
         algo="sha256",serialize=FALSE),1L,10L))
-    outcome <- tryCatch(dispatch_w00_formal(query,sources,request_id),error=function(e)e)
+    outcome <- tryCatch(dispatch_w00_formal(query,sources,request_id,\n      openalex_oql=as.character(input$search_formal_openalex_oql %||% "")),error=function(e)e)
     if (inherits(outcome,"error")) {
       search_formal_finalisation_message_rv(paste("W00 launch not confirmed:",conditionMessage(outcome),
         "Check GitHub Actions before trying again."))
