@@ -3078,32 +3078,15 @@ server <- function(input, output, session) {
     sum(hits, na.rm=TRUE)
   }
 
-  observe({
+  # Scoping begins empty. No GitHub query is read into this field.
+  # A separate request still reads the W00 source catalogue when needed.
+  observeEvent(input$search_scope_input_text, {
     req(authenticated())
-    if (!session_can("run_search_scoping")) return()
-    if (nzchar(search_scope_string_rv())) return()
-    x <- tryCatch(
-      read_github_text_file("user_input/scoping_search_string.txt"),
-      error=function(e) structure("", error=conditionMessage(e))
-    )
-    if (nzchar(as.character(x))) {
-      original <- trimws(as.character(x))
-      search_scope_string_rv(original)
-      if (!length(search_scope_versions_rv())) {
-        search_scope_versions_rv(stats::setNames(original, "original"))
-        search_scope_active_version_rv("original")
-      }
-      catalogue <- tryCatch(read_w00_scoping_source_catalogue(), error=function(e) NULL)
-      if (!is.null(catalogue) && nrow(catalogue)) {
-        search_scope_catalogue_rv(catalogue)
-      }
-    } else {
-      search_scope_status_rv(paste(
-        "Could not load scoping search string:",
-        attr(x, "error") %||% "unknown GitHub read error"
-      ))
-    }
-  })
+    if (!session_can("control_workflows")) return()
+    if (nzchar(search_scope_request_id_rv())) return()
+    query <- as.character(input$search_scope_input_text %||% "")
+    if (!identical(query,search_scope_string_rv())) search_scope_string_rv(query)
+  },ignoreInit=TRUE)
 
   output$configure_review <- renderUI({
     req(authenticated())
@@ -3133,30 +3116,22 @@ server <- function(input, output, session) {
             tags$summary(tags$strong("Scoping")),
             div(
               class="px-3 pb-3",
-          div(
-            class="d-flex align-items-center justify-content-between gap-2 flex-wrap",
-            div(
-              class="d-inline-flex align-items-center gap-2",
-              tags$h6(class="mb-0","Search string"),
-              tags$span(class="task-badge", search_scope_active_version_rv())
-            ),
+          if (!request_active && identical(as.character(current_user()$role),"administrator") &&
+              !isTRUE(original_complete)) textAreaInput(
+            "search_scope_input_text","Scoping search string",
+            value=isolate(search_scope_string_rv()),rows=8,width="100%"
+          ) else tagList(
+            tags$h6("Scoping search string"),
+            tags$pre(class="border rounded bg-light p-3 small mt-2",
+              style="white-space:pre-wrap;overflow-wrap:anywhere;",
+              search_scope_string_rv()),
             if (!request_active && isTRUE(original_complete)) actionButton(
-              "edit_search_scope",
-              "Edit search string",
+              "edit_search_scope","Create revised scoping version",
               class="btn-outline-secondary btn-sm"
             )
           ),
-          tags$pre(
-            class="border rounded bg-light p-3 small mt-2",
-            style="white-space:pre-wrap;overflow-wrap:anywhere;",
-            if (nzchar(search_scope_string_rv())) search_scope_string_rv() else "Loading search string…"
-          ),
-          if (!isTRUE(original_complete) && identical(search_scope_active_version_rv(),"original")) {
-            tags$div(
-              class="saved-note mb-2",
-              "Run the original scoping search before editing version 2"
-            )
-          },
+          if (!request_active && !isTRUE(original_complete))
+            textOutput("search_scope_validation_message"),
           if (length(search_scope_versions_rv()) > 1L) {
             tags$div(
               class="saved-note mb-2",
@@ -3169,7 +3144,8 @@ server <- function(input, output, session) {
               tags$span(class="saved-note fw-semibold","Scoping search running…")
             } else if (request_active && counts_resolved) {
               tags$span(class="saved-note fw-semibold","Scoping search complete.")
-            } else {
+            } else if (identical(as.character(current_user()$role),"administrator") &&
+                       isTRUE(search_boolean_validate(search_scope_string_rv())$valid)) {
               actionButton(
                 "run_search_scope",
                 sprintf("Run scoping search %s", search_scope_active_version_rv()),
@@ -3489,7 +3465,7 @@ server <- function(input, output, session) {
       ),
       tags$p(
         class="saved-note",
-        "This creates a temporary scoping version in the app. It does not replace the GitHub search string."
+        "This creates a temporary scoping version without modifying any GitHub search string."
       ),
       easyClose=FALSE,
       footer=tagList(
@@ -3778,6 +3754,14 @@ server <- function(input, output, session) {
     )
   })
 
+  output$search_scope_validation_message <- renderText({
+    if (nzchar(search_scope_request_id_rv())) return("")
+    query <- as.character(search_scope_string_rv() %||% "")
+    if (!nzchar(trimws(query))) return("Enter a scoping search string to enable Run scoping search.")
+    result <- search_boolean_validate(query)
+    if (isTRUE(result$valid)) "Basic Boolean syntax valid. Database-specific syntax is checked when scoping starts." else result$message
+  })
+
   observeEvent(input$run_search_scope, {
     req(authenticated())
     if (!session_can("control_workflows")) {
@@ -3785,6 +3769,14 @@ server <- function(input, output, session) {
       return()
     }
     if (nzchar(search_scope_request_id_rv())) return()
+    query <- as.character(input$search_scope_input_text %||% search_scope_string_rv())
+    if (!isTRUE(search_boolean_validate(query)$valid)) {
+      search_scope_status_rv(paste("Invalid scoping search:",search_boolean_validate(query)$message))
+      return()
+    }
+    search_scope_string_rv(query)
+    if (!length(search_scope_versions_rv()))
+      search_scope_versions_rv(stats::setNames(query,"original"))
 
     stamp <- format(Sys.time(),tz="UTC",format="%Y%m%dT%H%M%SZ")
     request_id <- paste0(
