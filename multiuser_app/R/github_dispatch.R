@@ -97,6 +97,26 @@ read_w00_scoping_source_catalogue <- function(ref = github_scoping_ref()) {
 # Launch the main W00 orchestrator from an explicit Shiny user action.
 # The strategy and exact source set are passed together; no repository
 # user_input file is edited and no global review environment is changed.
+# Read-only discovery for the current single-review development deployment.
+# Finds recent main-branch W00 orchestrator runs after page reload.
+w00_formal_recent_run <- function() {
+  assert_development_github_target()
+  url <- sprintf(
+    "https://api.github.com/repos/%s/actions/workflows/workflow_00_search_orchestrator.yml/runs?branch=main&event=workflow_dispatch&per_page=20",
+    github_dispatch_repo())
+  runs <- github_api_get_json(url)$workflow_runs %||% list()
+  if (!length(runs)) return(NULL)
+  runs[[1L]]
+}
+
+w00_formal_run_jobs <- function(run_id) {
+  assert_development_github_target()
+  if (!grepl("^[0-9]+$",as.character(run_id))) stop("Invalid W00 run ID",call.=FALSE)
+  url <- sprintf("https://api.github.com/repos/%s/actions/runs/%s/jobs?per_page=100",
+    github_dispatch_repo(),as.character(run_id))
+  github_api_get_json(url)$jobs %||% list()
+}
+
 dispatch_w00_formal <- function(search_string, sources, request_id) {
   assert_development_github_target()
   if (!is.character(search_string) || length(search_string)!=1L ||
