@@ -37,17 +37,18 @@ search_strategy_finalise <- function(review_key, search_string, created_by, expe
       !nzchar(trimws(created_by))) stop("Creator is required.",call.=FALSE)
   check <- search_boolean_validate(search_string)
   if (!isTRUE(check$valid)) stop(check$message,call.=FALSE)
-  # Sheets append is not compare-and-swap; concurrent writers can claim the same version.
-  # Do not permit immutable finalisation without a transactional backend.
-  if (identical(storage_backend(),"google_sheets"))
-    stop("Immutable finalisation is disabled for Google Sheets until an atomic writer is available.",call.=FALSE)
-  if (!identical(storage_backend(),"local"))
+  # One authorised administrator per review. Sheets checks are optimistic,
+  # not atomic across simultaneous sessions; conflicting rows fail verification.
+  backend <- storage_backend()
+  if (!backend %in% c("local","google_sheets"))
     stop("Unsupported immutable strategy storage backend.",call.=FALSE)
-  lock_path <- paste0(search_strategy_log_path(),".lock")
-  dir.create(dirname(lock_path),recursive=TRUE,showWarnings=FALSE)
-  if (!dir.create(lock_path,showWarnings=FALSE))
-    stop("Strategy registry is locked by another writer; retry after it completes.",call.=FALSE)
-  on.exit(unlink(lock_path,recursive=TRUE),add=TRUE)
+  if (identical(backend,"local")) {
+    lock_path <- paste0(search_strategy_log_path(),".lock")
+    dir.create(dirname(lock_path),recursive=TRUE,showWarnings=FALSE)
+    if (!dir.create(lock_path,showWarnings=FALSE))
+      stop("Strategy registry is locked by another writer; retry after it completes.",call.=FALSE)
+    on.exit(unlink(lock_path,recursive=TRUE),add=TRUE)
+  }
   existing <- search_strategy_versions(review_key)
   versions <- if(nrow(existing)) suppressWarnings(as.integer(existing$version)) else integer()
   if(anyNA(versions) || anyDuplicated(versions) || !identical(versions,seq_along(versions)))
@@ -62,13 +63,30 @@ search_strategy_finalise <- function(review_key, search_string, created_by, expe
   row <- list(review_key=review_key,version=as.character(latest+1L),
               strategy_sha256=sha,search_string=search_string,created_by=created_by,
               created_at_utc=format(Sys.time(),"%Y-%m-%dT%H:%M:%SZ",tz="UTC"))
-  path <- search_strategy_log_path()
-  dir.create(dirname(path),recursive=TRUE,showWarnings=FALSE)
-  cat(as.character(jsonlite::toJSON(row,auto_unbox=TRUE)), "\n",
-      file=path,append=TRUE,sep="")
+  if (identical(backend,"google_sheets")) {
+    # Recheck directly before append. Never automatically retry an uncertain append.
+    current <- search_strategy_versions(review_key)
+    if (nrow(current)!=latest)
+      stop("Strategy version changed before writing. Reload.",call.=FALSE)
+    gs4_auth_from_env()
+    ss <- sheet_id_from_env()
+    tab <- "search_strategy_versions"
+    if (!tab %in% sheet_names_cached(ss)) {
+      empty <- as.data.frame(setNames(replicate(length(search_strategy_version_columns),
+        character(),simplify=FALSE),search_strategy_version_columns),stringsAsFactors=FALSE)
+      googlesheets4::sheet_write(empty,ss=ss,sheet=tab)
+      invalidate_sheet_names_cache(ss)
+    }
+    googlesheets4::sheet_append(ss,data=as.data.frame(row,stringsAsFactors=FALSE),sheet=tab)
+  } else {
+    path <- search_strategy_log_path()
+    dir.create(dirname(path),recursive=TRUE,showWarnings=FALSE)
+    cat(as.character(jsonlite::toJSON(row,auto_unbox=TRUE)), "\n",
+        file=path,append=TRUE,sep="")
+  }
   verify <- search_strategy_versions(review_key)
   matching <- verify[as.character(verify$version)==row$version,,drop=FALSE]
-  if(nrow(matching)!=1L || !identical(as.character(matching$strategy_sha256[[1L]]),sha))
+  if(nrow(verify)!=latest+1L || nrow(matching)!=1L || !identical(as.character(matching$strategy_sha256[[1L]]),sha))
     stop("Finalisation write could not be verified; do not retry blindly.",call.=FALSE)
   row
 }
