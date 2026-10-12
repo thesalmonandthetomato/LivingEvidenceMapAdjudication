@@ -20,6 +20,7 @@ source("R/storage_sheets.R", local = TRUE)
 source("R/storage_backend.R", local = TRUE)
 source("R/auth.R", local = TRUE)
 source("R/github_dispatch.R", local = TRUE)
+source("R/search_boolean_validation.R", local = TRUE)
 
 queue_path <- Sys.getenv("LEM_W01_QUEUE", unset = "fixtures/w01_real_sample_2.jsonl")
 decision_path <- Sys.getenv("LEM_W01_DECISIONS", unset = "local_state/w01_decisions.jsonl")
@@ -1041,6 +1042,7 @@ server <- function(input, output, session) {
 
   search_scope_string_rv <- reactiveVal("")
   search_formal_draft_rv <- reactiveVal("")
+  search_formal_validation_rv <- reactiveVal(NULL)
   search_scope_status_rv <- reactiveVal("")
   search_scope_request_id_rv <- reactiveVal("")
   search_scope_run_id_rv <- reactiveVal("")
@@ -3181,6 +3183,11 @@ server <- function(input, output, session) {
               class="px-3 pb-3",
               textAreaInput("search_formal_text", "Formal search string",
                 value=search_formal_draft_rv(), rows=8, width="100%"),
+              fileInput("search_formal_upload", "Upload search string (.txt)",
+                accept=c(".txt","text/plain")),
+              actionButton("search_formal_validate", "Validate Boolean syntax",
+                class="btn-outline-primary btn-sm"),
+              textOutput("search_formal_validation_message"),
               tags$p(class="saved-note",
                 "Editable draft only. No strategy has been finalised, saved or dispatched.")
             )
@@ -3205,8 +3212,64 @@ server <- function(input, output, session) {
       return()
     }
     search_formal_draft_rv(query)
+    search_formal_validation_rv(NULL)
     updateTextAreaInput(session, "search_formal_text", value=query)
     showNotification("Scoping query copied to Searching as an editable draft.", type="message")
+  })
+
+  observeEvent(input$search_formal_text, {
+    req(authenticated())
+    if (!session_can("run_search_scoping")) return()
+    value <- as.character(input$search_formal_text %||% "")
+    if (!identical(value, search_formal_draft_rv())) {
+      search_formal_draft_rv(value)
+      search_formal_validation_rv(NULL)
+    }
+  }, ignoreInit=TRUE)
+
+  observeEvent(input$search_formal_upload, {
+    req(authenticated())
+    if (!session_can("run_search_scoping")) return()
+    upload <- input$search_formal_upload
+    if (is.null(upload)) return()
+    if (!grepl("\\.txt$", upload$name, ignore.case=TRUE)) {
+      showNotification("Upload a .txt search-string file.", type="error")
+      return()
+    }
+    bytes <- file.info(upload$datapath)$size
+    if (is.na(bytes) || bytes > 1024L * 1024L || bytes == 0L) {
+      showNotification("Search-string file must be between 1 byte and 1 MB.", type="error")
+      return()
+    }
+    lines <- tryCatch(readLines(upload$datapath, warn=FALSE, encoding="UTF-8"),
+                      error=function(e) e)
+    if (inherits(lines,"error")) {
+      showNotification("Unable to read the uploaded text file.", type="error")
+      return()
+    }
+    query <- sub("^\\ufeff", "", paste(lines, collapse="\\n"))
+    if (!nzchar(trimws(query))) {
+      showNotification("Uploaded search string is empty.", type="error")
+      return()
+    }
+    search_formal_draft_rv(query)
+    search_formal_validation_rv(NULL)
+    updateTextAreaInput(session, "search_formal_text", value=query)
+  })
+
+  observeEvent(input$search_formal_validate, {
+    req(authenticated())
+    if (!session_can("run_search_scoping")) return()
+    current <- as.character(input$search_formal_text %||% "")
+    result <- search_boolean_validate(current)
+    result$sha256 <- if(isTRUE(result$valid)) digest::digest(current,algo="sha256",serialize=FALSE) else NULL
+    search_formal_validation_rv(result)
+  })
+
+  output$search_formal_validation_message <- renderText({
+    result <- search_formal_validation_rv()
+    if (is.null(result)) return("Not validated.")
+    result$message
   })
 
   output$search_scope_progress <- renderUI({
