@@ -152,6 +152,27 @@ manual_search_zenodo_publish <- function(review_id,submission_id,prepared,files)
         paste0("https://zenodo.org/records/",id)),files=files_meta)
   },error=function(e)stop(sprintf("Zenodo draft %s: %s",id,conditionMessage(e)),call.=FALSE))
 }
+manual_search_successful_runs <- function() {
+  if(!identical(storage_backend(),"google_sheets")) return(character())
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  metadata <- as.data.frame(googlesheets4::read_sheet(ss,
+    sheet="review_metadata",col_types="cc"))
+  events <- as.data.frame(googlesheets4::read_sheet(ss,
+    sheet="workflow_events",col_types="cccccccc"))
+  if(!all(c("key","value") %in% names(metadata)) ||
+     !all(c("review_id","workflow","event_type","github_run_id") %in% names(events)))
+    stop("Review search registry schema is incomplete",call.=FALSE)
+  review_id <- as.character(metadata$value[match("review_id",metadata$key)])
+  if(length(review_id)!=1L || is.na(review_id) || !nzchar(review_id))
+    stop("Current review ID is unavailable",call.=FALSE)
+  matched <- events$review_id==review_id & events$workflow=="W00" &
+    events$event_type=="zenodo_published"
+  matched[is.na(matched)] <- FALSE
+  ids <- unique(as.character(events$github_run_id[matched]))
+  ids[!is.na(ids)&grepl("^[0-9]+$",ids)]
+}
+
 manual_search_api_history <- function(run_id) {
   if(!grepl("^[0-9]+$",run_id)) stop("Invalid W00 run ID",call.=FALSE)
   artifacts <- w00_scoping_run_artifacts(run_id)
