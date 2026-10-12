@@ -39,6 +39,10 @@ jobs:
             cat("PASS parse:", path, "\\n")
           }
           cat(sprintf("PASS: parsed %d application files\\n",length(paths)))
+      - name: Test Searching Boolean grammar offline
+        working-directory: multiuser_app
+        shell: bash
+        run: Rscript tests/test_search_boolean_validation.R
       - name: Validate deployment target is explicitly main
         shell: bash
         run: |
