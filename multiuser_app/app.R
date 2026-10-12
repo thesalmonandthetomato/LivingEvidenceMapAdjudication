@@ -1049,6 +1049,7 @@ server <- function(input, output, session) {
   search_formal_expected_version_rv <- reactiveVal(NULL)
   search_formal_finalisation_message_rv <- reactiveVal("")
   search_formal_launched_rv <- reactiveVal(FALSE)
+  search_formal_monitor_rv <- reactiveVal(NULL)
   search_formal_loaded_key_rv <- reactiveVal("")
   search_formal_draft_message_rv <- reactiveVal("")
   search_source_groups_rv <- reactiveVal(NULL)
@@ -3181,6 +3182,7 @@ server <- function(input, output, session) {
                 if (!search_formal_launched_rv()) actionButton("search_formal_start", "Start search", class="btn-primary btn-sm mt-2"),
                 textOutput("search_formal_finalisation_message")
               ),
+              uiOutput("search_formal_progress"),
               tags$p(class="saved-note",
                 "Start search validates the query and database selection, saves the strategy version, and launches W00 on the development main branch.")
             )
@@ -3464,6 +3466,73 @@ server <- function(input, output, session) {
         "Check LivingEvidenceMap Actions → Workflow 00 - Search orchestrator (main).",
         "No W01 dispatch requested."))
     }
+  })
+
+  # Read-only progress: recover latest single-review W00 dispatch after
+  # reloading Shiny. Never launch or resume any workflow during polling.
+  observe({
+    req(authenticated())
+    invalidateLater(10000,session)
+    run <- tryCatch(w00_formal_recent_run(),error=function(e)e)
+    if (inherits(run,"error")) {
+      search_formal_monitor_rv(list(error=conditionMessage(run)))
+      return()
+    }
+    if (is.null(run)) return()
+    id <- as.character(run$id %||% "")
+    jobs <- tryCatch(w00_formal_run_jobs(id),error=function(e)e)
+    if (inherits(jobs,"error")) {
+      search_formal_monitor_rv(list(id=id,url=as.character(run$html_url %||% ""),
+        error=conditionMessage(jobs)))
+      return()
+    }
+    search_formal_monitor_rv(list(id=id,url=as.character(run$html_url %||% ""),
+      status=as.character(run$status %||% ""),
+      conclusion=as.character(run$conclusion %||% ""),
+      jobs=jobs))
+  })
+
+  output$search_formal_progress <- renderUI({
+    m <- search_formal_monitor_rv()
+    if (is.null(m)) return(NULL)
+    if (nzchar(as.character(m$error %||% ""))) return(
+      tags$p(class="saved-note",paste("W00 progress temporarily unavailable:",m$error)))
+    jobs <- m$jobs %||% list()
+    # The orchestrator creates reusable source-child jobs after planning.
+    source_jobs <- Filter(function(j) {
+      n <- as.character(j$name %||% "")
+      grepl("^(search|source-search|source /|search /|search-source|harvest)",n,ignore.case=TRUE) ||
+        grepl(" / search$",n,ignore.case=TRUE)
+    },jobs)
+    n_total <- length(source_jobs)
+    n_done <- sum(vapply(source_jobs,function(j)
+      identical(as.character(j$status %||% ""),"completed"),logical(1)))
+    run_finished <- identical(as.character(m$status %||% ""),"completed")
+    pct <- if(run_finished) 100L else if(n_total) min(95L,round(10+85*n_done/n_total)) else 5L
+    overview <- if(run_finished) paste("W00 finished:",m$conclusion) else if(n_total) {
+      sprintf("Database jobs: %d of %d finished",n_done,n_total)
+    } else "W00 preparing search and database jobs…"
+    div(class="mt-3",
+      tags$h6("W00 search progress"),
+      tags$p(class="small",overview),
+      tags$p(tags$a(href=m$url,target="_blank",rel="noopener noreferrer",
+        paste("GitHub Actions run",m$id))),
+      div(class="progress mb-3",div(class="progress-bar",
+        role="progressbar",style=sprintf("width:%d%%",pct),
+        `aria-valuenow`=pct,`aria-valuemin`=0,`aria-valuemax`=100)),
+      if(n_total) tags$div(class="table-responsive",
+        tags$table(class="table table-sm",
+          tags$thead(tags$tr(tags$th("Database job"),tags$th("Status"),tags$th("Records"))),
+          tags$tbody(lapply(source_jobs,function(j) {
+            st <- as.character(j$status %||% "queued")
+            outcome <- as.character(j$conclusion %||% "")
+            tags$tr(tags$td(as.character(j$name %||% "")),
+              tags$td(if(identical(st,"completed") && nzchar(outcome)) outcome else st),
+              tags$td("—"))
+          }))
+        ))
+      else tags$p(class="saved-note","Waiting for GitHub to create database jobs.")
+    )
   })
 
   output$search_formal_finalisation_message <- renderText({
