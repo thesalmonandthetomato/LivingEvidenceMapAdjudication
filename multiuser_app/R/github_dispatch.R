@@ -124,6 +124,11 @@ dispatch_w00_formal <- function(search_string, sources, request_id) {
   sources <- unique(as.character(sources))
   if (!length(sources) || any(!grepl("^[a-z][a-z0-9_]*$",sources)))
     stop("Select valid source IDs before dispatch",call.=FALSE)
+  # The current Shiny form supplies one raw Boolean string. W00's existing
+  # OpenAlex/OQL translator requires structured terms or an explicit override.
+  # Fail before dispatch rather than start a doomed or semantically altered run.
+  if ("openalex" %in% sources)
+    stop("OpenAlex requires a database-specific OQL query or structured W00 concepts; the current Shiny search-string form cannot supply either. No search launched.",call.=FALSE)
   if (!grepl("^[A-Za-z0-9._-]{8,80}$",request_id))
     stop("Invalid formal search request ID",call.=FALSE)
   strategy <- list(
