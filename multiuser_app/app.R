@@ -1050,6 +1050,7 @@ server <- function(input, output, session) {
   search_formal_finalisation_message_rv <- reactiveVal("")
   search_formal_launched_rv <- reactiveVal(FALSE)
   search_formal_monitor_rv <- reactiveVal(NULL)
+  search_formal_request_id_rv <- reactiveVal("")
   search_formal_loaded_key_rv <- reactiveVal("")
   search_formal_draft_message_rv <- reactiveVal("")
   search_source_groups_rv <- reactiveVal(NULL)
@@ -3535,6 +3536,8 @@ server <- function(input, output, session) {
       search_formal_finalisation_message_rv(paste("W00 launch not confirmed:",conditionMessage(outcome),
         "Check GitHub Actions before trying again."))
     } else {
+      search_formal_request_id_rv(request_id)
+      search_formal_monitor_rv(NULL)
       search_formal_launched_rv(TRUE)
       search_formal_finalisation_message_rv(paste(
         "W00 full search dispatch accepted for",length(sources),"databases.",
@@ -3548,12 +3551,17 @@ server <- function(input, output, session) {
   observe({
     req(authenticated())
     invalidateLater(10000,session)
-    run <- tryCatch(w00_formal_recent_run(),error=function(e)e)
+    request_id <- as.character(search_formal_request_id_rv() %||% "")
+    if (!nzchar(request_id)) return()
+    run <- tryCatch(w00_formal_recent_run(request_id),error=function(e)e)
     if (inherits(run,"error")) {
       search_formal_monitor_rv(list(error=conditionMessage(run)))
       return()
     }
-    if (is.null(run)) return()
+    if (is.null(run)) {
+      search_formal_monitor_rv(list(waiting=TRUE))
+      return()
+    }
     id <- as.character(run$id %||% "")
     jobs <- tryCatch(w00_formal_run_jobs(id),error=function(e)e)
     if (inherits(jobs,"error")) {
@@ -3570,6 +3578,7 @@ server <- function(input, output, session) {
   output$search_formal_progress <- renderUI({
     m <- search_formal_monitor_rv()
     if (is.null(m)) return(NULL)
+    if (isTRUE(m$waiting)) return(tags$p(class="saved-note","Waiting for the matching W00 GitHub Actions run to appear…"))
     if (nzchar(as.character(m$error %||% ""))) return(
       tags$p(class="saved-note",paste("W00 progress temporarily unavailable:",m$error)))
     jobs <- m$jobs %||% list()
