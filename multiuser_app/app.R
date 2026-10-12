@@ -3258,8 +3258,15 @@ server <- function(input, output, session) {
                 else "Manual publication requires ZENODO_ACCESS_TOKEN in the private Shiny deployment environment."),
               tags$hr(),
               tags$h6("Manual upload history"),
-              uiOutput("search_manual_history"),
-              tags$h6(class="mt-3","Combined search totals"),
+              uiOutput("search_manual_history")
+            )
+          ),
+          tags$details(
+            class="assignment-disclosure",
+            `data-accordion-key`="configure-review-summary-report",
+            tags$summary(tags$strong("Summary and report")),
+            div(class="px-3 pb-3",
+              tags$h6("Combined search totals"),
               uiOutput("search_combined_totals"),
               downloadButton("download_search_history","Download search history (CSV)",
                 class="btn-outline-secondary btn-sm")
