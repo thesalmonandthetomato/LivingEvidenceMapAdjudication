@@ -3170,7 +3170,7 @@ server <- function(input, output, session) {
           uiOutput("search_scope_progress"),
           uiOutput("search_scope_table"),
           uiOutput("search_scope_report_download"),
-          actionButton("search_scope_finalise_to_searching", "Finalise search string", class="btn-outline-primary btn-sm mt-2")
+          if (isTRUE(counts_resolved)) actionButton("search_scope_finalise_to_searching", "Finalise search string", class="btn-outline-primary btn-sm mt-2")
             )
           ),
           tags$details(
