@@ -1,0 +1,7 @@
+app <- paste(readLines("app.R",warn=FALSE),collapse="\n")
+stopifnot(grepl("search_formal_live_validation <- reactive({",app,fixed=TRUE))
+stopifnot(grepl("search_formal_live_validation()$message",app,fixed=TRUE))
+stopifnot(grepl('LEM_SEARCH_REVIEW_ID is not configured',app,fixed=TRUE))
+stopifnot(!grepl('observeEvent(input$search_formal_validate',app,fixed=TRUE))
+stopifnot(grepl('Database counts complete; awaiting verified GitHub report',app,fixed=TRUE))
+cat("PASS: live syntax validation, storage blocker and truthful scoping report progress\n")
