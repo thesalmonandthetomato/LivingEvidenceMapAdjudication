@@ -1040,6 +1040,7 @@ server <- function(input, output, session) {
   backend_reset_status <- reactiveVal("")
 
   search_scope_string_rv <- reactiveVal("")
+  search_formal_draft_rv <- reactiveVal("")
   search_scope_status_rv <- reactiveVal("")
   search_scope_request_id_rv <- reactiveVal("")
   search_scope_run_id_rv <- reactiveVal("")
@@ -3168,15 +3169,21 @@ server <- function(input, output, session) {
           ),
           uiOutput("search_scope_progress"),
           uiOutput("search_scope_table"),
-          uiOutput("search_scope_report_download")
+          uiOutput("search_scope_report_download"),
+          actionButton("search_scope_finalise_to_searching", "Finalise search string", class="btn-outline-primary btn-sm mt-2")
             )
           ),
           tags$details(
             class="assignment-disclosure",
             `data-accordion-key`="configure-review-searching",
             tags$summary(tags$strong("Searching")),
-            div(class="px-3 pb-3 saved-note",
-                "Search configuration controls will be added after validation of this interface checkpoint.")
+            div(
+              class="px-3 pb-3",
+              textAreaInput("search_formal_text", "Formal search string",
+                value=search_formal_draft_rv(), rows=8, width="100%"),
+              tags$p(class="saved-note",
+                "Editable draft only. No strategy has been finalised, saved or dispatched.")
+            )
           ),
           tags$details(
             class="assignment-disclosure",
@@ -3187,6 +3194,19 @@ server <- function(input, output, session) {
         )
       )
     )
+  })
+
+  observeEvent(input$search_scope_finalise_to_searching, {
+    req(authenticated())
+    if (!session_can("run_search_scoping")) return()
+    query <- as.character(search_scope_string_rv() %||% "")
+    if (!nzchar(trimws(query))) {
+      showNotification("There is no scoping query to transfer.", type="error")
+      return()
+    }
+    search_formal_draft_rv(query)
+    updateTextAreaInput(session, "search_formal_text", value=query)
+    showNotification("Scoping query copied to Searching as an editable draft.", type="message")
   })
 
   output$search_scope_progress <- renderUI({
