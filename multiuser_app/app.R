@@ -22,6 +22,7 @@ source("R/auth.R", local = TRUE)
 source("R/github_dispatch.R", local = TRUE)
 source("R/search_boolean_validation.R", local = TRUE)
 source("R/search_draft_storage.R", local = TRUE)
+source("R/search_strategy_versions.R", local = TRUE)
 
 queue_path <- Sys.getenv("LEM_W01_QUEUE", unset = "fixtures/w01_real_sample_2.jsonl")
 decision_path <- Sys.getenv("LEM_W01_DECISIONS", unset = "local_state/w01_decisions.jsonl")
@@ -1044,6 +1045,8 @@ server <- function(input, output, session) {
   search_scope_string_rv <- reactiveVal("")
   search_formal_draft_rv <- reactiveVal("")
   search_formal_validation_rv <- reactiveVal(NULL)
+  search_formal_expected_version_rv <- reactiveVal(NULL)
+  search_formal_finalisation_message_rv <- reactiveVal("")
   search_formal_loaded_key_rv <- reactiveVal("")
   search_formal_draft_message_rv <- reactiveVal("")
   search_scope_status_rv <- reactiveVal("")
@@ -3193,6 +3196,10 @@ server <- function(input, output, session) {
               actionButton("search_formal_validate", "Validate Boolean syntax",
                 class="btn-outline-primary btn-sm"),
               textOutput("search_formal_validation_message"),
+              if (identical(as.character(current_user()$role %||% ""), "administrator")) tagList(
+                actionButton("search_formal_finalise", "Finalise strategy version", class="btn-primary btn-sm"),
+                textOutput("search_formal_finalisation_message")
+              ),
               tags$p(class="saved-note",
                 "Editable draft only. No strategy has been finalised, saved or dispatched.")
             )
@@ -3273,6 +3280,7 @@ server <- function(input, output, session) {
     if (!identical(value, search_formal_draft_rv())) {
       search_formal_draft_rv(value)
       search_formal_validation_rv(NULL)
+      search_formal_expected_version_rv(NULL)
     }
   }, ignoreInit=TRUE)
 
@@ -3312,7 +3320,48 @@ server <- function(input, output, session) {
     current <- as.character(input$search_formal_text %||% "")
     result <- search_boolean_validate(current)
     result$sha256 <- if(isTRUE(result$valid)) digest::digest(current,algo="sha256",serialize=FALSE) else NULL
+    review <- Sys.getenv("LEM_SEARCH_REVIEW_ID",unset="")
+    expected <- if (isTRUE(result$valid) && nzchar(review)) tryCatch(
+      nrow(search_strategy_versions(search_strategy_review_key(review))),error=function(e)e) else NULL
+    if (inherits(expected,"error")) {
+      result <- list(valid=FALSE,message=paste("Cannot read strategy history:",conditionMessage(expected)))
+      expected <- NULL
+    }
+    search_formal_expected_version_rv(expected)
     search_formal_validation_rv(result)
+  })
+
+  observeEvent(input$search_formal_finalise, {
+    req(authenticated(),current_user())
+    if (!identical(as.character(current_user()$role),"administrator") ||
+        !session_can("run_search_scoping")) return()
+    query <- as.character(input$search_formal_text %||% "")
+    validation <- search_formal_validation_rv()
+    version <- search_formal_expected_version_rv()
+    if (!isTRUE(validation$valid) || is.null(version) ||
+        !identical(validation$sha256,digest::digest(query,algo="sha256",serialize=FALSE))) {
+      search_formal_finalisation_message_rv("Validate the current search string before finalising.")
+      return()
+    }
+    review <- Sys.getenv("LEM_SEARCH_REVIEW_ID",unset="")
+    if (!nzchar(review)) {
+      search_formal_finalisation_message_rv("Cannot finalise: LEM_SEARCH_REVIEW_ID is not set.")
+      return()
+    }
+    outcome <- tryCatch(search_strategy_finalise(
+      search_strategy_review_key(review),query,as.character(current_user()$user_id),
+      expected_version=as.integer(version)),error=function(e)e)
+    if (inherits(outcome,"error")) {
+      search_formal_finalisation_message_rv(paste("Finalisation not confirmed:",conditionMessage(outcome)))
+    } else {
+      search_formal_validation_rv(NULL)
+      search_formal_expected_version_rv(NULL)
+      search_formal_finalisation_message_rv(paste("Strategy version",outcome$version,"finalised and verified. No search launched."))
+    }
+  })
+
+  output$search_formal_finalisation_message <- renderText({
+    search_formal_finalisation_message_rv()
   })
 
   output$search_formal_validation_message <- renderText({
