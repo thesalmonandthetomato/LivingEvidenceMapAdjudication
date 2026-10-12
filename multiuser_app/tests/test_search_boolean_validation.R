@@ -1,6 +1,9 @@
 source("R/search_boolean_validation.R")
 valid <- c('salmon AND aquaculture', '("atlantic salmon" OR trout) AND farm*',
-           'fish AND (feed OR NOT disease)', 'salmon')
+           'fish AND (feed OR NOT disease)', 'salmon',
+           '(salmon OR salmo) AND (farm* or aquacultur*)',
+           '(salmon or salmo) and (farm* Or aquacultur*)',
+           'fish and not disease', '"OR" AND salmon')
 invalid <- c('', 'AND salmon', 'salmon AND', 'salmon OR OR trout',
              'salmon trout', '(salmon OR trout', 'salmon )',
              'salmon AND ()', '"salmon')
