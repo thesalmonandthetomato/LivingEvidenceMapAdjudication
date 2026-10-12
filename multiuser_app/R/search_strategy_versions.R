@@ -106,3 +106,64 @@ search_review_require_sole_admin <- function(users, actor_id) {
     stop("Only the review administrator can finalise a search strategy.",call.=FALSE)
   invisible(TRUE)
 }
+
+
+# Review-specific completed W00 scoping results. Separate from immutable formal strategies.
+search_scoping_columns <- c("review_key","run_id","query","counts_json","completed_at_utc")
+search_scoping_log_path <- function() Sys.getenv("LEM_SEARCH_SCOPING_LOG",
+  unset="local_state/search_scoping_results.jsonl")
+
+search_scoping_history <- function(review_key) {
+  if (identical(storage_backend(),"google_sheets")) {
+    gs4_auth_from_env()
+    ss <- sheet_id_from_env()
+    if (!"search_scoping_results" %in% sheet_names_cached(ss)) return(data.frame())
+    rows <- googlesheets4::read_sheet(ss,sheet="search_scoping_results",col_types="c")
+  } else {
+    path <- search_scoping_log_path()
+    if (!file.exists(path)) return(data.frame())
+    lines <- readLines(path,warn=FALSE)
+    if (!length(lines)) return(data.frame())
+    rows <- do.call(rbind,lapply(lines,function(line)
+      as.data.frame(jsonlite::fromJSON(line),stringsAsFactors=FALSE)))
+  }
+  if (!all(search_scoping_columns %in% names(rows)))
+    stop("Incompatible scoping history schema",call.=FALSE)
+  rows[!is.na(rows$review_key) & rows$review_key==review_key,,drop=FALSE]
+}
+
+search_scoping_save <- function(review_key,run_id,query,counts) {
+  if (!grepl("^[0-9]+$",as.character(run_id)))
+    stop("Scoping run ID missing",call.=FALSE)
+  if (!is.character(query)||length(query)!=1L||!nzchar(trimws(query)))
+    stop("Scoping query missing",call.=FALSE)
+  if (!is.data.frame(counts)||!nrow(counts)||
+      !all(c("source_slug","status","hits")%in%names(counts)))
+    stop("Scoping counts incomplete",call.=FALSE)
+  existing <- search_scoping_history(review_key)
+  if (nrow(existing) && as.character(run_id)%in%as.character(existing$run_id))
+    return(invisible(FALSE))
+  row <- list(review_key=review_key,run_id=as.character(run_id),query=query,
+    counts_json=as.character(jsonlite::toJSON(counts,dataframe="rows",auto_unbox=TRUE,na="null")),
+    completed_at_utc=format(Sys.time(),"%Y-%m-%dT%H:%M:%SZ",tz="UTC"))
+  if (identical(storage_backend(),"google_sheets")) {
+    gs4_auth_from_env()
+    ss <- sheet_id_from_env()
+    if (!"search_scoping_results"%in%sheet_names_cached(ss)) {
+      empty <- as.data.frame(setNames(replicate(length(search_scoping_columns),
+        character(),simplify=FALSE),search_scoping_columns),stringsAsFactors=FALSE)
+      googlesheets4::sheet_write(empty,ss=ss,sheet="search_scoping_results")
+      invalidate_sheet_names_cache(ss)
+    }
+    googlesheets4::sheet_append(ss,
+      data=as.data.frame(row,stringsAsFactors=FALSE),sheet="search_scoping_results")
+  } else {
+    path <- search_scoping_log_path()
+    dir.create(dirname(path),recursive=TRUE,showWarnings=FALSE)
+    cat(as.character(jsonlite::toJSON(row,auto_unbox=TRUE)),"\n",file=path,append=TRUE,sep="")
+  }
+  verify <- search_scoping_history(review_key)
+  if (!as.character(run_id)%in%as.character(verify$run_id))
+    stop("Scoping result write could not be verified",call.=FALSE)
+  invisible(TRUE)
+}
