@@ -3185,7 +3185,7 @@ server <- function(input, output, session) {
             div(
               class="px-3 pb-3",
               textAreaInput("search_formal_text", "Formal search string",
-                value=search_formal_draft_rv(), rows=8, width="100%"),
+                value=isolate(search_formal_draft_rv()), rows=8, width="100%"),
               fileInput("search_formal_upload", "Upload search string (.txt)",
                 accept=c(".txt","text/plain")),
               actionButton("search_formal_save", "Save draft", class="btn-outline-secondary btn-sm"),
