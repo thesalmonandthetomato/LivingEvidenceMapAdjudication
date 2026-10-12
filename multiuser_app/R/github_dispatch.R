@@ -124,6 +124,28 @@ w00_formal_recent_run <- function(request_id, run_id = "") {
   matches[[1L]]
 }
 
+# Recover a W00 run using the review-specific metadata, not the latest global run.
+w00_formal_review_run <- function() {
+  if(!identical(storage_backend(),"google_sheets")) return(NULL)
+  gs4_auth_from_env()
+  rows <- as.data.frame(googlesheets4::read_sheet(
+    sheet_id_from_env(),sheet="review_metadata",col_types="cc"))
+  if(!all(c("key","value")%in%names(rows))) stop("Invalid review metadata",call.=FALSE)
+  vals <- stats::setNames(as.character(rows$value),as.character(rows$key))
+  run_id <- vals[["latest_w00_run_id"]] %||% ""
+  if(is.na(run_id) || !nzchar(trimws(run_id))) return(NULL)
+  if(!grepl("^[0-9]+$",run_id)) return(NULL)
+  endpoint <- sprintf("https://api.github.com/repos/%s/actions/runs/%s",
+    github_dispatch_repo(),run_id)
+  run <- github_api_get_json(endpoint)
+  title <- as.character(run$display_title %||% "")
+  prefix <- "W00 Shiny "
+  if(!startsWith(title,prefix)) return(NULL)
+  request_id <- substring(title,nchar(prefix)+1L)
+  if(!grepl("^[A-Za-z0-9._-]{8,80}$",request_id)) return(NULL)
+  list(request_id=request_id,run_id=run_id)
+}
+
 w00_formal_run_jobs <- function(run_id) {
   assert_development_github_target()
   if (!grepl("^[0-9]+$",as.character(run_id))) stop("Invalid W00 run ID",call.=FALSE)
