@@ -3173,8 +3173,6 @@ server <- function(input, output, session) {
                 accept=c(".txt","text/plain")),
               actionButton("search_formal_save", "Save draft", class="btn-outline-secondary btn-sm"),
               textOutput("search_formal_draft_message"),
-              actionButton("search_formal_validate", "Validate Boolean syntax",
-                class="btn-outline-primary btn-sm"),
               textOutput("search_formal_validation_message"),
               if (identical(as.character(current_user()$role %||% ""), "administrator")) tagList(
                 actionButton("search_formal_finalise", "Finalise strategy version", class="btn-primary btn-sm"),
@@ -3358,21 +3356,8 @@ server <- function(input, output, session) {
     updateTextAreaInput(session, "search_formal_text", value=query)
   })
 
-  observeEvent(input$search_formal_validate, {
-    req(authenticated())
-    if (!session_can("run_search_scoping")) return()
-    current <- as.character(input$search_formal_text %||% "")
-    result <- search_boolean_validate(current)
-    result$sha256 <- if(isTRUE(result$valid)) digest::digest(current,algo="sha256",serialize=FALSE) else NULL
-    review <- Sys.getenv("LEM_SEARCH_REVIEW_ID",unset="")
-    expected <- if (isTRUE(result$valid) && nzchar(review)) tryCatch(
-      nrow(search_strategy_versions(search_strategy_review_key(review))),error=function(e)e) else NULL
-    if (inherits(expected,"error")) {
-      result <- list(valid=FALSE,message=paste("Cannot read strategy history:",conditionMessage(expected)))
-      expected <- NULL
-    }
-    search_formal_expected_version_rv(expected)
-    search_formal_validation_rv(result)
+  search_formal_live_validation <- reactive({
+    search_boolean_validate(as.character(input$search_formal_text %||% ""))
   })
 
   observeEvent(input$search_formal_finalise, {
@@ -3380,16 +3365,20 @@ server <- function(input, output, session) {
     if (!identical(as.character(current_user()$role),"administrator") ||
         !session_can("run_search_scoping")) return()
     query <- as.character(input$search_formal_text %||% "")
-    validation <- search_formal_validation_rv()
-    version <- search_formal_expected_version_rv()
-    if (!isTRUE(validation$valid) || is.null(version) ||
-        !identical(validation$sha256,digest::digest(query,algo="sha256",serialize=FALSE))) {
-      search_formal_finalisation_message_rv("Validate the current search string before finalising.")
+    validation <- search_formal_live_validation()
+    if (!isTRUE(validation$valid)) {
+      search_formal_finalisation_message_rv(paste("Cannot finalise:",validation$message))
       return()
     }
-    review <- Sys.getenv("LEM_SEARCH_REVIEW_ID",unset="")
+    review <- trimws(Sys.getenv("LEM_SEARCH_REVIEW_ID",unset=""))
     if (!nzchar(review)) {
-      search_formal_finalisation_message_rv("Cannot finalise: LEM_SEARCH_REVIEW_ID is not set.")
+      search_formal_finalisation_message_rv("Cannot finalise: LEM_SEARCH_REVIEW_ID is not configured.")
+      return()
+    }
+    version <- tryCatch(nrow(search_strategy_versions(search_strategy_review_key(review))),
+      error=function(e)e)
+    if (inherits(version,"error")) {
+      search_formal_finalisation_message_rv(paste("Cannot read strategy history:",conditionMessage(version)))
       return()
     }
     outcome <- tryCatch({
@@ -3400,8 +3389,6 @@ server <- function(input, output, session) {
     if (inherits(outcome,"error")) {
       search_formal_finalisation_message_rv(paste("Finalisation not confirmed:",conditionMessage(outcome)))
     } else {
-      search_formal_validation_rv(NULL)
-      search_formal_expected_version_rv(NULL)
       search_formal_finalisation_message_rv(paste("Strategy version",outcome$version,"finalised and verified. No search launched."))
     }
   })
@@ -3411,9 +3398,8 @@ server <- function(input, output, session) {
   })
 
   output$search_formal_validation_message <- renderText({
-    result <- search_formal_validation_rv()
-    if (is.null(result)) return("Not validated.")
-    result$message
+    if (!nzchar(trimws(as.character(input$search_formal_text %||% "")))) return("Enter a search string.")
+    search_formal_live_validation()$message
   })
 
   output$search_scope_progress <- renderUI({
@@ -3918,7 +3904,7 @@ server <- function(input, output, session) {
       progress_label <- sprintf("Searching databases: %d of %d complete",completed,total)
     } else if (total > 0L && completed >= total) {
       pct <- if (identical(merge_status,"in_progress")) 96L else 92L
-      progress_label <- "Finalising scoping report…"
+      progress_label <- "Database counts complete; awaiting verified GitHub report…"
     } else {
       pct <- 10L
       progress_label <- "Preparing scoping search…"
