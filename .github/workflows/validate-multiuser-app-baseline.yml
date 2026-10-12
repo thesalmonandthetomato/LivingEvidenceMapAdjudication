@@ -39,6 +39,16 @@ jobs:
             cat("PASS parse:", path, "\\n")
           }
           cat(sprintf("PASS: parsed %d application files\\n",length(paths)))
+      - name: Install draft test dependencies
+        shell: Rscript {0}
+        run: |
+          needed <- c("digest","jsonlite")
+          missing <- needed[!vapply(needed,requireNamespace,logical(1),quietly=TRUE)]
+          if(length(missing)) install.packages(missing)
+      - name: Test search draft persistence offline
+        working-directory: multiuser_app
+        shell: bash
+        run: Rscript tests/test_search_draft_storage.R
       - name: Test Searching Boolean grammar offline
         working-directory: multiuser_app
         shell: bash
