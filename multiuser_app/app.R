@@ -3178,17 +3178,13 @@ server <- function(input, output, session) {
               textOutput("search_formal_validation_message"),
               uiOutput("search_source_group_controls"),
               textOutput("search_source_selection_preview"),
-              textAreaInput("search_formal_openalex_oql",
-                "OpenAlex OQL (required only when OpenAlex is selected)",
-                value="", rows=3, width="100%",
-                placeholder="works where title/abstract has (\"example\")"),
               if (identical(as.character(current_user()$role %||% ""), "administrator")) tagList(
                 if (!search_formal_launched_rv()) actionButton("search_formal_start", "Start search", class="btn-primary btn-sm mt-2"),
                 textOutput("search_formal_finalisation_message")
               ),
               uiOutput("search_formal_progress"),
               tags$p(class="saved-note",
-                "Start search validates the query and database selection, saves the strategy version, and launches W00 on the development main branch.")
+                "Start search requires successful scoping counts for the same search string and selected databases, then saves the strategy version and launches W00 on development main.")
             )
           ),
           tags$details(
@@ -3383,6 +3379,29 @@ server <- function(input, output, session) {
     search_boolean_validate(as.character(input$search_formal_text %||% ""))
   })
 
+  # Require successful count-only scoping of this exact query for selected databases.
+  search_formal_scoping_check <- function(query, sources) {
+    versions <- search_scope_versions_rv()
+    results <- search_scope_results_rv() %||% list()
+    matched <- names(versions)[vapply(versions,function(x)
+      identical(trimws(as.character(x)),trimws(as.character(query))),logical(1))]
+    if (!length(matched))
+      return("Run scoping for this search string before starting the full search.")
+    for (version in rev(matched)) {
+      rows <- results[[version]]
+      if (is.null(rows) || !nrow(rows) ||
+          !all(c("source_slug","status","hits") %in% names(rows))) next
+      positions <- match(sources,as.character(rows$source_slug))
+      if (anyNA(positions)) next
+      selected <- rows[positions,,drop=FALSE]
+      states <- vapply(selected$status,search_scope_display_status,character(1))
+      hits <- suppressWarnings(as.numeric(as.character(selected$hits)))
+      if (all(states=="Complete") && all(is.finite(hits) & hits>=0))
+        return(NULL)
+    }
+    "Complete successful scoping for every selected database with this search string before starting W00."
+  }
+
   observeEvent(input$search_formal_start, {
     req(authenticated(),current_user())
     if (!identical(as.character(current_user()$role),"administrator") ||
@@ -3396,6 +3415,11 @@ server <- function(input, output, session) {
     sources <- search_source_selected()
     if (!length(sources)) {
       search_formal_finalisation_message_rv("Cannot start: select at least one database.")
+      return()
+    }
+    scope_issue <- search_formal_scoping_check(query,sources)
+    if (!is.null(scope_issue)) {
+      search_formal_finalisation_message_rv(scope_issue)
       return()
     }
     showModal(modalDialog(
@@ -3422,6 +3446,11 @@ server <- function(input, output, session) {
     sources <- search_source_selected()
     if (!length(sources)) {
       search_formal_finalisation_message_rv("Select at least one database.")
+      return()
+    }
+    scope_issue <- search_formal_scoping_check(query,sources)
+    if (!is.null(scope_issue)) {
+      search_formal_finalisation_message_rv(scope_issue)
       return()
     }
     review <- tryCatch(search_formal_review_id(),error=function(e)e)
@@ -3459,8 +3488,7 @@ server <- function(input, output, session) {
     request_id <- paste0("formal-",format(Sys.time(),tz="UTC",format="%Y%m%dT%H%M%SZ"),"-",
       substr(digest::digest(paste(review,query_hash,paste(sort(sources),collapse=","),sep="|"),
         algo="sha256",serialize=FALSE),1L,10L))
-    outcome <- tryCatch(dispatch_w00_formal(query,sources,request_id,
-      openalex_oql=as.character(input$search_formal_openalex_oql %||% "")),error=function(e)e)
+    outcome <- tryCatch(dispatch_w00_formal(query,sources,request_id),error=function(e)e)
     if (inherits(outcome,"error")) {
       search_formal_finalisation_message_rv(paste("W00 launch not confirmed:",conditionMessage(outcome),
         "Check GitHub Actions before trying again."))
