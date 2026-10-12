@@ -1054,6 +1054,7 @@ server <- function(input, output, session) {
   search_manual_file_reset_rv <- reactiveVal(0L)
   search_manual_busy_rv <- reactiveVal(FALSE)
   search_manual_registry_refresh_rv <- reactiveVal(0L)
+  search_history_export_error_rv <- reactiveVal("")
   search_formal_validation_rv <- reactiveVal(NULL)
   search_formal_expected_version_rv <- reactiveVal(NULL)
   search_formal_finalisation_message_rv <- reactiveVal("")
@@ -3269,7 +3270,8 @@ server <- function(input, output, session) {
               tags$h6("Combined search totals"),
               uiOutput("search_combined_totals"),
               downloadButton("download_search_history","Download search history (CSV)",
-                class="btn-outline-secondary btn-sm")
+                class="btn-outline-secondary btn-sm"),
+              textOutput("search_history_export_error")
             )
           ),
           tags$details(
@@ -3525,9 +3527,12 @@ server <- function(input, output, session) {
     )
   })
 
+  output$search_history_export_error <- renderText(search_history_export_error_rv())
   output$download_search_history <- downloadHandler(
     filename=function()sprintf("search-history-%s.csv",format(Sys.Date(),"%Y-%m-%d")),
     content=function(file) {
+      search_history_export_error_rv("")
+      tryCatch({
       req(authenticated())
       review <- search_formal_review_id()
       key <- search_strategy_review_key(review)
@@ -3579,6 +3584,12 @@ server <- function(input, output, session) {
       out <- do.call(rbind,rows)
       out <- out[order(out$search_date,out$database),,drop=FALSE]
       utils::write.csv(out,file,row.names=FALSE,na="")
+      },error=function(e) {
+        message <- paste("Search history export failed:",conditionMessage(e))
+        search_history_export_error_rv(message)
+        showNotification(message,type="error",duration=NULL)
+        stop(message,call.=FALSE)
+      })
     }
   )
 
