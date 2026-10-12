@@ -117,24 +117,26 @@ w00_formal_run_jobs <- function(run_id) {
   github_api_get_json(url)$jobs %||% list()
 }
 
-dispatch_w00_formal <- function(search_string, sources, request_id) {
+dispatch_w00_formal <- function(search_string, sources, request_id, openalex_oql = "") {
   assert_development_github_target()
   if (!is.character(search_string) || length(search_string)!=1L ||
       !nzchar(trimws(search_string))) stop("Search string is empty",call.=FALSE)
   sources <- unique(as.character(sources))
   if (!length(sources) || any(!grepl("^[a-z][a-z0-9_]*$",sources)))
     stop("Select valid source IDs before dispatch",call.=FALSE)
-  # The current Shiny form supplies one raw Boolean string. W00's existing
-  # OpenAlex/OQL translator requires structured terms or an explicit override.
-  # Fail before dispatch rather than start a doomed or semantically altered run.
-  if ("openalex" %in% sources)
-    stop("OpenAlex requires a database-specific OQL query or structured W00 concepts; the current Shiny search-string form cannot supply either. No search launched.",call.=FALSE)
+  openalex_oql <- trimws(as.character(openalex_oql))
+  if ("openalex" %in% sources && (length(openalex_oql)!=1L || !nzchar(openalex_oql)))
+    stop("Enter an OpenAlex OQL query before starting a search that includes OpenAlex.",call.=FALSE)
+  if ("openalex" %in% sources && !grepl("^works[[:space:]]+where[[:space:]]+",openalex_oql,ignore.case=TRUE))
+    stop("OpenAlex requires a full OQL query beginning 'works where'.",call.=FALSE)
   if (!grepl("^[A-Za-z0-9._-]{8,80}$",request_id))
     stop("Invalid formal search request ID",call.=FALSE)
   strategy <- list(
     search_version=paste0("shiny-",request_id),
     advanced_boolean=search_string
   )
+  if ("openalex" %in% sources)
+    strategy$database_overrides <- list(openalex=openalex_oql)
   strategy_b64 <- jsonlite::base64_enc(charToRaw(enc2utf8(
     jsonlite::toJSON(strategy,auto_unbox=TRUE))))
   groups <- c("core_multidisciplinary","health_medicine","environment_agriculture",
