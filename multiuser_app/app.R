@@ -1051,6 +1051,8 @@ server <- function(input, output, session) {
   search_formal_launched_rv <- reactiveVal(FALSE)
   search_formal_selected_sources_rv <- reactiveVal(character())
   search_formal_monitor_rv <- reactiveVal(NULL)
+  search_formal_counts_rv <- reactiveVal(list())
+  search_formal_seen_records_rv <- reactiveVal(character())
   search_formal_request_id_rv <- reactiveVal("")
   search_formal_run_id_rv <- reactiveVal("")
   search_formal_monitor_restored_rv <- reactiveVal(FALSE)
@@ -3551,6 +3553,8 @@ server <- function(input, output, session) {
       search_formal_request_id_rv(request_id)
       search_formal_run_id_rv("")
       search_formal_monitor_rv(NULL)
+      search_formal_counts_rv(list())
+      search_formal_seen_records_rv(character())
       persisted <- tryCatch({
         w00_monitor_record(search_strategy_review_key(review),request_id)
         TRUE
@@ -3625,6 +3629,22 @@ server <- function(input, output, session) {
         error=conditionMessage(jobs)))
       return()
     }
+    artifacts <- tryCatch(w00_scoping_run_artifacts(id),error=function(e)list())
+    record_artifacts <- Filter(function(a) grepl(
+      paste0("^workflow00-search-record-[a-z0-9_]+-",id,"$"),
+      as.character(a$name %||% "")),artifacts)
+    seen <- search_formal_seen_records_rv() %||% character()
+    counts <- search_formal_counts_rv() %||% list()
+    for(a in record_artifacts) {
+      artifact_id <- as.character(a$id %||% "")
+      if(!nzchar(artifact_id) || artifact_id %in% seen) next
+      record <- tryCatch(read_w00_formal_record_artifact(a),error=function(e)NULL)
+      if(is.null(record)) next
+      counts[[record$source]] <- record
+      seen <- c(seen,artifact_id)
+    }
+    search_formal_counts_rv(counts)
+    search_formal_seen_records_rv(unique(seen))
     search_formal_monitor_rv(list(id=id,url=as.character(run$html_url %||% ""),
       status=as.character(run$status %||% ""),
       conclusion=as.character(run$conclusion %||% ""),
@@ -3668,7 +3688,7 @@ server <- function(input, output, session) {
         `aria-valuenow`=pct,`aria-valuemin`=0,`aria-valuemax`=100)),
       if(n_total) tags$div(class="table-responsive",
         tags$table(class="table table-sm",
-          tags$thead(tags$tr(tags$th("Database job"),tags$th("Status"),tags$th("Records"))),
+          tags$thead(tags$tr(tags$th("Database"),tags$th("Status"),tags$th("Records retrieved"))),
           tags$tbody(lapply(source_jobs,function(j) {
             st <- as.character(j$status %||% "queued")
             outcome <- as.character(j$conclusion %||% "")
@@ -3685,7 +3705,10 @@ server <- function(input, output, session) {
               else tools::toTitleCase(gsub("_"," ",st,fixed=TRUE))
             tags$tr(tags$td(label),
               tags$td(status_label),
-              tags$td("—"))
+              tags$td({
+                count <- search_formal_counts_rv()[[source_id]]
+                if(is.null(count)) "—" else format(as.integer(count$downloaded),big.mark=",",scientific=FALSE)
+              }))
           }))
         ))
       else if(run_finished) tags$p(class="saved-note",
