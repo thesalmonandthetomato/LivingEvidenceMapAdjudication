@@ -64,7 +64,7 @@ search_strategy_finalise <- function(review_key, search_string, created_by, expe
               created_at_utc=format(Sys.time(),"%Y-%m-%dT%H:%M:%SZ",tz="UTC"))
   path <- search_strategy_log_path()
   dir.create(dirname(path),recursive=TRUE,showWarnings=FALSE)
-  cat(as.character(jsonlite::toJSON(row,auto_unbox=TRUE)), "\\n",
+  cat(as.character(jsonlite::toJSON(row,auto_unbox=TRUE)), "\n",
       file=path,append=TRUE,sep="")
   verify <- search_strategy_versions(review_key)
   matching <- verify[as.character(verify$version)==row$version,,drop=FALSE]
