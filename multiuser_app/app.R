@@ -3459,7 +3459,8 @@ server <- function(input, output, session) {
     request_id <- paste0("formal-",format(Sys.time(),tz="UTC",format="%Y%m%dT%H%M%SZ"),"-",
       substr(digest::digest(paste(review,query_hash,paste(sort(sources),collapse=","),sep="|"),
         algo="sha256",serialize=FALSE),1L,10L))
-    outcome <- tryCatch(dispatch_w00_formal(query,sources,request_id,\n      openalex_oql=as.character(input$search_formal_openalex_oql %||% "")),error=function(e)e)
+    outcome <- tryCatch(dispatch_w00_formal(query,sources,request_id,
+      openalex_oql=as.character(input$search_formal_openalex_oql %||% "")),error=function(e)e)
     if (inherits(outcome,"error")) {
       search_formal_finalisation_message_rv(paste("W00 launch not confirmed:",conditionMessage(outcome),
         "Check GitHub Actions before trying again."))
