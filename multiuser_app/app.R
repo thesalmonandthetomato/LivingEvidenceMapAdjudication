@@ -3217,6 +3217,13 @@ server <- function(input, output, session) {
     } else {
       search_source_groups_rv(cfg)
       search_source_error_rv("")
+      # Database labels must be available before scoping has ever run.
+      catalogue <- tryCatch(read_w00_scoping_source_catalogue(),error=function(e)e)
+      if(inherits(catalogue,"error") || is.null(catalogue) || !nrow(catalogue)) {
+        search_source_error_rv("Unable to load database display names. Retry loading the app.")
+      } else {
+        search_scope_catalogue_rv(catalogue)
+      }
     }
   })
 
