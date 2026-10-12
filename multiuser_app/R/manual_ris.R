@@ -14,7 +14,7 @@ manual_ris_prepare <- function(files, database, platform, query, searched_on, re
   fields <- c(database,query,searched_on)
   if(anyNA(fields) || any(!nzchar(trimws(fields))))
     stop("Database, search string and search date are required",call.=FALSE)
-  if(!grepl("^\\d{4}-\\d{2}-\\d{2}$",searched_on))
+  if(!grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$",searched_on))
     stop("Search date must be YYYY-MM-DD",call.=FALSE)
   if(!is.na(reported) && (reported<0 || reported!=as.integer(reported)))
     stop("Reported hits must be a non-negative integer",call.=FALSE)
