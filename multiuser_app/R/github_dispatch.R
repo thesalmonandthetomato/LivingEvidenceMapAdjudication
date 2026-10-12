@@ -99,14 +99,19 @@ read_w00_scoping_source_catalogue <- function(ref = github_scoping_ref()) {
 # user_input file is edited and no global review environment is changed.
 # Read-only discovery for the current single-review development deployment.
 # Finds recent main-branch W00 orchestrator runs after page reload.
-w00_formal_recent_run <- function() {
+w00_formal_recent_run <- function(request_id) {
   assert_development_github_target()
+  if (!is.character(request_id) || length(request_id)!=1L ||
+      !grepl("^[A-Za-z0-9._-]{8,80}$",request_id))
+    stop("Valid W00 request ID is required for monitoring",call.=FALSE)
   url <- sprintf(
-    "https://api.github.com/repos/%s/actions/workflows/workflow_00_search_orchestrator.yml/runs?branch=main&event=workflow_dispatch&per_page=20",
+    "https://api.github.com/repos/%s/actions/workflows/workflow_00_search_orchestrator.yml/runs?branch=main&event=workflow_dispatch&per_page=100",
     github_dispatch_repo())
   runs <- github_api_get_json(url)$workflow_runs %||% list()
-  if (!length(runs)) return(NULL)
-  runs[[1L]]
+  matches <- Filter(function(x) identical(as.character(x$display_title %||% ""),
+    paste("W00 Shiny",request_id)),runs)
+  if (!length(matches)) return(NULL)
+  matches[[1L]]
 }
 
 w00_formal_run_jobs <- function(run_id) {
@@ -136,7 +141,7 @@ dispatch_w00_formal <- function(search_string, sources, request_id) {
               "social_sciences","education","regional","media_communication",
               "humanities","sport_tourism","grey_preprints")
   inputs <- list(
-    execution_pathway="shiny",review_id="almeria-map",review_sheet_id=sheet_id_from_env(),first_run="true",dispatch_w01="false",run_type="full",
+    shiny_request_id=request_id,execution_pathway="shiny",review_id="almeria-map",review_sheet_id=sheet_id_from_env(),first_run="true",dispatch_w01="false",run_type="full",
     additional_sources=paste(sources,collapse=","),
     strategy_json_b64=strategy_b64
   )
