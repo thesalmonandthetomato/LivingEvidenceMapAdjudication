@@ -1049,6 +1049,7 @@ server <- function(input, output, session) {
   search_formal_expected_version_rv <- reactiveVal(NULL)
   search_formal_finalisation_message_rv <- reactiveVal("")
   search_formal_launched_rv <- reactiveVal(FALSE)
+  search_formal_selected_sources_rv <- reactiveVal(character())
   search_formal_monitor_rv <- reactiveVal(NULL)
   search_formal_request_id_rv <- reactiveVal("")
   search_formal_run_id_rv <- reactiveVal("")
@@ -3219,6 +3220,7 @@ server <- function(input, output, session) {
 
   output$search_source_group_controls <- renderUI({
     groups <- search_source_groups_rv()
+    if (isTRUE(search_formal_launched_rv())) return(NULL)
     if (is.null(groups)) return(tags$p(class="saved-note",search_source_error_rv()))
     tagList(
       checkboxInput("search_all_databases","All databases",FALSE),
@@ -3277,6 +3279,13 @@ server <- function(input, output, session) {
   output$search_source_selection_preview <- renderText({
     groups <- search_source_groups_rv()
     if (is.null(groups)) return("")
+    if (isTRUE(search_formal_launched_rv())) {
+      submitted <- search_formal_selected_sources_rv()
+      if (length(submitted))
+        return(paste0("Databases submitted for W00 (",length(submitted),"): ",
+          paste(submitted,collapse=", ")))
+      return("W00 search submitted. Database selection is no longer editable.")
+    }
     resolved <- search_source_selected()
     if(!length(resolved)) return("No databases selected.")
     paste0(length(resolved)," unique W00 database(s): ",paste(resolved,collapse=", "))
@@ -3538,6 +3547,7 @@ server <- function(input, output, session) {
       search_formal_finalisation_message_rv(paste("W00 launch not confirmed:",conditionMessage(outcome),
         "Check GitHub Actions before trying again."))
     } else {
+      search_formal_selected_sources_rv(sources)
       search_formal_request_id_rv(request_id)
       search_formal_run_id_rv("")
       search_formal_monitor_rv(NULL)
