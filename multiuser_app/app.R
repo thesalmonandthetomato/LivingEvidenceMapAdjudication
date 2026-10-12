@@ -1053,6 +1053,7 @@ server <- function(input, output, session) {
   search_manual_success_rv <- reactiveVal(NULL)
   search_manual_file_reset_rv <- reactiveVal(0L)
   search_manual_busy_rv <- reactiveVal(FALSE)
+  search_manual_registry_refresh_rv <- reactiveVal(0L)
   search_formal_validation_rv <- reactiveVal(NULL)
   search_formal_expected_version_rv <- reactiveVal(NULL)
   search_formal_finalisation_message_rv <- reactiveVal("")
@@ -3225,6 +3226,10 @@ server <- function(input, output, session) {
                   "Each submission is published to a separate restricted Zenodo record, with its original RIS files and search manifest."
                 else "Manual publication requires ZENODO_ACCESS_TOKEN in the private Shiny deployment environment."),
               tags$hr(),
+              tags$h6("Manual upload history"),
+              uiOutput("search_manual_history"),
+              tags$h6(class="mt-3","Combined search totals"),
+              uiOutput("search_combined_totals"),
               downloadButton("download_search_history","Download search history (CSV)",
                 class="btn-outline-secondary btn-sm")
             )
@@ -3389,10 +3394,89 @@ server <- function(input, output, session) {
       search_manual_file_reset_rv(isolate(search_manual_file_reset_rv())+1L)
       search_manual_preview_rv(NULL)
       search_manual_pending_rv(NULL)
+      search_manual_registry_refresh_rv(isolate(search_manual_registry_refresh_rv())+1L)
       showNotification("RIS upload successful. Fields cleared for the next search.",
         type="message",duration=10)
     }
   })
+  search_manual_history_data <- reactive({
+    req(authenticated())
+    search_manual_registry_refresh_rv()
+    key <- search_strategy_review_key(search_formal_review_id())
+    tryCatch(manual_search_registry(key),error=function(e)e)
+  })
+  output$search_manual_history <- renderUI({
+    manual <- search_manual_history_data()
+    if(inherits(manual,"error")) return(tags$p(class="text-danger",
+      paste("Unable to read manual upload registry:",conditionMessage(manual))))
+    if(!nrow(manual)) return(tags$p(class="saved-note",
+      "No manual RIS uploads recorded for this review."))
+    values <- suppressWarnings(as.numeric(manual$records_downloaded))
+    valid <- !is.na(values) & is.finite(values) & values>=0
+    if(!all(valid)) return(tags$p(class="text-danger",
+      "Manual upload registry contains invalid record counts; total unavailable."))
+    table <- tags$table(class="table table-sm",
+      tags$thead(tags$tr(tags$th("Database"),tags$th("Search date"),
+        tags$th("RIS files"),tags$th("Records"),tags$th("Archive"))),
+      tags$tbody(lapply(seq_len(nrow(manual)),function(i) {
+        x <- manual[i,,drop=FALSE]
+        record <- as.character(x$zenodo_record_id)
+        tags$tr(tags$td(as.character(x$database)),
+          tags$td(as.character(x$search_date)),
+          tags$td(as.character(x$file_count)),
+          tags$td(format(values[[i]],big.mark=",",scientific=FALSE)),
+          tags$td(if(nzchar(record))
+            tags$a(href=paste0("https://zenodo.org/records/",record),
+              target="_blank",rel="noopener noreferrer",record)
+            else "—"))
+      })),
+      tags$tfoot(tags$tr(class="fw-semibold",tags$td("Total"),
+        tags$td(sprintf("%d submissions",nrow(manual))),
+        tags$td(format(sum(suppressWarnings(as.numeric(manual$file_count)),
+          na.rm=TRUE),big.mark=",",scientific=FALSE)),
+        tags$td(format(sum(values),big.mark=",",scientific=FALSE)),
+        tags$td(""))))
+    div(class="table-responsive",table)
+  })
+  output$search_combined_totals <- renderUI({
+    manual <- search_manual_history_data()
+    if(inherits(manual,"error")) return(tags$p(class="text-danger",
+      "Combined totals unavailable: manual registry could not be read."))
+    manual_values <- if(nrow(manual)) suppressWarnings(as.numeric(manual$records_downloaded))
+      else numeric()
+    if(anyNA(manual_values) || any(!is.finite(manual_values)))
+      return(tags$p(class="text-danger","Combined totals unavailable: invalid manual record counts."))
+    counts <- search_formal_counts_rv()
+    api_values <- vapply(counts,function(x)as.numeric(x$downloaded),numeric(1))
+    api_total <- sum(api_values)
+    manual_total <- sum(manual_values)
+    m <- search_formal_monitor_rv()
+    finished <- !is.null(m) && identical(as.character(m$status %||% ""),"completed") &&
+      identical(as.character(m$conclusion %||% ""),"success")
+    jobs <- if(!is.null(m)) m$jobs %||% list() else list()
+    source_jobs <- Filter(function(j) grepl(
+      "^search-sources \\([^)]+\\) / search$",
+      as.character(j$name %||% "")),jobs)
+    complete_api <- finished && length(source_jobs)>0 &&
+      length(api_values)>=length(source_jobs)
+    tags$div(
+      tags$table(class="table table-sm",
+        tags$thead(tags$tr(tags$th("Search source"),tags$th("Records downloaded"))),
+        tags$tbody(
+          tags$tr(tags$td("API databases"),
+            tags$td(if(length(api_values))format(api_total,big.mark=",",scientific=FALSE) else "—")),
+          tags$tr(tags$td("Manual RIS uploads"),
+            tags$td(format(manual_total,big.mark=",",scientific=FALSE)))),
+        tags$tfoot(tags$tr(class="fw-semibold",tags$td("Combined total"),
+          tags$td(if(complete_api)format(api_total+manual_total,
+            big.mark=",",scientific=FALSE) else "Pending complete API counts")))),
+      tags$p(class="saved-note",
+        if(complete_api)
+          "Downloaded records before deduplication. Counts may include duplicates between searches."
+        else "API counts are incomplete or not yet restored. The combined total will appear when all successful W00 database counts are available.")
+    )
+  })
+
   output$download_search_history <- downloadHandler(
     filename=function()sprintf("search-history-%s.csv",format(Sys.Date(),"%Y-%m-%d")),
     content=function(file) {
