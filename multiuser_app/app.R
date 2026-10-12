@@ -1558,7 +1558,7 @@ server <- function(input, output, session) {
 
   fmt_pipeline_n <- function(x) {
     z <- suppressWarnings(as.numeric(as.character(x %||% "")))
-    if(is.na(z)) return("—")
+    if(length(z)!=1L || is.na(z)) return("—")
     format(round(z),big.mark=",",scientific=FALSE,trim=TRUE)
   }
 
@@ -1572,7 +1572,7 @@ server <- function(input, output, session) {
 
   fmt_pipeline_delta <- function(x) {
     z <- suppressWarnings(as.numeric(as.character(x %||% "")))
-    if(is.na(z)) return(NULL)
+    if(length(z)!=1L || is.na(z)) return(NULL)
     paste0(if(z >= 0) "+" else "−", fmt_pipeline_n(abs(z)))
   }
 
@@ -1622,7 +1622,7 @@ server <- function(input, output, session) {
         last_search_date="",completed_through=if(verified) 1L else 0L,
         active_workflow="",search_results_total=total)
     } else {
-    p <- pipeline_status_rv()
+      p <- pipeline_status_rv()
     }
     if(is.null(p)) {
       return(div(
