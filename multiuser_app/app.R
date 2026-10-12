@@ -3144,13 +3144,8 @@ server <- function(input, output, session) {
               tags$span(class="saved-note fw-semibold","Scoping search running…")
             } else if (request_active && counts_resolved) {
               tags$span(class="saved-note fw-semibold","Scoping search complete.")
-            } else if (identical(as.character(current_user()$role),"administrator") &&
-                       isTRUE(search_boolean_validate(search_scope_string_rv())$valid)) {
-              actionButton(
-                "run_search_scope",
-                sprintf("Run scoping search %s", search_scope_active_version_rv()),
-                class="btn-primary btn-sm"
-              )
+            } else {
+              uiOutput("search_scope_run_control")
             },
             tags$span(class="saved-note", search_scope_status_rv())
           ),
@@ -3752,6 +3747,15 @@ server <- function(input, output, session) {
         ))
       )
     )
+  })
+
+  output$search_scope_run_control <- renderUI({
+    req(authenticated())
+    if (!identical(as.character(current_user()$role),"administrator")) return(NULL)
+    if (!isTRUE(search_boolean_validate(search_scope_string_rv())$valid)) return(NULL)
+    actionButton("run_search_scope",
+      sprintf("Run scoping search %s",search_scope_active_version_rv()),
+      class="btn-primary btn-sm")
   })
 
   output$search_scope_validation_message <- renderText({
