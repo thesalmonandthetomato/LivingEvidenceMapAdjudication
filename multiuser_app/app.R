@@ -3567,18 +3567,23 @@ server <- function(input, output, session) {
       grepl("^(search|source-search|source /|search /|search-source|harvest)",n,ignore.case=TRUE) ||
         grepl(" / search$",n,ignore.case=TRUE)
     },jobs)
+    # The single search-sources job is an orchestrator, not a database.
+    source_jobs <- Filter(function(j) !identical(as.character(j$name %||% ""),"search-sources"),source_jobs)
     n_total <- length(source_jobs)
     n_done <- sum(vapply(source_jobs,function(j)
       identical(as.character(j$status %||% ""),"completed"),logical(1)))
     run_finished <- identical(as.character(m$status %||% ""),"completed")
     successful <- run_finished && identical(as.character(m$conclusion %||% ""),"success")
-    pct <- if(successful) 100L else if(n_total) min(95L,round(10+85*n_done/n_total)) else 5L
-    overview <- if(run_finished) paste("W00 finished:",m$conclusion) else if(n_total) {
+    pct <- if(successful) 100L else if(n_total) min(95L,round(10+85*n_done/n_total)) else if(run_finished) 0L else 5L
+    failed_jobs <- Filter(function(j) identical(as.character(j$conclusion %||% ""),"failure"),jobs)
+    failed_stage <- if(length(failed_jobs)) as.character(failed_jobs[[1L]]$name %||% "") else ""
+    overview <- if(run_finished && !successful) paste0("W00 failed",if(nzchar(failed_stage)) paste0(" at ",failed_stage) else "",". No database retrieval completion can be reported.") else if(run_finished) "W00 completed successfully" else if(n_total) {
       sprintf("Database jobs: %d of %d finished",n_done,n_total)
     } else "W00 preparing search and database jobs…"
     div(class="mt-3",
       tags$h6("W00 search progress"),
       tags$p(class="small",overview),
+      tags$p(class="small",sprintf("Overall progress: %d%% (%s)",pct,if(run_finished && !successful) "failed before completion" else if(successful) "complete" else "approximate")),
       tags$p(tags$a(href=m$url,target="_blank",rel="noopener noreferrer",
         paste("GitHub Actions run",m$id))),
       div(class="progress mb-3",div(class="progress-bar",
