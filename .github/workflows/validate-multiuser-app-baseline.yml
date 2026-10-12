@@ -45,6 +45,10 @@ jobs:
           needed <- c("digest","jsonlite")
           missing <- needed[!vapply(needed,requireNamespace,logical(1),quietly=TRUE)]
           if(length(missing)) install.packages(missing)
+      - name: Test immutable strategy registry offline
+        working-directory: multiuser_app
+        shell: bash
+        run: Rscript tests/test_search_strategy_versions.R
       - name: Test search draft persistence offline
         working-directory: multiuser_app
         shell: bash
