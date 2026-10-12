@@ -3348,9 +3348,11 @@ server <- function(input, output, session) {
       search_formal_finalisation_message_rv("Cannot finalise: LEM_SEARCH_REVIEW_ID is not set.")
       return()
     }
-    outcome <- tryCatch(search_strategy_finalise(
-      search_strategy_review_key(review),query,as.character(current_user()$user_id),
-      expected_version=as.integer(version)),error=function(e)e)
+    outcome <- tryCatch({
+      search_review_require_sole_admin(user_registry_rv(),as.character(current_user()$user_id))
+      search_strategy_finalise(search_strategy_review_key(review),query,
+        as.character(current_user()$user_id),expected_version=as.integer(version))
+    },error=function(e)e)
     if (inherits(outcome,"error")) {
       search_formal_finalisation_message_rv(paste("Finalisation not confirmed:",conditionMessage(outcome)))
     } else {
