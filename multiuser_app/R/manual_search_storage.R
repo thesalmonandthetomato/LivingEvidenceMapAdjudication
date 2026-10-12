@@ -137,7 +137,7 @@ manual_search_zenodo_publish <- function(review_id,submission_id,prepared,files)
     manifest_path <- file.path(staged,"manifest.json")
     writeLines(jsonlite::toJSON(manifest,auto_unbox=TRUE,pretty=TRUE,null="null"),
       manifest_path,useBytes=TRUE)
-    for(path in c(list.files(staged,pattern="\\.ris$",full.names=TRUE),manifest_path)) {
+    for(path in c(file.path(staged,vapply(files_meta,`[[`,character(1),"archive_name")),manifest_path)) {
       url <- paste0(bucket,"/",utils::URLencode(basename(path),reserved=TRUE))
       perform(httr2::req_body_file(httr2::req_method(auth(url),"PUT"),path),
         c(200L,201L),paste("file",basename(path)))
