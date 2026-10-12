@@ -309,6 +309,26 @@ download_github_artifact_zip <- function(artifact_id, destination) {
   destination
 }
 
+read_w00_formal_record_artifact <- function(artifact) {
+  name <- as.character(artifact$name %||% "")
+  if(!grepl("^workflow00-search-record-[a-z0-9_]+-[0-9]+$",name))
+    return(NULL)
+  td <- tempfile("w00-formal-record-")
+  dir.create(td,recursive=TRUE)
+  on.exit(unlink(td,recursive=TRUE,force=TRUE),add=TRUE)
+  download_github_artifact_zip(as.character(artifact$id),file.path(td,"record.zip"))
+  utils::unzip(file.path(td,"record.zip"),exdir=td)
+  paths <- list.files(td,pattern="\\.json$",recursive=TRUE,full.names=TRUE)
+  if(length(paths)!=1L) stop("Expected one JSON W00 search record",call.=FALSE)
+  record <- jsonlite::fromJSON(paths[[1L]],simplifyVector=FALSE)
+  source <- as.character(record$source %||% "")
+  reported <- suppressWarnings(as.integer(record$reported_search_results))
+  downloaded <- suppressWarnings(as.integer(record$successfully_downloaded_results))
+  if(!grepl("^[a-z][a-z0-9_]*$",source) || is.na(reported) || is.na(downloaded))
+    stop("Invalid W00 record counts",call.=FALSE)
+  list(source=source,reported=reported,downloaded=downloaded)
+}
+
 read_w00_scoping_count_artifact <- function(artifact) {
   artifact_id <- as.character(artifact$id %||% "")
   artifact_name <- as.character(artifact$name %||% "")
