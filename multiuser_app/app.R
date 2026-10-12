@@ -3588,10 +3588,20 @@ server <- function(input, output, session) {
       search_formal_finalisation_message_rv(paste("Unable to restore W00 monitoring:",conditionMessage(saved)))
       return()
     }
+    if(is.null(saved)) {
+      saved <- tryCatch(w00_formal_review_run(),error=function(e)e)
+      if(inherits(saved,"error")) {
+        search_formal_finalisation_message_rv(paste("Unable to restore W00 from review metadata:",
+          conditionMessage(saved)))
+        return()
+      }
+    }
     if(!is.null(saved) && !nzchar(search_formal_request_id_rv())) {
       search_formal_request_id_rv(saved$request_id)
       search_formal_run_id_rv(saved$run_id)
       search_formal_launched_rv(TRUE)
+      search_formal_finalisation_message_rv(paste("Restored W00 GitHub run",saved$run_id,
+        "from review-specific monitoring history."))
     }
     search_formal_monitor_restored_rv(TRUE)
   })
