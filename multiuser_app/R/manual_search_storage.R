@@ -187,9 +187,17 @@ manual_search_successful_runs <- function() {
 manual_search_api_history <- function(run_id) {
   if(!grepl("^[0-9]+$",run_id)) stop("Invalid W00 run ID",call.=FALSE)
   artifacts <- w00_scoping_run_artifacts(run_id)
-  records <- Filter(function(a)grepl(
-    paste0("^workflow00-search-record-[a-z0-9_]+-",run_id,"$"),
-    as.character(a$name %||% "")),artifacts)
+  # Exclude workflow00-search-record-archive-<run>, which contains all
+  # consolidated search documentation, not a single database record.
+  records <- Filter(function(a) {
+    name <- as.character(a$name %||% "")
+    grepl(paste0("^workflow00-search-record-[a-z0-9_]+-",run_id,"$"),name) &&
+      !identical(name,paste0("workflow00-search-record-archive-",run_id))
+  },artifacts)
+  sources <- vapply(records,function(a)
+    sub(paste0("^workflow00-search-record-(.+)-",run_id,"$"),"\\1",
+      as.character(a$name)),character(1))
+  if(anyDuplicated(sources)) stop("Duplicate database search-record artifacts",call.=FALSE)
   if(!length(records))stop("W00 search-record artifacts are not available",call.=FALSE)
   lapply(records,function(a) {
     x <- read_w00_formal_record_artifact(a)
