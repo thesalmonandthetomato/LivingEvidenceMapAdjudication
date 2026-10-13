@@ -3179,6 +3179,9 @@ server <- function(input, output, session) {
               class="btn-outline-secondary btn-sm"
             )
           ),
+          tags$p(class="saved-note",style="font-size:0.85em;",
+            tags$strong("Wildcards and plural forms: "),
+            "Use an asterisk (*) at the end of a word stem to search for multiple word endings, including regular plurals (e.g. vegetable* retrieves vegetable and vegetables). Truncation can also retrieve related terms (e.g. farm* may retrieve farm, farms, farmer and farming). Irregular plurals, such as woman and women, should be entered separately. Wildcard behaviour varies between databases, so check that your terms capture the intended variants."),
           if (!request_active && !isTRUE(original_complete))
             textOutput("search_scope_validation_message"),
           if (length(search_scope_versions_rv()) > 1L) {
