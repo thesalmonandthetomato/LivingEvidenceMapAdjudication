@@ -2905,5 +2905,7 @@ w02_optional_pause_current <- function() {
   if(!all(required %in% names(d))) stop("Invalid W02 optional pause record")
   d <- d[!is.na(d$google_sheet_id) & as.character(d$google_sheet_id)==ss,,drop=FALSE]
   if(!nrow(d)) return(NULL)
-  as.list(d[nrow(d),,drop=FALSE])
+  latest <- as.list(d[nrow(d),,drop=FALSE])
+  if(!identical(as.character(latest$status %||% ""),"waiting_optional_abstracts")) return(NULL)
+  latest
 }
