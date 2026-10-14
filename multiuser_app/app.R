@@ -1059,6 +1059,8 @@ server <- function(input, output, session) {
   search_formal_expected_version_rv <- reactiveVal(NULL)
   search_formal_finalisation_message_rv <- reactiveVal("")
   search_formal_launched_rv <- reactiveVal(FALSE)
+  w01_preflight_status_rv <- reactiveVal("")
+  w01_preflight_busy_rv <- reactiveVal(FALSE)
   search_formal_selected_sources_rv <- reactiveVal(character())
   search_formal_monitor_rv <- reactiveVal(NULL)
   search_formal_counts_rv <- reactiveVal(list())
@@ -3290,9 +3292,12 @@ server <- function(input, output, session) {
             `data-accordion-key`="configure-review-deduplication",
             tags$summary(tags$strong("Deduplication (W01)")),
             div(class="px-3 pb-3",
-              tags$p("Preparation only. W01 is not enabled or dispatched."),
+              tags$p("W01 deduplication remains disabled. You can validate the active review's W00 and manual RIS input handoff without launching deduplication."),
+              if (session_can("run_search_scoping") && identical(as.character(current_user()$role),"administrator"))
+                actionButton("w01_preflight_start","Validate W01 input handoff",class="btn-outline-primary btn-sm"),
+              textOutput("w01_preflight_status"),
               tags$p(class="saved-note",
-                "Planned: read the review-specific API and manual RIS archives from restricted Zenodo, assemble a provenance-preserving search corpus, identify and resolve duplicate records, and send ambiguous cases to the existing human adjudication queue. Results will be archived separately for this review.")
+                "This runs the existing GitHub W01 read-only preflight. It does not create duplicate candidates, publish a W01 result, or start W02.")
             )
           )
         )
@@ -3835,6 +3840,30 @@ server <- function(input, output, session) {
     }
     "Complete successful scoping for every selected database with this search string before starting W00."
   }
+
+  output$w01_preflight_status <- renderText(w01_preflight_status_rv())
+
+  observeEvent(input$w01_preflight_start, {
+    req(authenticated(),current_user())
+    if (!identical(as.character(current_user()$role),"administrator") ||
+        !session_can("run_search_scoping") || isTRUE(w01_preflight_busy_rv())) return()
+    w01_preflight_busy_rv(TRUE)
+    on.exit(w01_preflight_busy_rv(FALSE),add=TRUE)
+    result <- tryCatch({
+      if(!identical(storage_backend(),"google_sheets"))
+        stop("W01 preflight requires the active review's Google Sheet",call.=FALSE)
+      gs4_auth_from_env()
+      sheet <- sheet_id_from_env()
+      meta <- as.data.frame(googlesheets4::read_sheet(sheet,sheet="review_metadata",col_types="cc"))
+      if(!all(c("key","value") %in% names(meta))) stop("Review metadata is invalid",call.=FALSE)
+      review_ids <- as.character(meta$value[which(as.character(meta$key)=="review_id")])
+      if(length(review_ids)!=1L || is.na(review_ids) || !nzchar(trimws(review_ids)))
+        stop("The active review has no unambiguous review_id",call.=FALSE)
+      dispatch_w01_input_preflight(review_ids, sheet)
+      "W01 input-preflight dispatch accepted by GitHub. No deduplication was requested. Check the W01 production workflow run on main for its result."
+    },error=function(e) paste("W01 preflight not launched:",conditionMessage(e)))
+    w01_preflight_status_rv(result)
+  })
 
   observeEvent(input$search_formal_start, {
     req(authenticated(),current_user())
