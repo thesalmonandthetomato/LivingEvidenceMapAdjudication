@@ -2909,3 +2909,31 @@ w02_optional_pause_current <- function() {
   if(!identical(as.character(latest$status %||% ""),"waiting_optional_abstracts")) return(NULL)
   latest
 }
+
+# Review-scoped W02 launch register. Append-only; latest entry is authoritative.
+w02_launch_record <- function(review_id, sheet_id=sheet_id_from_env()) {
+  gs4_auth_from_env()
+  if(!"w02_launch_registry" %in% sheet_names_cached(sheet_id)) return(NULL)
+  d <- googlesheets4::read_sheet(sheet_id,sheet="w02_launch_registry",col_types="c")
+  required <- c("review_id","sheet_id","launched_at_utc","run_id","state")
+  if(!all(required %in% names(d))) stop("Invalid W02 launch registry",call.=FALSE)
+  d <- d[!is.na(d$review_id)&!is.na(d$sheet_id)&
+         d$review_id==review_id&d$sheet_id==sheet_id,,drop=FALSE]
+  if(!nrow(d)) return(NULL)
+  as.list(d[nrow(d),,drop=FALSE])
+}
+append_w02_launch_record <- function(review_id, sheet_id, launched_at_utc, run_id="", state="requested") {
+  if(!state %in% c("requested","identified","failed")) stop("Invalid W02 launch state",call.=FALSE)
+  if(!grepl("^[A-Za-z0-9._-]{3,128}$",review_id) ||
+     !grepl("^[A-Za-z0-9_-]{15,150}$",sheet_id)) stop("Invalid review identity",call.=FALSE)
+  gs4_auth_from_env()
+  tab <- "w02_launch_registry"
+  cols <- c("review_id","sheet_id","launched_at_utc","run_id","state")
+  row <- data.frame(review_id=review_id,sheet_id=sheet_id,
+    launched_at_utc=launched_at_utc,run_id=as.character(run_id),state=state,
+    stringsAsFactors=FALSE)
+  if(!tab %in% sheet_names_cached(sheet_id)) {
+    googlesheets4::sheet_write(row,ss=sheet_id,sheet=tab)
+  } else googlesheets4::sheet_append(sheet_id,data=row,sheet=tab)
+  invisible(row)
+}
