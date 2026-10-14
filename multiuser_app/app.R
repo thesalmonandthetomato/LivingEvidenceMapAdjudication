@@ -3347,18 +3347,18 @@ server <- function(input, output, session) {
             `data-accordion-key`="configure-review-deduplication",
             tags$summary(tags$strong("Deduplication (W01)")),
             div(class="px-3 pb-3",
-              if (session_can("run_search_scoping") && identical(as.character(current_user()$role),"administrator"))
+              if (isTRUE(w01_persisted_lock_rv()) || nzchar(batch_id_rv()))
+                tags$p(class="small text-muted mt-2",
+                  if (nzchar(batch_id_rv()))
+                    "W01 has run for this review. Complete human adjudication and finalisation before a subsequent update."
+                  else
+                    "W01 launch unavailable: the prior run is already published or launch eligibility has not yet been verified.")
+              else if (!is.null(w01_launch_request_rv()))
+                tags$p(class="small text-muted mt-2","W01 has been launched; awaiting workflow completion.")
+              else if (session_can("run_search_scoping") && identical(as.character(current_user()$role),"administrator"))
                 actionButton("w01_begin_deduplication","Begin deduplication",class="btn-primary btn-sm",
-                  disabled=if (isTRUE(w01_launch_configuration()$ready) &&
-                               !nzchar(batch_id_rv()) && !isTRUE(w01_persisted_lock_rv()) &&
-                               is.null(w01_launch_request_rv())) NULL else "disabled",
-                  title=if(isTRUE(w01_persisted_lock_rv()))
-                    "W01 has already been published for this review, or launch eligibility is still being verified."
-                    else if(nzchar(batch_id_rv()))
-                    "W01 has already been run for this review. Complete human adjudication before another update."
-                    else if(!is.null(w01_launch_request_rv()))
-                    "A W01 execution has already been launched in this session."
-                    else w01_launch_configuration()$reason),
+                  disabled=if (isTRUE(w01_launch_configuration()$ready)) NULL else "disabled",
+                  title=w01_launch_configuration()$reason),
               if (!isTRUE(w01_launch_configuration()$ready))
                 tags$p(class="small text-muted mt-2",w01_launch_configuration()$reason),
               uiOutput("w01_launch_progress"),
