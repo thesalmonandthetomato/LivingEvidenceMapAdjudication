@@ -8333,7 +8333,10 @@ server <- function(input, output, session) {
       if (identical(storage_backend(),"google_sheets")) {
         append_w01_export_request(queue_sha_rv(),batch_id_rv(),"dispatching")
       }
-      dispatch_w01_export(batch_id_rv(),queue_sha_rv())
+      review_id <- trimws(Sys.getenv("LEM_SEARCH_REVIEW_ID",unset=""))
+      sheet_id <- if(nzchar(review_id)) trimws(sheet_id_from_env()) else ""
+      dispatch_w01_export(batch_id_rv(),queue_sha_rv(),
+                          review_id=review_id,google_sheet_id=sheet_id)
       if (identical(storage_backend(),"google_sheets")) {
         append_w01_export_request(queue_sha_rv(),batch_id_rv(),"dispatched")
       }
