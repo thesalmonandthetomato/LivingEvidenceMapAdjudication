@@ -3886,6 +3886,7 @@ server <- function(input, output, session) {
     })
     if (!sent) return()
     w01_launch_result_rv(NULL)
+    w01_launch_pending_rv(NULL)
     w01_launch_run_id_rv("")
     w01_launch_snapshot_rv(NULL)
     w01_launch_error_rv("")
@@ -3897,6 +3898,7 @@ server <- function(input, output, session) {
   # review-isolated launch, monitoring and result publication are integrated.
   w01_launch_request_rv <- reactiveVal(NULL)
   w01_launch_result_rv <- reactiveVal(NULL)
+  w01_launch_pending_rv <- reactiveVal(NULL)
   w01_launch_run_id_rv <- reactiveVal("")
   w01_launch_error_rv <- reactiveVal("")
   w01_launch_snapshot_rv <- reactiveVal(NULL)
@@ -3935,16 +3937,27 @@ server <- function(input, output, session) {
       w01_launch_snapshot_rv(snapshot)
       request <- w01_launch_request_rv()
       if(!is.null(request) && identical(snapshot$status,"completed") &&
-         identical(snapshot$conclusion,"success")) {
-        result <- tryCatch(
-          w01_published_review_results(
-            snapshot$run_id,request$review_id,request$review_sheet_id),
-          error=function(e)e
-        )
-        if(inherits(result,"error")) {
-          w01_launch_error_rv(conditionMessage(result))
+         identical(snapshot$conclusion,"success") &&
+         is.null(w01_launch_result_rv())) {
+        checked <- tryCatch({
+          result <- w01_published_review_results(
+            snapshot$run_id,request$review_id,request$review_sheet_id)
+          if(!is.null(result)) return(list(result=result,pending=NULL))
+          pending <- w01_pending_review_checkpoint(
+            snapshot$run_id,request$review_id,request$review_sheet_id)
+          if(is.null(pending)) return(list(result=NULL,pending=NULL))
+          resolved_run <- w01_resolved_review_run_id(
+            snapshot$run_id,request$review_id)
+          if(is.null(resolved_run)) return(list(result=NULL,pending=pending))
+          final <- w01_published_review_results(
+            resolved_run,request$review_id,request$review_sheet_id)
+          list(result=final,pending=if(is.null(final)) pending else NULL)
+        },error=function(e)e)
+        if(inherits(checked,"error")) {
+          w01_launch_error_rv(conditionMessage(checked))
         } else {
-          w01_launch_result_rv(result)
+          w01_launch_pending_rv(checked$pending)
+          if(!is.null(checked$result)) w01_launch_result_rv(checked$result)
         }
       }
     }
@@ -3972,8 +3985,12 @@ server <- function(input, output, session) {
     if(!identical(m$conclusion,"success"))
       return(tags$p(class="text-danger","Deduplication failed. The existing review data have not been replaced."))
     result <- w01_launch_result_rv()
-    if(is.null(result))
-      return(NULL) # Never imply W01 succeeded before its restricted publication is verified.
+    if(is.null(result)) {
+      pending <- w01_launch_pending_rv()
+      if(!is.null(pending))
+        return(tags$p(sprintf("Awaiting human review: %d uncertain duplicate cases. W01 will resume when decisions are returned.",pending$pending_human_cases)))
+      return(tags$p("W01 completed its processing stage. Awaiting verified review-specific publication."))
+    } # Never imply W01 finalisation succeeded before its restricted publication is verified.
     tags$div(
       tags$p(tags$strong("Deduplication completed")),
       tags$p(sprintf("%d duplicates removed",result$duplicates_removed)),
