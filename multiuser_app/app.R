@@ -3350,8 +3350,11 @@ server <- function(input, output, session) {
               if (session_can("run_search_scoping") && identical(as.character(current_user()$role),"administrator"))
                 actionButton("w01_begin_deduplication","Begin deduplication",class="btn-primary btn-sm",
                   disabled=if (isTRUE(w01_launch_configuration()$ready) &&
-                               !nzchar(batch_id_rv()) && is.null(w01_launch_request_rv())) NULL else "disabled",
-                  title=if(nzchar(batch_id_rv()))
+                               !nzchar(batch_id_rv()) && !isTRUE(w01_persisted_lock_rv()) &&
+                               is.null(w01_launch_request_rv())) NULL else "disabled",
+                  title=if(isTRUE(w01_persisted_lock_rv()))
+                    "W01 has already been published for this review, or launch eligibility is still being verified."
+                    else if(nzchar(batch_id_rv()))
                     "W01 has already been run for this review. Complete human adjudication before another update."
                     else if(!is.null(w01_launch_request_rv()))
                     "A W01 execution has already been launched in this session."
@@ -3924,6 +3927,10 @@ server <- function(input, output, session) {
       showNotification("A W01 launch is already being monitored in this session.",type="message",duration=8)
       return()
     }
+    if(isTRUE(w01_persisted_lock_rv())) {
+      showNotification("W01 has been run already, or its prior state cannot yet be verified. A new W00 update is required before another W01 launch.",type="warning",duration=10)
+      return()
+    }
     if(nzchar(batch_id_rv())) {
       showNotification("W01 already has a review batch for this project. Finish the batch before running an update.",type="warning",duration=10)
       return()
@@ -3950,7 +3957,7 @@ server <- function(input, output, session) {
     if (!isTRUE(w01_launch_configuration()$ready) ||
         !identical(as.character(current_user()$role),"administrator") ||
         !session_can("run_search_scoping") || !is.null(w01_launch_request_rv()) ||
-        nzchar(batch_id_rv())) return()
+        nzchar(batch_id_rv()) || isTRUE(w01_persisted_lock_rv())) return()
     sheet_id <- trimws(tryCatch(sheet_id_from_env(),error=function(e)""))
     configured_review_id <- trimws(Sys.getenv("LEM_SEARCH_REVIEW_ID",unset=""))
     identity <- tryCatch({
@@ -3993,6 +4000,21 @@ server <- function(input, output, session) {
 
   # W01 production remains fail-closed. These outputs become live when
   # review-isolated launch, monitoring and result publication are integrated.
+  w01_persisted_lock_rv <- reactiveVal(TRUE)
+  observeEvent(authenticated(), {
+    if(!isTRUE(authenticated()) || !identical(storage_backend(),"google_sheets")) return()
+    locked <- tryCatch({
+      sheet <- sheet_id_from_env()
+      meta <- googlesheets4::read_sheet(sheet,sheet="review_metadata",col_types="cc")
+      review <- as.character(meta$value[match("review_id",meta$key)])
+      if(length(review)!=1L || is.na(review) || !nzchar(review)) stop("Missing review identity")
+      w01_has_published_review_run(review,sheet)
+    },error=function(e) {
+      w01_launch_error_rv(paste("Cannot verify W01 launch eligibility:",conditionMessage(e)))
+      TRUE
+    })
+    w01_persisted_lock_rv(isTRUE(locked))
+  })
   w01_launch_request_rv <- reactiveVal(NULL)
   w01_launch_result_rv <- reactiveVal(NULL)
   w01_launch_pending_rv <- reactiveVal(NULL)
