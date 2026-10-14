@@ -892,9 +892,11 @@ dispatch_w02_from_shiny <- function(review_id, sheet_id) {
   invisible(pointer_path)
 }
 
-dispatch_w02_resume <- function(source_run_id, publish = TRUE) {
+dispatch_w02_resume <- function(source_run_id, publish = TRUE, google_sheet_id = "") {
   source_run_id <- as.character(source_run_id)
   if (!grepl("^[0-9]+$", source_run_id)) stop("Invalid W02 source run ID", call. = FALSE)
+  if(nzchar(google_sheet_id) && !grepl("^[A-Za-z0-9_-]{15,150}$",google_sheet_id))
+    stop("Invalid W02 review Google Sheet ID",call.=FALSE)
 
   endpoint <- sprintf(
     "https://api.github.com/repos/%s/actions/workflows/workflow_02_resume_after_human_review.yml/dispatches",
@@ -913,6 +915,7 @@ dispatch_w02_resume <- function(source_run_id, publish = TRUE) {
       ref = github_scoping_ref(),
       inputs = list(
         source_run_id = source_run_id,
+        google_sheet_id = google_sheet_id,
         publish = if (isTRUE(publish)) "true" else "false"
       )
     ))
