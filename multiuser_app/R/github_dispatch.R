@@ -700,7 +700,7 @@ read_w00_scoping_final_artifact <- function(artifact) {
 
 # Check a review-bound W01 export without conflating accepted dispatch and success.
 # A handoff is definitive; failure is attributed only to one unambiguous matching run.
-w01_export_delivery_status <- function(review_id, sheet_id, checkpoint_run_id) {
+w01_export_delivery_status <- function(review_id, sheet_id, checkpoint_run_id, requested_at_utc = "") {
   assert_development_github_target()
   stopifnot(grepl("^[A-Za-z0-9._-]{3,128}$",review_id),
             grepl("^[A-Za-z0-9_-]{15,150}$",sheet_id),
@@ -718,7 +718,39 @@ w01_export_delivery_status <- function(review_id, sheet_id, checkpoint_run_id) {
       return(list(state="failed",message="W01 handoff identity mismatch. Contact the administrator; do not rerun deduplication."))
     return(list(state="exported",message="W01 decisions exported to GitHub and handoff published. Resume/final publication must still be verified."))
   }
-  list(state="pending",message="W01 export request accepted; awaiting review-specific GitHub handoff. Check GitHub Actions if this persists.")
+  # GitHub workflow_dispatch returns HTTP 204, not a run ID. Attribute a run
+  # only when exactly one export was created within the request's time window.
+  # Otherwise explicitly report that delivery cannot be attributed yet.
+  if(nzchar(requested_at_utc)) {
+    started <- as.POSIXct(requested_at_utc,format="%Y-%m-%dT%H:%M:%SZ",tz="UTC")
+    if(!is.na(started)) {
+      endpoint <- sprintf(
+        "https://api.github.com/repos/%s/actions/workflows/shiny-adjudication-dry-run-export-w01.yml/runs?branch=main&event=workflow_dispatch&per_page=100",
+        github_dispatch_repo())
+      runs <- github_api_get_json(endpoint)$workflow_runs %||% list()
+      candidates <- Filter(function(x) {
+        at <- as.POSIXct(as.character(x$created_at %||% ""),
+                         format="%Y-%m-%dT%H:%M:%SZ",tz="UTC")
+        !is.na(at) && as.numeric(difftime(at,started,units="secs")) >= -15 &&
+          as.numeric(difftime(at,started,units="secs")) <= 180
+      },runs)
+      if(length(candidates)==1L) {
+        run <- candidates[[1L]]
+        url <- as.character(run$html_url %||% "")
+        conclusion <- as.character(run$conclusion %||% "")
+        if(identical(as.character(run$status %||% ""),"completed") &&
+           !identical(conclusion,"success"))
+          return(list(state="failed",message=paste0(
+            "W01 GitHub export failed (",conclusion,"). Review the export run: ",url)))
+        if(identical(as.character(run$status %||% ""),"completed") &&
+           identical(conclusion,"success"))
+          return(list(state="pending",message=paste0(
+            "W01 export run completed, but the expected review-specific handoff is missing: ",url)))
+        return(list(state="pending",message=paste0("W01 export running in GitHub: ",url)))
+      }
+    }
+  }
+  list(state="pending",message="W01 export request accepted; no verified review-specific handoff yet. GitHub run attribution is unavailable or ambiguous.")
 }
 
 dispatch_w01_export <- function(batch_id, queue_sha256, review_id="", google_sheet_id="") {
