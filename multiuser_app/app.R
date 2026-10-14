@@ -3291,8 +3291,10 @@ server <- function(input, output, session) {
             tags$summary(tags$strong("Deduplication (W01)")),
             div(class="px-3 pb-3",
               if (session_can("run_search_scoping") && identical(as.character(current_user()$role),"administrator"))
-                tags$button("Begin deduplication",type="button",class="btn btn-primary btn-sm",disabled="disabled",
-                  title="Available once the W01 production and publication pathways have passed validation"),
+                actionButton("w01_begin_deduplication","Begin deduplication",class="btn-primary btn-sm",
+                  disabled=if (identical(Sys.getenv("LEM_W01_PRODUCTION_ENABLED",unset="false"),"true")) NULL else "disabled",
+                  title=if (identical(Sys.getenv("LEM_W01_PRODUCTION_ENABLED",unset="false"),"true")) NULL else
+                    "Disabled until review-isolated W01 adjudication and publication are connected"),
               uiOutput("w01_launch_progress"),
               uiOutput("w01_launch_results")
             )
@@ -3837,6 +3839,59 @@ server <- function(input, output, session) {
     }
     "Complete successful scoping for every selected database with this search string before starting W00."
   }
+
+  # Production launch is explicitly gated until the review-isolated W01 route,
+  # human queue and final Zenodo receipt have been connected.
+  observeEvent(input$w01_begin_deduplication, {
+    req(authenticated(),current_user())
+    if (!identical(Sys.getenv("LEM_W01_PRODUCTION_ENABLED",unset="false"),"true")) return()
+    if (!identical(as.character(current_user()$role),"administrator") ||
+        !session_can("run_search_scoping")) return()
+    if (!is.null(w01_launch_request_rv())) return()
+    review_id <- trimws(Sys.getenv("LEM_SEARCH_REVIEW_ID",unset=""))
+    sheet_id <- trimws(tryCatch(sheet_id_from_env(),error=function(e)""))
+    if (!grepl("^[A-Za-z0-9._-]{3,128}$",review_id) ||
+        !grepl("^[A-Za-z0-9_-]{15,150}$",sheet_id)) {
+      w01_launch_error_rv("Configure a valid LEM_SEARCH_REVIEW_ID and Google Sheet ID before starting W01.")
+      return()
+    }
+    showModal(modalDialog(
+      title="Start deduplication",
+      tags$p("Run W01 for this review using the configured Google Sheet and authenticated GitHub API?"),
+      tags$p("Any unresolved duplicate decisions will be sent for adjudication."),
+      easyClose=TRUE,
+      footer=tagList(modalButton("Cancel"),
+        actionButton("w01_confirm_deduplication","Confirm and begin",class="btn-primary"))
+    ))
+  })
+
+  observeEvent(input$w01_confirm_deduplication, {
+    req(authenticated(),current_user())
+    removeModal()
+    if (!identical(Sys.getenv("LEM_W01_PRODUCTION_ENABLED",unset="false"),"true") ||
+        !identical(as.character(current_user()$role),"administrator") ||
+        !session_can("run_search_scoping") || !is.null(w01_launch_request_rv())) return()
+    review_id <- trimws(Sys.getenv("LEM_SEARCH_REVIEW_ID",unset=""))
+    sheet_id <- trimws(tryCatch(sheet_id_from_env(),error=function(e)""))
+    if (!grepl("^[A-Za-z0-9._-]{3,128}$",review_id) ||
+        !grepl("^[A-Za-z0-9_-]{15,150}$",sheet_id)) return()
+    request_id <- paste0("shiny-",format(Sys.time(),"%Y%m%d%H%M%S",tz="UTC"),"-",
+                         paste(sample(c(letters,0:9),12L,replace=TRUE),collapse=""))
+    sent <- tryCatch({
+      dispatch_w01_input_preflight(review_id,sheet_id,request_id)
+      TRUE
+    },error=function(e) {
+      w01_launch_error_rv(conditionMessage(e))
+      FALSE
+    })
+    if (!sent) return()
+    w01_launch_result_rv(NULL)
+    w01_launch_run_id_rv("")
+    w01_launch_snapshot_rv(NULL)
+    w01_launch_error_rv("")
+    w01_launch_request_rv(list(review_id=review_id,review_sheet_id=sheet_id,
+                               request_id=request_id))
+  })
 
   # W01 production remains fail-closed. These outputs become live when
   # review-isolated launch, monitoring and result publication are integrated.
