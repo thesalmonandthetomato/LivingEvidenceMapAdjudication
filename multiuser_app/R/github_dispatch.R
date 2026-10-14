@@ -516,11 +516,22 @@ read_w00_scoping_final_artifact <- function(artifact) {
 }
 
 
-dispatch_w01_export <- function(batch_id, queue_sha256) {
+dispatch_w01_export <- function(batch_id, queue_sha256, review_id="", google_sheet_id="") {
   batch_id <- as.character(batch_id)
   queue_sha256 <- tolower(as.character(queue_sha256))
   if (!nzchar(batch_id)) stop("Invalid W01 batch ID", call.=FALSE)
   if (!grepl("^[0-9a-f]{64}$", queue_sha256)) stop("Invalid W01 queue SHA-256", call.=FALSE)
+  review_id <- trimws(as.character(review_id))
+  google_sheet_id <- trimws(as.character(google_sheet_id))
+  if(xor(nzchar(review_id),nzchar(google_sheet_id)))
+    stop("Review-specific W01 export requires both review_id and Google Sheet ID",call.=FALSE)
+  if(nzchar(review_id) && (!grepl("^[A-Za-z0-9._-]{3,128}$",review_id) ||
+     !grepl("^[A-Za-z0-9_-]{15,150}$",google_sheet_id)))
+    stop("Invalid review-specific W01 export identity",call.=FALSE)
+  checkpoint_run_id <- sub("^w01-run-","",batch_id)
+  if(nzchar(review_id) && (!grepl("^w01-run-[0-9]+$",batch_id) ||
+      !grepl("^[0-9]+$",checkpoint_run_id)))
+    stop("Review-specific W01 export must identify the originating W01 run",call.=FALSE)
 
   endpoint <- sprintf(
     "https://api.github.com/repos/%s/actions/workflows/shiny-adjudication-dry-run-export-w01.yml/dispatches",
@@ -536,7 +547,9 @@ dispatch_w01_export <- function(batch_id, queue_sha256) {
       `User-Agent` = "LivingEvidenceMap-Adjudication"
     ) |>
     httr2::req_body_json(list(
-      ref = github_scoping_ref()
+      ref = github_scoping_ref(),
+      inputs = if(nzchar(review_id)) list(review_id=review_id,
+        google_sheet_id=google_sheet_id,checkpoint_run_id=checkpoint_run_id) else list()
     ))
 
   resp <- httr2::req_perform(req)
@@ -545,6 +558,10 @@ dispatch_w01_export <- function(batch_id, queue_sha256) {
   if (!identical(status, 404L)) {
     stop(sprintf("W01 export workflow dispatch failed with HTTP %d", status), call.=FALSE)
   }
+  # The legacy push-marker fallback cannot carry trusted workflow-dispatch
+  # review identity. Refuse it rather than export another review's Google Sheet.
+  if(nzchar(review_id))
+    stop("Authenticated W01 review export dispatch endpoint returned 404; refusing unscoped fallback",call.=FALSE)
 
   stamp <- format(Sys.time(), tz="UTC", format="%Y%m%dT%H%M%SZ")
   marker_path <- sprintf(
