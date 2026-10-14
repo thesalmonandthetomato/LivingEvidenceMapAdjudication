@@ -982,6 +982,11 @@ server <- function(input, output, session) {
   w02_optional_resume_requested_rv <- reactiveVal(FALSE)
   w02_launch_requested_rv <- reactiveVal(FALSE)
   w02_launch_status_rv <- reactiveVal("")
+  w02_launch_record_rv <- reactiveVal(NULL)
+  w02_launch_run_id_rv <- reactiveVal("")
+  w02_launch_snapshot_rv <- reactiveVal(NULL)
+  w02_launch_error_rv <- reactiveVal("")
+
   w02_queue_sha_rv <- reactiveVal("")
   w02_batch_id_rv <- reactiveVal("")
   w02_idx <- reactiveVal(1L)
@@ -3392,6 +3397,8 @@ server <- function(input, output, session) {
             div(class="px-3 pb-3",
               tags$p(class="saved-note","Launch automated bibliographic enrichment after W01. Human adjudication and optional missing-abstract completion are handled in the Enrichment task."),
               uiOutput("w02_launch_controls"),
+              uiOutput("w02_launch_progress"),
+              uiOutput("w02_launch_results"),
               uiOutput("w02_optional_pause_controls")
             )
           ),
@@ -8598,6 +8605,86 @@ server <- function(input, output, session) {
     }
   })
 
+  # Restore review-bound W02 launch monitoring from Google Sheets on login.
+  observe({
+    req(authenticated(),session_can("control_workflows"))
+    invalidateLater(15000,session)
+    record <- tryCatch({
+      ss <- sheet_id_from_env()
+      m <- googlesheets4::read_sheet(ss,sheet="review_metadata",col_types="cc")
+      review <- as.character(m$value[match("review_id",m$key)])
+      if(!length(review)||is.na(review)||!nzchar(review)) return(NULL)
+      w02_launch_record(review,ss)
+    },error=function(e) NULL)
+    if(!is.null(record)) {
+      w02_launch_record_rv(record)
+      id <- as.character(record$run_id %||% "")
+      if(grepl("^[0-9]+$",id)) w02_launch_run_id_rv(id)
+    }
+  })
+  observe({
+    req(authenticated(),session_can("control_workflows"))
+    record <- w02_launch_record_rv()
+    if(is.null(record)||nzchar(w02_launch_run_id_rv()))return()
+    invalidateLater(5000,session)
+    found <- tryCatch(w02_find_shiny_run(
+      as.character(record$launched_at_utc),as.character(record$review_id),
+      as.character(record$sheet_id)),error=function(e)e)
+    if(inherits(found,"error")) {
+      w02_launch_error_rv(conditionMessage(found))
+    } else if(!is.null(found)) {
+      id <- as.character(found$id)
+      w02_launch_run_id_rv(id)
+      w02_launch_error_rv("")
+      try(append_w02_launch_record(as.character(record$review_id),
+        as.character(record$sheet_id),as.character(record$launched_at_utc),id,"identified"),
+        silent=TRUE)
+    }
+  })
+  observe({
+    req(authenticated(),session_can("control_workflows"))
+    id <- w02_launch_run_id_rv()
+    if(!nzchar(id))return()
+    invalidateLater(5000,session)
+    snap <- tryCatch(w02_github_run_progress(id),error=function(e)e)
+    if(inherits(snap,"error")) {
+      w02_launch_error_rv(conditionMessage(snap))
+    } else {
+      w02_launch_snapshot_rv(snap)
+      w02_launch_error_rv("")
+    }
+  })
+  output$w02_launch_progress <- renderUI({
+    m <- w02_launch_snapshot_rv()
+    if(is.null(m)||identical(m$status,"completed"))return(NULL)
+    pct <- max(0L,min(99L,as.integer(m$progress %||% 0L)))
+    tags$div(class="mt-2",
+      tags$div(class="progress",role="progressbar",
+        `aria-valuenow`=pct,`aria-valuemin`="0",`aria-valuemax`="100",
+        tags$div(class="progress-bar progress-bar-striped progress-bar-animated",
+          style=paste0("width:",pct,"%"))))
+  })
+  output$w02_launch_results <- renderUI({
+    err <- w02_launch_error_rv()
+    m <- w02_launch_snapshot_rv()
+    id <- as.character(w02_launch_run_id_rv() %||% "")
+    if(!nzchar(id)) return(
+      if(nzchar(err)) tags$p(class="text-danger",paste("W02 monitoring:",err))
+      else if(!is.null(w02_launch_record_rv()))
+        tags$p(class="text-secondary small","W02 requested. Identifying its exact GitHub run…")
+      else NULL)
+    link <- tags$a(href=sprintf("https://github.com/thesalmonandthetomato/LivingEvidenceMap/actions/runs/%s",id),
+                   target="_blank",rel="noopener noreferrer",paste("GitHub Actions run",id))
+    if(is.null(m))return(tagList(link,if(nzchar(err))tags$p(class="text-danger",err)))
+    msg <- if(identical(m$status,"completed")) {
+      if(identical(m$conclusion,"success"))
+        "Automated W02 run completed. Review the Shiny adjudication or optional abstract pause before treating W02 as published."
+      else paste("W02 run",m$conclusion,". Inspect GitHub Actions before retrying.")
+    } else sprintf("W02 running: %d of %d reported Actions steps completed.",
+                  m$completed_steps,m$total_steps)
+    tagList(tags$p(class=if(identical(m$conclusion,"failure"))"text-danger" else "text-secondary small",msg),link)
+  })
+
   output$w02_launch_controls <- renderUI({
     if(!session_can("control_workflows")) {
       return(div(class="text-secondary small mt-2",
@@ -8610,7 +8697,7 @@ server <- function(input, output, session) {
         sprintf("W02 launch unavailable: adjudication batch %s has status %s.",
                 batch,as.character(w02_batch_status_rv() %||% "unknown"))))
     }
-    if(isTRUE(w02_launch_requested_rv())) {
+    if(isTRUE(w02_launch_requested_rv()) || !is.null(w02_launch_record_rv())) {
       return(div(class="text-secondary small mt-2",
         "W02 launch requested. Check GitHub Actions before attempting another launch."))
     }
@@ -8635,15 +8722,27 @@ server <- function(input, output, session) {
       configured <- trimws(Sys.getenv("LEM_SEARCH_REVIEW_ID",unset=""))
       if(nzchar(configured) && !identical(configured,review_id))
         stop("Environment review ID conflicts with active Google Sheet")
-      dispatch_w02_from_shiny(review_id,sheet_id)
+      pointer <- dispatch_w02_from_shiny(review_id,sheet_id)
+      list(pointer=pointer,review_id=review_id,sheet_id=sheet_id)
     },error=function(e)e)
     if(inherits(result,"error")) {
       w02_launch_status_rv(paste("W02 launch failed:",conditionMessage(result)))
       showNotification(w02_launch_status_rv(),type="error",duration=12)
       return()
     }
+    now <- format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ")
+    record <- list(review_id=result$review_id,sheet_id=result$sheet_id,launched_at_utc=now,
+                   run_id="",state="requested")
     w02_launch_requested_rv(TRUE)
-    w02_launch_status_rv(paste("W02 enrichment requested using",result))
+    w02_launch_record_rv(record)
+    saved <- tryCatch(append_w02_launch_record(result$review_id,result$sheet_id,now),
+                      error=function(e)e)
+    if(inherits(saved,"error")) {
+      w02_launch_status_rv(paste("W02 dispatched, but persistent monitoring could not be saved:",
+                                 conditionMessage(saved)))
+    } else {
+      w02_launch_status_rv(paste("W02 enrichment requested using",result$pointer))
+    }
   })
 
   observeEvent(input$w02_prepare_abstract_queue,{
