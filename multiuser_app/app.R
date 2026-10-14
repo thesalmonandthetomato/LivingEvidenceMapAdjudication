@@ -8632,7 +8632,7 @@ server <- function(input, output, session) {
         ,drop=FALSE]
       if(nrow(matching)) {
         timestamps <- as.character(matching$requested_at_utc)
-        timestamps <- timestamps[grepl("^\\d{4}-\\d{2}-\\d{2}T",timestamps)]
+        timestamps <- timestamps[grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}T",timestamps)]
         if(length(timestamps)) request_time <- min(timestamps)
       }
       w01_export_delivery_status(review,sheet,sub("^w01-run-","",batch),
