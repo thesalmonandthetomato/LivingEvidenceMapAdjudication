@@ -2479,8 +2479,7 @@ server <- function(input, output, session) {
                 "No records awaiting review"
               }
             ),
-            uiOutput("w02_optional_pause_controls"),
-            uiOutput("w02_launch_controls")
+
           ),
           if(!is.null(w02_optional_pause_rv())) uiOutput("w02_missing_abstract_editor"),
           div(
@@ -3384,6 +3383,25 @@ server <- function(input, output, session) {
               uiOutput("w01_launch_results"),
               uiOutput("w01_ris_controls"),
               textOutput("w01_ris_status")
+            )
+          ),
+          tags$details(
+            class="assignment-disclosure",
+            `data-accordion-key`="configure-review-enrichment",
+            tags$summary(tags$strong("Enrichment (W02)")),
+            div(class="px-3 pb-3",
+              tags$p(class="saved-note","Launch automated bibliographic enrichment after W01. Human adjudication and optional missing-abstract completion are handled in the Enrichment task."),
+              uiOutput("w02_launch_controls"),
+              uiOutput("w02_optional_pause_controls")
+            )
+          ),
+          tags$details(
+            class="assignment-disclosure",
+            `data-accordion-key`="configure-review-retractions",
+            tags$summary(tags$strong("Retraction scanning (W03)")),
+            div(class="px-3 pb-3",
+              tags$p(class="saved-note",
+                "Retraction scanning follows publication of the completed W02 state. W03 is triggered through the pipeline; no separate manual launch is configured here.")
             )
           )
         )
