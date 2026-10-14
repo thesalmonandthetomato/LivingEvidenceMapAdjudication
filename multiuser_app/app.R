@@ -3349,9 +3349,13 @@ server <- function(input, output, session) {
             div(class="px-3 pb-3",
               if (session_can("run_search_scoping") && identical(as.character(current_user()$role),"administrator"))
                 actionButton("w01_begin_deduplication","Begin deduplication",class="btn-primary btn-sm",
-                  disabled=if (isTRUE(w01_launch_configuration()$ready)) NULL else "disabled",
-                  title=if (isTRUE(w01_launch_configuration()$ready)) NULL else
-                    w01_launch_configuration()$reason),
+                  disabled=if (isTRUE(w01_launch_configuration()$ready) &&
+                               !nzchar(batch_id_rv()) && is.null(w01_launch_request_rv())) NULL else "disabled",
+                  title=if(nzchar(batch_id_rv()))
+                    "W01 has already been run for this review. Complete human adjudication before another update."
+                    else if(!is.null(w01_launch_request_rv()))
+                    "A W01 execution has already been launched in this session."
+                    else w01_launch_configuration()$reason),
               if (!isTRUE(w01_launch_configuration()$ready))
                 tags$p(class="small text-muted mt-2",w01_launch_configuration()$reason),
               uiOutput("w01_launch_progress"),
@@ -3920,6 +3924,10 @@ server <- function(input, output, session) {
       showNotification("A W01 launch is already being monitored in this session.",type="message",duration=8)
       return()
     }
+    if(nzchar(batch_id_rv())) {
+      showNotification("W01 already has a review batch for this project. Finish the batch before running an update.",type="warning",duration=10)
+      return()
+    }
     w01_launch_error_rv("")
     sheet_id <- trimws(tryCatch(sheet_id_from_env(),error=function(e)""))
     if (!grepl("^[A-Za-z0-9_-]{15,150}$",sheet_id)) {
@@ -3941,7 +3949,8 @@ server <- function(input, output, session) {
     removeModal()
     if (!isTRUE(w01_launch_configuration()$ready) ||
         !identical(as.character(current_user()$role),"administrator") ||
-        !session_can("run_search_scoping") || !is.null(w01_launch_request_rv())) return()
+        !session_can("run_search_scoping") || !is.null(w01_launch_request_rv()) ||
+        nzchar(batch_id_rv())) return()
     sheet_id <- trimws(tryCatch(sheet_id_from_env(),error=function(e)""))
     configured_review_id <- trimws(Sys.getenv("LEM_SEARCH_REVIEW_ID",unset=""))
     identity <- tryCatch({
@@ -10340,13 +10349,15 @@ server <- function(input, output, session) {
       queue_sha256 = queue_sha_rv()
     )
 
-    saved <- tryCatch(
-      save_active_decision(decision, decision_path, prior_decision = prior),
-      error = function(e) {
-        status(paste("Save failed:", conditionMessage(e)))
-        NULL
-      }
-    )
+    saved <- withProgress(message="Saving W01 decision to Google Sheets…",value=0,{
+      tryCatch(
+        save_active_decision(decision, decision_path, prior_decision = prior),
+        error = function(e) {
+          status(paste("Save failed:", conditionMessage(e)))
+          NULL
+        }
+      )
+    })
     if (is.null(saved)) return(FALSE)
 
     remaining <- Filter(
