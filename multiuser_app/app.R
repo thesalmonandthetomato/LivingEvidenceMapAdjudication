@@ -10352,6 +10352,7 @@ server <- function(input, output, session) {
       return(FALSE)
     }
     z <- current_case()
+    assignment_check_start <- proc.time()[["elapsed"]]
 
     if (
       session_can("manage_assignments") &&
