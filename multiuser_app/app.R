@@ -1054,6 +1054,8 @@ server <- function(input, output, session) {
   w08_status <- reactiveVal("")
   w08_resume_requested_rv <- reactiveVal(FALSE)
   pipeline_status_rv <- reactiveVal(NULL)
+  review_published_metrics_rv <- reactiveVal(NULL)
+  review_reporting_error_rv <- reactiveVal("")
   manual_screening_rv <- reactiveVal(NULL)
   authoritative_w08_rv <- reactiveVal(NULL)
   backend_reset_status <- reactiveVal("")
@@ -1116,6 +1118,27 @@ server <- function(input, output, session) {
       } else {
         authoritative_w08_rv(NULL)
       }
+    }
+  })
+
+  # Review-scoped publication receipts, independent of the legacy global status.
+  observe({
+    req(authenticated(),identical(storage_backend(),"google_sheets"))
+    invalidateLater(60000,session)
+    if(!identical(app_view(),"tasks"))return()
+    metrics <- tryCatch({
+      ss <- sheet_id_from_env()
+      metadata <- googlesheets4::read_sheet(ss,sheet="review_metadata",col_types="cc")
+      review <- as.character(metadata$value[match("review_id",metadata$key)])
+      if(length(review)!=1L||is.na(review)||!grepl("^[A-Za-z0-9._-]{3,128}$",review))
+        stop("Missing valid review_id in the active review_metadata tab")
+      read_review_published_w01_w02(review,ss)
+    },error=function(e)e)
+    if(inherits(metrics,"error")) {
+      review_reporting_error_rv(conditionMessage(metrics))
+    } else {
+      review_reporting_error_rv("")
+      review_published_metrics_rv(metrics)
     }
   })
 
@@ -1691,8 +1714,20 @@ server <- function(input, output, session) {
         update_id=if(!is.null(m)) as.character(m$id %||% "") else "",
         last_search_date="",completed_through=if(verified) 1L else 0L,
         active_workflow="",search_results_total=total)
+      published <- review_published_metrics_rv()
+      if(!is.null(published)) {
+        p <- utils::modifyList(p,published)
+        p$update_id <- if(nzchar(as.character(published$run_id %||% "")))
+          as.character(published$run_id) else p$update_id
+      }
     } else {
       p <- pipeline_status_rv()
+    }
+    if(review_mode && nzchar(review_reporting_error_rv())) {
+      return(div(class="pipeline-summary",
+        div(class="text-danger small",
+          paste("Review-specific pipeline reporting unavailable:",
+                review_reporting_error_rv()))))
     }
     if(is.null(p)) {
       return(div(
