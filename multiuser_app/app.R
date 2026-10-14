@@ -4080,6 +4080,19 @@ server <- function(input, output, session) {
 
   # Export is intentionally unavailable until a review-specific final W01
   # receipt exists. The RIS is created on demand, not polled from Google Sheets.
+  w01_final_receipt_rv <- reactiveVal(NULL)
+  observeEvent(authenticated(), {
+    if(!isTRUE(authenticated()) || !identical(storage_backend(),"google_sheets")) return()
+    receipt <- tryCatch({
+      sheet <- sheet_id_from_env()
+      metadata <- googlesheets4::read_sheet(sheet,sheet="review_metadata",col_types="cc")
+      review <- as.character(metadata$value[match("review_id",metadata$key)])
+      if(length(review)!=1L || is.na(review) ||
+         !grepl("^[A-Za-z0-9._-]{3,128}$",review)) return(NULL)
+      w01_latest_final_review_receipt(review,sheet)
+    },error=function(e) NULL)
+    w01_final_receipt_rv(receipt)
+  })
   w01_ris_export_rv <- reactiveVal(NULL)
   w01_ris_status_rv <- reactiveVal("")
   w01_ris_artifact_rv <- reactiveVal(NULL)
@@ -4088,9 +4101,10 @@ server <- function(input, output, session) {
   w01_final_export_identity <- reactive({
     request <- w01_launch_request_rv()
     result <- w01_launch_result_rv()
-    if(is.null(request) || is.null(result) ||
-       !grepl("^[0-9]+$",as.character(result$run_id %||% ""))) return(NULL)
-    list(review_id=request$review_id,run_id=as.character(result$run_id))
+    if(!is.null(request) && !is.null(result) &&
+       grepl("^[0-9]+$",as.character(result$run_id %||% "")))
+      return(list(review_id=request$review_id,run_id=as.character(result$run_id)))
+    w01_final_receipt_rv()
   })
 
   output$w01_ris_controls <- renderUI({
