@@ -1544,6 +1544,63 @@ server <- function(input, output, session) {
     invisible(TRUE)
   }
 
+  # The W01 queue may be published while users remain logged in. Load a
+  # changed immutable batch without resetting active decisions on the same one.
+  observe({
+    req(authenticated(),current_user())
+    if (!identical(storage_backend(),"google_sheets")) return()
+    invalidateLater(15000,session)
+    incoming <- tryCatch(read_sheet_w01_queue(),error=function(e)e)
+    if(inherits(incoming,"error")) {
+      if(!nzchar(batch_id_rv()))
+        status(paste("Unable to refresh W01 review queue:",conditionMessage(incoming)))
+      return()
+    }
+    if(is.null(incoming)) return()
+    next_id <- as.character(incoming$batch_id %||% "")
+    next_sha <- as.character(incoming$queue_sha256 %||% "")
+    if(!nzchar(next_id) || !nzchar(next_sha)) return()
+    if(identical(next_id,isolate(batch_id_rv())) &&
+       identical(next_sha,isolate(queue_sha_rv()))) return()
+    loaded <- tryCatch({
+      latest_assignments <- read_assignment_registry(assignment_path)
+      all_decisions <- read_active_decisions(decision_path)
+      current_decisions <- filter_batch_decisions(all_decisions,next_sha)
+      reviewer_cases <- cases_for_assignment_user(
+        incoming$cases,latest_assignments,"01",next_id,current_user(),
+        task_type="deduplication",active_events=current_decisions)
+      repair_events <- read_active_w01_repairs(w01_repair_path,next_sha)
+      export_requested <- w01_export_request_exists(next_sha,next_id)
+      list(assignments=latest_assignments,decisions=current_decisions,
+           cases=reviewer_cases,repairs=repair_events,
+           export_requested=isTRUE(export_requested))
+    },error=function(e)e)
+    if(inherits(loaded,"error")) {
+      status(paste("Unable to load newly published W01 queue:",conditionMessage(loaded)))
+      return()
+    }
+    assignment_registry_rv(loaded$assignments)
+    w01_all_cases_rv(incoming$cases)
+    w01_repairs_rv(loaded$repairs)
+    cases_rv(loaded$cases)
+    decisions(loaded$decisions)
+    queue_sha_rv(next_sha)
+    batch_id_rv(next_id)
+    batch_status_rv(incoming$batch_status %||% "")
+    w01_export_requested_rv(loaded$export_requested)
+    w01_export_status_rv(if(loaded$export_requested)
+      "Sent to GitHub. The reviewed batch is queued for integrity checks and resume." else "")
+    ids <- if(length(loaded$cases)) vapply(loaded$cases,function(z)
+      as.character(z$review_case_id),character(1)) else character()
+    finished <- if(length(loaded$decisions)) unique(vapply(loaded$decisions,
+      function(z)as.character(z$review_case_id),character(1))) else character()
+    remaining <- which(!ids %in% finished)
+    idx(if(length(remaining)) remaining[[1L]] else max(1L,length(ids)))
+    complete(!length(remaining))
+    status(sprintf("W01 review queue %s loaded automatically (%d cases).",
+                   next_id,length(incoming$cases)))
+  })
+
   load_batch <- function() {
     if (identical(storage_backend(), "google_sheets")) {
       return(read_sheet_w01_queue())
