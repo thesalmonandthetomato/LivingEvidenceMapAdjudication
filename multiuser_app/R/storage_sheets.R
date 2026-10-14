@@ -2893,3 +2893,17 @@ append_w02_missing_abstract_edit <- function(source_run_id, queue_sha256, record
   invisible(row)
 }
 
+
+# Review-specific zero-conflict W02 optional pause; never infer it from a global run.
+w02_optional_pause_current <- function() {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  if(!"w02_optional_pause" %in% sheet_names_cached(ss)) return(NULL)
+  d <- googlesheets4::read_sheet(ss,sheet="w02_optional_pause",col_types="c")
+  required <- c("source_run_id","review_id","google_sheet_id","missing_abstracts","status")
+  if(!nrow(d)) return(NULL)
+  if(!all(required %in% names(d))) stop("Invalid W02 optional pause record")
+  d <- d[!is.na(d$google_sheet_id) & as.character(d$google_sheet_id)==ss,,drop=FALSE]
+  if(!nrow(d)) return(NULL)
+  as.list(d[nrow(d),,drop=FALSE])
+}
