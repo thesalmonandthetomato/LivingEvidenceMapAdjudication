@@ -3840,9 +3840,31 @@ server <- function(input, output, session) {
 
   # W01 production remains fail-closed. These outputs become live when
   # review-isolated launch, monitoring and result publication are integrated.
+  w01_launch_request_rv <- reactiveVal(NULL)
+  w01_launch_result_rv <- reactiveVal(NULL)
   w01_launch_run_id_rv <- reactiveVal("")
   w01_launch_error_rv <- reactiveVal("")
   w01_launch_snapshot_rv <- reactiveVal(NULL)
+
+  # Locate the exact run associated with this review's launch request.
+  # Never display progress from the latest global W01 run.
+  observe({
+    req(authenticated())
+    request <- w01_launch_request_rv()
+    if(is.null(request) || nzchar(w01_launch_run_id_rv())) return()
+    invalidateLater(5000,session)
+    run <- tryCatch(
+      w01_find_shiny_run(request$review_id,request$request_id),
+      error=function(e)e
+    )
+    if(inherits(run,"error")) {
+      w01_launch_error_rv(conditionMessage(run))
+      return()
+    }
+    if(is.null(run)) return()
+    w01_launch_run_id_rv(as.character(run$id))
+    w01_launch_error_rv("")
+  })
 
   # A run is only monitored after its exact GitHub run ID has been verified.
   observe({
@@ -3856,6 +3878,20 @@ server <- function(input, output, session) {
     } else {
       w01_launch_error_rv("")
       w01_launch_snapshot_rv(snapshot)
+      request <- w01_launch_request_rv()
+      if(!is.null(request) && identical(snapshot$status,"completed") &&
+         identical(snapshot$conclusion,"success")) {
+        result <- tryCatch(
+          w01_published_review_results(
+            snapshot$run_id,request$review_id,request$review_sheet_id),
+          error=function(e)e
+        )
+        if(inherits(result,"error")) {
+          w01_launch_error_rv(conditionMessage(result))
+        } else {
+          w01_launch_result_rv(result)
+        }
+      }
     }
   })
 
@@ -3880,9 +3916,15 @@ server <- function(input, output, session) {
     if(is.null(m) || !identical(m$status,"completed")) return(NULL)
     if(!identical(m$conclusion,"success"))
       return(tags$p(class="text-danger","Deduplication failed. The existing review data have not been replaced."))
-    # A completed Actions job is not sufficient evidence of canonical W01 counts.
-    # Render metrics only after the review-specific result publication is integrated.
-    tags$p("Workflow completed. Deduplication results are awaiting verified publication.")
+    result <- w01_launch_result_rv()
+    if(is.null(result))
+      return(NULL) # Never imply W01 succeeded before its restricted publication is verified.
+    tags$div(
+      tags$p(tags$strong("Deduplication completed")),
+      tags$p(sprintf("%d duplicates removed",result$duplicates_removed)),
+      tags$p(sprintf("%d unique records remain",result$unique_records)),
+      tags$p(sprintf("%d uncertain cases require review",result$uncertain_cases))
+    )
   })
 
   observeEvent(input$search_formal_start, {
