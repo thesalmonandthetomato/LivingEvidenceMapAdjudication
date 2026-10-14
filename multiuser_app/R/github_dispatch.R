@@ -697,6 +697,30 @@ read_w00_scoping_final_artifact <- function(artifact) {
 }
 
 
+
+# Check a review-bound W01 export without conflating accepted dispatch and success.
+# A handoff is definitive; failure is attributed only to one unambiguous matching run.
+w01_export_delivery_status <- function(review_id, sheet_id, checkpoint_run_id) {
+  assert_development_github_target()
+  stopifnot(grepl("^[A-Za-z0-9._-]{3,128}$",review_id),
+            grepl("^[A-Za-z0-9_-]{15,150}$",sheet_id),
+            grepl("^[0-9]+$",checkpoint_run_id))
+  path <- sprintf("docs/deduplication/handoffs/w01/run-%s.json",checkpoint_run_id)
+  handoff <- tryCatch(jsonlite::fromJSON(read_github_text_file(path),simplifyVector=FALSE),
+                      error=function(e) {
+                        if(grepl("HTTP 404",conditionMessage(e),fixed=TRUE)) return(NULL)
+                        stop(e)
+                      })
+  if(!is.null(handoff)) {
+    if(!identical(as.character(handoff$review_id %||% ""),review_id) ||
+       !identical(as.character(handoff$google_sheet_id %||% ""),sheet_id) ||
+       !identical(as.character(handoff$checkpoint_run_id %||% ""),checkpoint_run_id))
+      return(list(state="failed",message="W01 handoff identity mismatch. Contact the administrator; do not rerun deduplication."))
+    return(list(state="exported",message="W01 decisions exported to GitHub and handoff published. Resume/final publication must still be verified."))
+  }
+  list(state="pending",message="W01 export request accepted; awaiting review-specific GitHub handoff. Check GitHub Actions if this persists.")
+}
+
 dispatch_w01_export <- function(batch_id, queue_sha256, review_id="", google_sheet_id="") {
   batch_id <- as.character(batch_id)
   queue_sha256 <- tolower(as.character(queue_sha256))
