@@ -8847,6 +8847,22 @@ server <- function(input, output, session) {
     }
 
     queue_sha <- as.character(w02_queue_sha_rv())
+    abstract_ready <- tryCatch({
+      q <- w02_missing_abstract_queue()
+      if(!nrow(q)) return(TRUE)
+      if(!all(c("source_run_id","queue_sha256","record_id") %in% names(q)))
+        stop("Invalid optional abstract queue")
+      if(any(as.character(q$source_run_id)!=source_run_id))
+        stop("Optional abstract queue belongs to a different W02 run")
+      ed <- w02_missing_abstract_edits(source_run_id,unique(as.character(q$queue_sha256)))
+      if(!setequal(as.character(q$record_id),as.character(ed$record_id))) {
+        w02_status(sprintf("Optional abstract review incomplete: %d records remain.",
+          sum(!q$record_id %in% ed$record_id)))
+        return(FALSE)
+      }
+      TRUE
+    },error=function(e){w02_status(paste("W02 abstract queue check failed:",conditionMessage(e)));FALSE})
+    if(!isTRUE(abstract_ready)) return(FALSE)
     already <- tryCatch(
       w02_resume_request_exists(queue_sha, source_run_id),
       error = function(e) {
