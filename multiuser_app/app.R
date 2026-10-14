@@ -3292,9 +3292,9 @@ server <- function(input, output, session) {
             div(class="px-3 pb-3",
               if (session_can("run_search_scoping") && identical(as.character(current_user()$role),"administrator"))
                 actionButton("w01_begin_deduplication","Begin deduplication",class="btn-primary btn-sm",
-                  disabled=if (identical(Sys.getenv("LEM_W01_PRODUCTION_ENABLED",unset="false"),"true")) NULL else "disabled",
-                  title=if (identical(Sys.getenv("LEM_W01_PRODUCTION_ENABLED",unset="false"),"true")) NULL else
-                    "Disabled until review-isolated W01 adjudication and publication are connected"),
+                  disabled=if (isTRUE(w01_launch_configuration()$ready)) NULL else "disabled",
+                  title=if (isTRUE(w01_launch_configuration()$ready)) NULL else
+                    w01_launch_configuration()$reason),
               uiOutput("w01_launch_progress"),
               uiOutput("w01_launch_results")
             )
@@ -3844,7 +3844,7 @@ server <- function(input, output, session) {
   # human queue and final Zenodo receipt have been connected.
   observeEvent(input$w01_begin_deduplication, {
     req(authenticated(),current_user())
-    if (!identical(Sys.getenv("LEM_W01_PRODUCTION_ENABLED",unset="false"),"true")) return()
+    if (!isTRUE(w01_launch_configuration()$ready)) return()
     if (!identical(as.character(current_user()$role),"administrator") ||
         !session_can("run_search_scoping")) return()
     if (!is.null(w01_launch_request_rv())) return()
@@ -3868,13 +3868,26 @@ server <- function(input, output, session) {
   observeEvent(input$w01_confirm_deduplication, {
     req(authenticated(),current_user())
     removeModal()
-    if (!identical(Sys.getenv("LEM_W01_PRODUCTION_ENABLED",unset="false"),"true") ||
+    if (!isTRUE(w01_launch_configuration()$ready) ||
         !identical(as.character(current_user()$role),"administrator") ||
         !session_can("run_search_scoping") || !is.null(w01_launch_request_rv())) return()
     review_id <- trimws(Sys.getenv("LEM_SEARCH_REVIEW_ID",unset=""))
     sheet_id <- trimws(tryCatch(sheet_id_from_env(),error=function(e)""))
     if (!grepl("^[A-Za-z0-9._-]{3,128}$",review_id) ||
         !grepl("^[A-Za-z0-9_-]{15,150}$",sheet_id)) return()
+    # Confirm the authenticated Sheet belongs to the stated review before API dispatch.
+    identity_ok <- tryCatch({
+      metadata <- googlesheets4::read_sheet(sheet_id,sheet="review_metadata",col_types="cc")
+      if(!all(c("key","value") %in% names(metadata))) stop("Invalid review_metadata")
+      actual <- as.character(metadata$value[match("review_id",metadata$key)])
+      if(length(actual)!=1L || is.na(actual) || !identical(actual,review_id))
+        stop("The Google Sheet review_id does not match LEM_SEARCH_REVIEW_ID")
+      TRUE
+    },error=function(e) {
+      w01_launch_error_rv(paste("W01 review identity verification failed:",conditionMessage(e)))
+      FALSE
+    })
+    if(!identity_ok) return()
     request_id <- paste0("shiny-",format(Sys.time(),"%Y%m%d%H%M%S",tz="UTC"),"-",
                          paste(sample(c(letters,0:9),12L,replace=TRUE),collapse=""))
     sent <- tryCatch({
