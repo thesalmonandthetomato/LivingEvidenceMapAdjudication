@@ -198,10 +198,13 @@ dispatch_w00_formal <- function(search_string, sources, request_id) {
 
 # Explicit read-only W01 input preflight for the active review. Production W01
 # remains disabled in the pipeline until review-isolated publication is ready.
-dispatch_w01_input_preflight <- function(review_id, review_sheet_id) {
+dispatch_w01_input_preflight <- function(review_id, review_sheet_id, request_id) {
   assert_development_github_target()
   review_id <- trimws(as.character(review_id))
   review_sheet_id <- trimws(as.character(review_sheet_id))
+  request_id <- trimws(as.character(request_id))
+  if(length(request_id)!=1L || !grepl("^[A-Za-z0-9._-]{8,80}$",request_id))
+    stop("Invalid W01 Shiny request ID",call.=FALSE)
   if(length(review_id)!=1L || !grepl("^[A-Za-z0-9._-]{3,128}$",review_id))
     stop("Invalid W01 review ID",call.=FALSE)
   if(length(review_sheet_id)!=1L || !grepl("^[A-Za-z0-9_-]{15,150}$",review_sheet_id))
@@ -212,7 +215,7 @@ dispatch_w01_input_preflight <- function(review_id, review_sheet_id) {
   )
   payload <- list(ref=github_scoping_ref(),inputs=list(
     execution_pathway="shiny",review_id=review_id,
-    review_sheet_id=review_sheet_id,first_run="true"
+    review_sheet_id=review_sheet_id,shiny_request_id=request_id,first_run="true"
   ))
   req <- httr2::request(endpoint) |>
     httr2::req_method("POST") |>
@@ -229,6 +232,25 @@ dispatch_w01_input_preflight <- function(review_id, review_sheet_id) {
   invisible(TRUE)
 }
 
+
+# Correlate one Shiny launch with its actual GitHub Actions run. Never choose
+# the latest W01 run, which may belong to another review or launch pathway.
+w01_find_shiny_run <- function(review_id, request_id) {
+  assert_development_github_target()
+  if(!grepl("^[A-Za-z0-9._-]{3,128}$",as.character(review_id)) ||
+     !grepl("^[A-Za-z0-9._-]{8,80}$",as.character(request_id)))
+    stop("Invalid W01 launch identity",call.=FALSE)
+  endpoint <- sprintf(
+    "https://api.github.com/repos/%s/actions/workflows/workflow_01_production.yml/runs?branch=main&event=workflow_dispatch&per_page=100",
+    github_dispatch_repo()
+  )
+  candidates <- github_api_get_json(endpoint)$workflow_runs %||% list()
+  wanted <- paste("W01",review_id,request_id)
+  hits <- Filter(function(x) identical(as.character(x$display_title %||% ""),wanted),candidates)
+  if(!length(hits)) return(NULL)
+  if(length(hits)!=1L) stop("Ambiguous W01 launch request ID",call.=FALSE)
+  hits[[1L]]
+}
 
 # Read-only progress observation for an explicit W01 run; never dispatches jobs.
 w01_github_run_progress <- function(run_id) {
