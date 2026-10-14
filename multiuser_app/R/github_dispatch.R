@@ -195,6 +195,40 @@ dispatch_w00_formal <- function(search_string, sources, request_id) {
   invisible(TRUE)
 }
 
+
+# Explicit read-only W01 input preflight for the active review. Production W01
+# remains disabled in the pipeline until review-isolated publication is ready.
+dispatch_w01_input_preflight <- function(review_id, review_sheet_id) {
+  assert_development_github_target()
+  review_id <- trimws(as.character(review_id))
+  review_sheet_id <- trimws(as.character(review_sheet_id))
+  if(length(review_id)!=1L || !grepl("^[A-Za-z0-9._-]{3,128}$",review_id))
+    stop("Invalid W01 review ID",call.=FALSE)
+  if(length(review_sheet_id)!=1L || !grepl("^[A-Za-z0-9_-]{15,150}$",review_sheet_id))
+    stop("Invalid W01 Google Sheet ID",call.=FALSE)
+  endpoint <- sprintf(
+    "https://api.github.com/repos/%s/actions/workflows/workflow_01_production.yml/dispatches",
+    github_dispatch_repo()
+  )
+  payload <- list(ref=github_scoping_ref(),inputs=list(
+    execution_pathway="shiny",review_id=review_id,
+    review_sheet_id=review_sheet_id,first_run="true"
+  ))
+  req <- httr2::request(endpoint) |>
+    httr2::req_method("POST") |>
+    httr2::req_headers(
+      Authorization=paste("Bearer",github_dispatch_token()),
+      Accept="application/vnd.github+json",
+      `X-GitHub-Api-Version`="2022-11-28",
+      `User-Agent`="LivingEvidenceMap-Adjudication"
+    ) |>
+    httr2::req_body_json(payload)
+  resp <- httr2::req_perform(req)
+  if(!identical(httr2::resp_status(resp),204L))
+    stop(sprintf("W01 preflight dispatch returned HTTP %d",httr2::resp_status(resp)),call.=FALSE)
+  invisible(TRUE)
+}
+
 dispatch_w00_scoping <- function(request_id, search_string = NULL, search_string_path = "user_input/scoping_search_string.txt") {
   request_id <- trimws(as.character(request_id))
   if (!grepl("^[A-Za-z0-9._-]{8,80}$", request_id)) {
