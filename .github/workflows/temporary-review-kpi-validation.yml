@@ -1,0 +1,28 @@
+name: Temporary review-specific KPI validation
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/temporary-review-kpi-validation.yml']
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Validate Shiny R syntax and publication provenance
+        shell: Rscript {0}
+        run: |
+          parse(file="multiuser_app/app.R")
+          parse(file="multiuser_app/R/github_dispatch.R")
+          parse(file="multiuser_app/R/storage_sheets.R")
+          x <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\n")
+          y <- paste(readLines("multiuser_app/R/github_dispatch.R",warn=FALSE),collapse="\n")
+          stopifnot(grepl("read_review_published_w01_w02",x,fixed=TRUE),
+                    grepl("upstream_workflow01_canonical_sha256",y,fixed=TRUE),
+                    grepl("google_sheet_id",y,fixed=TRUE))
+          cat("PASS review-scoped KPI reader and Shiny R syntax\n")
