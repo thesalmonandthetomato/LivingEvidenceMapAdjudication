@@ -2480,19 +2480,7 @@ server <- function(input, output, session) {
               }
             ),
             uiOutput("w02_optional_pause_controls"),
-            if(is.null(w02_optional_pause_rv()) &&
-               session_can("control_workflows") && !nzchar(w02_batch_id_rv())) {
-              div(class="mt-2",
-                if(isTRUE(w02_launch_requested_rv())) {
-                  tags$div(class="text-secondary small",
-                           "W02 launch requested. Check GitHub Actions for enrichment progress.")
-                } else {
-                  actionButton("w02_begin_enrichment","Begin enrichment",
-                               class="btn-primary btn-sm")
-                },
-                textOutput("w02_launch_status")
-              )
-            }
+            uiOutput("w02_launch_controls")
           ),
           if(!is.null(w02_optional_pause_rv())) uiOutput("w02_missing_abstract_editor"),
           div(
@@ -8590,6 +8578,27 @@ server <- function(input, output, session) {
       w02_optional_resume_requested_rv(TRUE)
       w02_abstract_status_rv("W02 resume dispatched.")
     }
+  })
+
+  output$w02_launch_controls <- renderUI({
+    if(!session_can("control_workflows")) {
+      return(div(class="text-secondary small mt-2",
+                 "W02 enrichment launch requires workflow administrator permissions."))
+    }
+    if(!is.null(w02_optional_pause_rv())) return(NULL)
+    batch <- as.character(w02_batch_id_rv() %||% "")
+    if(nzchar(batch)) {
+      return(div(class="text-secondary small mt-2",
+        sprintf("W02 launch unavailable: adjudication batch %s has status %s.",
+                batch,as.character(w02_batch_status_rv() %||% "unknown"))))
+    }
+    if(isTRUE(w02_launch_requested_rv())) {
+      return(div(class="text-secondary small mt-2",
+        "W02 launch requested. Check GitHub Actions before attempting another launch."))
+    }
+    div(class="mt-2",
+      actionButton("w02_begin_enrichment","Begin enrichment",class="btn-primary btn-sm"),
+      textOutput("w02_launch_status"))
   })
 
   output$w02_launch_status <- renderText(w02_launch_status_rv())
