@@ -2600,6 +2600,13 @@ server <- function(input, output, session) {
         uiOutput("w02_progress_bar"),
         uiOutput("w02_decision_panel"),
         uiOutput("w02_case_view"),
+        if(session_can("control_workflows")) {
+          div(class="mt-2",
+            actionButton("w02_prepare_abstract_queue","Prepare optional missing-abstract queue",
+              class="btn-outline-secondary btn-sm"),
+            tags$span(class="text-secondary small ms-2",
+              "Only if you wish to review abstracts left empty after enrichment."))
+        },
         uiOutput("w02_missing_abstract_editor")
       ))
     }
@@ -8531,6 +8538,23 @@ server <- function(input, output, session) {
     }
     w02_launch_requested_rv(TRUE)
     w02_launch_status_rv(paste("W02 enrichment requested using",result))
+  })
+
+  observeEvent(input$w02_prepare_abstract_queue,{
+    req(authenticated(),session_can("control_workflows"))
+    id <- sub("^w02-run-","",as.character(w02_batch_id_rv()))
+    if(!grepl("^[0-9]+$",id)) {
+      w02_abstract_status_rv("No paused W02 enrichment run available")
+      return()
+    }
+    outcome <- tryCatch(dispatch_w02_missing_abstract_queue(id,sheet_id_from_env()),
+                        error=function(e)e)
+    if(inherits(outcome,"error")) {
+      w02_abstract_status_rv(paste("Queue request failed:",conditionMessage(outcome)))
+      showNotification(w02_abstract_status_rv(),type="error")
+    } else {
+      w02_abstract_status_rv("Optional abstract queue requested. It will appear when GitHub publishes it.")
+    }
   })
 
   # The optional queue is independent of normal W02 conflicts and decisions.
