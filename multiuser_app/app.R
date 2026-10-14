@@ -3942,16 +3942,25 @@ server <- function(input, output, session) {
         checked <- tryCatch({
           result <- w01_published_review_results(
             snapshot$run_id,request$review_id,request$review_sheet_id)
-          if(!is.null(result)) return(list(result=result,pending=NULL))
-          pending <- w01_pending_review_checkpoint(
-            snapshot$run_id,request$review_id,request$review_sheet_id)
-          if(is.null(pending)) return(list(result=NULL,pending=NULL))
-          resolved_run <- w01_resolved_review_run_id(
-            snapshot$run_id,request$review_id)
-          if(is.null(resolved_run)) return(list(result=NULL,pending=pending))
-          final <- w01_published_review_results(
-            resolved_run,request$review_id,request$review_sheet_id)
-          list(result=final,pending=if(is.null(final)) pending else NULL)
+          if(!is.null(result)) {
+            list(result=result,pending=NULL)
+          } else {
+            pending <- w01_pending_review_checkpoint(
+              snapshot$run_id,request$review_id,request$review_sheet_id)
+            if(is.null(pending)) {
+              list(result=NULL,pending=NULL)
+            } else {
+              resolved_run <- w01_resolved_review_run_id(
+                snapshot$run_id,request$review_id)
+              if(is.null(resolved_run)) {
+                list(result=NULL,pending=pending)
+              } else {
+                final <- w01_published_review_results(
+                  resolved_run,request$review_id,request$review_sheet_id)
+                list(result=final,pending=if(is.null(final)) pending else NULL)
+              }
+            }
+          }
         },error=function(e)e)
         if(inherits(checked,"error")) {
           w01_launch_error_rv(conditionMessage(checked))
