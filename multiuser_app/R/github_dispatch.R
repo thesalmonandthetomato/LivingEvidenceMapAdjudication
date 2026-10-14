@@ -254,6 +254,40 @@ w01_github_run_progress <- function(run_id) {
 }
 
 
+
+# Use published, review-bound Zenodo receipts, never infer counts from
+# GitHub job completion or from the legacy current-run dashboard.
+w01_published_review_results <- function(run_id, review_id, review_sheet_id) {
+  assert_development_github_target()
+  run_id <- as.character(run_id)
+  if(length(run_id)!=1L || !grepl("^[0-9]+$",run_id))
+    stop("Invalid W01 results run ID",call.=FALSE)
+  if(!nzchar(as.character(review_id)) || !nzchar(as.character(review_sheet_id)))
+    stop("W01 results require both review identifiers",call.=FALSE)
+  path <- sprintf("docs/deduplication/zenodo/run-%s.json",run_id)
+  receipt <- tryCatch(
+    jsonlite::fromJSON(read_github_text_file(path),simplifyVector=FALSE),
+    error=function(e) NULL
+  )
+  if(is.null(receipt)) return(NULL)
+  if(!identical(as.character(receipt$status %||% ""),"published") ||
+     !identical(as.character(receipt$visibility %||% ""),"restricted") ||
+     !identical(as.character(receipt$github_run_id %||% ""),run_id) ||
+     !identical(as.character(receipt$review_id %||% ""),as.character(review_id)) ||
+     !identical(as.character(receipt$google_sheet_id %||% ""),as.character(review_sheet_id)))
+    stop("W01 published receipt does not match the active review",call.=FALSE)
+  manifestations <- suppressWarnings(as.integer(receipt$source_manifestations %||% NA_integer_))
+  unique_records <- suppressWarnings(as.integer(receipt$canonical_records %||% NA_integer_))
+  uncertain <- suppressWarnings(as.integer(receipt$manual_review_pairs %||% NA_integer_))
+  if(length(manifestations)!=1L || length(unique_records)!=1L ||
+     length(uncertain)!=1L || anyNA(c(manifestations,unique_records,uncertain)) ||
+     unique_records<0L || manifestations<unique_records || uncertain<0L)
+    stop("Published W01 receipt lacks valid deduplication counts",call.=FALSE)
+  list(duplicates_removed=manifestations-unique_records,
+       unique_records=unique_records,uncertain_cases=uncertain,
+       state=as.character(receipt$state %||% ""))
+}
+
 dispatch_w00_scoping <- function(request_id, search_string = NULL, search_string_path = "user_input/scoping_search_string.txt") {
   request_id <- trimws(as.character(request_id))
   if (!grepl("^[A-Za-z0-9._-]{8,80}$", request_id)) {
