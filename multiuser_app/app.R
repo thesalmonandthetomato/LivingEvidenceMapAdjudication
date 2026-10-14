@@ -6649,6 +6649,8 @@ server <- function(input, output, session) {
     case_id,
     events
   ) {
+    assignment_start <- proc.time()[["elapsed"]]
+    on.exit(message(sprintf("[W01 timing] automatic_assignment_total=%.3fs",proc.time()[["elapsed"]]-assignment_start)),add=TRUE)
     uid <- session_reviewer_id()
     if (!nzchar(uid)) return(invisible(FALSE))
 
@@ -6681,6 +6683,7 @@ server <- function(input, output, session) {
       return(invisible(FALSE))
     }
 
+    persistence_start <- proc.time()[["elapsed"]]
     persisted <- tryCatch(
       save_assignment_registry(
         c(assignment_registry_rv(), plan$new_assignments),
@@ -6688,8 +6691,13 @@ server <- function(input, output, session) {
         actor_user_id = uid,
         expected_current_signature = assignment_registry_signature(assignment_registry_rv())
       ),
-      error = function(e) NULL
+      error = function(e) {
+        message("[W01 timing] automatic_assignment_persistence_error=",conditionMessage(e))
+        NULL
+      }
     )
+    message(sprintf("[W01 timing] automatic_assignment_persistence=%.3fs new_assignments=%d",
+                    proc.time()[["elapsed"]]-persistence_start,length(plan$new_assignments)))
     if (is.null(persisted)) return(invisible(FALSE))
 
     assignment_registry_rv(persisted)
@@ -8488,6 +8496,7 @@ server <- function(input, output, session) {
     }
     z <- w02_current_case()
 
+    assignment_check_start <- proc.time()[["elapsed"]]
     if (
       session_can("manage_assignments") &&
       !user_has_active_assignment(
@@ -10335,6 +10344,8 @@ server <- function(input, output, session) {
   })
 
   save_choice <- function(choice) {
+    save_start <- proc.time()[["elapsed"]]
+    on.exit(message(sprintf("[W01 timing] save_choice_total=%.3fs",proc.time()[["elapsed"]]-save_start)),add=TRUE)
     req(authenticated())
     if(!session_can("adjudicate_assigned")) {
       status("You do not have permission to adjudicate records.")
@@ -10354,6 +10365,8 @@ server <- function(input, output, session) {
         z, as.character(z$review_case_id), w01_active_assignment_events()
       )
     }
+    message(sprintf("[W01 timing] assignment_check_and_creation=%.3fs",
+                    proc.time()[["elapsed"]]-assignment_check_start))
 
     current <- decisions()
     prior <- NULL
@@ -10371,6 +10384,7 @@ server <- function(input, output, session) {
       queue_sha256 = queue_sha_rv()
     )
 
+    persist_start <- proc.time()[["elapsed"]]
     saved <- withProgress(message="Saving W01 decision to Google Sheets…",value=0,{
       tryCatch(
         save_active_decision(decision, decision_path, prior_decision = prior),
@@ -10380,6 +10394,8 @@ server <- function(input, output, session) {
         }
       )
     })
+    message(sprintf("[W01 timing] save_active_decision=%.3fs",
+                    proc.time()[["elapsed"]]-persist_start))
     if (is.null(saved)) return(FALSE)
 
     remaining <- Filter(
@@ -10398,6 +10414,8 @@ server <- function(input, output, session) {
   }
 
   advance_after_save <- function() {
+    advance_start <- proc.time()[["elapsed"]]
+    on.exit(message(sprintf("[W01 timing] advance_after_save=%.3fs",proc.time()[["elapsed"]]-advance_start)),add=TRUE)
     unresolved <- unresolved_indices()
     if (!length(unresolved)) {
       assignments_active <- assignment_mode_active(
