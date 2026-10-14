@@ -974,6 +974,8 @@ server <- function(input, output, session) {
 
   w02_all_cases_rv <- reactiveVal(list())
   w02_cases_rv <- reactiveVal(NULL)
+  w02_launch_requested_rv <- reactiveVal(FALSE)
+  w02_launch_status_rv <- reactiveVal("")
   w02_queue_sha_rv <- reactiveVal("")
   w02_batch_id_rv <- reactiveVal("")
   w02_idx <- reactiveVal(1L)
@@ -2470,7 +2472,19 @@ server <- function(input, output, session) {
               } else {
                 "No records awaiting review"
               }
-            )
+            ),
+            if(session_can("control_workflows") && !nzchar(w02_batch_id_rv())) {
+              div(class="mt-2",
+                if(isTRUE(w02_launch_requested_rv())) {
+                  tags$div(class="text-secondary small",
+                           "W02 launch requested. Check GitHub Actions for enrichment progress.")
+                } else {
+                  actionButton("w02_begin_enrichment","Begin enrichment",
+                               class="btn-primary btn-sm")
+                },
+                textOutput("w02_launch_status")
+              )
+            }
           ),
           div(
             class = "col-12 col-lg-6",
@@ -8485,6 +8499,33 @@ server <- function(input, output, session) {
         )
       )
     )
+  })
+
+  output$w02_launch_status <- renderText(w02_launch_status_rv())
+
+  observeEvent(input$w02_begin_enrichment,{
+    req(authenticated(),session_can("control_workflows"))
+    if(isTRUE(w02_launch_requested_rv()) || nzchar(w02_batch_id_rv())) return()
+    result <- tryCatch({
+      sheet_id <- sheet_id_from_env()
+      meta <- googlesheets4::read_sheet(sheet_id,sheet="review_metadata",col_types="cc")
+      if(!all(c("key","value") %in% names(meta))) stop("Invalid review_metadata")
+      review_id <- as.character(meta$value[match("review_id",meta$key)])
+      if(length(review_id)!=1L || is.na(review_id) ||
+         !grepl("^[A-Za-z0-9._-]{3,128}$",review_id))
+        stop("Missing valid review_id in active Google Sheet")
+      configured <- trimws(Sys.getenv("LEM_SEARCH_REVIEW_ID",unset=""))
+      if(nzchar(configured) && !identical(configured,review_id))
+        stop("Environment review ID conflicts with active Google Sheet")
+      dispatch_w02_from_shiny(review_id,sheet_id)
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w02_launch_status_rv(paste("W02 launch failed:",conditionMessage(result)))
+      showNotification(w02_launch_status_rv(),type="error",duration=12)
+      return()
+    }
+    w02_launch_requested_rv(TRUE)
+    w02_launch_status_rv(paste("W02 enrichment requested using",result))
   })
 
   output$w02_save_status <- renderText(w02_status())
