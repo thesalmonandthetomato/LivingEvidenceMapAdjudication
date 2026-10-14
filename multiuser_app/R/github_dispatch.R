@@ -1117,3 +1117,75 @@ dispatch_w04_resolution_resume <- function(source_run_id, batch_id, queue_sha256
   }
   invisible(TRUE)
 }
+
+
+# Publication-backed status for a specific review. The GitHub-only pathway
+# remains independent and continues to read its own current-run status.
+read_review_published_w01_w02 <- function(review_id,sheet_id) {
+  assert_development_github_target()
+  if(!grepl("^[A-Za-z0-9._-]{3,128}$",review_id) ||
+     !grepl("^[A-Za-z0-9_-]{15,150}$",sheet_id))
+    stop("Invalid review-specific reporting identity",call.=FALSE)
+  directory <- sprintf("docs/deduplication/reviews/%s/zenodo",review_id)
+  entries <- github_api_get_json(sprintf(
+    "https://api.github.com/repos/%s/contents/%s?ref=main",
+    github_dispatch_repo(),directory))
+  filenames <- vapply(entries,function(e)as.character(e$name %||% ""),character(1))
+  files <- filenames[grepl("^run-[0-9]+\\.json$",filenames)]
+  if(!length(files))return(NULL)
+  ids <- as.numeric(sub("^run-([0-9]+)\\.json$","\\1",files))
+  files <- files[order(ids,decreasing=TRUE)]
+  w01 <- NULL
+  for(fn in files) {
+    candidate <- jsonlite::fromJSON(
+      read_github_text_file(paste0(directory,"/",fn)),simplifyVector=FALSE)
+    if(identical(as.character(candidate$review_id %||% ""),review_id) &&
+       identical(as.character(candidate$google_sheet_id %||% ""),sheet_id) &&
+       identical(as.character(candidate$workflow %||% ""),"01") &&
+       identical(as.character(candidate$state %||% ""),"final") &&
+       identical(as.character(candidate$status %||% ""),"published") &&
+       identical(as.character(candidate$visibility %||% ""),"restricted")) {
+      w01 <- candidate
+      break
+    }
+  }
+  if(is.null(w01))return(NULL)
+  sha <- as.character(w01$canonical_jsonl_sha256 %||% "")
+  if(!grepl("^[0-9a-f]{64}$",sha))stop("W01 review receipt lacks canonical checksum",call.=FALSE)
+  count <- suppressWarnings(as.integer(w01$canonical_records %||% NA))
+  if(length(count)!=1L||is.na(count)||count<0L)
+    stop("W01 review receipt lacks canonical count",call.=FALSE)
+  result <- list(stage="W01",run_id=as.character(w01$github_run_id),
+                 deduplicated_records=as.character(count),
+                 canonical_records=as.character(count),
+                 completed_through=2L,active_workflow=3L,
+                 status_label="Deduplication complete; awaiting enrichment")
+  endpoint <- sprintf("https://api.github.com/repos/%s/contents/docs/enrichment/zenodo?ref=main",
+                      github_dispatch_repo())
+  published <- tryCatch(github_api_get_json(endpoint),error=function(e)NULL)
+  if(is.null(published))return(result)
+  names <- vapply(published,function(e)as.character(e$name %||% ""),character(1))
+  names <- names[grepl("^run-[0-9]+\\.json$",names)]
+  if(!length(names))return(result)
+  ids <- as.numeric(sub("^run-([0-9]+)\\.json$","\\1",names))
+  names <- names[order(ids,decreasing=TRUE)]
+  for(fn in names){
+    receipt <- jsonlite::fromJSON(
+      read_github_text_file(paste0("docs/enrichment/zenodo/",fn)),simplifyVector=FALSE)
+    if(!identical(as.character(receipt$upstream_workflow01_canonical_sha256 %||% ""),sha) ||
+       !identical(as.character(receipt$workflow %||% ""),"02") ||
+       !identical(as.character(receipt$status %||% ""),"published") ||
+       !identical(as.character(receipt$visibility %||% ""),"restricted"))next
+    enriched <- suppressWarnings(as.integer(receipt$cumulative_patch_records %||% NA))
+    if(length(enriched)!=1L||is.na(enriched)||enriched<0L)
+      stop("W02 receipt lacks validated patch count",call.=FALSE)
+    result$stage <- "W02"
+    result$run_id <- as.character(receipt$github_run_id)
+    result$enriched_records <- as.character(enriched)
+    result$completed_through <- 3L
+    result$active_workflow <- 4L
+    result$status_label <- "Enrichment complete; awaiting retraction scanning"
+    break
+  }
+  result
+}
