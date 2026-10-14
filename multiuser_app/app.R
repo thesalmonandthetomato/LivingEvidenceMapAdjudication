@@ -8552,7 +8552,7 @@ server <- function(input, output, session) {
       if(!isTRUE(w02_optional_resume_requested_rv())) {
         actionButton("w02_optional_continue",
           if(has_queue) "Complete review and continue W02" else "Skip abstract review and continue W02",
-          class="btn-primary btn-sm",disabled=FALSE)
+          class="btn-primary btn-sm")
       } else tags$span(class="text-success","W02 resume requested"),
       textOutput("w02_optional_control_status")
     )
