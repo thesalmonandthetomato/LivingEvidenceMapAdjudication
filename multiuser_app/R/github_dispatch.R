@@ -308,9 +308,52 @@ w01_published_review_results <- function(run_id, review_id, review_sheet_id) {
      length(uncertain)!=1L || anyNA(c(manifestations,unique_records,uncertain)) ||
      unique_records<0L || manifestations<unique_records || uncertain<0L)
     stop("Published W01 receipt lacks valid deduplication counts",call.=FALSE)
+  # manual_review_pairs counts the cases originally requiring an LLM
+  # decision, not the human cases still unresolved after final publication.
   list(duplicates_removed=manifestations-unique_records,
-       unique_records=unique_records,uncertain_cases=uncertain,
+       unique_records=unique_records,uncertain_cases=0L,
+       original_manual_review_pairs=uncertain,
        state=as.character(receipt$state %||% ""))
+}
+
+# Review-specific pause and resumption are separate GitHub runs. Follow only
+# the immutable, review-bound checkpoint and resolution pointers, never the
+# latest global W01 run or the legacy salmon current-run status.
+w01_pending_review_checkpoint <- function(run_id,review_id,review_sheet_id) {
+  if(!grepl("^[0-9]+$",as.character(run_id)) ||
+     !grepl("^[A-Za-z0-9._-]{3,128}$",as.character(review_id)))
+    stop("Invalid review checkpoint identity",call.=FALSE)
+  path <- sprintf("docs/deduplication/reviews/%s/checkpoints/run-%s.json",review_id,run_id)
+  x <- tryCatch(jsonlite::fromJSON(read_github_text_file(path),simplifyVector=FALSE),
+                error=function(e)NULL)
+  if(is.null(x)) return(NULL)
+  if(!identical(as.character(x$status %||% ""),"published") ||
+     !identical(as.character(x$state %||% ""),"pre_adjudication") ||
+     !identical(as.character(x$visibility %||% ""),"restricted") ||
+     !identical(as.character(x$github_run_id %||% ""),as.character(run_id)) ||
+     !identical(as.character(x$review_id %||% ""),as.character(review_id)) ||
+     !identical(as.character(x$google_sheet_id %||% ""),as.character(review_sheet_id)))
+    stop("W01 checkpoint belongs to another review or is invalid",call.=FALSE)
+  n <- suppressWarnings(as.integer(x$pending_human_cases %||% NA_integer_))
+  if(length(n)!=1L || is.na(n) || n<1L)
+    stop("W01 checkpoint has an invalid number of human cases",call.=FALSE)
+  list(pending_human_cases=n,run_id=as.character(run_id))
+}
+
+w01_resolved_review_run_id <- function(checkpoint_run_id,review_id) {
+  if(!grepl("^[0-9]+$",as.character(checkpoint_run_id)) ||
+     !grepl("^[A-Za-z0-9._-]{3,128}$",as.character(review_id)))
+    stop("Invalid review resume identity",call.=FALSE)
+  path <- sprintf("docs/deduplication/reviews/%s/checkpoints/resolutions/run-%s.json",
+                  review_id,checkpoint_run_id)
+  x <- tryCatch(jsonlite::fromJSON(read_github_text_file(path),simplifyVector=FALSE),
+                error=function(e)NULL)
+  if(is.null(x)) return(NULL)
+  if(!identical(as.character(x$status %||% ""),"resolved") ||
+     !identical(as.character(x$checkpoint_run_id %||% ""),as.character(checkpoint_run_id)) ||
+     !grepl("^[0-9]+$",as.character(x$resolved_by_run_id %||% "")))
+    stop("Invalid W01 review resolution marker",call.=FALSE)
+  as.character(x$resolved_by_run_id)
 }
 
 dispatch_w00_scoping <- function(request_id, search_string = NULL, search_string_path = "user_input/scoping_search_string.txt") {
