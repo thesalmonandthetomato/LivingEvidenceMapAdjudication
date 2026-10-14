@@ -3878,7 +3878,7 @@ server <- function(input, output, session) {
     request_id <- paste0("shiny-",format(Sys.time(),"%Y%m%d%H%M%S",tz="UTC"),"-",
                          paste(sample(c(letters,0:9),12L,replace=TRUE),collapse=""))
     sent <- tryCatch({
-      dispatch_w01_input_preflight(review_id,sheet_id,request_id)
+      dispatch_w01_input_preflight(review_id,sheet_id,request_id,run_llm=TRUE)
       TRUE
     },error=function(e) {
       w01_launch_error_rv(conditionMessage(e))
