@@ -3862,11 +3862,9 @@ server <- function(input, output, session) {
       return()
     }
     w01_launch_error_rv("")
-    review_id <- trimws(Sys.getenv("LEM_SEARCH_REVIEW_ID",unset=""))
     sheet_id <- trimws(tryCatch(sheet_id_from_env(),error=function(e)""))
-    if (!grepl("^[A-Za-z0-9._-]{3,128}$",review_id) ||
-        !grepl("^[A-Za-z0-9_-]{15,150}$",sheet_id)) {
-      w01_launch_error_rv("Configure a valid LEM_SEARCH_REVIEW_ID and Google Sheet ID before starting W01.")
+    if (!grepl("^[A-Za-z0-9_-]{15,150}$",sheet_id)) {
+      w01_launch_error_rv("Configure a valid review Google Sheet ID before starting W01.")
       return()
     }
     showModal(modalDialog(
@@ -3885,26 +3883,27 @@ server <- function(input, output, session) {
     if (!isTRUE(w01_launch_configuration()$ready) ||
         !identical(as.character(current_user()$role),"administrator") ||
         !session_can("run_search_scoping") || !is.null(w01_launch_request_rv())) return()
-    review_id <- trimws(Sys.getenv("LEM_SEARCH_REVIEW_ID",unset=""))
     sheet_id <- trimws(tryCatch(sheet_id_from_env(),error=function(e)""))
-    if (!grepl("^[A-Za-z0-9._-]{3,128}$",review_id) ||
-        !grepl("^[A-Za-z0-9_-]{15,150}$",sheet_id)) {
-      w01_launch_error_rv("Review ID or Google Sheet ID is missing or invalid.")
-      return()
-    }
-    # Confirm the authenticated Sheet belongs to the stated review before API dispatch.
-    identity_ok <- tryCatch({
+    configured_review_id <- trimws(Sys.getenv("LEM_SEARCH_REVIEW_ID",unset=""))
+    identity <- tryCatch({
+      if(!grepl("^[A-Za-z0-9_-]{15,150}$",sheet_id))
+        stop("Review Google Sheet ID is missing or invalid")
       metadata <- googlesheets4::read_sheet(sheet_id,sheet="review_metadata",col_types="cc")
       if(!all(c("key","value") %in% names(metadata))) stop("Invalid review_metadata")
-      actual <- as.character(metadata$value[match("review_id",metadata$key)])
-      if(length(actual)!=1L || is.na(actual) || !identical(actual,review_id))
-        stop("The Google Sheet review_id does not match LEM_SEARCH_REVIEW_ID")
-      TRUE
+      review_id <- as.character(metadata$value[match("review_id",metadata$key)])
+      if(length(review_id)!=1L || is.na(review_id) ||
+         !grepl("^[A-Za-z0-9._-]{3,128}$",review_id))
+        stop("Google Sheet review_metadata has no valid review_id")
+      if(nzchar(configured_review_id) && !identical(configured_review_id,review_id))
+        stop("Configured LEM_SEARCH_REVIEW_ID does not match the Google Sheet")
+      review_id
     },error=function(e) {
       w01_launch_error_rv(paste("W01 review identity verification failed:",conditionMessage(e)))
-      FALSE
+      showNotification(conditionMessage(e),type="error",duration=12)
+      NULL
     })
-    if(!identity_ok) return()
+    if(is.null(identity)) return()
+    review_id <- identity
     request_id <- paste0("shiny-",format(Sys.time(),"%Y%m%d%H%M%S",tz="UTC"),"-",
                          paste(sample(c(letters,0:9),12L,replace=TRUE),collapse=""))
     sent <- tryCatch({
