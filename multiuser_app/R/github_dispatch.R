@@ -198,7 +198,7 @@ dispatch_w00_formal <- function(search_string, sources, request_id) {
 
 # Explicit read-only W01 input preflight for the active review. Production W01
 # remains disabled in the pipeline until review-isolated publication is ready.
-dispatch_w01_input_preflight <- function(review_id, review_sheet_id, request_id) {
+dispatch_w01_input_preflight <- function(review_id, review_sheet_id, request_id, run_llm=FALSE) {
   assert_development_github_target()
   review_id <- trimws(as.character(review_id))
   review_sheet_id <- trimws(as.character(review_sheet_id))
@@ -215,7 +215,8 @@ dispatch_w01_input_preflight <- function(review_id, review_sheet_id, request_id)
   )
   payload <- list(ref=github_scoping_ref(),inputs=list(
     execution_pathway="shiny",review_id=review_id,
-    review_sheet_id=review_sheet_id,shiny_request_id=request_id,first_run="true"
+    review_sheet_id=review_sheet_id,shiny_request_id=request_id,first_run="true",
+    run_review_llm=if(isTRUE(run_llm)) "true" else "false"
   ))
   req <- httr2::request(endpoint) |>
     httr2::req_method("POST") |>
@@ -228,7 +229,7 @@ dispatch_w01_input_preflight <- function(review_id, review_sheet_id, request_id)
     httr2::req_body_json(payload)
   resp <- httr2::req_perform(req)
   if(!identical(httr2::resp_status(resp),204L))
-    stop(sprintf("W01 preflight dispatch returned HTTP %d",httr2::resp_status(resp)),call.=FALSE)
+    stop(sprintf("W01 review dispatch returned HTTP %d",httr2::resp_status(resp)),call.=FALSE)
   invisible(TRUE)
 }
 
