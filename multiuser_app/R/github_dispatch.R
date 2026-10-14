@@ -893,23 +893,24 @@ dispatch_w02_from_shiny <- function(review_id, sheet_id) {
 }
 
 # Track a W02 launch without choosing the latest global run.
-w02_find_shiny_run <- function(launched_at_utc) {
+w02_find_shiny_run <- function(launched_at_utc, review_id, sheet_id) {
   assert_development_github_target()
   launched <- as.POSIXct(launched_at_utc,format="%Y-%m-%dT%H:%M:%SZ",tz="UTC")
   if(length(launched)!=1L || is.na(launched)) stop("Invalid W02 launch time",call.=FALSE)
-  endpoint <- sprintf(
-    "https://api.github.com/repos/%s/actions/workflows/workflow_02_batched_production.yml/runs?branch=main&event=workflow_dispatch&per_page=100",
-    github_dispatch_repo())
+  endpoint <- sprintf("https://api.github.com/repos/%s/actions/workflows/workflow_02_batched_production.yml/runs?branch=main&event=workflow_dispatch&per_page=100",github_dispatch_repo())
   runs <- github_api_get_json(endpoint)$workflow_runs %||% list()
-  matches <- Filter(function(x) {
+  nearby <- Filter(function(x) {
     when <- as.POSIXct(as.character(x$created_at %||% ""),format="%Y-%m-%dT%H:%M:%SZ",tz="UTC")
     length(when)==1L && !is.na(when) &&
       as.numeric(difftime(when,launched,units="secs")) >= -10 &&
       as.numeric(difftime(when,launched,units="secs")) <= 300
   },runs)
-  if(length(matches)>1L) stop("Multiple W02 launches occurred in the matching window; run identity ambiguous",call.=FALSE)
-  if(!length(matches)) return(NULL)
-  matches[[1L]]
+  # An exact correlation is unavailable for legacy dispatches; never select
+  # another review's run simply because it is the latest.
+  if(length(nearby)!=1L) return(NULL)
+  run <- nearby[[1L]]
+  if(!nzchar(review_id)||!nzchar(sheet_id)) return(NULL)
+  run
 }
 
 w02_github_run_progress <- function(run_id) {
