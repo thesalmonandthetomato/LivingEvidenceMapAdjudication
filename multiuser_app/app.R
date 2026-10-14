@@ -8522,7 +8522,9 @@ server <- function(input, output, session) {
     req(authenticated(),identical(storage_backend(),"google_sheets"))
     invalidateLater(30000,session)
     state <- tryCatch(w02_optional_pause_current(),error=function(e)NULL)
-    if(!is.null(state)) {
+    if(is.null(state)) {
+      w02_optional_pause_rv(NULL)
+    } else {
       review <- as.character(state$review_id %||% "")
       configured <- trimws(Sys.getenv("LEM_SEARCH_REVIEW_ID",unset=""))
       if(!nzchar(configured) || identical(configured,review)) {
