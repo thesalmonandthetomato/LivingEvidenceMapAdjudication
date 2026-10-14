@@ -8711,6 +8711,7 @@ server <- function(input, output, session) {
   observeEvent(input$w02_begin_enrichment,{
     req(authenticated(),session_can("control_workflows"))
     if(isTRUE(w02_launch_requested_rv()) || nzchar(w02_batch_id_rv())) return()
+    launched_at <- format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ")
     result <- tryCatch({
       sheet_id <- sheet_id_from_env()
       meta <- googlesheets4::read_sheet(sheet_id,sheet="review_metadata",col_types="cc")
@@ -8730,7 +8731,7 @@ server <- function(input, output, session) {
       showNotification(w02_launch_status_rv(),type="error",duration=12)
       return()
     }
-    now <- format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ")
+    now <- launched_at
     record <- list(review_id=result$review_id,sheet_id=result$sheet_id,launched_at_utc=now,
                    run_id="",state="requested")
     w02_launch_requested_rv(TRUE)
