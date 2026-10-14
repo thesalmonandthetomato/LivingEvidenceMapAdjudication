@@ -229,6 +229,31 @@ dispatch_w01_input_preflight <- function(review_id, review_sheet_id) {
   invisible(TRUE)
 }
 
+
+# Read-only progress observation for an explicit W01 run; never dispatches jobs.
+w01_github_run_progress <- function(run_id) {
+  assert_development_github_target()
+  run_id <- as.character(run_id)
+  if(length(run_id)!=1L || !grepl("^[0-9]+$",run_id))
+    stop("Invalid W01 GitHub run ID",call.=FALSE)
+  base <- sprintf("https://api.github.com/repos/%s/actions/runs/%s",github_dispatch_repo(),run_id)
+  run <- github_api_get_json(base)
+  if(!identical(as.character(run$path %||% ""),".github/workflows/workflow_01_production.yml"))
+    stop("GitHub run is not W01 production",call.=FALSE)
+  if(!identical(as.character(run$head_branch %||% ""),"main"))
+    stop("W01 run is not on development main",call.=FALSE)
+  jobs <- github_api_get_json(paste0(base,"/jobs?per_page=100"))$jobs %||% list()
+  active <- Filter(function(j) !identical(as.character(j$conclusion %||% ""),"skipped"), jobs)
+  steps <- unlist(lapply(active,function(j) j$steps %||% list()),recursive=FALSE)
+  completed <- sum(vapply(steps,function(x) identical(as.character(x$status %||% ""),"completed"),logical(1)))
+  total <- length(steps)
+  list(run_id=run_id,status=as.character(run$status %||% ""),
+       conclusion=as.character(run$conclusion %||% ""),
+       completed_steps=completed,total_steps=total,
+       progress=if(total) min(99L,as.integer(floor(100*completed/total))) else 0L)
+}
+
+
 dispatch_w00_scoping <- function(request_id, search_string = NULL, search_string_path = "user_input/scoping_search_string.txt") {
   request_id <- trimws(as.character(request_id))
   if (!grepl("^[A-Za-z0-9._-]{8,80}$", request_id)) {
