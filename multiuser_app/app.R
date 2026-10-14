@@ -3355,7 +3355,9 @@ server <- function(input, output, session) {
               if (!isTRUE(w01_launch_configuration()$ready))
                 tags$p(class="small text-muted mt-2",w01_launch_configuration()$reason),
               uiOutput("w01_launch_progress"),
-              uiOutput("w01_launch_results")
+              uiOutput("w01_launch_results"),
+              uiOutput("w01_ris_controls"),
+              textOutput("w01_ris_status")
             )
           )
         )
@@ -4029,7 +4031,7 @@ server <- function(input, output, session) {
           result <- w01_published_review_results(
             snapshot$run_id,request$review_id,request$review_sheet_id)
           if(!is.null(result)) {
-            list(result=result,pending=NULL)
+            list(result=c(result,list(run_id=snapshot$run_id)),pending=NULL)
           } else {
             pending <- w01_pending_review_checkpoint(
               snapshot$run_id,request$review_id,request$review_sheet_id)
@@ -4043,7 +4045,8 @@ server <- function(input, output, session) {
               } else {
                 final <- w01_published_review_results(
                   resolved_run,request$review_id,request$review_sheet_id)
-                list(result=final,pending=if(is.null(final)) pending else NULL)
+                list(result=if(is.null(final)) NULL else c(final,list(run_id=resolved_run)),
+                     pending=if(is.null(final)) pending else NULL)
               }
             }
           }
@@ -4074,6 +4077,79 @@ server <- function(input, output, session) {
           style=paste0("width:",pct,"%")))
     )
   })
+
+  # Export is intentionally unavailable until a review-specific final W01
+  # receipt exists. The RIS is created on demand, not polled from Google Sheets.
+  w01_ris_export_rv <- reactiveVal(NULL)
+  w01_ris_status_rv <- reactiveVal("")
+  w01_ris_artifact_rv <- reactiveVal(NULL)
+  w01_ris_check_active_rv <- reactiveVal(FALSE)
+
+  w01_final_export_identity <- reactive({
+    request <- w01_launch_request_rv()
+    result <- w01_launch_result_rv()
+    if(is.null(request) || is.null(result) ||
+       !grepl("^[0-9]+$",as.character(result$run_id %||% ""))) return(NULL)
+    list(review_id=request$review_id,run_id=as.character(result$run_id))
+  })
+
+  output$w01_ris_controls <- renderUI({
+    id <- w01_final_export_identity()
+    if(is.null(id)) return(NULL)
+    tagList(
+      actionButton("w01_prepare_ris","Prepare unique records RIS",class="btn-outline-primary btn-sm"),
+      if(!is.null(w01_ris_artifact_rv())) downloadButton("w01_download_ris","Download RIS",class="btn-primary btn-sm")
+    )
+  })
+  output$w01_ris_status <- renderText(w01_ris_status_rv())
+
+  observeEvent(input$w01_prepare_ris,{
+    req(authenticated(),current_user())
+    id <- w01_final_export_identity()
+    if(is.null(id)) return()
+    w01_ris_artifact_rv(NULL)
+    ok <- tryCatch({
+      dispatch_w01_ris_export(id$review_id,id$run_id)
+      TRUE
+    },error=function(e) {
+      w01_ris_status_rv(paste("RIS preparation failed:",conditionMessage(e)))
+      FALSE
+    })
+    if(ok) {
+      w01_ris_export_rv(id)
+      w01_ris_check_active_rv(TRUE)
+      w01_ris_status_rv("Preparing deduplicated RIS from the final restricted W01 record…")
+    }
+  })
+
+  observe({
+    req(authenticated())
+    id <- w01_ris_export_rv()
+    if(is.null(id) || !isTRUE(w01_ris_check_active_rv())) return()
+    invalidateLater(10000,session)
+    x <- tryCatch(w01_ris_export_artifact(id$review_id,id$run_id),error=function(e)e)
+    if(inherits(x,"error")) {
+      w01_ris_status_rv(paste("RIS artifact lookup failed:",conditionMessage(x)))
+      w01_ris_check_active_rv(FALSE)
+    } else if(!is.null(x)) {
+      w01_ris_artifact_rv(x)
+      w01_ris_check_active_rv(FALSE)
+      w01_ris_status_rv("RIS ready: one record per unique canonical work.")
+    }
+  })
+
+  output$w01_download_ris <- downloadHandler(
+    filename=function() {
+      id <- w01_final_export_identity()
+      if(is.null(id)) return("unique_records.ris")
+      paste0(id$review_id,"-unique-records.ris")
+    },
+    content=function(file) {
+      req(authenticated(),w01_ris_artifact_rv())
+      w01_ris_download_artifact(w01_ris_artifact_rv(),file)
+    },
+    contentType="application/x-research-info-systems"
+  )
 
   output$w01_launch_results <- renderUI({
     msg <- w01_launch_error_rv()
