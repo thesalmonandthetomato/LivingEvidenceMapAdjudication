@@ -8746,7 +8746,8 @@ server <- function(input, output, session) {
         mark_review_complete("02",w02_batch_id_rv(),w02_queue_sha_rv(),w02_batch_status_rv)
       }
       append_w02_resume_request(queue_sha, source_run_id, "dispatching")
-      dispatch_w02_resume(source_run_id, publish = TRUE)
+      dispatch_w02_resume(source_run_id, publish = TRUE,
+                          google_sheet_id=sheet_id_from_env())
       append_w02_resume_request(queue_sha, source_run_id, "dispatched")
       w02_resume_requested_rv(TRUE)
       w02_status("Sent to GitHub. Workflow 02 resume requested.")
