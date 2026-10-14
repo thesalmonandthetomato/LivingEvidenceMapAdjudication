@@ -3844,10 +3844,22 @@ server <- function(input, output, session) {
   # human queue and final Zenodo receipt have been connected.
   observeEvent(input$w01_begin_deduplication, {
     req(authenticated(),current_user())
-    if (!isTRUE(w01_launch_configuration()$ready)) return()
+    cfg <- w01_launch_configuration()
     if (!identical(as.character(current_user()$role),"administrator") ||
-        !session_can("run_search_scoping")) return()
-    if (!is.null(w01_launch_request_rv())) return()
+        !session_can("run_search_scoping")) {
+      w01_launch_error_rv("An administrator with review configuration permission is required.")
+      return()
+    }
+    if (!isTRUE(cfg$ready)) {
+      w01_launch_error_rv(cfg$reason)
+      showNotification(cfg$reason,type="error",duration=10)
+      return()
+    }
+    if (!is.null(w01_launch_request_rv())) {
+      showNotification("A W01 launch is already being monitored in this session.",type="message",duration=8)
+      return()
+    }
+    w01_launch_error_rv("")
     review_id <- trimws(Sys.getenv("LEM_SEARCH_REVIEW_ID",unset=""))
     sheet_id <- trimws(tryCatch(sheet_id_from_env(),error=function(e)""))
     if (!grepl("^[A-Za-z0-9._-]{3,128}$",review_id) ||
@@ -3874,7 +3886,10 @@ server <- function(input, output, session) {
     review_id <- trimws(Sys.getenv("LEM_SEARCH_REVIEW_ID",unset=""))
     sheet_id <- trimws(tryCatch(sheet_id_from_env(),error=function(e)""))
     if (!grepl("^[A-Za-z0-9._-]{3,128}$",review_id) ||
-        !grepl("^[A-Za-z0-9_-]{15,150}$",sheet_id)) return()
+        !grepl("^[A-Za-z0-9_-]{15,150}$",sheet_id)) {
+      w01_launch_error_rv("Review ID or Google Sheet ID is missing or invalid.")
+      return()
+    }
     # Confirm the authenticated Sheet belongs to the stated review before API dispatch.
     identity_ok <- tryCatch({
       metadata <- googlesheets4::read_sheet(sheet_id,sheet="review_metadata",col_types="cc")
