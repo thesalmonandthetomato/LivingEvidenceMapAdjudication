@@ -985,7 +985,8 @@ dispatch_w02_resume <- function(source_run_id, publish = TRUE, google_sheet_id =
       inputs = list(
         source_run_id = source_run_id,
         google_sheet_id = google_sheet_id,
-        publish = if (isTRUE(publish)) "true" else "false"
+        publish = if (isTRUE(publish)) "true" else "false",
+        auto_launch_w04 = "false"
       )
     ))
 
