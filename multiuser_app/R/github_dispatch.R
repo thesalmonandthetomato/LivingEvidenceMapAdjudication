@@ -1185,6 +1185,48 @@ read_review_published_w01_w02 <- function(review_id,sheet_id) {
     result$completed_through <- 3L
     result$active_workflow <- 4L
     result$status_label <- "Enrichment complete; awaiting retraction scanning"
+    # Verify W03 provenance via the post-W02 lean checkpoint, not a global run.
+    lean_path <- sprintf("docs/compaction/zenodo/run-%s.json",receipt$github_run_id)
+    lean <- tryCatch(jsonlite::fromJSON(read_github_text_file(lean_path),
+                              simplifyVector=FALSE),error=function(e)NULL)
+    if(!is.null(lean) &&
+       identical(as.character(lean$status %||% ""),"published") &&
+       identical(as.character(lean$input_canonical_sha256 %||% ""),
+                 as.character(receipt$final_enriched_sha256 %||% ""))) {
+      lean_sha <- as.character(lean$lean_canonical_sha256 %||% "")
+      if(grepl("^[0-9a-f]{64}$",lean_sha)) {
+        w03_endpoint <- sprintf("https://api.github.com/repos/%s/contents/docs/publication_status/zenodo?ref=main",
+                                github_dispatch_repo())
+        w03_entries <- tryCatch(github_api_get_json(w03_endpoint),error=function(e)NULL)
+        if(!is.null(w03_entries)) {
+          w03_names <- vapply(w03_entries,function(e)as.character(e$name %||% ""),character(1))
+          w03_names <- w03_names[grepl("^run-[0-9]+\\.json$",w03_names)]
+          if(length(w03_names)) {
+            w03_ids <- as.numeric(sub("^run-([0-9]+)\\.json$","\\1",w03_names))
+            w03_names <- w03_names[order(w03_ids,decreasing=TRUE)]
+            for(w03_fn in w03_names) {
+              w03 <- jsonlite::fromJSON(
+                read_github_text_file(paste0("docs/publication_status/zenodo/",w03_fn)),
+                simplifyVector=FALSE)
+              if(!identical(as.character(w03$status %||% ""),"published") ||
+                 !identical(as.character(w03$workflow %||% ""),"03") ||
+                 !identical(as.character(w03$visibility %||% ""),"restricted") ||
+                 !identical(as.character(w03$upstream_lean_canonical_sha256 %||% ""),lean_sha))next
+              withdrawn <- suppressWarnings(as.integer(w03$exclude_from_workflow04 %||% NA))
+              if(length(withdrawn)!=1L||is.na(withdrawn)||withdrawn<0L)
+                stop("W03 receipt lacks validated exclusion count",call.=FALSE)
+              result$stage <- "W03"
+              result$run_id <- as.character(w03$publication_github_run_id %||% "")
+              result$retracted_records <- as.character(withdrawn)
+              result$completed_through <- 4L
+              result$active_workflow <- 5L
+              result$status_label <- "Retraction scanning complete; awaiting screening"
+              break
+            }
+          }
+        }
+      }
+    }
     break
   }
   result
