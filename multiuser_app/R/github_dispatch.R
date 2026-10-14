@@ -838,6 +838,60 @@ dispatch_w01_export <- function(batch_id, queue_sha256, review_id="", google_she
   invisible(TRUE)
 }
 
+# Launch the existing W02 production workflow using the active review's
+# authoritative final W01 pointer. Never use another review's pointer.
+dispatch_w02_from_shiny <- function(review_id, sheet_id) {
+  assert_development_github_target()
+  review_id <- trimws(as.character(review_id))
+  sheet_id <- trimws(as.character(sheet_id))
+  if(!grepl("^[A-Za-z0-9._-]{3,128}$",review_id) ||
+     !grepl("^[A-Za-z0-9_-]{15,150}$",sheet_id))
+    stop("Invalid W02 review identity",call.=FALSE)
+  directory <- paste0("docs/deduplication/reviews/",review_id,"/zenodo")
+  endpoint <- sprintf("https://api.github.com/repos/%s/contents/%s?ref=main",
+                      github_dispatch_repo(),directory)
+  entries <- github_api_get_json(endpoint)
+  names <- vapply(entries,function(x) as.character(x$name %||% ""),character(1))
+  names <- names[grepl("^run-[0-9]+\\.json$",names)]
+  if(!length(names)) stop("No final W01 pointer found for this review",call.=FALSE)
+  ids <- as.numeric(sub("^run-([0-9]+)\\.json$","\\1",names))
+  ordered <- names[order(ids,decreasing=TRUE)]
+  pointer <- NULL
+  pointer_path <- ""
+  for(n in ordered) {
+    candidate <- paste0(directory,"/",n)
+    x <- jsonlite::fromJSON(read_github_text_file(candidate),simplifyVector=FALSE)
+    if(identical(as.character(x$workflow %||% ""),"01") &&
+       identical(as.character(x$state %||% ""),"final") &&
+       identical(as.character(x$status %||% ""),"published")) {
+      pointer <- x
+      pointer_path <- candidate
+      break
+    }
+  }
+  if(is.null(pointer) ||
+     !identical(as.character(pointer$review_id %||% ""),review_id) ||
+     !identical(as.character(pointer$google_sheet_id %||% ""),sheet_id))
+    stop("Final W01 pointer is missing or does not match the active review",call.=FALSE)
+  endpoint <- sprintf(
+    "https://api.github.com/repos/%s/actions/workflows/workflow_02_batched_production.yml/dispatches",
+    github_dispatch_repo())
+  req <- httr2::request(endpoint) |>
+    httr2::req_method("POST") |>
+    httr2::req_headers(
+      Authorization=paste("Bearer",github_dispatch_token()),
+      Accept="application/vnd.github+json",
+      `X-GitHub-Api-Version`="2022-11-28",
+      `User-Agent`="LivingEvidenceMap-Adjudication") |>
+    httr2::req_body_json(list(ref=github_scoping_ref(),
+      inputs=list(first_run="true",workflow01_pointer_path=pointer_path,
+                  previous_workflow02_pointer_path="",google_sheet_id=sheet_id)))
+  resp <- httr2::req_perform(req)
+  if(!identical(httr2::resp_status(resp),204L))
+    stop(sprintf("W02 launch failed with HTTP %d",httr2::resp_status(resp)),call.=FALSE)
+  invisible(pointer_path)
+}
+
 dispatch_w02_resume <- function(source_run_id, publish = TRUE) {
   source_run_id <- as.character(source_run_id)
   if (!grepl("^[0-9]+$", source_run_id)) stop("Invalid W02 source run ID", call. = FALSE)
