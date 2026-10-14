@@ -3840,8 +3840,50 @@ server <- function(input, output, session) {
 
   # W01 production remains fail-closed. These outputs become live when
   # review-isolated launch, monitoring and result publication are integrated.
-  output$w01_launch_progress <- renderUI(NULL)
-  output$w01_launch_results <- renderUI(NULL)
+  w01_launch_run_id_rv <- reactiveVal("")
+  w01_launch_error_rv <- reactiveVal("")
+  w01_launch_snapshot_rv <- reactiveVal(NULL)
+
+  # A run is only monitored after its exact GitHub run ID has been verified.
+  observe({
+    req(authenticated())
+    run_id <- w01_launch_run_id_rv()
+    if(!nzchar(run_id)) return()
+    invalidateLater(5000,session)
+    snapshot <- tryCatch(w01_github_run_progress(run_id),error=function(e)e)
+    if(inherits(snapshot,"error")) {
+      w01_launch_error_rv(conditionMessage(snapshot))
+    } else {
+      w01_launch_error_rv("")
+      w01_launch_snapshot_rv(snapshot)
+    }
+  })
+
+  output$w01_launch_progress <- renderUI({
+    m <- w01_launch_snapshot_rv()
+    if(is.null(m)) return(NULL)
+    if(identical(m$status,"completed")) return(NULL)
+    pct <- as.integer(m$progress %||% 0L)
+    tags$div(
+      class="mt-2",
+      tags$div(class="progress",role="progressbar",
+        `aria-valuenow`=pct,`aria-valuemin`="0",`aria-valuemax`="100",
+        tags$div(class="progress-bar progress-bar-striped progress-bar-animated",
+          style=paste0("width:",pct,"%")))
+    )
+  })
+
+  output$w01_launch_results <- renderUI({
+    msg <- w01_launch_error_rv()
+    if(nzchar(msg)) return(tags$p(class="text-danger",paste("Deduplication status unavailable:",msg)))
+    m <- w01_launch_snapshot_rv()
+    if(is.null(m) || !identical(m$status,"completed")) return(NULL)
+    if(!identical(m$conclusion,"success"))
+      return(tags$p(class="text-danger","Deduplication failed. The existing review data have not been replaced."))
+    # A completed Actions job is not sufficient evidence of canonical W01 counts.
+    # Render metrics only after the review-specific result publication is integrated.
+    tags$p("Workflow completed. Deduplication results are awaiting verified publication.")
+  })
 
   observeEvent(input$search_formal_start, {
     req(authenticated(),current_user())
