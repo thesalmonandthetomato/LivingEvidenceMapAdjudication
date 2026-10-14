@@ -3295,6 +3295,8 @@ server <- function(input, output, session) {
                   disabled=if (isTRUE(w01_launch_configuration()$ready)) NULL else "disabled",
                   title=if (isTRUE(w01_launch_configuration()$ready)) NULL else
                     w01_launch_configuration()$reason),
+              if (!isTRUE(w01_launch_configuration()$ready))
+                tags$p(class="small text-muted mt-2",w01_launch_configuration()$reason),
               uiOutput("w01_launch_progress"),
               uiOutput("w01_launch_results")
             )
