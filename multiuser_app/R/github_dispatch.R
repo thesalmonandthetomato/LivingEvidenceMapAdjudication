@@ -198,6 +198,24 @@ dispatch_w00_formal <- function(search_string, sources, request_id) {
 
 # Explicit read-only W01 input preflight for the active review. Production W01
 # remains disabled in the pipeline until review-isolated publication is ready.
+# A production launch must be independently configured even if GitHub is public.
+# No unauthenticated GitHub or implicit legacy Sheet fallback is permitted.
+w01_launch_configuration <- function() {
+  review_id <- trimws(Sys.getenv("LEM_SEARCH_REVIEW_ID",unset=""))
+  sheet_id <- trimws(tryCatch(sheet_id_from_env(),error=function(e)""))
+  reason <- ""
+  if(!identical(Sys.getenv("LEM_GITHUB_DISPATCH_REPO",unset=""),
+                "thesalmonandthetomato/LivingEvidenceMap") ||
+     !identical(Sys.getenv("LEM_GITHUB_SCOPING_REF",unset=""),"main") ||
+     !nzchar(Sys.getenv("LEM_GITHUB_DISPATCH_TOKEN",unset="")))
+    reason <- "Authenticated GitHub W01 dispatch is not configured."
+  else if(!grepl("^[A-Za-z0-9._-]{3,128}$",review_id))
+    reason <- "Set LEM_SEARCH_REVIEW_ID to the active review's identifier."
+  else if(!grepl("^[A-Za-z0-9_-]{15,150}$",sheet_id))
+    reason <- "Configure the active review's Google Sheet ID."
+  list(ready=!nzchar(reason),reason=reason,review_id=review_id,sheet_id=sheet_id)
+}
+
 dispatch_w01_input_preflight <- function(review_id, review_sheet_id, request_id, run_llm=FALSE) {
   assert_development_github_target()
   review_id <- trimws(as.character(review_id))
