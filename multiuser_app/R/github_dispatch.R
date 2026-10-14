@@ -238,7 +238,7 @@ w01_github_run_progress <- function(run_id) {
     stop("Invalid W01 GitHub run ID",call.=FALSE)
   base <- sprintf("https://api.github.com/repos/%s/actions/runs/%s",github_dispatch_repo(),run_id)
   run <- github_api_get_json(base)
-  if(!identical(as.character(run$path %||% ""),".github/workflows/workflow_01_production.yml"))
+  if(!grepl("(^|/)\\.github/workflows/workflow_01_production\\.yml(@|$)",as.character(run$path %||% "")))
     stop("GitHub run is not W01 production",call.=FALSE)
   if(!identical(as.character(run$head_branch %||% ""),"main"))
     stop("W01 run is not on development main",call.=FALSE)
