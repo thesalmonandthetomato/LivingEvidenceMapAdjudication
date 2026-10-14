@@ -3443,15 +3443,6 @@ server <- function(input, output, session) {
               uiOutput("w02_launch_results"),
               uiOutput("w02_optional_pause_controls")
             )
-          ),
-          tags$details(
-            class="assignment-disclosure",
-            `data-accordion-key`="configure-review-retractions",
-            tags$summary(tags$strong("Retraction scanning (W03)")),
-            div(class="px-3 pb-3",
-              tags$p(class="saved-note",
-                "Retraction scanning follows publication of the completed W02 state. W03 is triggered through the pipeline; no separate manual launch is configured here.")
-            )
           )
         )
       )
