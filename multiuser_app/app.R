@@ -8628,8 +8628,8 @@ server <- function(input, output, session) {
       matching <- request_rows[
         as.character(request_rows$batch_id)==batch &
         as.character(request_rows$queue_sha256)==as.character(queue_sha_rv()) &
-        as.character(request_rows$status) %in% c("dispatching","dispatched"),,
-        drop=FALSE]
+        as.character(request_rows$status) %in% c("dispatching","dispatched"),
+        ,drop=FALSE]
       if(nrow(matching)) {
         timestamps <- as.character(matching$requested_at_utc)
         timestamps <- timestamps[grepl("^\\d{4}-\\d{2}-\\d{2}T",timestamps)]
