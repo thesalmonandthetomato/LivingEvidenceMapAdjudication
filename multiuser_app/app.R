@@ -1546,10 +1546,10 @@ server <- function(input, output, session) {
 
   # The W01 queue may be published while users remain logged in. Load a
   # changed immutable batch without resetting active decisions on the same one.
-  observe({
+  w01_queue_refresh_signal <- reactiveVal(0L)
+  observeEvent(w01_queue_refresh_signal(), {
     req(authenticated(),current_user())
     if (!identical(storage_backend(),"google_sheets")) return()
-    invalidateLater(15000,session)
     incoming <- tryCatch(read_sheet_w01_queue(),error=function(e)e)
     if(inherits(incoming,"error")) {
       if(!nzchar(batch_id_rv()))
@@ -4051,6 +4051,9 @@ server <- function(input, output, session) {
         if(inherits(checked,"error")) {
           w01_launch_error_rv(conditionMessage(checked))
         } else {
+          if(!is.null(checked$pending) && is.null(w01_launch_pending_rv())) {
+            w01_queue_refresh_signal(isolate(w01_queue_refresh_signal())+1L)
+          }
           w01_launch_pending_rv(checked$pending)
           if(!is.null(checked$result)) w01_launch_result_rv(checked$result)
         }
