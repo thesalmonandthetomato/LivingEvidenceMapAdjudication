@@ -892,6 +892,50 @@ dispatch_w02_from_shiny <- function(review_id, sheet_id) {
   invisible(pointer_path)
 }
 
+# Track a W02 launch without choosing the latest global run.
+w02_find_shiny_run <- function(launched_at_utc) {
+  assert_development_github_target()
+  launched <- as.POSIXct(launched_at_utc,format="%Y-%m-%dT%H:%M:%SZ",tz="UTC")
+  if(length(launched)!=1L || is.na(launched)) stop("Invalid W02 launch time",call.=FALSE)
+  endpoint <- sprintf(
+    "https://api.github.com/repos/%s/actions/workflows/workflow_02_batched_production.yml/runs?branch=main&event=workflow_dispatch&per_page=100",
+    github_dispatch_repo())
+  runs <- github_api_get_json(endpoint)$workflow_runs %||% list()
+  matches <- Filter(function(x) {
+    when <- as.POSIXct(as.character(x$created_at %||% ""),format="%Y-%m-%dT%H:%M:%SZ",tz="UTC")
+    length(when)==1L && !is.na(when) &&
+      as.numeric(difftime(when,launched,units="secs")) >= -10 &&
+      as.numeric(difftime(when,launched,units="secs")) <= 300
+  },runs)
+  if(length(matches)>1L) stop("Multiple W02 launches occurred in the matching window; run identity ambiguous",call.=FALSE)
+  if(!length(matches)) return(NULL)
+  matches[[1L]]
+}
+
+w02_github_run_progress <- function(run_id) {
+  assert_development_github_target()
+  id <- as.character(run_id)
+  if(length(id)!=1L || !grepl("^[0-9]+$",id)) stop("Invalid W02 run ID",call.=FALSE)
+  base <- sprintf("https://api.github.com/repos/%s/actions/runs/%s",github_dispatch_repo(),id)
+  run <- github_api_get_json(base)
+  if(!grepl("(^|/)\\.github/workflows/workflow_02_batched_production\\.yml(@|$)",
+             as.character(run$path %||% "")))
+    stop("Run is not W02 production",call.=FALSE)
+  if(!identical(as.character(run$head_branch %||% ""),"main"))
+    stop("W02 run is not on main",call.=FALSE)
+  jobs <- github_api_get_json(paste0(base,"/jobs?per_page=100"))$jobs %||% list()
+  active <- Filter(function(j) !identical(as.character(j$conclusion %||% ""),"skipped"),jobs)
+  steps <- unlist(lapply(active,function(j)j$steps %||% list()),recursive=FALSE)
+  total <- length(steps)
+  completed <- sum(vapply(steps,function(x)identical(as.character(x$status %||% ""),"completed"),logical(1)))
+  pct <- if(total) min(99L,as.integer(floor(100*completed/total))) else 0L
+  if(identical(as.character(run$status %||% ""),"completed") &&
+     identical(as.character(run$conclusion %||% ""),"success")) pct<-100L
+  list(run_id=id,status=as.character(run$status %||% ""),
+       conclusion=as.character(run$conclusion %||% ""),
+       progress=pct,completed_steps=completed,total_steps=total)
+}
+
 # Explicit opt-in only: create a separate missing-abstract queue for one W02 run.
 dispatch_w02_missing_abstract_queue <- function(source_run_id, google_sheet_id) {
   assert_development_github_target()
