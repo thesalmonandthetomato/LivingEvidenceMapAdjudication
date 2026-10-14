@@ -974,6 +974,10 @@ server <- function(input, output, session) {
 
   w02_all_cases_rv <- reactiveVal(list())
   w02_cases_rv <- reactiveVal(NULL)
+  w02_abstract_queue_rv <- reactiveVal(NULL)
+  w02_abstract_edits_rv <- reactiveVal(data.frame())
+  w02_abstract_idx_rv <- reactiveVal(1L)
+  w02_abstract_status_rv <- reactiveVal("")
   w02_launch_requested_rv <- reactiveVal(FALSE)
   w02_launch_status_rv <- reactiveVal("")
   w02_queue_sha_rv <- reactiveVal("")
@@ -2595,7 +2599,8 @@ server <- function(input, output, session) {
         ),
         uiOutput("w02_progress_bar"),
         uiOutput("w02_decision_panel"),
-        uiOutput("w02_case_view")
+        uiOutput("w02_case_view"),
+        uiOutput("w02_missing_abstract_editor")
       ))
     }
 
@@ -8527,6 +8532,97 @@ server <- function(input, output, session) {
     w02_launch_requested_rv(TRUE)
     w02_launch_status_rv(paste("W02 enrichment requested using",result))
   })
+
+  # The optional queue is independent of normal W02 conflicts and decisions.
+  observe({
+    req(authenticated(),identical(storage_backend(),"google_sheets"))
+    invalidateLater(30000,session)
+    q <- tryCatch(w02_missing_abstract_queue(),error=function(e) {
+      w02_abstract_status_rv(paste("Abstract queue unavailable:",conditionMessage(e)))
+      NULL
+    })
+    if(is.null(q)) return()
+    required <- c("source_run_id","queue_sha256","record_id","title","doi")
+    if(nrow(q) && !all(required %in% names(q))) {
+      w02_abstract_status_rv("Invalid W02 missing-abstract queue format")
+      return()
+    }
+    if(!nrow(q)) return()
+    runs <- unique(as.character(q$source_run_id))
+    shas <- unique(as.character(q$queue_sha256))
+    if(length(runs)!=1L || length(shas)!=1L) {
+      w02_abstract_status_rv("Ambiguous abstract queue identity")
+      return()
+    }
+    active_run <- sub("^w02-run-","",as.character(w02_batch_id_rv()))
+    if(nzchar(w02_batch_id_rv()) && !identical(runs,active_run)) return()
+    w02_abstract_queue_rv(q)
+    edits <- tryCatch(w02_missing_abstract_edits(runs,shas),error=function(e) {
+      w02_abstract_status_rv(conditionMessage(e))
+      NULL
+    })
+    if(!is.null(edits)) w02_abstract_edits_rv(edits)
+  })
+  output$w02_missing_abstract_editor <- renderUI({
+    q <- w02_abstract_queue_rv()
+    if(is.null(q)||!nrow(q)) return(NULL)
+    n <- nrow(q)
+    i <- max(1L,min(as.integer(w02_abstract_idx_rv()),n))
+    z <- q[i,,drop=FALSE]
+    edited <- w02_abstract_edits_rv()
+    done <- if(nrow(edited)) sum(q$record_id %in% edited$record_id) else 0L
+    previous <- if(nrow(edited)) edited[edited$record_id==z$record_id[[1L]],,drop=FALSE] else data.frame()
+    card(class="mt-3",
+      card_header(tags$strong(sprintf("Optional missing-abstract review · %d of %d · %d completed",i,n,done))),
+      div(class="p-2",
+        tags$h5(as.character(z$title[[1L]])),
+        tags$div("DOI: ",as.character(z$doi[[1L]])),
+        tags$div(class="text-secondary small",sprintf("Record ID: %s",z$record_id[[1L]])),
+        textAreaInput("w02_abstract_manual_text","Enter abstract",
+          value=if(nrow(previous)) as.character(previous$abstract[[1L]]) else "",rows=8,width="100%"),
+        textInput("w02_abstract_provenance","Abstract source / provenance",
+          value=if(nrow(previous)) as.character(previous$provenance[[1L]]) else "",
+          placeholder="Publication DOI, publisher page or other verified source"),
+        div(class="d-flex gap-2",
+          actionButton("w02_abstract_save","Save abstract",class="btn-primary btn-sm"),
+          actionButton("w02_abstract_skip","Leave abstract empty",class="btn-outline-secondary btn-sm"),
+          actionButton("w02_abstract_prev","Previous",class="btn-outline-secondary btn-sm"),
+          actionButton("w02_abstract_next","Next",class="btn-outline-secondary btn-sm")),
+        tags$div(class="text-secondary small",textOutput("w02_missing_abstract_status"))
+      ))
+  })
+  output$w02_missing_abstract_status <- renderText(w02_abstract_status_rv())
+  observeEvent(input$w02_abstract_prev,{
+    w02_abstract_idx_rv(max(1L,w02_abstract_idx_rv()-1L))
+  })
+  observeEvent(input$w02_abstract_next,{
+    q <- w02_abstract_queue_rv()
+    if(!is.null(q)) w02_abstract_idx_rv(min(nrow(q),w02_abstract_idx_rv()+1L))
+  })
+  save_optional_abstract <- function(decision) {
+    req(authenticated(),session_can("adjudicate_assigned"))
+    q <- w02_abstract_queue_rv()
+    req(!is.null(q),nrow(q)>0)
+    z <- q[w02_abstract_idx_rv(),,drop=FALSE]
+    result <- tryCatch(append_w02_missing_abstract_edit(
+      as.character(z$source_run_id[[1L]]),as.character(z$queue_sha256[[1L]]),
+      as.character(z$record_id[[1L]]),
+      if(identical(decision,"add")) as.character(input$w02_abstract_manual_text %||% "") else "",
+      decision,session_reviewer_id(),
+      if(identical(decision,"add")) as.character(input$w02_abstract_provenance %||% "") else ""),
+      error=function(e)e)
+    if(inherits(result,"error")) {
+      w02_abstract_status_rv(paste("Save failed:",conditionMessage(result)))
+      return()
+    }
+    edits <- w02_missing_abstract_edits(as.character(z$source_run_id[[1L]]),
+                                        as.character(z$queue_sha256[[1L]]))
+    w02_abstract_edits_rv(edits)
+    w02_abstract_status_rv(sprintf("Saved %s for %s",decision,z$record_id[[1L]]))
+    w02_abstract_idx_rv(min(nrow(q),w02_abstract_idx_rv()+1L))
+  }
+  observeEvent(input$w02_abstract_save,save_optional_abstract("add"))
+  observeEvent(input$w02_abstract_skip,save_optional_abstract("skip"))
 
   output$w02_save_status <- renderText(w02_status())
 
