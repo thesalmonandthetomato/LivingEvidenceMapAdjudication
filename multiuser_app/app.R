@@ -8623,10 +8623,25 @@ server <- function(input, output, session) {
       review <- as.character(meta$value[match("review_id",meta$key)])
       if(length(review)!=1L || is.na(review) || !nzchar(review))
         stop("Cannot identify review in Google Sheets")
-      w01_export_delivery_status(review,sheet,sub("^w01-run-","",batch))
+      request_time <- ""
+      request_rows <- googlesheets4::read_sheet(sheet,sheet=w01_export_request_tab(),col_types="c")
+      matching <- request_rows[
+        as.character(request_rows$batch_id)==batch &
+        as.character(request_rows$queue_sha256)==as.character(queue_sha_rv()) &
+        as.character(request_rows$status) %in% c("dispatching","dispatched"),,
+        drop=FALSE]
+      if(nrow(matching)) {
+        timestamps <- as.character(matching$requested_at_utc)
+        timestamps <- timestamps[grepl("^\\d{4}-\\d{2}-\\d{2}T",timestamps)]
+        if(length(timestamps)) request_time <- min(timestamps)
+      }
+      w01_export_delivery_status(review,sheet,sub("^w01-run-","",batch),
+                                 requested_at_utc=request_time)
     },error=function(e) list(state="unknown",message=paste("W01 delivery status unavailable:",conditionMessage(e))))
+    previous_status <- isolate(w01_export_status_rv())
     w01_export_status_rv(as.character(result$message))
-    if(identical(result$state,"failed")) {
+    if(identical(result$state,"failed") &&
+       !identical(previous_status,as.character(result$message))) {
       status(as.character(result$message))
       showNotification(as.character(result$message),type="error",duration=NULL)
     }
