@@ -2841,3 +2841,55 @@ reset_backend_queue_state <- function(created_by = "", allowed_obsolete_batches 
     preserved_tabs = intersect(c(user_registry_tab()), sheet_names_cached(ss))
   )
 }
+
+# Optional W02 missing-abstract queue and independent append-only edit ledger.
+w02_missing_abstract_queue <- function() {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  if(!"queue_w02_missing_abstracts" %in% sheet_names_cached(ss)) return(data.frame())
+  googlesheets4::read_sheet(ss,sheet="queue_w02_missing_abstracts",col_types="c")
+}
+w02_missing_abstract_edits <- function(source_run_id, queue_sha256) {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  if(!"w02_missing_abstract_edits" %in% sheet_names_cached(ss)) return(data.frame())
+  d <- googlesheets4::read_sheet(ss,sheet="w02_missing_abstract_edits",col_types="c")
+  required <- c("record_id","source_run_id","queue_sha256","abstract","decision","saved_at_utc")
+  if(!all(required %in% names(d))) stop("Malformed W02 abstract ledger",call.=FALSE)
+  d <- d[!is.na(d$source_run_id) & !is.na(d$queue_sha256) &
+    d$source_run_id==source_run_id & d$queue_sha256==queue_sha256,,drop=FALSE]
+  if(nrow(d)) d <- d[!duplicated(d$record_id,fromLast=TRUE),,drop=FALSE]
+  d
+}
+append_w02_missing_abstract_edit <- function(source_run_id, queue_sha256, record_id,
+                                               abstract, decision, reviewer, provenance) {
+  if(!decision %in% c("add","skip")) stop("Invalid abstract decision",call.=FALSE)
+  if(!grepl("^[0-9]+$",source_run_id) ||
+     !grepl("^[0-9a-f]{64}$",queue_sha256) || !nzchar(record_id) || !nzchar(reviewer))
+    stop("Invalid missing-abstract ledger identity",call.=FALSE)
+  abstract <- trimws(abstract)
+  provenance <- trimws(provenance)
+  if(identical(decision,"add") && (!nzchar(abstract)||!nzchar(provenance)))
+    stop("Adding an abstract requires text and provenance",call.=FALSE)
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- "w02_missing_abstract_edits"
+  cols <- c("edit_id","source_run_id","queue_sha256","record_id","abstract",
+            "decision","reviewer","provenance","saved_at_utc")
+  if(!tab %in% sheet_names_cached(ss)) {
+    sheet_add_cached(ss,tab)
+    blank <- as.data.frame(setNames(replicate(length(cols),character(),simplify=FALSE),cols))
+    googlesheets4::sheet_write(blank,ss=ss,sheet=tab)
+  }
+  now <- format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ")
+  id <- paste0("w02-abstract-",substr(digest::digest(
+    paste(source_run_id,queue_sha256,record_id,abstract,decision,reviewer,now,sep="|"),
+    algo="sha256",serialize=FALSE),1,24))
+  row <- data.frame(edit_id=id,source_run_id=source_run_id,queue_sha256=queue_sha256,
+                    record_id=record_id,abstract=abstract,decision=decision,
+                    reviewer=reviewer,provenance=provenance,saved_at_utc=now,
+                    stringsAsFactors=FALSE)
+  googlesheets4::sheet_append(ss,data=row,sheet=tab)
+  invisible(row)
+}
+
