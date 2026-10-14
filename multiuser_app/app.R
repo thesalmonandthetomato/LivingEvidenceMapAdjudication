@@ -978,6 +978,8 @@ server <- function(input, output, session) {
   w02_abstract_edits_rv <- reactiveVal(data.frame())
   w02_abstract_idx_rv <- reactiveVal(1L)
   w02_abstract_status_rv <- reactiveVal("")
+  w02_optional_pause_rv <- reactiveVal(NULL)
+  w02_optional_resume_requested_rv <- reactiveVal(FALSE)
   w02_launch_requested_rv <- reactiveVal(FALSE)
   w02_launch_status_rv <- reactiveVal("")
   w02_queue_sha_rv <- reactiveVal("")
@@ -2477,7 +2479,9 @@ server <- function(input, output, session) {
                 "No records awaiting review"
               }
             ),
-            if(session_can("control_workflows") && !nzchar(w02_batch_id_rv())) {
+            uiOutput("w02_optional_pause_controls"),
+            if(is.null(w02_optional_pause_rv()) &&
+               session_can("control_workflows") && !nzchar(w02_batch_id_rv())) {
               div(class="mt-2",
                 if(isTRUE(w02_launch_requested_rv())) {
                   tags$div(class="text-secondary small",
@@ -2490,6 +2494,7 @@ server <- function(input, output, session) {
               )
             }
           ),
+          if(!is.null(w02_optional_pause_rv())) uiOutput("w02_missing_abstract_editor"),
           div(
             class = "col-12 col-lg-6",
             stage_card(
@@ -8511,6 +8516,78 @@ server <- function(input, output, session) {
         )
       )
     )
+  })
+
+  observe({
+    req(authenticated(),identical(storage_backend(),"google_sheets"))
+    invalidateLater(30000,session)
+    state <- tryCatch(w02_optional_pause_current(),error=function(e)NULL)
+    if(!is.null(state)) {
+      review <- as.character(state$review_id %||% "")
+      configured <- trimws(Sys.getenv("LEM_SEARCH_REVIEW_ID",unset=""))
+      if(!nzchar(configured) || identical(configured,review)) {
+        w02_optional_pause_rv(state)
+      }
+    }
+  })
+  output$w02_optional_pause_controls <- renderUI({
+    z <- w02_optional_pause_rv()
+    if(is.null(z)||!session_can("control_workflows"))return(NULL)
+    run <- as.character(z$source_run_id %||% "")
+    if(!grepl("^[0-9]+$",run))return(NULL)
+    q <- w02_abstract_queue_rv()
+    edits <- w02_abstract_edits_rv()
+    has_queue <- !is.null(q) && nrow(q)>0 && all(as.character(q$source_run_id)==run)
+    pending <- if(has_queue) sum(!as.character(q$record_id) %in% as.character(edits$record_id)) else 0L
+    div(class="mt-2 p-2 border rounded",
+      tags$strong("W02 paused: optional abstract completion"),
+      tags$p(class="text-secondary small",
+        sprintf("%s of %s abstracts missing after enrichment. Source run %s.",
+          as.character(z$missing_abstracts),as.character(z$canonical_records),run)),
+      if(has_queue) {
+        tags$p(class="text-secondary small",sprintf("%d manual decisions remain.",pending))
+      } else {
+        actionButton("w02_optional_prepare","Review missing abstracts",class="btn-outline-primary btn-sm")
+      },
+      if(!isTRUE(w02_optional_resume_requested_rv())) {
+        actionButton("w02_optional_continue",
+          if(has_queue) "Complete review and continue W02" else "Skip abstract review and continue W02",
+          class="btn-primary btn-sm",disabled=FALSE)
+      } else tags$span(class="text-success","W02 resume requested"),
+      textOutput("w02_optional_control_status")
+    )
+  })
+  output$w02_optional_control_status <- renderText(w02_abstract_status_rv())
+  observeEvent(input$w02_optional_prepare,{
+    req(authenticated(),session_can("control_workflows"))
+    z <- req(w02_optional_pause_rv())
+    id <- as.character(z$source_run_id)
+    response <- tryCatch(dispatch_w02_missing_abstract_queue(id,sheet_id_from_env()),
+                         error=function(e)e)
+    w02_abstract_status_rv(if(inherits(response,"error"))
+      paste("Optional queue failed:",conditionMessage(response)) else
+      "Abstract queue requested; records will load after publication.")
+  })
+  observeEvent(input$w02_optional_continue,{
+    req(authenticated(),session_can("control_workflows"))
+    z <- req(w02_optional_pause_rv())
+    id <- as.character(z$source_run_id)
+    q <- w02_abstract_queue_rv()
+    if(!is.null(q) && nrow(q) && all(as.character(q$source_run_id)==id)) {
+      ed <- w02_missing_abstract_edits(id,unique(as.character(q$queue_sha256)))
+      if(!setequal(as.character(q$record_id),as.character(ed$record_id))) {
+        w02_abstract_status_rv("Optional abstract queue incomplete; save or skip each record.")
+        return()
+      }
+    }
+    response <- tryCatch(dispatch_w02_resume(id,publish=TRUE,
+                                             google_sheet_id=sheet_id_from_env()),error=function(e)e)
+    if(inherits(response,"error")){
+      w02_abstract_status_rv(paste("Resume failed:",conditionMessage(response)))
+    }else{
+      w02_optional_resume_requested_rv(TRUE)
+      w02_abstract_status_rv("W02 resume dispatched.")
+    }
   })
 
   output$w02_launch_status <- renderText(w02_launch_status_rv())
