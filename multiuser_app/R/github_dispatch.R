@@ -209,8 +209,8 @@ w01_launch_configuration <- function() {
      !identical(Sys.getenv("LEM_GITHUB_SCOPING_REF",unset=""),"main") ||
      !nzchar(Sys.getenv("LEM_GITHUB_DISPATCH_TOKEN",unset="")))
     reason <- "Authenticated GitHub W01 dispatch is not configured."
-  else if(!grepl("^[A-Za-z0-9._-]{3,128}$",review_id))
-    reason <- "Set LEM_SEARCH_REVIEW_ID to the active review's identifier."
+  else if(nzchar(review_id) && !grepl("^[A-Za-z0-9._-]{3,128}$",review_id))
+    reason <- "Configured LEM_SEARCH_REVIEW_ID is invalid."
   else if(!grepl("^[A-Za-z0-9_-]{15,150}$",sheet_id))
     reason <- "Configure the active review's Google Sheet ID."
   list(ready=!nzchar(reason),reason=reason,review_id=review_id,sheet_id=sheet_id)
