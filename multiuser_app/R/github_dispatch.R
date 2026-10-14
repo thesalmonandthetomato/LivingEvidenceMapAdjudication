@@ -374,6 +374,36 @@ w01_resolved_review_run_id <- function(checkpoint_run_id,review_id) {
   as.character(x$resolved_by_run_id)
 }
 
+# Discover final RIS eligibility from review-bound, restricted Zenodo receipts.
+# Called once at authenticated session start, never as a Sheets poll.
+w01_latest_final_review_receipt <- function(review_id,sheet_id) {
+  assert_development_github_target()
+  if(!grepl("^[A-Za-z0-9._-]{3,128}$",review_id) ||
+     !grepl("^[A-Za-z0-9_-]{15,150}$",sheet_id))
+    stop("Invalid W01 review identifier",call.=FALSE)
+  directory <- sprintf("docs/deduplication/reviews/%s/zenodo",review_id)
+  endpoint <- sprintf("https://api.github.com/repos/%s/contents/%s?ref=main",
+                      github_dispatch_repo(),directory)
+  entries <- tryCatch(github_api_get_json(endpoint),error=function(e)NULL)
+  if(is.null(entries)||!length(entries)) return(NULL)
+  filenames <- vapply(entries,function(x)as.character(x$name %||% ""),character(1))
+  files <- filenames[grepl("^run-[0-9]+\\.json$",filenames)]
+  if(!length(files)) return(NULL)
+  ids <- as.numeric(sub("^run-([0-9]+)\\.json$","\\1",files))
+  files <- files[order(ids,decreasing=TRUE)]
+  for(fn in files) {
+    x <- tryCatch(jsonlite::fromJSON(read_github_text_file(paste0(directory,"/",fn)),
+                                      simplifyVector=FALSE),error=function(e)NULL)
+    if(!is.null(x) && identical(as.character(x$status %||% ""),"published") &&
+       identical(as.character(x$visibility %||% ""),"restricted") &&
+       (as.character(x$state %||% "") %in% c("final","delta")) &&
+       identical(as.character(x$review_id %||% ""),review_id) &&
+       identical(as.character(x$google_sheet_id %||% ""),sheet_id))
+      return(list(run_id=as.character(x$github_run_id),review_id=review_id))
+  }
+  NULL
+}
+
 # RIS is derived only from a final, review-bound W01 canonical receipt.
 dispatch_w01_ris_export <- function(review_id,source_run_id) {
   assert_development_github_target()
