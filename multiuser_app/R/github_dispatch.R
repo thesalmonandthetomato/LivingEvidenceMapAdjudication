@@ -374,6 +374,64 @@ w01_resolved_review_run_id <- function(checkpoint_run_id,review_id) {
   as.character(x$resolved_by_run_id)
 }
 
+# RIS is derived only from a final, review-bound W01 canonical receipt.
+dispatch_w01_ris_export <- function(review_id,source_run_id) {
+  assert_development_github_target()
+  if(!grepl("^[A-Za-z0-9._-]{3,128}$",review_id) ||
+     !grepl("^[0-9]+$",as.character(source_run_id)))
+    stop("Invalid W01 RIS export identity",call.=FALSE)
+  endpoint <- sprintf("https://api.github.com/repos/%s/actions/workflows/workflow_01_export_ris.yml/dispatches",github_dispatch_repo())
+  req <- httr2::request(endpoint) |>
+    httr2::req_method("POST") |>
+    httr2::req_headers(Authorization=paste("Bearer",github_dispatch_token()),
+      Accept="application/vnd.github+json",`X-GitHub-Api-Version`="2022-11-28",
+      `User-Agent`="LivingEvidenceMap-Adjudication") |>
+    httr2::req_body_json(list(ref=github_scoping_ref(),
+      inputs=list(review_id=review_id,source_run_id=as.character(source_run_id))))
+  response <- httr2::req_perform(req)
+  if(!identical(httr2::resp_status(response),204L))
+    stop("RIS export dispatch failed: HTTP ",httr2::resp_status(response),call.=FALSE)
+  invisible(TRUE)
+}
+
+w01_ris_export_artifact <- function(review_id,source_run_id) {
+  assert_development_github_target()
+  if(!grepl("^[A-Za-z0-9._-]{3,128}$",review_id) ||
+     !grepl("^[0-9]+$",as.character(source_run_id)))
+    stop("Invalid RIS lookup identity",call.=FALSE)
+  endpoint <- sprintf("https://api.github.com/repos/%s/actions/artifacts?per_page=100",github_dispatch_repo())
+  xs <- github_api_get_json(endpoint)$artifacts %||% list()
+  wanted <- paste0("workflow01-unique-ris-",review_id,"-",source_run_id)
+  found <- Filter(function(x) identical(as.character(x$name %||% ""),wanted) &&
+                        !isTRUE(x$expired),xs)
+  if(!length(found)) return(NULL)
+  found[[1L]]
+}
+
+w01_ris_download_artifact <- function(artifact,destination) {
+  if(is.null(artifact$archive_download_url) ||
+     !grepl("^https://api\\.github\\.com/repos/thesalmonandthetomato/LivingEvidenceMap/actions/artifacts/[0-9]+/zip$",
+            as.character(artifact$archive_download_url)))
+    stop("Unexpected GitHub RIS artifact download URL",call.=FALSE)
+  zip_path <- tempfile(fileext=".zip")
+  on.exit(unlink(zip_path),add=TRUE)
+  req <- httr2::request(as.character(artifact$archive_download_url)) |>
+    httr2::req_headers(Authorization=paste("Bearer",github_dispatch_token()),
+      Accept="application/vnd.github+json",
+      `X-GitHub-Api-Version`="2022-11-28",
+      `User-Agent`="LivingEvidenceMap-Adjudication")
+  httr2::req_perform(req,path=zip_path)
+  members <- utils::unzip(zip_path,list=TRUE)$Name
+  if(!identical(members,"unique_records.ris"))
+    stop("Export artifact must contain exactly one RIS file",call.=FALSE)
+  dest_dir <- tempfile("ris_extract_")
+  dir.create(dest_dir)
+  on.exit(unlink(dest_dir,recursive=TRUE),add=TRUE)
+  utils::unzip(zip_path,files=members,exdir=dest_dir)
+  if(!file.copy(file.path(dest_dir,"unique_records.ris"),destination,overwrite=TRUE))
+    stop("Unable to stage RIS download",call.=FALSE)
+}
+
 dispatch_w00_scoping <- function(request_id, search_string = NULL, search_string_path = "user_input/scoping_search_string.txt") {
   request_id <- trimws(as.character(request_id))
   if (!grepl("^[A-Za-z0-9._-]{8,80}$", request_id)) {
