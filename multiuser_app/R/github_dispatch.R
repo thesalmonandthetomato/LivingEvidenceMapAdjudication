@@ -286,7 +286,9 @@ w01_published_review_results <- function(run_id, review_id, review_sheet_id) {
     stop("Invalid W01 results run ID",call.=FALSE)
   if(!nzchar(as.character(review_id)) || !nzchar(as.character(review_sheet_id)))
     stop("W01 results require both review identifiers",call.=FALSE)
-  path <- sprintf("docs/deduplication/zenodo/run-%s.json",run_id)
+  if(!grepl("^[A-Za-z0-9._-]{3,128}$",as.character(review_id)))
+    stop("Invalid W01 review ID for published results",call.=FALSE)
+  path <- sprintf("docs/deduplication/reviews/%s/zenodo/run-%s.json",review_id,run_id)
   receipt <- tryCatch(
     jsonlite::fromJSON(read_github_text_file(path),simplifyVector=FALSE),
     error=function(e) NULL
