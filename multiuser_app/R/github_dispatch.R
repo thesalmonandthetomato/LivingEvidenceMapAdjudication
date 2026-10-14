@@ -374,6 +374,38 @@ w01_resolved_review_run_id <- function(checkpoint_run_id,review_id) {
   as.character(x$resolved_by_run_id)
 }
 
+# One authenticated lookup at login; no recurring GitHub or Sheets polling.
+# Any published W01 checkpoint/final record locks duplicate first-run launches.
+w01_has_published_review_run <- function(review_id,sheet_id) {
+  assert_development_github_target()
+  if(!grepl("^[A-Za-z0-9._-]{3,128}$",review_id) ||
+     !grepl("^[A-Za-z0-9_-]{15,150}$",sheet_id))
+    stop("Invalid review identity for W01 launch lock",call.=FALSE)
+  for(folder in c("checkpoints","zenodo")) {
+    dir <- sprintf("docs/deduplication/reviews/%s/%s",review_id,folder)
+    endpoint <- sprintf("https://api.github.com/repos/%s/contents/%s?ref=main",
+                        github_dispatch_repo(),dir)
+    entries <- tryCatch(github_api_get_json(endpoint),error=function(e)e)
+    if(inherits(entries,"error")) {
+      if(grepl("HTTP 404",conditionMessage(entries),fixed=TRUE)) next
+      stop(conditionMessage(entries),call.=FALSE)
+    }
+    if(!length(entries)) next
+    for(item in entries) {
+      name <- as.character(item$name %||% "")
+      if(!grepl("^run-[0-9]+\\.json$",name)) next
+      receipt <- jsonlite::fromJSON(read_github_text_file(paste0(dir,"/",name)),
+                                    simplifyVector=FALSE)
+      if(identical(as.character(receipt$status %||% ""),"published") &&
+         identical(as.character(receipt$visibility %||% ""),"restricted") &&
+         identical(as.character(receipt$review_id %||% ""),review_id) &&
+         identical(as.character(receipt$google_sheet_id %||% ""),sheet_id))
+        return(TRUE)
+    }
+  }
+  FALSE
+}
+
 # Discover final RIS eligibility from review-bound, restricted Zenodo receipts.
 # Called once at authenticated session start, never as a Sheets poll.
 w01_latest_final_review_receipt <- function(review_id,sheet_id) {
