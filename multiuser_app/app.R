@@ -3241,6 +3241,11 @@ server <- function(input, output, session) {
           class="px-3 pb-3",
           tags$details(
             class="assignment-disclosure",
+            `data-accordion-key`="configure-review-searching",
+            tags$summary(tags$strong("Searching")),
+            div(class="px-3 pb-3",
+          tags$details(
+            class="assignment-disclosure",
             `data-accordion-key`="configure-review-scoping",
             tags$summary(tags$strong("Scoping")),
             div(
@@ -3295,8 +3300,8 @@ server <- function(input, output, session) {
           ),
           tags$details(
             class="assignment-disclosure",
-            `data-accordion-key`="configure-review-searching",
-            tags$summary(tags$strong("Searching")),
+            `data-accordion-key`="configure-review-api-searching",
+            tags$summary(tags$strong("Bibliographic database API searches")),
             div(
               class="px-3 pb-3",
               textAreaInput("search_formal_text", "Formal search string",
@@ -3364,6 +3369,8 @@ server <- function(input, output, session) {
             `data-accordion-key`="configure-review-scheduling",
             tags$summary(tags$strong("Scheduling")),
             div(class="px-3 pb-3 saved-note","Scheduled searching currently disabled")
+          ),
+            )
           ),
           tags$details(
             class="assignment-disclosure",
