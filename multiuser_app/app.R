@@ -1589,7 +1589,7 @@ server <- function(input, output, session) {
     batch_status_rv(incoming$batch_status %||% "")
     w01_export_requested_rv(loaded$export_requested)
     w01_export_status_rv(if(loaded$export_requested)
-      "Sent to GitHub. The reviewed batch is queued for integrity checks and resume." else "")
+      "W01 export requested; checking GitHub handoff status." else "")
     ids <- if(length(loaded$cases)) vapply(loaded$cases,function(z)
       as.character(z$review_case_id),character(1)) else character()
     finished <- if(length(loaded$decisions)) unique(vapply(loaded$decisions,
@@ -5950,7 +5950,7 @@ server <- function(input, output, session) {
               ),
               if (isTRUE(w01_export_requested_rv())) {
                 tags$div(
-                  class = "text-success small fw-semibold",
+                  class = "text-secondary small fw-semibold",
                   w01_export_status_rv()
                 )
               } else {
@@ -8115,7 +8115,7 @@ server <- function(input, output, session) {
           ) && identical(as.character(batch$batch_status %||% ""), "review_complete")
           requested <- isTRUE(requested) || isTRUE(legacy_dispatched_batch)
           w01_export_requested_rv(isTRUE(requested))
-          w01_export_status_rv(if(isTRUE(requested)) "Sent to GitHub. The reviewed batch is queued for integrity checks and resume." else "")
+          w01_export_status_rv(if(isTRUE(requested)) "W01 export requested; checking GitHub handoff status." else "")
 
           ids <- vapply(visible_cases, function(x) as.character(x$review_case_id), character(1))
           done_ids <- if (length(current_decisions)) {
@@ -8567,8 +8567,8 @@ server <- function(input, output, session) {
         (identical(storage_backend(),"google_sheets") &&
          w01_export_request_exists(queue_sha_rv(),batch_id_rv()))) {
       w01_export_requested_rv(TRUE)
-      w01_export_status_rv("Sent to GitHub.")
-      status("W01 export has already been requested.")
+      w01_export_status_rv("W01 export was requested; checking whether GitHub completed it.")
+      status("W01 export request already exists.")
       return()
     }
     dispatched <- tryCatch({
@@ -8578,8 +8578,16 @@ server <- function(input, output, session) {
       if (identical(storage_backend(),"google_sheets")) {
         append_w01_export_request(queue_sha_rv(),batch_id_rv(),"dispatching")
       }
-      review_id <- trimws(Sys.getenv("LEM_SEARCH_REVIEW_ID",unset=""))
-      sheet_id <- if(nzchar(review_id)) trimws(sheet_id_from_env()) else ""
+      sheet_id <- trimws(sheet_id_from_env())
+      meta <- googlesheets4::read_sheet(sheet_id,sheet="review_metadata",col_types="cc")
+      if(!all(c("key","value") %in% names(meta))) stop("Invalid review_metadata")
+      review_id <- as.character(meta$value[match("review_id",meta$key)])
+      if(length(review_id)!=1L || is.na(review_id) ||
+         !grepl("^[A-Za-z0-9._-]{3,128}$",review_id))
+        stop("Missing or invalid review_id in Google Sheet review_metadata")
+      configured <- trimws(Sys.getenv("LEM_SEARCH_REVIEW_ID",unset=""))
+      if(nzchar(configured) && !identical(configured,review_id))
+        stop("Configured LEM_SEARCH_REVIEW_ID conflicts with Google Sheet review_id")
       dispatch_w01_export(batch_id_rv(),queue_sha_rv(),
                           review_id=review_id,google_sheet_id=sheet_id)
       if (identical(storage_backend(),"google_sheets")) {
@@ -8595,8 +8603,32 @@ server <- function(input, output, session) {
     })
     if(dispatched) {
       w01_export_requested_rv(TRUE)
-      w01_export_status_rv("Sent to GitHub. The reviewed batch is queued for integrity checks and resume.")
-      status("W01 sent to GitHub.")
+      w01_export_status_rv("GitHub accepted the W01 export request. Awaiting verified handoff.")
+      status("W01 export requested; outcome not yet verified.")
+    } else {
+      w01_export_requested_rv(FALSE)
+      w01_export_status_rv("W01 delivery failed. See the status message and retry.")
+    }
+  })
+  # A GitHub dispatch acknowledgement is not a successful export. Inspect the
+  # review-specific handoff and exact matching export run, never another review.
+  observe({
+    req(authenticated(),isTRUE(w01_export_requested_rv()))
+    batch <- as.character(batch_id_rv())
+    if(!grepl("^w01-run-[0-9]+$",batch)) return()
+    invalidateLater(15000,session)
+    result <- tryCatch({
+      sheet <- sheet_id_from_env()
+      meta <- googlesheets4::read_sheet(sheet,sheet="review_metadata",col_types="cc")
+      review <- as.character(meta$value[match("review_id",meta$key)])
+      if(length(review)!=1L || is.na(review) || !nzchar(review))
+        stop("Cannot identify review in Google Sheets")
+      w01_export_delivery_status(review,sheet,sub("^w01-run-","",batch))
+    },error=function(e) list(state="unknown",message=paste("W01 delivery status unavailable:",conditionMessage(e))))
+    w01_export_status_rv(as.character(result$message))
+    if(identical(result$state,"failed")) {
+      status(as.character(result$message))
+      showNotification(as.character(result$message),type="error",duration=NULL)
     }
   })
   observeEvent(input$w02_send_github, {
