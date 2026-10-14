@@ -892,6 +892,30 @@ dispatch_w02_from_shiny <- function(review_id, sheet_id) {
   invisible(pointer_path)
 }
 
+# Explicit opt-in only: create a separate missing-abstract queue for one W02 run.
+dispatch_w02_missing_abstract_queue <- function(source_run_id, google_sheet_id) {
+  assert_development_github_target()
+  if(!grepl("^[0-9]+$",as.character(source_run_id)) ||
+     !grepl("^[A-Za-z0-9_-]{15,150}$",as.character(google_sheet_id)))
+    stop("Invalid W02 missing-abstract queue identity",call.=FALSE)
+  endpoint <- sprintf(
+    "https://api.github.com/repos/%s/actions/workflows/workflow_02_optional_missing_abstracts.yml/dispatches",
+    github_dispatch_repo())
+  resp <- httr2::request(endpoint) |>
+    httr2::req_method("POST") |>
+    httr2::req_headers(Authorization=paste("Bearer",github_dispatch_token()),
+      Accept="application/vnd.github+json",
+      `X-GitHub-Api-Version`="2022-11-28",
+      `User-Agent`="LivingEvidenceMap-Adjudication") |>
+    httr2::req_body_json(list(ref=github_scoping_ref(),inputs=list(
+      source_run_id=as.character(source_run_id),
+      google_sheet_id=as.character(google_sheet_id)))) |>
+    httr2::req_perform()
+  if(!identical(httr2::resp_status(resp),204L))
+    stop(sprintf("W02 optional abstract queue dispatch returned HTTP %d",httr2::resp_status(resp)),call.=FALSE)
+  invisible(TRUE)
+}
+
 dispatch_w02_resume <- function(source_run_id, publish = TRUE, google_sheet_id = "") {
   source_run_id <- as.character(source_run_id)
   if (!grepl("^[0-9]+$", source_run_id)) stop("Invalid W02 source run ID", call. = FALSE)
