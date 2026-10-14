@@ -266,18 +266,31 @@ w01_lookup_persisted_decision <- function(ss, tab, decision_id) {
   normalise_sheet_rows(hits)[[1L]]
 }
 
+# Operational timings only: no record text, credentials or decision content.
+w01_timing_log <- function(stage,elapsed,rows=NA_integer_) {
+  if(!is.finite(elapsed)) return(invisible(NULL))
+  suffix <- if(is.na(rows)) "" else sprintf(" rows=%d",as.integer(rows))
+  message(sprintf("[W01 timing] %s=%.3fs%s",stage,elapsed,suffix))
+  invisible(NULL)
+}
+
 append_sheet_decision <- function(decision, prior_decision = NULL) {
+  timer_start <- proc.time()[["elapsed"]]
   gs4_auth_from_env()
   ensure_w01_decision_tab()
   ss <- sheet_id_from_env()
   tab <- sheet_decision_tab()
+  w01_timing_log("sheet_auth_and_tab",proc.time()[["elapsed"]]-timer_start)
   decision_id <- paste0("dec-", digest::digest(
     paste(decision$review_case_id, decision$resolved_at_utc, decision$decision, sep="|"),
     algo="sha256", serialize=FALSE
   ))
 
   # One pre-write read is required to enforce cross-reviewer authority.
+  read_start <- proc.time()[["elapsed"]]
   current_log <- read_sheet_decision_log()
+  w01_timing_log("decision_log_read",proc.time()[["elapsed"]]-read_start,length(current_log))
+  conflict_start <- proc.time()[["elapsed"]]
   existing_ids <- vapply(current_log, function(x) as.character(x$decision_id %||% ""), character(1))
   existing <- which(existing_ids == decision_id)
   if (length(existing) > 1L) stop("Duplicate W01 decision IDs found", call. = FALSE)
@@ -304,6 +317,7 @@ append_sheet_decision <- function(decision, prior_decision = NULL) {
     }
   }
 
+  w01_timing_log("decision_conflict_check",proc.time()[["elapsed"]]-conflict_start)
   row <- data.frame(
     decision_id=decision_id,
     review_case_id=as.character(decision$review_case_id),
@@ -318,10 +332,13 @@ append_sheet_decision <- function(decision, prior_decision = NULL) {
   # A successful Sheets append response is the write acknowledgement.
   # A second full-sheet read on every success causes avoidable API quota pressure.
   # On an ambiguous HTTP failure, verify the deterministic decision ID before retry.
+  append_start <- proc.time()[["elapsed"]]
   append_error <- tryCatch({
     googlesheets4::sheet_append(ss, data=row, sheet=tab)
     NULL
   }, error=function(e) conditionMessage(e))
+  w01_timing_log("decision_sheet_append",proc.time()[["elapsed"]]-append_start)
+  w01_timing_log("decision_persistence_total",proc.time()[["elapsed"]]-timer_start)
   if (is.null(append_error)) {
     return(invisible(normalise_saved_decision_event(
       as.list(row[1L, , drop=FALSE]), prior_decision=prior_decision,
