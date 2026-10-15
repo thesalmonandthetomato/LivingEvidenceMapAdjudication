@@ -1,0 +1,44 @@
+name: Temporary W04 authoritative corpus adapter test
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/temporary-w04-corpus-source-test.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Synthetic review-matched W02/W03 eligibility
+        shell: Rscript {0}
+        run: |
+          install.packages(c('digest','jsonlite'),repos='https://cloud.r-project.org')
+          for(p in c('multiuser_app/R/w04_subset_eligible.R',
+                     'multiuser_app/R/w04_subset_registry.R',
+                     'multiuser_app/app.R')) parse(file=p)
+          source('multiuser_app/R/w04_subset_eligible.R')
+          x <- paste(rep('a',64),collapse='')
+          y <- paste(rep('b',64),collapse='')
+          lean <- list(status='published',state='post_w02_lean_canonical_checkpoint',
+                       visibility='restricted',lean_canonical_sha256=x)
+          w03 <- list(status='published',workflow='03',state='publication_status',
+                      visibility='restricted',upstream_lean_canonical_sha256=x)
+          stopifnot(w04_subset_valid_pointer_pair(lean,w03))
+          w03$upstream_lean_canonical_sha256 <- y
+          stopifnot(inherits(try(w04_subset_valid_pointer_pair(lean,w03),silent=TRUE),'try-error'))
+          canon <- c('{"identity":{"record_id":"r1"}}',
+                     '{"identity":{"record_id":"r2"}}',
+                     '{"identity":{"record_id":"r3"}}')
+          status <- c('{"record_id":"r2","publication_status":{"exclude_from_workflow04":true}}',
+                      '{"record_id":"r3","publication_status":{"exclude_from_workflow04":false}}',
+                      '{"record_id":"r1","publication_status":{"exclude_from_workflow04":false}}')
+          ids <- w04_subset_eligible_ids_from_lines(canon,status,3)
+          stopifnot(identical(ids,c('r1','r3')))
+          stopifnot(inherits(try(w04_subset_eligible_ids_from_lines(canon,status,4),silent=TRUE),'try-error'))
+          cat('PASS matched checkpoint, excluded records, shuffled status and count guards\n')
