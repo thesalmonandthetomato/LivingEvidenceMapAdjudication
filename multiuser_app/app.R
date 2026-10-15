@@ -3532,7 +3532,7 @@ server <- function(input, output, session) {
               ),
               tags$details(class="assignment-disclosure",
                 tags$summary(tags$strong("Subsets and validation")),
-                div(class="px-3 pb-3 saved-note","Subset management is being implemented in Milestones 4–6. Existing screening and consistency interfaces remain available."),
+                div(class="px-3 pb-3 saved-note","Subset management is being implemented in Milestones 4–6. Existing screening and consistency interfaces remain available.")
               ),
               tags$details(class="assignment-disclosure",
                 tags$summary(tags$strong("Model execution")),
