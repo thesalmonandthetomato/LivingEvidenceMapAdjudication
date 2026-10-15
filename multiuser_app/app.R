@@ -5971,7 +5971,9 @@ server <- function(input, output, session) {
           if (
             identical(cfg$workflow,"04") && identical(cfg$task_type,"manual_screening")
           ) {
-            radioButtons(
+            tagList(
+              uiOutput("w04_assignment_subset_selector"),
+              radioButtons(
               "w04_review_mode",
               "Manual screening purpose",
               choices = c(
@@ -5979,6 +5981,7 @@ server <- function(input, output, session) {
                 "Build validation set · split random records across selected reviewers" = "validation_set"
               ),
               selected = "reviewer_consistency"
+              )
             )
           },
           tags$p(class = "text-secondary small mb-2", guidance),
@@ -7648,15 +7651,33 @@ server <- function(input, output, session) {
     ))
   })
 
+  output$w04_assignment_subset_selector <- renderUI({
+    req(authenticated())
+    available <- w04_subsets_rv()
+    ids <- if(length(available)) vapply(available,function(s)as.character(s$subset_id),character(1)) else character()
+    selectInput("w04_assignment_subset_id","Registered human-screening subset",
+      choices=c("Select a registered subset"="",stats::setNames(ids,
+        paste0(ids," (",vapply(available,function(s)as.character(s$actual_size),character(1))," records)"))))
+  })
   w04_assignment_plan <- reactive({
     req(authenticated())
     selected <- as.character(input$w04_assignment_users %||% character())
     type <- as.character(input$w04_assignment_type %||% "number")
     amount <- input$w04_assignment_amount %||% NA_real_
     review_mode <- as.character(input$w04_review_mode %||% "reviewer_consistency")
-    tryCatch(
+    tryCatch({
+      subset_id <- as.character(input$w04_assignment_subset_id %||% "")
+      if(!nzchar(subset_id)) stop("Select a registered human-screening subset",call.=FALSE)
+      eligible <- w04_subset_corpus_rv()
+      if(is.null(eligible)) stop("Verify the eligible corpus before assigning a subset",call.=FALSE)
+      registry <- w04_subsets_rv()
+      chosen <- Filter(function(x)identical(x$subset_id,subset_id) &&
+        identical(x$review_id,eligible$review_id),registry)
+      if(length(chosen)!=1L) stop("Selected subset is not in this review registry",call.=FALSE)
+      cases <- w04_subset_queue_cases(chosen[[1L]],w04_all_cases_rv(),
+        eligible$checkpoint_sha256)
       plan_w04_manual_assignment(
-        cases = w04_all_cases_rv(),
+        cases = cases,
         assignments = assignment_registry_rv(),
         active_events = w04_active_assignment_events(),
         batch_id = w04_batch_id_rv(),
@@ -7664,9 +7685,8 @@ server <- function(input, output, session) {
         review_mode = review_mode,
         allocation_type = type,
         amount = amount
-      ),
-      error=function(e) list(error=conditionMessage(e))
-    )
+      )
+      }, error=function(e) list(error=conditionMessage(e)))
   })
   output$w04_assignment_preview <- renderUI({
     req(authenticated())
