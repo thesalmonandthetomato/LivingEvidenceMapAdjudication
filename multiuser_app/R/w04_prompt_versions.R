@@ -12,7 +12,7 @@ w04_prompt_version <- function(review_id,text,author,filename="",notes="",status
   if(!status %in% c("draft","approved","superseded"))
     stop("Invalid prompt status",call.=FALSE)
   sha <- w04_prompt_checksum(text)
-  at <- format(created_at,tz="UTC",format="%Y-%m-%dT%H:%M:%SZ")
+  at <- format(created_at,tz="UTC",format="%Y-%m-%dT%H:%M:%OS6Z")
   nonce <- digest::digest(paste(review_id,sha,at,author,parent_version,sep=":"),algo="sha256",
                           serialize=FALSE)
   list(schema="lem-w04-prompt-v1",review_id=review_id,
