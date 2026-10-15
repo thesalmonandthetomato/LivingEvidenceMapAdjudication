@@ -3282,6 +3282,13 @@ server <- function(input, output, session) {
       return()
     }
     w04_subset_corpus_rv(result)
+    registered <- tryCatch(w04_subset_registry_read(result$review_id),error=function(e)e)
+    if(inherits(registered,"error")) {
+      w04_subset_corpus_rv(NULL)
+      w04_subset_status_rv(paste("Subset history could not be checked:",conditionMessage(registered)))
+      return()
+    }
+    w04_subsets_rv(registered)
     w04_subset_status_rv(sprintf("Verified %d eligible canonical records (lean SHA %s).",
       length(result$record_ids),substr(result$checkpoint_sha256,1,16)))
   })
@@ -3296,7 +3303,8 @@ server <- function(input, output, session) {
     if(is.null(corpus)) return(NULL)
     subsets <- Filter(function(x)identical(x$source_checkpoint_sha256,
       corpus$checkpoint_sha256),w04_subsets_rv())
-    choices <- c("Full eligible corpus"="","Unsampled remainder"="remainder")
+    choices <- c("Full eligible corpus"="full")
+    if(length(subsets)) choices <- c(choices,"Unsampled remainder"="remainder")
     if(length(subsets)) {
       ids <- vapply(subsets,function(x)x$subset_id,character(1))
       choices <- c(choices,stats::setNames(ids,paste0("Child of ",ids)))
@@ -3317,18 +3325,20 @@ server <- function(input, output, session) {
       previous <- w04_subset_registry_read(corpus$review_id)
       matching <- Filter(function(x) identical(x$source_checkpoint_sha256,
         corpus$checkpoint_sha256),previous)
-      origin <- as.character(input$w04_subset_source %||% "")
+      origin <- as.character(input$w04_subset_source %||% "full")
+      if(!length(matching) && !identical(origin,"full"))
+        stop("The first subset must be sampled from the full eligible corpus",call.=FALSE)
       parent <- NULL
       pool <- corpus$record_ids
       if(identical(origin,"remainder")) {
         pool <- w04_subset_pool_remainder(pool,matching)
-      } else if(nzchar(origin)) {
+      } else if(!identical(origin,"full")) {
         hits <- Filter(function(x)identical(x$subset_id,origin),matching)
         if(length(hits)!=1L) stop("Selected parent subset is unavailable",call.=FALSE)
         parent <- hits[[1L]]
       }
       subset <- w04_subset_create(corpus$review_id,pool,
-        size=as.integer(input$w04_subset_size),seed=as.integer(input$w04_subset_seed),
+        size=as.integer(input$w04_subset_size),seed=sample.int(.Machine$integer.max,1L),
         parent=parent,source_checkpoint_sha256=corpus$checkpoint_sha256,
         created_by=session_reviewer_id(),existing=previous)
       w04_subset_registry_append(subset)
@@ -3697,7 +3707,6 @@ server <- function(input, output, session) {
                     style="display:none;",class="saved-note","Verifying W02/W03 corpus provenance…"),
                   uiOutput("w04_subset_parent_select"),
                   numericInput("w04_subset_size","Number of records",value=100,min=1,step=1),
-                  numericInput("w04_subset_seed","Random seed",value=12345,min=0,step=1),
                   uiOutput("w04_subset_create_control"),
                   textOutput("w04_subset_registry_status"),
                   uiOutput("w04_subset_registry_history"))
