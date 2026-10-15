@@ -3406,6 +3406,18 @@ server <- function(input, output, session) {
     w04_subset_status_rv(msg)
     showNotification(msg,type="message",duration=12)
   })
+  output$w04_subset_verification_state <- renderUI({
+    corpus <- w04_subset_corpus_rv()
+    if(is.null(corpus)) return(tags$p(class="saved-note","Not yet verified in this session. Complete Step 1 before preparing a queue."))
+    tags$p(class="saved-note",sprintf("Verified: %d eligible records. You can continue to Steps 2 and 3.",length(corpus$record_ids)))
+  })
+  output$w04_subset_prepare_control <- renderUI({
+    ready <- !is.null(w04_subset_corpus_rv()) && length(w04_subsets_rv())>0L
+    if(!ready) return(tags$p(class="saved-note","Queue preparation becomes available after corpus verification and subset registration."))
+    actionButton("w04_subset_prepare_queue","3. Prepare manual screening queue",
+      class="btn-outline-primary btn-sm",
+      onclick="window.lemBusyStart('w04_subset_prepare_queue','Preparing and verifying subset screening queue…')")
+  })
   output$w04_subset_queue_selector <- renderUI({
     subsets <- w04_subsets_rv()
     if(!length(subsets)) return(tags$p(class="saved-note","Register a subset before preparing screening."))
@@ -3824,26 +3836,32 @@ server <- function(input, output, session) {
               tags$details(class="assignment-disclosure",
                 tags$summary(tags$strong("Subsets and validation")),
                 div(class="px-3 pb-3",
-                  tags$p(class="saved-note","Subsets are tied to the published, review-specific W02/W03 corpus. Verify eligibility before saving immutable membership to the review registry."),
+                  tags$p(class="saved-note","Follow these steps in order. Corpus verification is required each session before creating subsets or preparing human-screening queues."),
+                  tags$h5("Step 1 · Verify the eligible corpus"),
+                  tags$p(class="saved-note","Check the review-specific W02/W03 source records. This does not run screening or modify records."),
+                  actionButton("w04_subset_load_corpus","1. Verify eligible corpus",class="btn-outline-primary btn-sm",
+                    onclick="window.lemBusyStart('w04_subset_load_corpus','Verifying W02/W03 corpus provenance…')"),
+                  tags$div(id="w04_subset_load_corpus_busy",role="status",`aria-live`="polite",
+                    style="display:none;",class="saved-note","Verifying W02/W03 corpus provenance…"),
+                  uiOutput("w04_subset_verification_state"),
+                  tags$hr(),
+                  tags$h5("Step 2 · Create or load a registered subset"),
                   actionButton("w04_subset_registry_refresh","Load registered subsets",class="btn-outline-secondary btn-sm",
                     onclick="window.lemBusyStart('w04_subset_registry_refresh','Loading review-specific subset registry…')"),
                   tags$div(id="w04_subset_registry_refresh_busy",role="status",`aria-live`="polite",
                     style="display:none;",class="saved-note","Loading review-specific subset registry…"),
-                  actionButton("w04_subset_load_corpus","Verify eligible corpus",class="btn-outline-primary btn-sm",
-                    onclick="window.lemBusyStart('w04_subset_load_corpus','Verifying W02/W03 corpus provenance…')"),
-                  tags$div(id="w04_subset_load_corpus_busy",role="status",`aria-live`="polite",
-                    style="display:none;",class="saved-note","Verifying W02/W03 corpus provenance…"),
                   uiOutput("w04_subset_parent_select"),
                   numericInput("w04_subset_size","Number of records",value=100,min=1,step=1),
                   uiOutput("w04_subset_create_control"),
-                  textOutput("w04_subset_registry_status"),
                   uiOutput("w04_subset_registry_history"),
+                  tags$hr(),
+                  tags$h5("Step 3 · Prepare a human-screening queue"),
+                  tags$p(class="saved-note","Choose a registered subset to assign to human reviewers. This does not launch an LLM run. Model execution will use the same subset registry separately."),
                   uiOutput("w04_subset_queue_selector"),
-                  actionButton("w04_subset_prepare_queue","Prepare manual screening queue",
-                    class="btn-outline-primary btn-sm",
-                    onclick="window.lemBusyStart('w04_subset_prepare_queue','Preparing and verifying subset screening queue…')"),
+                  uiOutput("w04_subset_prepare_control"),
                   tags$div(id="w04_subset_prepare_queue_busy",role="status",`aria-live`="polite",
-                    style="display:none;",class="saved-note","Preparing and verifying subset screening queue…"))
+                    style="display:none;",class="saved-note","Preparing and verifying subset screening queue…"),
+                  textOutput("w04_subset_registry_status")
               ),
               tags$details(class="assignment-disclosure",
                 tags$summary(tags$strong("Model execution")),
