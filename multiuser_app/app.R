@@ -213,8 +213,8 @@ highlight_screening_text <- function(text, include_terms = character(), exclude_
   split_highlight_entries <- function(values) {
     # Split literal commas and literal line breaks, never the letters r or n.
     entries <- unlist(strsplit(as.character(values), ",", fixed=TRUE),use.names=FALSE)
-    entries <- unlist(strsplit(gsub("\\r", "\\n", entries, fixed=TRUE),
-      "\\n", fixed=TRUE),use.names=FALSE)
+    entries <- unlist(strsplit(gsub(intToUtf8(13L), intToUtf8(10L),
+      entries, fixed=TRUE),intToUtf8(10L),fixed=TRUE),use.names=FALSE)
     entries <- trimws(entries)
     unique(entries[nzchar(entries)])
   }
