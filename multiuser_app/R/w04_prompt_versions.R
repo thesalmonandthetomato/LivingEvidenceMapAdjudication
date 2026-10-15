@@ -44,9 +44,9 @@ w04_prompt_from_upload <- function(path,filename) {
 w04_prompt_manifest <- function(versions) {
   lapply(versions,function(v) {
     z <- v
-    z$content <- NULL
     if(!identical(w04_prompt_checksum(v$content),v$sha256))
       stop("Prompt checksum mismatch",call.=FALSE)
+    z$content <- NULL
     z
   })
 }
