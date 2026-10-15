@@ -9873,25 +9873,6 @@ server <- function(input, output, session) {
             sprintf("%s%%",pct)))
   })
 
-  output$w04_screening_highlight_status <- renderText({
-    status <- as.character(w04_highlight_status_rv() %||% "")
-    if(!nzchar(status)) return("Highlight terms: not loaded")
-    z <- tryCatch(w04_current_case(),error=function(e)NULL)
-    if(is.null(z)) return(status)
-    b <- z$bibliographic %||% list()
-    fields <- c(b$title %||% "",b$abstract %||% "",b$keywords %||% "")
-    rendered <- paste(vapply(fields,function(x) {
-      as.character(htmltools::renderTags(highlight_screening_text(x,
-        w04_include_terms(),w04_exclude_terms()))$html)
-    },character(1)),collapse="")
-    count_marker <- function(marker) {
-      hits <- gregexpr(marker,rendered,fixed=TRUE)[[1L]]
-      if(identical(hits[[1L]],-1L)) 0L else length(hits)
-    }
-    sprintf("%s Visible matching check: %d green, %d red.",
-      status,count_marker('class="screen-include"'),
-      count_marker('class="screen-exclude"'))
-  })
   output$w04_case_view <- renderUI({
     z <- w04_current_case()
     b <- z$bibliographic %||% list()
@@ -9904,7 +9885,7 @@ server <- function(input, output, session) {
           tags$strong("Title and abstract screening"),
           tags$span(class="task-badge",sprintf("Random order %s",z$random_order %||% w04_idx()))
         ),
-        tags$div(class="small text-secondary mt-1",textOutput("w04_screening_highlight_status",inline=TRUE))
+        NULL
       ),
       div(
         class="compact-record-body w04-text",
