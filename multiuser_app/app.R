@@ -3292,7 +3292,15 @@ server <- function(input, output, session) {
       return()
     }
     w04_prompt_versions_rv(result)
-    w04_prompt_status_rv(sprintf("%d immutable archived W04 prompt versions loaded.",length(result)))
+    if(length(result)) {
+      timestamps <- vapply(result,function(v)as.character(v$created_at_utc %||% ""),character(1))
+      latest <- result[[order(timestamps,decreasing=TRUE)[[1L]]]]
+      updateTextAreaInput(session,"w04_prompt_text",value=latest$content)
+      w04_prompt_status_rv(paste("Loaded latest archived prompt into editor:",latest$version_id,
+        sprintf("(%d archived versions available).",length(result))))
+    } else {
+      w04_prompt_status_rv("No archived W04 prompt versions found.")
+    }
   })
   observeEvent(input$w04_prompt_save,{
     req(authenticated())
@@ -3538,7 +3546,7 @@ server <- function(input, output, session) {
                     tags$span(class="spinner-border spinner-border-sm me-2",role="status"),
                     "Saving and verifying prompt in Zenodo…"),
                   tags$script(HTML("if(window.Shiny&&!window.w04PromptFeedbackInstalled){window.w04PromptFeedbackInstalled=true;Shiny.addCustomMessageHandler('w04_prompt_feedback',function(x){var b=document.getElementById('w04_prompt_save');if(b){b.disabled=false;b.textContent='Save immutable draft';}var s=document.getElementById('w04_prompt_progress');if(s){s.style.display='none';} });}")),
-                  actionButton("w04_prompt_refresh","Load archive",class="btn-outline-secondary btn-sm"),
+                  actionButton("w04_prompt_refresh","Load latest prompt",class="btn-outline-secondary btn-sm"),
                   textOutput("w04_prompt_archive_status"),
                   uiOutput("w04_prompt_archive_history")
                 )
