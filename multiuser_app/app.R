@@ -3699,7 +3699,7 @@ server <- function(input, output, session) {
   output$configure_review <- renderUI({
     req(authenticated())
     if (!identical(as.character(current_user()$role %||% ""),"administrator")) return(NULL)
-    if (!session_can("run_search_scoping")) return(NULL)
+    # Administrator access controls this menu; individual operations retain their own permission checks.
 
     request_active <- nzchar(as.character(search_scope_request_id_rv() %||% ""))
     counts_resolved <- search_scope_counts_resolved()
