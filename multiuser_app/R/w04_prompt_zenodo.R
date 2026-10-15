@@ -8,7 +8,9 @@ w04_prompt_zenodo_request <- function(endpoint, method="GET", body=NULL, file=NU
   req <- httr2::req_headers(httr2::request(endpoint),
     Authorization=paste("Bearer",token))
   req <- httr2::req_method(req,method)
-  if(!is.null(body)) req <- httr2::req_body_json(req,body,auto_unbox=TRUE)
+  if(identical(method,"POST") && is.list(body) && length(body)==0L) {
+    req <- httr2::req_body_raw(req,charToRaw("{}"),type="application/json")
+  } else if(!is.null(body)) req <- httr2::req_body_json(req,body,auto_unbox=TRUE)
   if(!is.null(file)) req <- httr2::req_body_file(req,file)
   resp <- httr2::req_perform(httr2::req_error(httr2::req_timeout(req,120),
     is_error=function(resp)FALSE))
