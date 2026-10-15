@@ -16,6 +16,7 @@ source("R/w04_validation_lifecycle.R", local = TRUE)
 source("R/w04_kappa_registry.R", local = TRUE)
 source("R/w04_human_kappa_registry.R", local = TRUE)
 source("R/w04_prompt_versions.R", local = TRUE)
+source("R/w04_prompt_zenodo.R", local = TRUE)
 source("R/storage_local.R", local = TRUE)
 source("R/storage_sheets.R", local = TRUE)
 source("R/storage_backend.R", local = TRUE)
@@ -996,6 +997,8 @@ server <- function(input, output, session) {
   w02_status <- reactiveVal("")
   w02_resume_requested_rv <- reactiveVal(FALSE)
 
+  w04_prompt_status_rv <- reactiveVal("")
+  w04_prompt_versions_rv <- reactiveVal(list())
   w04_all_cases_rv <- reactiveVal(list())
   w04_cases_rv <- reactiveVal(NULL)
   w04_queue_sha_rv <- reactiveVal("")
@@ -3253,6 +3256,69 @@ server <- function(input, output, session) {
     if (!identical(query,search_scope_string_rv())) search_scope_string_rv(query)
   },ignoreInit=TRUE)
 
+  output$w04_prompt_archive_status <- renderText(w04_prompt_status_rv())
+  output$w04_prompt_archive_history <- renderUI({
+    versions <- w04_prompt_versions_rv()
+    if(!length(versions)) return(tags$p(class="saved-note","No archived versions loaded."))
+    tags$ul(lapply(rev(versions),function(v) tags$li(
+      tags$strong(as.character(v$version_id)),
+      paste(" · ",v$status," · ",v$created_at_utc," · ",v$author,
+        " · SHA-256 ",substr(v$sha256,1,16))
+    )))
+  })
+  observeEvent(input$w04_prompt_upload,{
+    req(authenticated())
+    if(!session_can("control_workflows")) return()
+    uploaded <- input$w04_prompt_upload
+    req(uploaded)
+    result <- tryCatch(w04_prompt_from_upload(uploaded$datapath,uploaded$name),
+      error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_prompt_status_rv(paste("Prompt import failed:",conditionMessage(result)))
+      return()
+    }
+    updateTextAreaInput(session,"w04_prompt_text",value=result)
+    w04_prompt_status_rv("Prompt extracted into editor. Not saved to Zenodo.")
+  })
+  observeEvent(input$w04_prompt_refresh,{
+    req(authenticated())
+    if(!session_can("control_workflows")) return()
+    result <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      w04_prompt_archive_versions(meta)
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_prompt_status_rv(paste("Could not load W04 archive:",conditionMessage(result)))
+      return()
+    }
+    w04_prompt_versions_rv(result)
+    w04_prompt_status_rv(sprintf("%d immutable archived W04 prompt versions loaded.",length(result)))
+  })
+  observeEvent(input$w04_prompt_save,{
+    req(authenticated())
+    if(!session_can("control_workflows")||
+       !identical(as.character(current_user()$role),"administrator")) return()
+    result <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      existing <- w04_prompt_archive_versions(meta)
+      prompt <- as.character(input$w04_prompt_text %||% "")
+      filename <- if(!is.null(input$w04_prompt_upload))
+        as.character(input$w04_prompt_upload$name) else ""
+      version <- w04_prompt_version(meta$review_id,prompt,session_reviewer_id(),
+        filename=filename,notes=as.character(input$w04_prompt_change_notes %||% ""),
+        status="draft")
+      w04_prompt_archive_save(meta,version)
+      refreshed <- w04_prompt_archive_versions(w04_prompt_review_metadata())
+      list(id=version$version_id,versions=refreshed)
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_prompt_status_rv(paste("Prompt was not confirmed saved:",conditionMessage(result)))
+      return()
+    }
+    w04_prompt_versions_rv(result$versions)
+    w04_prompt_status_rv(paste("Verified restricted Zenodo draft version:",result$id))
+  })
+
   output$configure_review <- renderUI({
     req(authenticated())
     if (!session_can("run_search_scoping")) return(NULL)
@@ -3443,6 +3509,35 @@ server <- function(input, output, session) {
               uiOutput("w02_launch_progress"),
               uiOutput("w02_launch_results"),
               uiOutput("w02_optional_pause_controls")
+            )
+          ),
+          tags$details(
+            class="assignment-disclosure",
+            `data-accordion-key`="configure-review-w04",
+            tags$summary(tags$strong("Relevance screening (W04)")),
+            div(class="px-3 pb-3",
+              tags$details(class="assignment-disclosure",
+                tags$summary(tags$strong("Prompt management")),
+                div(class="px-3 pb-3",
+                  tags$p(class="saved-note","Drafts are archived in a separate, restricted review-specific Zenodo deposit. Saving never launches model screening."),
+                  fileInput("w04_prompt_upload","Import prompt (TXT, Markdown, DOCX, PDF)",
+                    accept=c(".txt",".md",".docx",".pdf")),
+                  textAreaInput("w04_prompt_text","Prompt text",rows=12,width="100%"),
+                  textInput("w04_prompt_change_notes","Change notes"),
+                  actionButton("w04_prompt_save","Save immutable draft",class="btn-primary btn-sm"),
+                  actionButton("w04_prompt_refresh","Load archive",class="btn-outline-secondary btn-sm"),
+                  textOutput("w04_prompt_archive_status"),
+                  uiOutput("w04_prompt_archive_history")
+                )
+              ),
+              tags$details(class="assignment-disclosure",
+                tags$summary(tags$strong("Subsets and validation")),
+                div(class="px-3 pb-3 saved-note","Subset management is being implemented in Milestones 4–6. Existing screening and consistency interfaces remain available."),
+              ),
+              tags$details(class="assignment-disclosure",
+                tags$summary(tags$strong("Model execution")),
+                div(class="px-3 pb-3 saved-note","Experimental execution and approved production screening remain unavailable until Milestones 7–8.")
+              )
             )
           )
         )
