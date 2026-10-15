@@ -3461,6 +3461,10 @@ server <- function(input, output, session) {
     w04_batch_id_rv(q$batch_id)
     w04_batch_status_rv(q$batch_status %||% "active")
     w04_decisions(existing_decisions)
+    w04_manual_abstract_edits_rv(tryCatch(
+      active_sheet_w04_manual_abstract_edits(q$queue_sha256,session_reviewer_id()),
+      error=function(e){w04_manual_abstract_status_rv(paste("Abstract edits unavailable:",conditionMessage(e)));list()}))
+    w04_manual_abstract_edit_rv(FALSE)
     # Highlight configuration belongs to the review, not the loaded subset.
     # Preserve already loaded values; the login/configuration reader refreshes them.
     if(!is.null(w04_highlight_version_rv())) {
@@ -9900,7 +9904,7 @@ server <- function(input, output, session) {
       return(as.character(edit$abstract))
     z <- w04_current_case()
     original <- (z$bibliographic %||% list())[["abstract"]] %||% ""
-    if(grepl("^pending_workflow[0-9]+\\\\s*;\\\\s*[0-9]+$",trimws(as.character(original)),ignore.case=TRUE))
+    if(grepl("^pending_workflow[0-9]+[[:space:]]*;[[:space:]]*[0-9]+$",trimws(as.character(original)),ignore.case=TRUE))
       return("")
     as.character(original)
   })
