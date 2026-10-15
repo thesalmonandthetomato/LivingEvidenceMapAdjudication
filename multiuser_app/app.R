@@ -1241,28 +1241,24 @@ server <- function(input, output, session) {
   }
 
   load_w04_batch <- function() {
-    if (!identical(storage_backend(), "google_sheets")) return(NULL)
-
-    # A real pipeline W04 queue always takes precedence over synthetic test data.
-    production <- read_sheet_w04_queue()
-    if (!is.null(production)) return(production)
-
-    # The isolated W04 test queue is reloaded on fresh reviewer sessions only
-    # when its batch has active manual-screening assignments. This allows
-    # assigned reviewers to see their synthetic records without ever allowing
-    # test data to override a real pipeline queue.
-    test_tab <- Sys.getenv("LEM_W04_TEST_QUEUE_TAB", unset="queue_w04_test_active")
-    synthetic <- read_sheet_w04_queue_from_tab(test_tab)
-    if (is.null(synthetic)) return(NULL)
-
-    active_test_assignments <- active_assignments_for_batch(
-      assignment_registry_rv(),
-      "04",
-      synthetic$batch_id,
-      "manual_screening"
-    )
-    if (!length(active_test_assignments)) return(NULL)
-    synthetic
+    if(!identical(storage_backend(),"google_sheets")) return(NULL)
+    # Manual screening is sourced exclusively from registered subset batches.
+    # Legacy model/validation and synthetic queues remain untouched on disk,
+    # but are never automatically presented as manual-screening cases.
+    assignments <- assignment_registry_rv() %||% list()
+    user <- current_user()
+    if(is.null(user)) return(NULL)
+    meta <- w04_prompt_review_metadata()
+    registered <- w04_subset_registry_read(meta$review_id)
+    if(!length(registered)) return(NULL)
+    assigned <- Filter(function(s) {
+      batch <- paste0("w04-human-",s$subset_id)
+      length(assignments_for_user(assignments,"04",batch,
+        as.character(normalise_user_row(user)$user_id),"manual_screening"))>0L
+    },registered)
+    # Multiple batches must be explicitly selected, not silently conflated.
+    if(length(assigned)!=1L) return(NULL)
+    w04_subset_queue_read(assigned[[1L]]$subset_id,meta$review_id)
   }
 
   w04_resolution_decision_ids <- function(ds = w04_resolution_decisions()) {
