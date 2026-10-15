@@ -3530,8 +3530,8 @@ server <- function(input, output, session) {
     w04_highlight_version_rv(config)
     w04_include_terms(config$include)
     w04_exclude_terms(config$exclude)
-    w04_highlight_status_rv(sprintf("Highlight terms loaded: %d include, %d exclude.",
-      length(config$include),length(config$exclude)))
+    w04_highlight_status_rv(sprintf("Highlight terms loaded: include [%s]; exclude [%s].",
+      paste(config$include,collapse=", "),paste(config$exclude,collapse=", ")))
   }
   w04_reload_highlights <- function() {
     config <- tryCatch(w04_highlight_read(w04_prompt_review_metadata()),error=function(e)e)
