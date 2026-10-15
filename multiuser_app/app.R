@@ -999,6 +999,8 @@ server <- function(input, output, session) {
   w02_status <- reactiveVal("")
   w02_resume_requested_rv <- reactiveVal(FALSE)
 
+  w04_subset_status_rv <- reactiveVal("")
+  w04_subsets_rv <- reactiveVal(list())
   w04_prompt_status_rv <- reactiveVal("")
   w04_prompt_versions_rv <- reactiveVal(list())
   w04_all_cases_rv <- reactiveVal(list())
@@ -3258,6 +3260,32 @@ server <- function(input, output, session) {
     if (!identical(query,search_scope_string_rv())) search_scope_string_rv(query)
   },ignoreInit=TRUE)
 
+  output$w04_subset_registry_status <- renderText(w04_subset_status_rv())
+  output$w04_subset_registry_history <- renderUI({
+    subsets <- w04_subsets_rv()
+    if(!length(subsets)) return(tags$p(class="saved-note","No registered subsets loaded."))
+    tags$ul(lapply(subsets,function(s)tags$li(
+      tags$strong(as.character(s$subset_id)),
+      paste(" · ",s$actual_size,"records · seed ",s$random_seed,
+        " · checkpoint ",substr(s$source_checkpoint_sha256,1,12),
+        if(nzchar(s$parent_subset_id)) paste(" · child of",s$parent_subset_id) else "")
+    )))
+  })
+  observeEvent(input$w04_subset_registry_refresh,{
+    req(authenticated())
+    if(!session_can("control_workflows")) return()
+    result <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      w04_subset_registry_read(meta$review_id)
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_subset_status_rv(paste("Cannot load W04 subset registry:",conditionMessage(result)))
+      return()
+    }
+    w04_subsets_rv(result)
+    w04_subset_status_rv(sprintf("%d registered W04 subsets loaded.",length(result)))
+  })
+
   output$w04_prompt_archive_status <- renderText(w04_prompt_status_rv())
   output$w04_prompt_zenodo_link <- renderUI({
     req(authenticated())
@@ -3567,7 +3595,11 @@ server <- function(input, output, session) {
               ),
               tags$details(class="assignment-disclosure",
                 tags$summary(tags$strong("Subsets and validation")),
-                div(class="px-3 pb-3 saved-note","Subset management is being implemented in Milestones 4–6. Existing screening and consistency interfaces remain available.")
+                div(class="px-3 pb-3",
+                  tags$p(class="saved-note","Persistent subset registry is review-specific. Existing subsets can be inspected here. Creation is disabled until the complete eligible canonical corpus is verified."),
+                  actionButton("w04_subset_registry_refresh","Load registered subsets",class="btn-outline-secondary btn-sm"),
+                  textOutput("w04_subset_registry_status"),
+                  uiOutput("w04_subset_registry_history"))
               ),
               tags$details(class="assignment-disclosure",
                 tags$summary(tags$strong("Model execution")),
