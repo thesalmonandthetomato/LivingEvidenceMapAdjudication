@@ -27,4 +27,5 @@ jobs:
                     grepl('output$w04_subset_prepare_control <- renderUI',x,fixed=TRUE),
                     grepl('!is.null(w04_subset_corpus_rv())',x,fixed=TRUE),
                     grepl('uiOutput("w04_subset_prepare_control")',x,fixed=TRUE))
-          cat('PASS ordered W04 subset steps and prerequisite gating\n')
+          stopifnot(grepl('w04_all_cases_rv(q$cases)',x,fixed=TRUE),grepl('w04_batch_id_rv(q$batch_id)',x,fixed=TRUE))
+          cat('PASS ordered steps and assignment activation\n')
