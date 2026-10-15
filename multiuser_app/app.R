@@ -7676,13 +7676,15 @@ server <- function(input, output, session) {
       chosen <- Filter(function(x)identical(x$subset_id,subset_id) &&
         identical(x$review_id,eligible$review_id),registry)
       if(length(chosen)!=1L) stop("Selected subset is not in this review registry",call.=FALSE)
-      cases <- w04_subset_queue_cases(chosen[[1L]],w04_all_cases_rv(),
+      prepared <- w04_subset_queue_read(subset_id,eligible$review_id)
+      if(is.null(prepared)) stop("Create the screening queue for this subset before assigning reviewers",call.=FALSE)
+      cases <- w04_subset_queue_cases(chosen[[1L]],prepared$cases,
         eligible$checkpoint_sha256)
       plan_w04_manual_assignment(
         cases = cases,
         assignments = assignment_registry_rv(),
         active_events = w04_active_assignment_events(),
-        batch_id = w04_batch_id_rv(),
+        batch_id = prepared$batch_id,
         user_ids = selected,
         review_mode = review_mode,
         allocation_type = type,
