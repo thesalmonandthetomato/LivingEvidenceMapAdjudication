@@ -1,0 +1,31 @@
+name: Temporary W04 persistence validation
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/temporary-w04-persistence-validation.yml']
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Check W04 persistence syntax and verification contract
+        shell: Rscript {0}
+        run: |
+          parse(file='multiuser_app/R/storage_sheets.R')
+          parse(file='multiuser_app/app.R')
+          src <- paste(readLines('multiuser_app/R/storage_sheets.R',warn=FALSE),collapse='\n')
+          start <- regexpr('append_w04_decision_to_tab <- function',src,fixed=TRUE)[1]
+          end <- regexpr('append_sheet_w04_decision <- function',src,fixed=TRUE)[1]
+          stopifnot(start>0,end>start)
+          body <- substr(src,start,end-1L)
+          stopifnot(grepl('sheet_append(ss,data=row,sheet=tab)',body,fixed=TRUE))
+          stopifnot(grepl('cell_cols("A")',body,fixed=TRUE))
+          stopifnot(grepl('sum(as.character(written_ids$decision_id)==decision_id,na.rm=TRUE)!=1L',body,fixed=TRUE))
+          stopifnot(grepl('normalise_saved_decision_event(',body,fixed=TRUE))
+          cat('PASS W04 source parsing and decision append verification structure\n')
