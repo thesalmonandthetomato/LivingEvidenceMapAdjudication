@@ -1089,6 +1089,101 @@ append_sheet_w04_resolution_abstract_edit <- function(edit, prior_edit=NULL) {
   as.list(hit[1,,drop=FALSE])
 }
 
+# Manual-screening abstract corrections use a separate append-only log.
+w04_manual_abstract_edit_tab <- function() {
+  Sys.getenv("LEM_W04_MANUAL_ABSTRACT_EDIT_TAB", unset = "w04_manual_abstract_edits")
+}
+
+read_sheet_w04_manual_abstract_edit_log <- function() {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w04_manual_abstract_edit_tab()
+  if (!tab %in% sheet_names_cached(ss)) return(list())
+  x <- googlesheets4::read_sheet(ss, sheet=tab, col_types="c")
+  if (!nrow(x)) return(list())
+  lapply(seq_len(nrow(x)), function(i) as.list(x[i,,drop=FALSE]))
+}
+
+active_sheet_w04_manual_abstract_edits <- function(queue_sha256 = "", reviewer = "") {
+  rows <- read_sheet_w04_manual_abstract_edit_log()
+  if (!length(rows)) return(list())
+  sha <- tolower(as.character(queue_sha256 %||% ""))
+  if (nzchar(sha)) {
+    rows <- Filter(
+      function(x) identical(tolower(as.character(x$queue_sha256 %||% "")), sha),
+      rows
+    )
+  }
+  reviewer <- as.character(reviewer %||% "")
+  if(nzchar(reviewer)) rows <- Filter(function(x)
+    identical(as.character(x$reviewer %||% ""),reviewer),rows)
+  if (!length(rows)) return(list())
+  keys <- vapply(rows, function(x) paste(
+    tolower(as.character(x$queue_sha256 %||% "")),
+    as.character(x$review_case_id %||% ""),
+    as.character(x$reviewer %||% ""), sep="::"
+  ), character(1))
+  tm <- vapply(rows, function(x) as.character(x$saved_at_utc %||% ""), character(1))
+  ord <- order(tm, seq_along(rows), decreasing=TRUE)
+  rows <- rows[ord]
+  keys <- keys[ord]
+  rows[!duplicated(keys)]
+}
+
+append_sheet_w04_manual_abstract_edit <- function(edit, prior_edit=NULL) {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- w04_manual_abstract_edit_tab()
+  tabs <- sheet_names_cached(ss)
+  cols <- c(
+    "edit_id","review_case_id","record_id","abstract","reviewer",
+    "saved_at_utc","queue_sha256","supersedes_edit_id"
+  )
+  if (!tab %in% tabs) {
+    sheet_add_cached(ss, tab)
+    empty <- as.data.frame(
+      setNames(replicate(length(cols), character(), simplify=FALSE), cols),
+      stringsAsFactors=FALSE
+    )
+    googlesheets4::sheet_write(empty, ss=ss, sheet=tab)
+  }
+
+  review_case_id <- as.character(edit$review_case_id %||% "")
+  record_id <- as.character(edit$record_id %||% "")
+  reviewer <- as.character(edit$reviewer %||% "")
+  abstract <- trimws(as.character(edit$abstract %||% ""))
+  queue_sha <- tolower(as.character(edit$queue_sha256 %||% ""))
+  if (!nzchar(review_case_id) || !nzchar(record_id)) stop("W04 abstract edit is missing record identity", call.=FALSE)
+  if (!nzchar(reviewer)) stop("W04 abstract edit is missing reviewer", call.=FALSE)
+  if (!nzchar(abstract)) stop("W04 abstract edit must not be empty", call.=FALSE)
+  if (!grepl("^[0-9a-f]{64}$",queue_sha)) stop("W04 abstract edit has invalid queue SHA-256", call.=FALSE)
+
+  saved_at <- as.character(edit$saved_at_utc %||% format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"))
+  edit_id <- paste0("w04-abs-", substr(digest::digest(
+    paste(review_case_id, record_id, abstract, reviewer, saved_at, queue_sha, sep="|"),
+    algo="sha256", serialize=FALSE
+  ),1L,24L))
+  supersedes <- if (is.null(prior_edit)) "" else as.character(prior_edit$edit_id %||% "")
+
+  row <- data.frame(
+    edit_id=edit_id,
+    review_case_id=review_case_id,
+    record_id=record_id,
+    abstract=abstract,
+    reviewer=reviewer,
+    saved_at_utc=saved_at,
+    queue_sha256=queue_sha,
+    supersedes_edit_id=supersedes,
+    stringsAsFactors=FALSE
+  )
+  googlesheets4::sheet_append(ss, data=row, sheet=tab)
+
+  verify <- googlesheets4::read_sheet(ss, sheet=tab, col_types="c")
+  hit <- verify[as.character(verify$edit_id)==edit_id,,drop=FALSE]
+  if (nrow(hit)!=1L) stop("W04 abstract edit write could not be verified", call.=FALSE)
+  as.list(hit[1,,drop=FALSE])
+}
+
 w04_resolution_decision_tab <- function() {
   Sys.getenv("LEM_W04_RESOLUTION_DECISION_TAB", unset = "decisions_w04_resolution")
 }
