@@ -90,7 +90,7 @@ w04_prompt_fetch_draft <- function(meta) {
   id <- w04_prompt_draft_id(meta)
   if(!nzchar(id)) return(NULL)
   x <- w04_prompt_zenodo_request(w04_prompt_deposit_endpoint(id))
-  if(!identical(as.character(x$submitted), "FALSE") && isTRUE(x$submitted))
+  if(isTRUE(x$submitted))
     stop("W04 prompt archive is already published",call.=FALSE)
   expected <- paste("Living Evidence Map W04 prompt development |",meta$review_id)
   if(!identical(as.character(x$metadata$title),expected))
@@ -148,5 +148,31 @@ w04_prompt_archive_save <- function(meta,version) {
     w04_prompt_archive_versions(w04_prompt_review_metadata()))
   if(length(matches)!=1L||!identical(matches[[1]]$sha256,version$sha256))
     stop("W04 prompt upload was not verified; reconcile before retrying",call.=FALSE)
+  # Rebuild the manifest from verified, immutable archived versions.
+  current <- w04_prompt_archive_versions(w04_prompt_review_metadata())
+  manifest <- list(schema="lem-w04-prompt-manifest-v1",review_id=meta$review_id,
+                   deposition_id=id,versions=w04_prompt_manifest(current))
+  manifest_path <- tempfile(fileext=".json")
+  on.exit(unlink(manifest_path),add=TRUE)
+  writeLines(jsonlite::toJSON(manifest,auto_unbox=TRUE,pretty=TRUE,null="null"),
+    manifest_path,useBytes=TRUE)
+  w04_prompt_zenodo_request(paste0(bucket,"/manifest.json"),"PUT",
+    file=manifest_path,expected=c(200L,201L))
+  verify <- w04_prompt_fetch_draft(w04_prompt_review_metadata())
+  manifest_files <- Filter(function(x) identical(as.character(x$filename),"manifest.json"),
+    verify$files %||% list())
+  if(length(manifest_files)!=1L)
+    stop("W04 draft prompt manifest was not listed after upload",call.=FALSE)
+  url <- as.character(manifest_files[[1L]]$links$download %||% "")
+  req <- httr2::req_headers(httr2::request(url),
+    Authorization=paste("Bearer",Sys.getenv("ZENODO_ACCESS_TOKEN",unset="")))
+  resp <- httr2::req_perform(req)
+  if(httr2::resp_status(resp)!=200L) stop("Could not verify W04 prompt manifest",call.=FALSE)
+  observed <- jsonlite::fromJSON(httr2::resp_body_string(resp),simplifyVector=FALSE)
+  found <- Filter(function(x) identical(x$version_id,version$version_id),
+    observed$versions %||% list())
+  if(!identical(observed$review_id,meta$review_id)||length(found)!=1L||
+     !identical(found[[1]]$sha256,version$sha256))
+    stop("W04 manifest verification failed",call.=FALSE)
   invisible(version$version_id)
 }
