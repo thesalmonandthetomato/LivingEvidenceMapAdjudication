@@ -7809,7 +7809,7 @@ server <- function(input, output, session) {
       if(is.null(prepared)) stop("Create the screening queue for this subset before assigning reviewers",call.=FALSE)
       cases <- w04_subset_queue_cases(chosen[[1L]],prepared$cases,
         eligible$checkpoint_sha256)
-      plan_w04_manual_assignment(
+      plan <- plan_w04_manual_assignment(
         cases = cases,
         assignments = assignment_registry_rv(),
         active_events = w04_active_assignment_events(),
@@ -7819,12 +7819,15 @@ server <- function(input, output, session) {
         allocation_type = type,
         amount = amount
       )
+      plan$subset_batch_id <- prepared$batch_id
+      plan
       }, error=function(e) list(error=conditionMessage(e)))
   })
   output$w04_assignment_preview <- renderUI({
     req(authenticated())
     workflow_assignment_preview(
-      w04_assignment_plan(), "w04", "04", w04_batch_id_rv(),
+      w04_assignment_plan(), "w04", "04",
+      as.character(w04_assignment_plan()$subset_batch_id %||% ""),
       "manual_screening", w04_active_assignment_events()
     )
   })
