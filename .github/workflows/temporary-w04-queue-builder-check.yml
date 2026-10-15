@@ -1,0 +1,46 @@
+name: Temporary W04 human queue builder check
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/temporary-w04-queue-builder-check.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Validate immutable subset queue construction
+        shell: Rscript {0}
+        run: |
+          install.packages(c('digest','jsonlite'),repos='https://cloud.r-project.org')
+          paths <- c('multiuser_app/app.R','multiuser_app/R/w04_subset_queue_builder.R',
+                     'multiuser_app/R/w04_subset_queue_storage.R')
+          for(p in paths) parse(file=p)
+          source('multiuser_app/R/w04_subset_registry.R')
+          source('multiuser_app/R/w04_subset_queue_builder.R')
+          source('multiuser_app/R/w04_subset_queue_storage.R')
+          sha <- paste(rep('a',64),collapse='')
+          ids <- paste0('c',1:10)
+          subset <- w04_subset_create('almeria-map',ids,4,91,
+             source_checkpoint_sha256=sha,created_by='tester')
+          records <- vapply(ids,function(id)jsonlite::toJSON(
+             list(identity=list(record_id=id),canonical=list(
+             title=paste('Title',id),abstract=paste('Abstract',id),doi=paste0('10.1/',id))),
+             auto_unbox=TRUE),character(1))
+          q <- w04_subset_screening_build(subset,records,sha)
+          rows <- w04_subset_screening_rows(q)
+          stopifnot(nrow(rows)==4L,identical(vapply(q$cases,function(x)x$record_id,character(1)),subset$record_ids))
+          stopifnot(all(vapply(q$cases,function(x)is.null(x$screening),logical(1))))
+          stopifnot(length(unique(rows$review_case_id))==4L,
+                    identical(q$queue_sha256,w04_subset_screening_build(subset,records,sha)$queue_sha256))
+          stopifnot(inherits(try(w04_subset_screening_build(subset,records,'other'),silent=TRUE),'try-error'))
+          missing <- records[-1L]
+          if(ids[[1L]]%in%subset$record_ids)
+            stopifnot(inherits(try(w04_subset_screening_build(subset,missing,sha),silent=TRUE),'try-error'))
+          cat('PASS queue builder, checksum, membership, no model decisions and R syntax\n')
