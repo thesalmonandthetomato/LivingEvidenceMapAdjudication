@@ -17,6 +17,7 @@ source("R/w04_kappa_registry.R", local = TRUE)
 source("R/w04_human_kappa_registry.R", local = TRUE)
 source("R/w04_prompt_versions.R", local = TRUE)
 source("R/w04_prompt_zenodo.R", local = TRUE)
+source("R/w04_highlight_zenodo.R", local = TRUE)
 source("R/w04_subset_registry.R", local = TRUE)
 source("R/w04_subset_storage.R", local = TRUE)
 source("R/w04_subset_eligible.R", local = TRUE)
@@ -1021,6 +1022,8 @@ server <- function(input, output, session) {
   w04_note_status <- reactiveVal("")
   w04_batch_status_rv <- reactiveVal("")
   w04_status <- reactiveVal("")
+  w04_highlight_status_rv <- reactiveVal("")
+  w04_highlight_version_rv <- reactiveVal(NULL)
   w04_include_terms <- reactiveVal(character())
   w04_exclude_terms <- reactiveVal(character())
   w04_consistency_analyses_rv <- reactiveVal(list())
@@ -3415,8 +3418,8 @@ server <- function(input, output, session) {
     w04_batch_id_rv(q$batch_id)
     w04_batch_status_rv(q$batch_status %||% "active")
     w04_decisions(existing_decisions)
-    w04_include_terms(character())
-    w04_exclude_terms(character())
+    w04_include_terms(if(is.null(w04_highlight_version_rv())) character() else unlist(w04_highlight_version_rv()$include,use.names=FALSE))
+    w04_exclude_terms(if(is.null(w04_highlight_version_rv())) character() else unlist(w04_highlight_version_rv()$exclude,use.names=FALSE))
     w04_idx(1L)
     msg <- sprintf("%s screening queue %s with %d records. It is now active under W04 Manual screening → Manage assignments.",
       if(isTRUE(result$created))"Created" else "Loaded",q$batch_id,length(q$cases))
@@ -3504,13 +3507,68 @@ server <- function(input, output, session) {
     w04_queue_sha_rv(q$queue_sha256)
     w04_batch_id_rv(q$batch_id)
     w04_batch_status_rv(q$batch_status %||% "active")
-    w04_include_terms(character())
-    w04_exclude_terms(character())
+    w04_include_terms(if(is.null(w04_highlight_version_rv())) character() else unlist(w04_highlight_version_rv()$include,use.names=FALSE))
+    w04_exclude_terms(if(is.null(w04_highlight_version_rv())) character() else unlist(w04_highlight_version_rv()$exclude,use.names=FALSE))
     w04_decisions(result$decisions)
     w04_idx(1L)
     w04_manual_queue_status_rv(sprintf("Loaded assigned subset %s (%d records).",q$subset_id,length(q$cases)))
   })
 
+  output$w04_highlight_status <- renderText(w04_highlight_status_rv())
+  w04_apply_highlight_version <- function(version) {
+    w04_highlight_version_rv(version)
+    if(is.null(version)) {
+      w04_include_terms(if(is.null(w04_highlight_version_rv())) character() else unlist(w04_highlight_version_rv()$include,use.names=FALSE))
+      w04_exclude_terms(if(is.null(w04_highlight_version_rv())) character() else unlist(w04_highlight_version_rv()$exclude,use.names=FALSE))
+    } else {
+      w04_include_terms(unlist(version$include,use.names=FALSE))
+      w04_exclude_terms(unlist(version$exclude,use.names=FALSE))
+    }
+  }
+  observeEvent(input$w04_highlight_load,{
+    on.exit(session$sendCustomMessage("lem_busy_finished",list(id="w04_highlight_load")),add=TRUE)
+    req(authenticated())
+    if(!identical(as.character(current_user()$role %||% ""),"administrator")) return()
+    z <- tryCatch(w04_highlight_latest(w04_prompt_review_metadata()),error=function(e)e)
+    if(inherits(z,"error")) {
+      w04_highlight_status_rv(paste("Could not load highlight terms:",conditionMessage(z)))
+      return()
+    }
+    w04_apply_highlight_version(z)
+    updateTextAreaInput(session,"w04_highlight_include",
+      value=if(is.null(z)) "" else paste(unlist(z$include,use.names=FALSE),collapse="\n"))
+    updateTextAreaInput(session,"w04_highlight_exclude",
+      value=if(is.null(z)) "" else paste(unlist(z$exclude,use.names=FALSE),collapse="\n"))
+    w04_highlight_status_rv(if(is.null(z)) "No archived highlight terms found." else
+      paste("Loaded and applied",z$version_id))
+  })
+  observeEvent(input$w04_highlight_save,{
+    on.exit(session$sendCustomMessage("lem_busy_finished",list(id="w04_highlight_save")),add=TRUE)
+    req(authenticated())
+    if(!identical(as.character(current_user()$role %||% ""),"administrator")) return()
+    z <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      version <- w04_highlight_version(meta,
+        as.character(input$w04_highlight_include %||% ""),
+        as.character(input$w04_highlight_exclude %||% ""),
+        session_reviewer_id())
+      w04_highlight_save(meta,version)
+      version
+    },error=function(e)e)
+    if(inherits(z,"error")) {
+      w04_highlight_status_rv(paste("Highlight terms were not saved:",conditionMessage(z)))
+      return()
+    }
+    w04_apply_highlight_version(z)
+    w04_highlight_status_rv(paste("Saved and applied",z$version_id))
+  })
+  observeEvent(authenticated(),{
+    if(!isTRUE(authenticated())||!identical(storage_backend(),"google_sheets")) return()
+    z <- tryCatch(w04_highlight_latest(w04_prompt_review_metadata()),error=function(e)e)
+    if(inherits(z,"error")) {
+      w04_highlight_status_rv(paste("Highlight archive unavailable:",conditionMessage(z)))
+    } else w04_apply_highlight_version(z)
+  },ignoreInit=TRUE)
   output$w04_subset_registry_status <- renderText(w04_subset_status_rv())
   output$w04_subset_registry_history <- renderUI({
     subsets <- w04_subsets_rv()
@@ -3630,6 +3688,7 @@ server <- function(input, output, session) {
 
   output$configure_review <- renderUI({
     req(authenticated())
+    if (!identical(as.character(current_user()$role %||% ""),"administrator")) return(NULL)
     if (!session_can("run_search_scoping")) return(NULL)
 
     request_active <- nzchar(as.character(search_scope_request_id_rv() %||% ""))
@@ -3848,6 +3907,23 @@ server <- function(input, output, session) {
                   textOutput("w04_prompt_archive_status"),
                   uiOutput("w04_prompt_archive_history"),
                   uiOutput("w04_prompt_zenodo_link")
+                )
+              ),
+              tags$details(class="assignment-disclosure",
+                tags$summary(tags$strong("Highlighted terms")),
+                div(class="px-3 pb-3",
+                  tags$p(class="saved-note","One term or phrase per line. Include terms appear green, exclude terms red in W04 titles, abstracts and keywords. Save immutable versions to the same restricted Zenodo draft as the screening prompt."),
+                  textAreaInput("w04_highlight_include","Terms for include (green)",rows=6,width="100%"),
+                  textAreaInput("w04_highlight_exclude","Terms for exclude (red)",rows=6,width="100%"),
+                  actionButton("w04_highlight_load","Load latest highlighted terms",
+                    class="btn-outline-secondary btn-sm",
+                    onclick="window.lemBusyStart('w04_highlight_load','Loading archived highlighted terms…')"),
+                  actionButton("w04_highlight_save","Save highlighted terms to Zenodo",
+                    class="btn-primary btn-sm",
+                    onclick="window.lemBusyStart('w04_highlight_save','Saving and verifying highlighted terms…')"),
+                  tags$div(id="w04_highlight_load_busy",role="status",style="display:none;","Loading highlighted terms…"),
+                  tags$div(id="w04_highlight_save_busy",role="status",style="display:none;","Saving highlighted terms…"),
+                  textOutput("w04_highlight_status")
                 )
               ),
               tags$details(class="assignment-disclosure",
@@ -8460,8 +8536,8 @@ server <- function(input, output, session) {
           w04_queue_sha_rv(w04_batch$queue_sha256)
           w04_batch_id_rv(w04_batch$batch_id)
           w04_batch_status_rv(w04_batch$batch_status %||% "")
-          w04_include_terms(w04_batch$highlight_include %||% character())
-          w04_exclude_terms(w04_batch$highlight_exclude %||% character())
+          w04_include_terms(if(is.null(w04_highlight_version_rv())) w04_batch$highlight_include %||% character() else unlist(w04_highlight_version_rv()$include,use.names=FALSE))
+          w04_exclude_terms(if(is.null(w04_highlight_version_rv())) w04_batch$highlight_exclude %||% character() else unlist(w04_highlight_version_rv()$exclude,use.names=FALSE))
           w04_decisions(w04_batch_decisions)
           w04_validation_finalize_requested_rv(
             tryCatch(
