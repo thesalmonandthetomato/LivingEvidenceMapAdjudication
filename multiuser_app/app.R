@@ -190,8 +190,9 @@ screening_green_terms <- c(
 screening_red_terms <- c("hatcheries")
 
 highlight_screening_text <- function(text, include_terms = character(), exclude_terms = character()) {
-  include_terms <- unique(c(as.character(include_terms), screening_green_terms))
-  exclude_terms <- unique(c(as.character(exclude_terms), screening_red_terms))
+  # Use only terms supplied by the active review's Google Sheets configuration.
+  include_terms <- unique(as.character(include_terms))
+  exclude_terms <- unique(as.character(exclude_terms))
   text <- normalise_display_text(text)
   if (!nzchar(text)) return("")
   terms <- c(
