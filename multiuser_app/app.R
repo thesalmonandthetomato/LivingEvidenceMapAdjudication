@@ -3257,6 +3257,17 @@ server <- function(input, output, session) {
   },ignoreInit=TRUE)
 
   output$w04_prompt_archive_status <- renderText(w04_prompt_status_rv())
+  output$w04_prompt_zenodo_link <- renderUI({
+    req(authenticated())
+    if(!session_can("control_workflows")) return(NULL)
+    meta <- tryCatch(w04_prompt_review_metadata(),error=function(e)NULL)
+    if(is.null(meta)) return(NULL)
+    id <- w04_prompt_draft_id(meta)
+    if(!nzchar(id)) return(tags$span(class="saved-note","No W04 Zenodo draft created yet."))
+    tags$a(href=paste0("https://zenodo.org/uploads/",id),
+      target="_blank",rel="noopener noreferrer",
+      paste("Open restricted W04 Zenodo draft",id))
+  })
   output$w04_prompt_archive_history <- renderUI({
     versions <- w04_prompt_versions_rv()
     if(!length(versions)) return(tags$p(class="saved-note","No archived versions loaded."))
@@ -3548,7 +3559,8 @@ server <- function(input, output, session) {
                   tags$script(HTML("if(window.Shiny&&!window.w04PromptFeedbackInstalled){window.w04PromptFeedbackInstalled=true;Shiny.addCustomMessageHandler('w04_prompt_feedback',function(x){var b=document.getElementById('w04_prompt_save');if(b){b.disabled=false;b.textContent='Save immutable draft';}var s=document.getElementById('w04_prompt_progress');if(s){s.style.display='none';} });}")),
                   actionButton("w04_prompt_refresh","Load latest prompt",class="btn-outline-secondary btn-sm"),
                   textOutput("w04_prompt_archive_status"),
-                  uiOutput("w04_prompt_archive_history")
+                  uiOutput("w04_prompt_archive_history"),
+                  uiOutput("w04_prompt_zenodo_link")
                 )
               ),
               tags$details(class="assignment-disclosure",
