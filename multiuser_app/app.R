@@ -3371,27 +3371,25 @@ server <- function(input, output, session) {
     if(!session_can("manage_assignments")) return()
     result <- withProgress(message="Preparing W04 manual screening",detail="Verifying canonical source and subset membership",value=0.1,{
       tryCatch({
-        corpus <- w04_subset_corpus_rv()
-        if(is.null(corpus)) stop("Verify the eligible corpus first",call.=FALSE)
+        meta <- w04_prompt_review_metadata()
         selected <- as.character(input$w04_subset_queue_selected %||% "")
-        registry <- w04_subset_registry_read(corpus$review_id)
-        matches <- Filter(function(x)identical(x$subset_id,selected) &&
-          identical(x$source_checkpoint_sha256,corpus$checkpoint_sha256),registry)
+        registry <- w04_subset_registry_read(meta$review_id)
+        matches <- Filter(function(x)identical(x$subset_id,selected),registry)
         if(length(matches)!=1L) stop("Select a valid registered subset",call.=FALSE)
-        existing <- w04_subset_queue_read(selected,corpus$review_id)
+        existing <- w04_subset_queue_read(selected,meta$review_id)
         if(!is.null(existing)) {
           list(queue=existing,created=FALSE)
         } else {
           pointers <- w04_subset_review_source_pointers()
-          if(!identical(pointers$review_id,corpus$review_id) ||
-             !identical(tolower(as.character(pointers$lean$lean_canonical_sha256)),corpus$checkpoint_sha256))
-            stop("Review source changed since corpus verification",call.=FALSE)
+          if(!identical(pointers$review_id,meta$review_id) ||
+             !identical(tolower(as.character(pointers$lean$lean_canonical_sha256)),matches[[1L]]$source_checkpoint_sha256))
+            stop("Archived source differs from saved subset provenance",call.=FALSE)
           incProgress(0.25,detail="Restoring checksum-verified canonical metadata")
           source <- w04_subset_verified_archive(pointers$lean,"lean")
-          queue <- w04_subset_screening_build(matches[[1L]],source,corpus$checkpoint_sha256)
+          queue <- w04_subset_screening_build(matches[[1L]],source,matches[[1L]]$source_checkpoint_sha256)
           incProgress(0.45,detail="Saving and verifying isolated subset queue")
-          w04_subset_queue_store(queue,corpus$review_id)
-          list(queue=w04_subset_queue_read(selected,corpus$review_id),created=TRUE)
+          w04_subset_queue_store(queue,meta$review_id)
+          list(queue=w04_subset_queue_read(selected,meta$review_id),created=TRUE)
         }
       },error=function(e)e)
     })
@@ -3431,8 +3429,8 @@ server <- function(input, output, session) {
     tags$p(class="saved-note",sprintf("Verified: %d eligible records. You can continue to Steps 2 and 3.",length(corpus$record_ids)))
   })
   output$w04_subset_prepare_control <- renderUI({
-    ready <- !is.null(w04_subset_corpus_rv()) && length(w04_subsets_rv())>0L
-    if(!ready) return(tags$p(class="saved-note","Queue preparation becomes available after corpus verification and subset registration."))
+    ready <- length(w04_subsets_rv())>0L
+    if(!ready) return(tags$p(class="saved-note","Load or create a registered subset to prepare a screening queue."))
     actionButton("w04_subset_prepare_queue","3. Prepare manual screening queue",
       class="btn-outline-primary btn-sm",
       onclick="window.lemBusyStart('w04_subset_prepare_queue','Preparing and verifying subset screening queue…')")
@@ -3855,8 +3853,8 @@ server <- function(input, output, session) {
               tags$details(class="assignment-disclosure",
                 tags$summary(tags$strong("Subsets and validation")),
                 div(class="px-3 pb-3",
-                  tags$p(class="saved-note","Follow these steps in order. Corpus verification is required each session before creating subsets or preparing human-screening queues."),
-                  tags$h5("Step 1 · Verify the eligible corpus"),
+                  tags$p(class="saved-note","Verify the eligible corpus only when creating a new subset. Existing registered subsets can be loaded, prepared and assigned without repeating verification."),
+                  tags$h5("New subsets · Verify eligible corpus"),
                   tags$p(class="saved-note","Check the review-specific W02/W03 source records. This does not run screening or modify records."),
                   actionButton("w04_subset_load_corpus","1. Verify eligible corpus",class="btn-outline-primary btn-sm",
                     onclick="window.lemBusyStart('w04_subset_load_corpus','Verifying W02/W03 corpus provenance…')"),
@@ -3864,7 +3862,7 @@ server <- function(input, output, session) {
                     style="display:none;",class="saved-note","Verifying W02/W03 corpus provenance…"),
                   uiOutput("w04_subset_verification_state"),
                   tags$hr(),
-                  tags$h5("Step 2 · Create or load a registered subset"),
+                  tags$h5("Select an existing subset or create a new one"),
                   actionButton("w04_subset_registry_refresh","Load registered subsets",class="btn-outline-secondary btn-sm",
                     onclick="window.lemBusyStart('w04_subset_registry_refresh','Loading review-specific subset registry…')"),
                   tags$div(id="w04_subset_registry_refresh_busy",role="status",`aria-live`="polite",
@@ -3874,7 +3872,7 @@ server <- function(input, output, session) {
                   uiOutput("w04_subset_create_control"),
                   uiOutput("w04_subset_registry_history"),
                   tags$hr(),
-                  tags$h5("Step 3 · Prepare a human-screening queue"),
+                  tags$h5("Prepare human screening from a registered subset"),
                   tags$p(class="saved-note","Choose a registered subset to assign to human reviewers. This does not launch an LLM run. Model execution will use the same subset registry separately."),
                   uiOutput("w04_subset_queue_selector"),
                   uiOutput("w04_subset_prepare_control"),
@@ -7839,16 +7837,14 @@ server <- function(input, output, session) {
     tryCatch({
       subset_id <- as.character(input$w04_assignment_subset_id %||% "")
       if(!nzchar(subset_id)) stop("Select a registered human-screening subset",call.=FALSE)
-      eligible <- w04_subset_corpus_rv()
-      if(is.null(eligible)) stop("Verify the eligible corpus before assigning a subset",call.=FALSE)
-      registry <- w04_subsets_rv()
-      chosen <- Filter(function(x)identical(x$subset_id,subset_id) &&
-        identical(x$review_id,eligible$review_id),registry)
+      meta <- w04_prompt_review_metadata()
+      registry <- w04_subset_registry_read(meta$review_id)
+      chosen <- Filter(function(x)identical(x$subset_id,subset_id),registry)
       if(length(chosen)!=1L) stop("Selected subset is not in this review registry",call.=FALSE)
-      prepared <- w04_subset_queue_read(subset_id,eligible$review_id)
+      prepared <- w04_subset_queue_read(subset_id,meta$review_id)
       if(is.null(prepared)) stop("Create the screening queue for this subset before assigning reviewers",call.=FALSE)
       cases <- w04_subset_queue_cases(chosen[[1L]],prepared$cases,
-        eligible$checkpoint_sha256)
+        chosen[[1L]]$source_checkpoint_sha256)
       subset_events <- w04_filter_batch_decisions(active_sheet_w04_decisions(),prepared$queue_sha256)
       plan <- plan_w04_manual_assignment(
         cases = cases,
