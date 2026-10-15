@@ -1240,13 +1240,12 @@ server <- function(input, output, session) {
     which(!ids %in% w04_decision_ids())
   }
 
-  load_w04_batch <- function() {
+  load_w04_batch <- function(user = current_user()) {
     if(!identical(storage_backend(),"google_sheets")) return(NULL)
     # Manual screening is sourced exclusively from registered subset batches.
     # Legacy model/validation and synthetic queues remain untouched on disk,
     # but are never automatically presented as manual-screening cases.
     assignments <- assignment_registry_rv() %||% list()
-    user <- current_user()
     if(is.null(user)) return(NULL)
     meta <- w04_prompt_review_metadata()
     registered <- w04_subset_registry_read(meta$review_id)
@@ -8396,7 +8395,7 @@ server <- function(input, output, session) {
           } else list()
         )
 
-        w04_batch <- load_w04_batch()
+        w04_batch <- load_w04_batch(login_user)
         if (!is.null(w04_batch) && identical(as.character(w04_batch$review_mode %||% ""), "resolution")) {
           w04_batch <- NULL
         }
