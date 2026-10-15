@@ -189,10 +189,26 @@ screening_green_terms <- c(
 
 screening_red_terms <- c("hatcheries")
 
+highlight_plural_variants <- function(term) {
+  term <- trimws(as.character(term))
+  if (!nzchar(term)) return(character())
+  # Only regular singular/plural forms. Never use substring matching.
+  if (grepl("[^aeiou]ies$", term, ignore.case=TRUE))
+    return(unique(c(term, sub("ies$", "y", term, ignore.case=TRUE))))
+  if (grepl("[^aeiou]y$", term, ignore.case=TRUE))
+    return(unique(c(term, paste0(sub("y$", "", term, ignore.case=TRUE), "ies"))))
+  if (grepl("(ch|sh|x|z|ss)es$", term, ignore.case=TRUE))
+    return(unique(c(term, sub("es$", "", term, ignore.case=TRUE))))
+  if (grepl("(ch|sh|x|z|ss)$", term, ignore.case=TRUE))
+    return(unique(c(term, paste0(term, "es"))))
+  if (grepl("s$", term, ignore.case=TRUE)) return(unique(c(term, sub("s$", "", term, ignore.case=TRUE))))
+  unique(c(term, paste0(term, "s")))
+}
+
 highlight_screening_text <- function(text, include_terms = character(), exclude_terms = character()) {
   # Use only terms supplied by the active review's Google Sheets configuration.
-  include_terms <- unique(as.character(include_terms))
-  exclude_terms <- unique(as.character(exclude_terms))
+  include_terms <- unique(unlist(lapply(as.character(include_terms), highlight_plural_variants), use.names=FALSE))
+  exclude_terms <- unique(unlist(lapply(as.character(exclude_terms), highlight_plural_variants), use.names=FALSE))
   text <- normalise_display_text(text)
   if (!nzchar(text)) return("")
   terms <- c(
