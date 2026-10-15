@@ -37,3 +37,5 @@ jobs:
           stopifnot(identical(w04_prompt_from_upload(txt,'prompt.txt'),'Synthetic prompt'))
           unlink(txt)
           cat('PASS W04 synthetic provenance, manifest and TXT upload tests\n')
+
+# Recheck final Zenodo manifest persistence module revision.
