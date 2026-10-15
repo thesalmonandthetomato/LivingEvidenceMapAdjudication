@@ -1,0 +1,29 @@
+name: Temporary W04 existing subset flow validation
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/temporary-w04-no-repeat-verification.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Verify existing-subset queue and reviewer assignment paths
+        shell: Rscript {0}
+        run: |
+          parse(file='multiuser_app/app.R')
+          x<-paste(readLines('multiuser_app/app.R',warn=FALSE),collapse='\n')
+          stopifnot(grepl('ready <- length(w04_subsets_rv())>0L',x,fixed=TRUE),
+                    grepl('registry <- w04_subset_registry_read(meta$review_id)',x,fixed=TRUE),
+                    grepl('w04_subset_screening_build(matches[[1L]],source,matches[[1L]]$source_checkpoint_sha256)',x,fixed=TRUE),
+                    grepl('w04_subset_queue_cases(chosen[[1L]],prepared$cases',x,fixed=TRUE),
+                    !grepl('Verify the eligible corpus before assigning a subset',x,fixed=TRUE),
+                    !grepl('Verify the eligible corpus first',x,fixed=TRUE))
+          cat('PASS existing subsets do not require repeated corpus verification\n')
