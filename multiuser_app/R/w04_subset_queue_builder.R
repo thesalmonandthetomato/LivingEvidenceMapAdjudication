@@ -36,7 +36,7 @@ w04_subset_screening_build <- function(subset,canonical_lines,checkpoint_sha256)
       random_order=as.integer(i),
       bibliographic=list(
         title=w04_subset_screening_first(c$title,r$title),
-        abstract=w04_subset_screening_first(c$abstract,r$abstract),
+        abstract=w04_subset_screening_first(c[["abstract"]],r[["abstract"]]),
         keywords=w04_subset_screening_first(c$keywords,r$keywords),
         journal=w04_subset_screening_first(c$source_title,c$journal,r$source_title,r$journal),
         authors=w04_subset_screening_first(c$authors,r$authors),
