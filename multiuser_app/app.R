@@ -3264,6 +3264,7 @@ server <- function(input, output, session) {
   },ignoreInit=TRUE)
 
   observeEvent(input$w04_subset_load_corpus,{
+    on.exit(session$sendCustomMessage("lem_busy_finished",list(id="w04_subset_load_corpus")),add=TRUE)
     req(authenticated())
     if(!session_can("control_workflows")) return()
     result <- withProgress(message="Verifying eligible W04 corpus",detail="Restoring restricted W02 and W03 archives",value=0.1,{
@@ -3355,6 +3356,7 @@ server <- function(input, output, session) {
     )))
   })
   observeEvent(input$w04_subset_registry_refresh,{
+    on.exit(session$sendCustomMessage("lem_busy_finished",list(id="w04_subset_registry_refresh")),add=TRUE)
     req(authenticated())
     if(!session_can("control_workflows")) return()
     result <- tryCatch({
@@ -3405,6 +3407,7 @@ server <- function(input, output, session) {
     w04_prompt_status_rv("Prompt extracted into editor. Not saved to Zenodo.")
   })
   observeEvent(input$w04_prompt_refresh,{
+    on.exit(session$sendCustomMessage("lem_busy_finished",list(id="w04_prompt_refresh")),add=TRUE)
     req(authenticated())
     if(!session_can("control_workflows")) return()
     result <- tryCatch({
@@ -3670,7 +3673,11 @@ server <- function(input, output, session) {
                     tags$span(class="spinner-border spinner-border-sm me-2",role="status"),
                     "Saving and verifying prompt in Zenodo…"),
                   tags$script(HTML("if(window.Shiny&&!window.w04PromptFeedbackInstalled){window.w04PromptFeedbackInstalled=true;Shiny.addCustomMessageHandler('w04_prompt_feedback',function(x){var b=document.getElementById('w04_prompt_save');if(b){b.disabled=false;b.textContent='Save immutable draft';}var s=document.getElementById('w04_prompt_progress');if(s){s.style.display='none';} });}")),
-                  actionButton("w04_prompt_refresh","Load latest prompt",class="btn-outline-secondary btn-sm"),
+                  tags$script(HTML("if(!window.lemBusyStart){window.lemBusyStart=function(id,msg){var b=document.getElementById(id);if(!b)return; b.dataset.originalLabel=b.textContent;b.disabled=true;b.textContent='Working…';var s=document.getElementById(id+'_busy');if(s){s.style.display='block';s.textContent=msg;}};}if(window.Shiny&&!window.lemBusyHandlerInstalled){window.lemBusyHandlerInstalled=true;Shiny.addCustomMessageHandler('lem_busy_finished',function(x){var b=document.getElementById(x.id);if(b){b.disabled=false;b.textContent=b.dataset.originalLabel||b.textContent;}var s=document.getElementById(x.id+'_busy');if(s)s.style.display='none';});}")),
+                  actionButton("w04_prompt_refresh","Load latest prompt",class="btn-outline-secondary btn-sm",
+                    onclick="window.lemBusyStart('w04_prompt_refresh','Retrieving latest archived prompt from Zenodo…')"),
+                  tags$div(id="w04_prompt_refresh_busy",role="status",`aria-live`="polite",
+                    style="display:none;",class="saved-note","Retrieving latest archived prompt from Zenodo…"),
                   textOutput("w04_prompt_archive_status"),
                   uiOutput("w04_prompt_archive_history"),
                   uiOutput("w04_prompt_zenodo_link")
@@ -3680,8 +3687,14 @@ server <- function(input, output, session) {
                 tags$summary(tags$strong("Subsets and validation")),
                 div(class="px-3 pb-3",
                   tags$p(class="saved-note","Subsets are tied to the published, review-specific W02/W03 corpus. Verify eligibility before saving immutable membership to the review registry."),
-                  actionButton("w04_subset_registry_refresh","Load registered subsets",class="btn-outline-secondary btn-sm"),
-                  actionButton("w04_subset_load_corpus","Verify eligible corpus",class="btn-outline-primary btn-sm"),
+                  actionButton("w04_subset_registry_refresh","Load registered subsets",class="btn-outline-secondary btn-sm",
+                    onclick="window.lemBusyStart('w04_subset_registry_refresh','Loading review-specific subset registry…')"),
+                  tags$div(id="w04_subset_registry_refresh_busy",role="status",`aria-live`="polite",
+                    style="display:none;",class="saved-note","Loading review-specific subset registry…"),
+                  actionButton("w04_subset_load_corpus","Verify eligible corpus",class="btn-outline-primary btn-sm",
+                    onclick="window.lemBusyStart('w04_subset_load_corpus','Verifying W02/W03 corpus provenance…')"),
+                  tags$div(id="w04_subset_load_corpus_busy",role="status",`aria-live`="polite",
+                    style="display:none;",class="saved-note","Verifying W02/W03 corpus provenance…"),
                   uiOutput("w04_subset_parent_select"),
                   numericInput("w04_subset_size","Number of records",value=100,min=1,step=1),
                   numericInput("w04_subset_seed","Random seed",value=12345,min=0,step=1),
