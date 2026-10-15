@@ -3379,25 +3379,32 @@ server <- function(input, output, session) {
           identical(x$source_checkpoint_sha256,corpus$checkpoint_sha256),registry)
         if(length(matches)!=1L) stop("Select a valid registered subset",call.=FALSE)
         existing <- w04_subset_queue_read(selected,corpus$review_id)
-        if(!is.null(existing)) return(list(queue=existing,created=FALSE))
-        pointers <- w04_subset_review_source_pointers()
-        if(!identical(pointers$review_id,corpus$review_id) ||
-           !identical(tolower(as.character(pointers$lean$lean_canonical_sha256)),corpus$checkpoint_sha256))
-          stop("Review source changed since corpus verification",call.=FALSE)
-        incProgress(0.25,detail="Restoring checksum-verified canonical metadata")
-        source <- w04_subset_verified_archive(pointers$lean,"lean")
-        queue <- w04_subset_screening_build(matches[[1L]],source,corpus$checkpoint_sha256)
-        incProgress(0.45,detail="Saving and verifying isolated subset queue")
-        w04_subset_queue_store(queue,corpus$review_id)
-        list(queue=w04_subset_queue_read(selected,corpus$review_id),created=TRUE)
+        if(!is.null(existing)) {
+          list(queue=existing,created=FALSE)
+        } else {
+          pointers <- w04_subset_review_source_pointers()
+          if(!identical(pointers$review_id,corpus$review_id) ||
+             !identical(tolower(as.character(pointers$lean$lean_canonical_sha256)),corpus$checkpoint_sha256))
+            stop("Review source changed since corpus verification",call.=FALSE)
+          incProgress(0.25,detail="Restoring checksum-verified canonical metadata")
+          source <- w04_subset_verified_archive(pointers$lean,"lean")
+          queue <- w04_subset_screening_build(matches[[1L]],source,corpus$checkpoint_sha256)
+          incProgress(0.45,detail="Saving and verifying isolated subset queue")
+          w04_subset_queue_store(queue,corpus$review_id)
+          list(queue=w04_subset_queue_read(selected,corpus$review_id),created=TRUE)
+        }
       },error=function(e)e)
     })
     if(inherits(result,"error")) {
-      w04_subset_status_rv(paste("Manual subset queue unavailable:",conditionMessage(result)))
+      msg <- paste("Manual subset queue unavailable:",conditionMessage(result))
+      w04_subset_status_rv(msg)
+      showNotification(msg,type="error",duration=NULL)
       return()
     }
-    w04_subset_status_rv(sprintf("%s screening queue %s with %d records. Assign reviewers in Manual screening.",
-      if(isTRUE(result$created))"Created" else "Loaded",result$queue$batch_id,length(result$queue$cases)))
+    msg <- sprintf("%s screening queue %s with %d records. Assign reviewers in Manual screening.",
+      if(isTRUE(result$created))"Created" else "Loaded",result$queue$batch_id,length(result$queue$cases))
+    w04_subset_status_rv(msg)
+    showNotification(msg,type="message",duration=12)
   })
   output$w04_subset_queue_selector <- renderUI({
     subsets <- w04_subsets_rv()
