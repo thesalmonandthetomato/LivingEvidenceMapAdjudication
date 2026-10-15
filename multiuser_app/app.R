@@ -3401,8 +3401,27 @@ server <- function(input, output, session) {
       showNotification(msg,type="error",duration=NULL)
       return()
     }
-    msg <- sprintf("%s screening queue %s with %d records. Assign reviewers in Manual screening.",
-      if(isTRUE(result$created))"Created" else "Loaded",result$queue$batch_id,length(result$queue$cases))
+    q <- result$queue
+    existing_decisions <- tryCatch(
+      w04_filter_batch_decisions(active_sheet_w04_decisions(),q$queue_sha256),
+      error=function(e)e)
+    if(inherits(existing_decisions,"error")) {
+      msg <- paste("Queue saved but could not activate assignment controls:",
+        conditionMessage(existing_decisions))
+      w04_subset_status_rv(msg)
+      showNotification(msg,type="error",duration=NULL)
+      return()
+    }
+    w04_all_cases_rv(q$cases)
+    w04_queue_sha_rv(q$queue_sha256)
+    w04_batch_id_rv(q$batch_id)
+    w04_batch_status_rv(q$batch_status %||% "active")
+    w04_decisions(existing_decisions)
+    w04_include_terms(character())
+    w04_exclude_terms(character())
+    w04_idx(1L)
+    msg <- sprintf("%s screening queue %s with %d records. It is now active under W04 Manual screening → Manage assignments.",
+      if(isTRUE(result$created))"Created" else "Loaded",q$batch_id,length(q$cases))
     w04_subset_status_rv(msg)
     showNotification(msg,type="message",duration=12)
   })
