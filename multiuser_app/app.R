@@ -266,7 +266,13 @@ highlight_screening_text <- function(text, include_terms = character(), exclude_
   cursor <- 1L
   for (x in chosen) {
     if (x$start > cursor) out[[length(out)+1L]] <- substr(text,cursor,x$start-1L)
-    out[[length(out)+1L]] <- tags$span(class=x$class,substr(text,x$start,x$end))
+    out[[length(out)+1L]] <- tags$span(
+      class=x$class,
+      style=if (identical(x$class,"screen-include"))
+        "background-color:#d9f2df!important;color:#145c2e!important;"
+      else "background-color:#fde0e0!important;color:#8b1e1e!important;",
+      substr(text,x$start,x$end)
+    )
     cursor <- x$end + 1L
   }
   if (cursor <= nchar(text)) out[[length(out)+1L]] <- substr(text,cursor,nchar(text))
@@ -9853,7 +9859,22 @@ server <- function(input, output, session) {
 
   output$w04_screening_highlight_status <- renderText({
     status <- as.character(w04_highlight_status_rv() %||% "")
-    if(!nzchar(status)) "Highlight terms: not loaded" else status
+    if(!nzchar(status)) return("Highlight terms: not loaded")
+    z <- tryCatch(w04_current_case(),error=function(e)NULL)
+    if(is.null(z)) return(status)
+    b <- z$bibliographic %||% list()
+    fields <- c(b$title %||% "",b$abstract %||% "",b$keywords %||% "")
+    rendered <- paste(vapply(fields,function(x) {
+      as.character(htmltools::renderTags(highlight_screening_text(x,
+        w04_include_terms(),w04_exclude_terms()))$html)
+    },character(1)),collapse="")
+    count_marker <- function(marker) {
+      hits <- gregexpr(marker,rendered,fixed=TRUE)[[1L]]
+      if(identical(hits[[1L]],-1L)) 0L else length(hits)
+    }
+    sprintf("%s Visible matching check: %d green, %d red.",
+      status,count_marker('class="screen-include"'),
+      count_marker('class="screen-exclude"'))
   })
   output$w04_case_view <- renderUI({
     z <- w04_current_case()
