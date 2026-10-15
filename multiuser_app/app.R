@@ -3266,11 +3266,15 @@ server <- function(input, output, session) {
   observeEvent(input$w04_subset_load_corpus,{
     req(authenticated())
     if(!session_can("control_workflows")) return()
-    result <- tryCatch({
-      pointers <- w04_subset_review_source_pointers()
-      eligible <- w04_subset_load_eligible(pointers$lean,pointers$w03)
-      c(eligible,list(review_id=pointers$review_id))
-    },error=function(e)e)
+    result <- withProgress(message="Verifying eligible W04 corpus",detail="Restoring restricted W02 and W03 archives",value=0.1,{
+      tryCatch({
+        pointers <- w04_subset_review_source_pointers()
+        incProgress(0.2,detail="Checking review-specific W02/W03 provenance")
+        eligible <- w04_subset_load_eligible(pointers$lean,pointers$w03)
+        incProgress(0.6,detail="Validating canonical record eligibility")
+        c(eligible,list(review_id=pointers$review_id))
+      },error=function(e)e)
+    })
     if(inherits(result,"error")) {
       w04_subset_corpus_rv(NULL)
       w04_subset_status_rv(paste("Eligible corpus could not be verified:",conditionMessage(result)))
@@ -3307,7 +3311,8 @@ server <- function(input, output, session) {
       w04_subset_status_rv("Verify the eligible canonical corpus before creating subsets.")
       return()
     }
-    result <- tryCatch({
+    result <- withProgress(message="Saving W04 subset",detail="Checking existing subset assignments",value=0.1,{
+      tryCatch({
       previous <- w04_subset_registry_read(corpus$review_id)
       matching <- Filter(function(x) identical(x$source_checkpoint_sha256,
         corpus$checkpoint_sha256),previous)
@@ -3328,7 +3333,8 @@ server <- function(input, output, session) {
       w04_subset_registry_append(subset)
       list(id=subset$subset_id,all=w04_subset_registry_read(corpus$review_id),
            n=subset$actual_size)
-    },error=function(e)e)
+      },error=function(e)e)
+    })
     if(inherits(result,"error")) {
       w04_subset_status_rv(paste("Subset not confirmed saved:",conditionMessage(result)))
       return()
