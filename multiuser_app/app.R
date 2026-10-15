@@ -3413,6 +3413,7 @@ server <- function(input, output, session) {
       showNotification(msg,type="error",duration=NULL)
       return()
     }
+    w04_reload_highlights()
     w04_all_cases_rv(q$cases)
     w04_queue_sha_rv(q$queue_sha256)
     w04_batch_id_rv(q$batch_id)
@@ -3507,6 +3508,7 @@ server <- function(input, output, session) {
       return()
     }
     q <- result$queue
+    w04_reload_highlights()
     w04_all_cases_rv(q$cases)
     w04_queue_sha_rv(q$queue_sha256)
     w04_batch_id_rv(q$batch_id)
@@ -3527,6 +3529,17 @@ server <- function(input, output, session) {
     w04_highlight_version_rv(config)
     w04_include_terms(config$include)
     w04_exclude_terms(config$exclude)
+    w04_highlight_status_rv(sprintf("Highlight terms loaded: %d include, %d exclude.",
+      length(config$include),length(config$exclude)))
+  }
+  w04_reload_highlights <- function() {
+    config <- tryCatch(w04_highlight_read(w04_prompt_review_metadata()),error=function(e)e)
+    if(inherits(config,"error")) {
+      w04_highlight_status_rv(paste("Highlight configuration unavailable:",conditionMessage(config)))
+      return(invisible(FALSE))
+    }
+    w04_apply_highlight_config(config)
+    invisible(TRUE)
   }
   observeEvent(input$w04_highlight_load,{
     on.exit(session$sendCustomMessage("lem_busy_finished",list(id="w04_highlight_load")),add=TRUE)
@@ -3564,10 +3577,7 @@ server <- function(input, output, session) {
   })
   observeEvent(authenticated(),{
     if(!isTRUE(authenticated())||!identical(storage_backend(),"google_sheets")) return()
-    z <- tryCatch(w04_highlight_read(w04_prompt_review_metadata()),error=function(e)e)
-    if(inherits(z,"error")) {
-      w04_highlight_status_rv(paste("Highlight configuration unavailable:",conditionMessage(z)))
-    } else w04_apply_highlight_config(z)
+    w04_reload_highlights()
   },ignoreInit=TRUE)
   output$w04_subset_registry_status <- renderText(w04_subset_status_rv())
   output$w04_subset_registry_history <- renderUI({
@@ -9824,6 +9834,10 @@ server <- function(input, output, session) {
             sprintf("%s%%",pct)))
   })
 
+  output$w04_screening_highlight_status <- renderText({
+    status <- as.character(w04_highlight_status_rv() %||% "")
+    if(!nzchar(status)) "Highlight terms: not loaded" else status
+  })
   output$w04_case_view <- renderUI({
     z <- w04_current_case()
     b <- z$bibliographic %||% list()
@@ -9835,7 +9849,8 @@ server <- function(input, output, session) {
           class="d-flex justify-content-between align-items-center",
           tags$strong("Title and abstract screening"),
           tags$span(class="task-badge",sprintf("Random order %s",z$random_order %||% w04_idx()))
-        )
+        ),
+        tags$div(class="small text-secondary mt-1",textOutput("w04_screening_highlight_status",inline=TRUE))
       ),
       div(
         class="compact-record-body w04-text",
