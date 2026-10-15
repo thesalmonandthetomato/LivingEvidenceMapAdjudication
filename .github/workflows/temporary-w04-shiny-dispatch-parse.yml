@@ -1,0 +1,27 @@
+name: Temporary W04 Shiny dispatch syntax validation
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/temporary-w04-shiny-dispatch-parse.yml'
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Parse Shiny W04 and dispatch R files
+        shell: Rscript {0}
+        run: |
+          paths <- c('multiuser_app/R/github_dispatch.R',
+                     'multiuser_app/R/w04_blind_resolution.R',
+                     'multiuser_app/R/w04_validation_lifecycle.R',
+                     'multiuser_app/R/w04_kappa_registry.R',
+                     'multiuser_app/R/w04_human_kappa_registry.R',
+                     'multiuser_app/app.R')
+          for (p in paths) { parse(file=p); cat('PASS ', p, '\\n', sep='') }
