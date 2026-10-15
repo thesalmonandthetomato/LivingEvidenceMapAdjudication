@@ -2498,7 +2498,12 @@ server <- function(input, output, session) {
               )
             },
             if (!is.null(button_id) && remaining > 0L && isTRUE(can_open)) {
-              actionButton(button_id, button_label, class = "btn-primary mt-auto")
+              if (identical(button_id,"open_w04")) {
+                actionButton(button_id,button_label,class="btn-primary mt-auto",
+                  onclick="this.textContent='Opening manual screening…'; this.setAttribute('aria-busy','true');")
+              } else {
+                actionButton(button_id, button_label, class = "btn-primary mt-auto")
+              }
             } else {
               tags$div(class = "text-secondary small mt-auto", idle_text)
             }
