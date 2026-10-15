@@ -1,0 +1,33 @@
+name: Temporary W04 manual abstract validation
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/temporary-w04-manual-abstract.yml']
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Validate manual abstract edits
+        shell: Rscript {0}
+        run: |
+          parse(file='multiuser_app/app.R')
+          parse(file='multiuser_app/R/storage_sheets.R')
+          app <- paste(readLines('multiuser_app/app.R',warn=FALSE),collapse='\n')
+          storage <- paste(readLines('multiuser_app/R/storage_sheets.R',warn=FALSE),collapse='\n')
+          stopifnot(grepl('w04_manual_save_abstract',app,fixed=TRUE))
+          stopifnot(grepl('w04_manual_effective_abstract <- reactive',app,fixed=TRUE))
+          stopifnot(grepl('active_sheet_w04_manual_abstract_edits',app,fixed=TRUE))
+          stopifnot(grepl('append_sheet_w04_manual_abstract_edit',app,fixed=TRUE))
+          stopifnot(grepl('w04_manual_abstract_edits',storage,fixed=TRUE))
+          stopifnot(grepl('as.character(x$reviewer %||% "")',storage,fixed=TRUE))
+          pattern <- '^pending_workflow[0-9]+[[:space:]]*;[[:space:]]*[0-9]+$'
+          stopifnot(grepl(pattern,'pending_workflow02; 1'))
+          stopifnot(!grepl(pattern,'Valid abstract about agriculture'))
+          cat('PASS W04 manual abstract editor syntax and linkage checks\n')
