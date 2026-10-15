@@ -5879,7 +5879,9 @@ server <- function(input, output, session) {
         return(if (has_w02_batch) as.character(w02_batch_id_rv()) else "")
       }
       if (identical(workflow, "04") && identical(task_type, "manual_screening")) {
-        return(if (has_w04_batch) as.character(w04_batch_id_rv()) else "")
+        # Registered human subsets may have assignments even when the admin
+        # has no personal queue loaded. Preserve every batch in the summary.
+        return(NA_character_)
       }
       if (identical(workflow, "04") && identical(task_type, "model_uncertainty")) {
         return(if (has_w04_resolution_batch) as.character(w04_resolution_batch_id_rv()) else "")
@@ -5915,9 +5917,18 @@ server <- function(input, output, session) {
       ) return(w02_active_assignment_events())
       if (
         identical(z$workflow, "04") &&
-        identical(z$task_type, "manual_screening") &&
-        identical(z$batch_id, w04_batch_id_rv())
-      ) return(w04_active_assignment_events())
+        identical(z$task_type, "manual_screening")
+      ) {
+        if(identical(z$batch_id,w04_batch_id_rv())) return(w04_active_assignment_events())
+        all <- tryCatch(active_sheet_w04_decisions(),error=function(e) list())
+        subset_id <- sub("^w04-human-","",z$batch_id)
+        queue <- tryCatch({
+          meta <- w04_prompt_review_metadata()
+          w04_subset_queue_read(subset_id,meta$review_id)
+        },error=function(e)NULL)
+        if(is.null(queue)) return(list())
+        return(w04_filter_batch_decisions(all,queue$queue_sha256))
+      }
       if (
         identical(z$workflow, "04") &&
         identical(z$task_type, "model_uncertainty") &&
@@ -6147,6 +6158,12 @@ server <- function(input, output, session) {
             class = "mt-2",
             tags$div(class = "text-secondary small mb-2", "No active W08 queue is loaded.")
           ))
+        }
+        if(identical(z$workflow,"04") &&
+           identical(z$task_type,"manual_screening") &&
+           startsWith(z$batch_id,"w04-human-")) {
+          return(tags$p(class="saved-note",
+            "Registered subset assignments are shown above. To manage this batch, prepare or load its subset from Configure review."))
         }
         return(NULL)
       }
