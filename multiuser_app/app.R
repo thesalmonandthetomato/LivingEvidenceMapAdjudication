@@ -234,13 +234,12 @@ highlight_screening_text <- function(text, include_terms = character(), exclude_
     term <- trimws(terms[[i]])
     needle <- tolower(term)
     if (!nzchar(needle)) next
-    start_at <- 1L
-    repeat {
-      tail <- substr(hay, start_at, nchar(hay))
-      pos <- regexpr(needle, tail, fixed = TRUE)[[1L]]
-      if (pos < 0L) break
-      s <- start_at + pos - 1L
-      e <- s + nchar(term) - 1L
+    # Locate every occurrence against the same full string. This avoids
+    # offsets being recalculated on progressively shortened substrings.
+    positions <- gregexpr(needle, hay, fixed = TRUE)[[1L]]
+    if (length(positions) == 1L && positions[[1L]] < 0L) next
+    for (s in positions) {
+      e <- s + nchar(needle, type="chars") - 1L
       before <- if (s > 1L) substr(hay, s - 1L, s - 1L) else ""
       after <- if (e < nchar(hay)) substr(hay, e + 1L, e + 1L) else ""
       starts_word <- grepl("^[[:alnum:]]", needle)
@@ -249,10 +248,9 @@ highlight_screening_text <- function(text, include_terms = character(), exclude_
       right_ok <- !ends_word || !nzchar(after) || !grepl("[[:alnum:]]", after)
       if (left_ok && right_ok) {
         k <- k + 1L
-        candidates[[k]] <- list(start=s,end=e,class=names(terms)[[i]],length=nchar(term))
+        candidates[[k]] <- list(start=as.integer(s),end=as.integer(e),
+          class=names(terms)[[i]],length=nchar(needle,type="chars"))
       }
-      start_at <- s + 1L
-      if (start_at > nchar(hay)) break
     }
   }
   if (!length(candidates)) return(text)
