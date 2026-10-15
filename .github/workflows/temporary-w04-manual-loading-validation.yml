@@ -28,4 +28,5 @@ jobs:
                      'plan$subset_batch_id <- prepared$batch_id',
                      'w04_filter_batch_decisions(all,queue$queue_sha256)'))
             stopifnot(grepl(z,x,fixed=TRUE))
+          stopifnot(grepl('load_w04_batch(login_user)',x,fixed=TRUE),grepl('load_w04_batch <- function(user = current_user())',x,fixed=TRUE))
           cat('PASS W04 manual subset queue loading and guarded assignment preview\n')
