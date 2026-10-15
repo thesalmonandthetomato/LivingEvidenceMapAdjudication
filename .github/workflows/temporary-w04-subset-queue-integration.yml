@@ -1,0 +1,28 @@
+name: Temporary W04 subset queue integration validation
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/temporary-w04-subset-queue-integration.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Validate Shiny subset queue preparation
+        shell: Rscript {0}
+        run: |
+          for(p in c('multiuser_app/app.R',
+                     'multiuser_app/R/w04_subset_queue_builder.R',
+                     'multiuser_app/R/w04_subset_queue_storage.R')) parse(file=p)
+          x<-paste(readLines('multiuser_app/app.R',warn=FALSE),collapse='\n')
+          stopifnot(grepl('w04_subset_prepare_queue',x,fixed=TRUE),
+                    grepl('w04_subset_queue_store(queue,corpus$review_id)',x,fixed=TRUE),
+                    grepl('batch_id = prepared$batch_id',x,fixed=TRUE))
+          cat('PASS W04 isolated queue preparation syntax and guarded planner\n')
