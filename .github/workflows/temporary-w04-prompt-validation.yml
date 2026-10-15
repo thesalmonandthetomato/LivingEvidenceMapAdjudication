@@ -39,3 +39,5 @@ jobs:
           cat('PASS W04 synthetic provenance, manifest and TXT upload tests\n')
 
 # Recheck final Zenodo manifest persistence module revision.
+
+# Final check after parent-version UI wiring.
