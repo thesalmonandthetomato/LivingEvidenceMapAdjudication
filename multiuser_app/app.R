@@ -1006,6 +1006,8 @@ server <- function(input, output, session) {
 
   w04_subset_status_rv <- reactiveVal("")
   w04_subset_corpus_rv <- reactiveVal(NULL)
+  w04_manual_queue_choices_rv <- reactiveVal(list())
+  w04_manual_queue_status_rv <- reactiveVal("")
   w04_subsets_rv <- reactiveVal(list())
   w04_prompt_status_rv <- reactiveVal("")
   w04_prompt_versions_rv <- reactiveVal(list())
@@ -2673,6 +2675,17 @@ server <- function(input, output, session) {
             uiOutput("w04_progress_text")
           )
         ),
+        div(class="d-flex align-items-center gap-2 flex-wrap mb-2",
+          actionButton("w04_manual_find_queues","Find assigned subsets",class="btn-outline-secondary btn-sm",
+            onclick="window.lemBusyStart('w04_manual_find_queues','Checking assigned subset queues…')"),
+          uiOutput("w04_manual_queue_selector"),
+          actionButton("w04_manual_load_queue","Load selected subset",class="btn-outline-secondary btn-sm",
+            onclick="window.lemBusyStart('w04_manual_load_queue','Loading assigned subset decisions…')")),
+        tags$div(id="w04_manual_find_queues_busy",class="saved-note",
+          style="display:none;",role="status","Checking assigned subset queues…"),
+        tags$div(id="w04_manual_load_queue_busy",class="saved-note",
+          style="display:none;",role="status","Loading assigned subset decisions…"),
+        textOutput("w04_manual_queue_status"),
         uiOutput("w04_progress_bar"),
         card(
           class = "decision-panel",
@@ -3398,6 +3411,75 @@ server <- function(input, output, session) {
     selectInput("w04_subset_queue_selected","Subset for manual screening",
       choices=stats::setNames(ids,paste0(ids," (",vapply(subsets,function(x)x$actual_size,integer(1))," records)")))
   })
+  observeEvent(input$w04_manual_find_queues,{
+    on.exit(session$sendCustomMessage("lem_busy_finished",list(id="w04_manual_find_queues")),add=TRUE)
+    req(authenticated())
+    result <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      subsets <- w04_subset_registry_read(meta$review_id)
+      registered <- Filter(function(x) {
+        batch_id <- paste0("w04-human-",x$subset_id)
+        assigned <- active_assignments_for_batch(assignment_registry_rv(),"04",
+          batch_id,"manual_screening")
+        if(session_can("manage_assignments")) return(length(assigned)>0L)
+        mine <- assignments_for_user(assignment_registry_rv(),"04",batch_id,
+          session_reviewer_id(),"manual_screening")
+        length(mine)>0L
+      },subsets)
+      registered
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_manual_queue_status_rv(paste("Unable to find assigned subset queues:",conditionMessage(result)))
+      return()
+    }
+    w04_manual_queue_choices_rv(result)
+    w04_manual_queue_status_rv(sprintf("%d assigned subset queues available.",length(result)))
+  })
+  output$w04_manual_queue_selector <- renderUI({
+    xs <- w04_manual_queue_choices_rv()
+    if(!length(xs)) return(NULL)
+    ids <- vapply(xs,function(x)x$subset_id,character(1))
+    selectInput("w04_manual_queue_selected","Assigned subset",choices=stats::setNames(ids,ids))
+  })
+  output$w04_manual_queue_status <- renderText(w04_manual_queue_status_rv())
+  observeEvent(input$w04_manual_load_queue,{
+    on.exit(session$sendCustomMessage("lem_busy_finished",list(id="w04_manual_load_queue")),add=TRUE)
+    req(authenticated())
+    result <- tryCatch({
+      subset_id <- as.character(input$w04_manual_queue_selected %||% "")
+      choices <- w04_manual_queue_choices_rv()
+      if(!nzchar(subset_id)||!any(vapply(choices,function(x)identical(x$subset_id,subset_id),logical(1))))
+        stop("Select an assigned registered subset",call.=FALSE)
+      meta <- w04_prompt_review_metadata()
+      queue <- w04_subset_queue_read(subset_id,meta$review_id)
+      if(is.null(queue)) stop("Registered subset queue not prepared",call.=FALSE)
+      assigned <- active_assignments_for_batch(assignment_registry_rv(),"04",
+        queue$batch_id,"manual_screening")
+      if(!length(assigned)) stop("No active assignments for this subset",call.=FALSE)
+      if(!session_can("manage_assignments")) {
+        mine <- assignments_for_user(assignment_registry_rv(),"04",
+          queue$batch_id,session_reviewer_id(),"manual_screening")
+        if(!length(mine)) stop("No assigned records for this user",call.=FALSE)
+      }
+      all <- active_sheet_w04_decisions()
+      list(queue=queue,decisions=w04_filter_batch_decisions(all,queue$queue_sha256))
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_manual_queue_status_rv(paste("Could not load subset screening:",conditionMessage(result)))
+      return()
+    }
+    q <- result$queue
+    w04_all_cases_rv(q$cases)
+    w04_queue_sha_rv(q$queue_sha256)
+    w04_batch_id_rv(q$batch_id)
+    w04_batch_status_rv(q$batch_status %||% "active")
+    w04_include_terms(character())
+    w04_exclude_terms(character())
+    w04_decisions(result$decisions)
+    w04_idx(1L)
+    w04_manual_queue_status_rv(sprintf("Loaded assigned subset %s (%d records).",q$subset_id,length(q$cases)))
+  })
+
   output$w04_subset_registry_status <- renderText(w04_subset_status_rv())
   output$w04_subset_registry_history <- renderUI({
     subsets <- w04_subsets_rv()
