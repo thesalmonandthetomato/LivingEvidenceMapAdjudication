@@ -29,14 +29,6 @@ jobs:
           normalise_display_text <- function(x) trimws(gsub('[[:space:]]+',' ',as.character(x)))
           sentence <- 'the yield of vegetable crops; two solar power plants at Almeria in Southern Spain'
           conf <- 'Almería, Almeria, crop, crops, vegetable, farm'
-          entries <- trimws(unlist(strsplit(conf,'[,\\r\\n]')))
-          cat('ENTRIES:',paste(sprintf('[%s]',entries),collapse=' '),'\n')
-          variants <- unique(unlist(lapply(entries,highlight_plural_variants),use.names=FALSE))
-          cat('VARIANTS:',paste(sprintf('[%s]',variants),collapse=' '),'\n')
-          for(term in c('vegetable','crop','crops','Almeria')) {
-            loc <- gregexpr(tolower(term),tolower(sentence),fixed=TRUE)[[1L]]
-            cat('POS',term, paste(loc,collapse=','),'\n')
-          }
           x <- highlight_screening_text(sentence,conf,'Mexico')
           html <- as.character(htmltools::renderTags(x)$html)
           cat('RENDERED:',html,'\n')
