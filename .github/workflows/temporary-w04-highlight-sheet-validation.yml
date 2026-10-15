@@ -1,0 +1,35 @@
+name: Temporary W04 editable highlight config check
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/temporary-w04-highlight-sheet-validation.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Validate W04 editable highlighting config
+        shell: Rscript {0}
+        run: |
+          install.packages(c('digest','jsonlite'),repos='https://cloud.r-project.org')
+          parse(file='multiuser_app/app.R')
+          source('multiuser_app/R/w04_highlight_sheets.R')
+          meta<-list(review_id='almeria-map')
+          x<-w04_highlight_config(meta,'farm\n aquaculture\nfarm','hatchery\nfisheries','admin')
+          stopifnot(identical(x$include,c('farm','aquaculture')),
+                    identical(x$exclude,c('hatchery','fisheries')),
+                    grepl('^[a-f0-9]{64}$',x$sha256),
+                    inherits(try(w04_highlight_config(meta,'farm','FARM','admin'),silent=TRUE),'try-error'))
+          app<-paste(readLines('multiuser_app/app.R',warn=FALSE),collapse='\n')
+          stopifnot(grepl('source("R/w04_highlight_sheets.R", local = TRUE)',app,fixed=TRUE),
+                    grepl('w04_highlight_save(meta,config,baseline$sha256)',app,fixed=TRUE),
+                    grepl('w04_highlight_read(w04_prompt_review_metadata())',app,fixed=TRUE),
+                    grepl('Save highlighted terms',app,fixed=TRUE))
+          cat('PASS editable highlight terms and app syntax\n')
