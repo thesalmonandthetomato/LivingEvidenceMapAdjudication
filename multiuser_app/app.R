@@ -3881,6 +3881,7 @@ server <- function(input, output, session) {
                   tags$div(id="w04_subset_prepare_queue_busy",role="status",`aria-live`="polite",
                     style="display:none;",class="saved-note","Preparing and verifying subset screening queue…"),
                   textOutput("w04_subset_registry_status")
+                )
               ),
               tags$details(class="assignment-disclosure",
                 tags$summary(tags$strong("Model execution")),
