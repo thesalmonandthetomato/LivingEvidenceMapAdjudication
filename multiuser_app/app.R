@@ -3306,7 +3306,8 @@ server <- function(input, output, session) {
         as.character(input$w04_prompt_upload$name) else ""
       version <- w04_prompt_version(meta$review_id,prompt,session_reviewer_id(),
         filename=filename,notes=as.character(input$w04_prompt_change_notes %||% ""),
-        status="draft")
+        status="draft",parent_version=if(length(existing))
+          as.character(existing[[length(existing)]]$version_id) else "")
       w04_prompt_archive_save(meta,version)
       refreshed <- w04_prompt_archive_versions(w04_prompt_review_metadata())
       list(id=version$version_id,versions=refreshed)
