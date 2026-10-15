@@ -1,0 +1,32 @@
+name: Temporary W04 highlight terms validation
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/temporary-w04-highlight-terms-check.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Validate admin-only highlight terms and immutable payload
+        shell: Rscript {0}
+        run: |
+          install.packages(c('digest','jsonlite'),repos='https://cloud.r-project.org')
+          parse(file='multiuser_app/app.R')
+          source('multiuser_app/R/w04_highlight_zenodo.R')
+          x<-w04_highlight_version(list(review_id='almeria-map'),'farm\n aquaculture \nfarm','hatchery\nfishery','admin')
+          stopifnot(w04_highlight_verify(x,'almeria-map'))
+          stopifnot(identical(unlist(x$include),c('farm','aquaculture')))
+          stopifnot(inherits(try(w04_highlight_version(list(review_id='almeria-map'),'farm','FARM','admin'),silent=TRUE),'try-error'))
+          app<-paste(readLines('multiuser_app/app.R',warn=FALSE),collapse='\n')
+          stopifnot(grepl('tags$strong("Highlighted terms")',app,fixed=TRUE))
+          stopifnot(grepl('if (!identical(as.character(current_user()$role %||% ""),"administrator")) return(NULL)',app,fixed=TRUE))
+          stopifnot(grepl('w04_highlight_latest(w04_prompt_review_metadata())',app,fixed=TRUE))
+          cat('PASS W04 highlight terms and admin-only UI\n')
