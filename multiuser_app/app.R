@@ -3357,6 +3357,47 @@ server <- function(input, output, session) {
     w04_subset_status_rv(sprintf("Verified subset %s (%d canonical records).",
       result$id,result$n))
   })
+  observeEvent(input$w04_subset_prepare_queue,{
+    on.exit(session$sendCustomMessage("lem_busy_finished",list(id="w04_subset_prepare_queue")),add=TRUE)
+    req(authenticated())
+    if(!session_can("manage_assignments")) return()
+    result <- withProgress(message="Preparing W04 manual screening",detail="Verifying canonical source and subset membership",value=0.1,{
+      tryCatch({
+        corpus <- w04_subset_corpus_rv()
+        if(is.null(corpus)) stop("Verify the eligible corpus first",call.=FALSE)
+        selected <- as.character(input$w04_subset_queue_selected %||% "")
+        registry <- w04_subset_registry_read(corpus$review_id)
+        matches <- Filter(function(x)identical(x$subset_id,selected) &&
+          identical(x$source_checkpoint_sha256,corpus$checkpoint_sha256),registry)
+        if(length(matches)!=1L) stop("Select a valid registered subset",call.=FALSE)
+        existing <- w04_subset_queue_read(selected,corpus$review_id)
+        if(!is.null(existing)) return(list(queue=existing,created=FALSE))
+        pointers <- w04_subset_review_source_pointers()
+        if(!identical(pointers$review_id,corpus$review_id) ||
+           !identical(tolower(as.character(pointers$lean$lean_canonical_sha256)),corpus$checkpoint_sha256))
+          stop("Review source changed since corpus verification",call.=FALSE)
+        incProgress(0.25,detail="Restoring checksum-verified canonical metadata")
+        source <- w04_subset_verified_archive(pointers$lean,"lean")
+        queue <- w04_subset_screening_build(matches[[1L]],source,corpus$checkpoint_sha256)
+        incProgress(0.45,detail="Saving and verifying isolated subset queue")
+        w04_subset_queue_store(queue,corpus$review_id)
+        list(queue=w04_subset_queue_read(selected,corpus$review_id),created=TRUE)
+      },error=function(e)e)
+    })
+    if(inherits(result,"error")) {
+      w04_subset_status_rv(paste("Manual subset queue unavailable:",conditionMessage(result)))
+      return()
+    }
+    w04_subset_status_rv(sprintf("%s screening queue %s with %d records. Assign reviewers in Manual screening.",
+      if(isTRUE(result$created))"Created" else "Loaded",result$queue$batch_id,length(result$queue$cases)))
+  })
+  output$w04_subset_queue_selector <- renderUI({
+    subsets <- w04_subsets_rv()
+    if(!length(subsets)) return(tags$p(class="saved-note","Register a subset before preparing screening."))
+    ids <- vapply(subsets,function(x)as.character(x$subset_id),character(1))
+    selectInput("w04_subset_queue_selected","Subset for manual screening",
+      choices=stats::setNames(ids,paste0(ids," (",vapply(subsets,function(x)x$actual_size,integer(1))," records)")))
+  })
   output$w04_subset_registry_status <- renderText(w04_subset_status_rv())
   output$w04_subset_registry_history <- renderUI({
     subsets <- w04_subsets_rv()
@@ -3712,7 +3753,13 @@ server <- function(input, output, session) {
                   numericInput("w04_subset_size","Number of records",value=100,min=1,step=1),
                   uiOutput("w04_subset_create_control"),
                   textOutput("w04_subset_registry_status"),
-                  uiOutput("w04_subset_registry_history"))
+                  uiOutput("w04_subset_registry_history"),
+                  uiOutput("w04_subset_queue_selector"),
+                  actionButton("w04_subset_prepare_queue","Prepare manual screening queue",
+                    class="btn-outline-primary btn-sm",
+                    onclick="window.lemBusyStart('w04_subset_prepare_queue','Preparing and verifying subset screening queue…')"),
+                  tags$div(id="w04_subset_prepare_queue_busy",role="status",`aria-live`="polite",
+                    style="display:none;",class="saved-note","Preparing and verifying subset screening queue…"))
               ),
               tags$details(class="assignment-disclosure",
                 tags$summary(tags$strong("Model execution")),
