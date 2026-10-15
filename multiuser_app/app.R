@@ -3297,7 +3297,11 @@ server <- function(input, output, session) {
   observeEvent(input$w04_prompt_save,{
     req(authenticated())
     if(!session_can("control_workflows")||
-       !identical(as.character(current_user()$role),"administrator")) return()
+       !identical(as.character(current_user()$role),"administrator")) {
+      w04_prompt_status_rv("Administrator permission is required.")
+      session$sendCustomMessage("w04_prompt_feedback",list(done=TRUE))
+      return()
+    }
     result <- tryCatch({
       meta <- w04_prompt_review_metadata()
       existing <- w04_prompt_archive_versions(meta)
@@ -3314,10 +3318,12 @@ server <- function(input, output, session) {
     },error=function(e)e)
     if(inherits(result,"error")) {
       w04_prompt_status_rv(paste("Prompt was not confirmed saved:",conditionMessage(result)))
+      session$sendCustomMessage("w04_prompt_feedback",list(done=TRUE))
       return()
     }
     w04_prompt_versions_rv(result$versions)
     w04_prompt_status_rv(paste("Verified restricted Zenodo draft version:",result$id))
+    session$sendCustomMessage("w04_prompt_feedback",list(done=TRUE))
   })
 
   output$configure_review <- renderUI({
@@ -3525,7 +3531,13 @@ server <- function(input, output, session) {
                     accept=c(".txt",".md",".docx",".pdf")),
                   textAreaInput("w04_prompt_text","Prompt text",rows=12,width="100%"),
                   textInput("w04_prompt_change_notes","Change notes"),
-                  actionButton("w04_prompt_save","Save immutable draft",class="btn-primary btn-sm"),
+                  actionButton("w04_prompt_save","Save immutable draft",class="btn-primary btn-sm",
+                    onclick="this.disabled=true;this.textContent='Saving…';var s=document.getElementById('w04_prompt_progress');if(s){s.style.display='block';s.textContent='Saving and verifying prompt in Zenodo…';}"),
+                  tags$div(id="w04_prompt_progress",role="status",`aria-live`="polite",
+                    style="display:none;margin-top:8px;",
+                    tags$span(class="spinner-border spinner-border-sm me-2",role="status"),
+                    "Saving and verifying prompt in Zenodo…"),
+                  tags$script(HTML("if(window.Shiny&&!window.w04PromptFeedbackInstalled){window.w04PromptFeedbackInstalled=true;Shiny.addCustomMessageHandler('w04_prompt_feedback',function(x){var b=document.getElementById('w04_prompt_save');if(b){b.disabled=false;b.textContent='Save immutable draft';}var s=document.getElementById('w04_prompt_progress');if(s){s.style.display='none';} });}")),
                   actionButton("w04_prompt_refresh","Load archive",class="btn-outline-secondary btn-sm"),
                   textOutput("w04_prompt_archive_status"),
                   uiOutput("w04_prompt_archive_history")
