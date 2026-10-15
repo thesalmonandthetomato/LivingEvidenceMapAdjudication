@@ -1,0 +1,31 @@
+name: Temporary W04 manual loading validation
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/temporary-w04-manual-loading-validation.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Parse and inspect guarded registered-subset loader
+        shell: Rscript {0}
+        run: |
+          for(p in c('multiuser_app/app.R','multiuser_app/R/w04_subset_queue_builder.R',
+                     'multiuser_app/R/w04_subset_queue_storage.R',
+                     'multiuser_app/R/w04_subset_screening_adapter.R')) parse(file=p)
+          x<-paste(readLines('multiuser_app/app.R',warn=FALSE),collapse='\n')
+          for(z in c('w04_manual_find_queues','w04_manual_load_queue',
+                     'w04_subset_queue_store(queue,corpus$review_id)',
+                     'w04_subset_queue_read(subset_id,meta$review_id)',
+                     'plan$subset_batch_id <- prepared$batch_id',
+                     'w04_filter_batch_decisions(all,queue$queue_sha256)'))
+            stopifnot(grepl(z,x,fixed=TRUE))
+          cat('PASS W04 manual subset queue loading and guarded assignment preview\n')
