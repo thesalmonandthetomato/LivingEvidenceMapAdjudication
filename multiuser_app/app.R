@@ -6386,6 +6386,10 @@ server <- function(input, output, session) {
       )) else character()
       src_now <- record_table_source(z$workflow,z$task_type,z$batch_id)
       completed_case_ids <- if (length(src_now)) record_table_completed_case_ids(src_now[[1L]]) else character()
+      # Registered W04 subset queues need not be loaded into the admin session.
+      # Always show actual assigned case counts from the assignment registry.
+      if(identical(z$workflow,"04") && identical(z$task_type,"manual_screening") &&
+         !length(all_case_ids)) all_case_ids <- assigned_case_ids
       case_total <- length(all_case_ids[nzchar(all_case_ids)])
       case_completed <- sum(all_case_ids %in% completed_case_ids)
       case_outstanding <- max(0L,case_total-case_completed)
@@ -6428,7 +6432,7 @@ server <- function(input, output, session) {
           "assignment-workflow workflow-section",
           paste0("wf-w",z$workflow)
         ),
-        `data-accordion-key` = paste0("workflow-", z$workflow, "-", z$task_type),
+        `data-accordion-key` = paste0("workflow-", z$workflow, "-", z$task_type, "-", z$batch_id),
         tags$summary(
           div(
             class = "d-inline-flex flex-wrap align-items-center gap-2",
