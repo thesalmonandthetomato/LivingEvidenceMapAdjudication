@@ -207,8 +207,17 @@ highlight_plural_variants <- function(term) {
 
 highlight_screening_text <- function(text, include_terms = character(), exclude_terms = character()) {
   # Use only terms supplied by the active review's Google Sheets configuration.
-  include_terms <- unique(unlist(lapply(as.character(include_terms), highlight_plural_variants), use.names=FALSE))
-  exclude_terms <- unique(unlist(lapply(as.character(exclude_terms), highlight_plural_variants), use.names=FALSE))
+  # Accept comma-separated lists as well as newline-separated entries.
+  # Existing saved Google Sheets payloads remain unchanged: splitting happens
+  # only for the display matcher, not for persistence or checksum validation.
+  split_highlight_entries <- function(values) {
+    entries <- trimws(unlist(strsplit(as.character(values), "[,\\r\\n]")))
+    unique(entries[nzchar(entries)])
+  }
+  include_terms <- unique(unlist(lapply(split_highlight_entries(include_terms),
+    highlight_plural_variants), use.names=FALSE))
+  exclude_terms <- unique(unlist(lapply(split_highlight_entries(exclude_terms),
+    highlight_plural_variants), use.names=FALSE))
   text <- normalise_display_text(text)
   if (!nzchar(text)) return("")
   terms <- c(
