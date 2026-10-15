@@ -20,6 +20,7 @@ source("R/w04_prompt_zenodo.R", local = TRUE)
 source("R/w04_subset_registry.R", local = TRUE)
 source("R/w04_subset_storage.R", local = TRUE)
 source("R/w04_subset_eligible.R", local = TRUE)
+source("R/w04_subset_review_source.R", local = TRUE)
 source("R/storage_local.R", local = TRUE)
 source("R/storage_sheets.R", local = TRUE)
 source("R/storage_backend.R", local = TRUE)
@@ -1001,6 +1002,7 @@ server <- function(input, output, session) {
   w02_resume_requested_rv <- reactiveVal(FALSE)
 
   w04_subset_status_rv <- reactiveVal("")
+  w04_subset_corpus_rv <- reactiveVal(NULL)
   w04_subsets_rv <- reactiveVal(list())
   w04_prompt_status_rv <- reactiveVal("")
   w04_prompt_versions_rv <- reactiveVal(list())
@@ -3261,6 +3263,80 @@ server <- function(input, output, session) {
     if (!identical(query,search_scope_string_rv())) search_scope_string_rv(query)
   },ignoreInit=TRUE)
 
+  observeEvent(input$w04_subset_load_corpus,{
+    req(authenticated())
+    if(!session_can("control_workflows")) return()
+    result <- tryCatch({
+      pointers <- w04_subset_review_source_pointers()
+      eligible <- w04_subset_load_eligible(pointers$lean,pointers$w03)
+      c(eligible,list(review_id=pointers$review_id))
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_subset_corpus_rv(NULL)
+      w04_subset_status_rv(paste("Eligible corpus could not be verified:",conditionMessage(result)))
+      return()
+    }
+    w04_subset_corpus_rv(result)
+    w04_subset_status_rv(sprintf("Verified %d eligible canonical records (lean SHA %s).",
+      length(result$record_ids),substr(result$checkpoint_sha256,1,16)))
+  })
+  output$w04_subset_create_control <- renderUI({
+    if(is.null(w04_subset_corpus_rv()) ||
+       !identical(as.character(current_user()$role %||% ""),"administrator"))
+      return(tags$p(class="saved-note","Creation requires a verified eligible corpus."))
+    actionButton("w04_subset_create","Create and save subset",class="btn-primary btn-sm")
+  })
+  output$w04_subset_parent_select <- renderUI({
+    corpus <- w04_subset_corpus_rv()
+    if(is.null(corpus)) return(NULL)
+    subsets <- Filter(function(x)identical(x$source_checkpoint_sha256,
+      corpus$checkpoint_sha256),w04_subsets_rv())
+    choices <- c("Full eligible corpus"="","Unsampled remainder"="remainder")
+    if(length(subsets)) {
+      ids <- vapply(subsets,function(x)x$subset_id,character(1))
+      choices <- c(choices,stats::setNames(ids,paste0("Child of ",ids)))
+    }
+    selectInput("w04_subset_source","Sample from",choices=choices)
+  })
+  observeEvent(input$w04_subset_create,{
+    req(authenticated())
+    if(!session_can("control_workflows")||
+       !identical(as.character(current_user()$role),"administrator")) return()
+    corpus <- w04_subset_corpus_rv()
+    if(is.null(corpus)) {
+      w04_subset_status_rv("Verify the eligible canonical corpus before creating subsets.")
+      return()
+    }
+    result <- tryCatch({
+      previous <- w04_subset_registry_read(corpus$review_id)
+      matching <- Filter(function(x) identical(x$source_checkpoint_sha256,
+        corpus$checkpoint_sha256),previous)
+      origin <- as.character(input$w04_subset_source %||% "")
+      parent <- NULL
+      pool <- corpus$record_ids
+      if(identical(origin,"remainder")) {
+        pool <- w04_subset_pool_remainder(pool,matching)
+      } else if(nzchar(origin)) {
+        hits <- Filter(function(x)identical(x$subset_id,origin),matching)
+        if(length(hits)!=1L) stop("Selected parent subset is unavailable",call.=FALSE)
+        parent <- hits[[1L]]
+      }
+      subset <- w04_subset_create(corpus$review_id,pool,
+        size=as.integer(input$w04_subset_size),seed=as.integer(input$w04_subset_seed),
+        parent=parent,source_checkpoint_sha256=corpus$checkpoint_sha256,
+        created_by=session_reviewer_id(),existing=previous)
+      w04_subset_registry_append(subset)
+      list(id=subset$subset_id,all=w04_subset_registry_read(corpus$review_id),
+           n=subset$actual_size)
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_subset_status_rv(paste("Subset not confirmed saved:",conditionMessage(result)))
+      return()
+    }
+    w04_subsets_rv(result$all)
+    w04_subset_status_rv(sprintf("Verified subset %s (%d canonical records).",
+      result$id,result$n))
+  })
   output$w04_subset_registry_status <- renderText(w04_subset_status_rv())
   output$w04_subset_registry_history <- renderUI({
     subsets <- w04_subsets_rv()
@@ -3597,8 +3673,13 @@ server <- function(input, output, session) {
               tags$details(class="assignment-disclosure",
                 tags$summary(tags$strong("Subsets and validation")),
                 div(class="px-3 pb-3",
-                  tags$p(class="saved-note","Persistent subset registry is review-specific. Existing subsets can be inspected here. Creation is disabled until the complete eligible canonical corpus is verified."),
+                  tags$p(class="saved-note","Subsets are tied to the published, review-specific W02/W03 corpus. Verify eligibility before saving immutable membership to the review registry."),
                   actionButton("w04_subset_registry_refresh","Load registered subsets",class="btn-outline-secondary btn-sm"),
+                  actionButton("w04_subset_load_corpus","Verify eligible corpus",class="btn-outline-primary btn-sm"),
+                  uiOutput("w04_subset_parent_select"),
+                  numericInput("w04_subset_size","Number of records",value=100,min=1,step=1),
+                  numericInput("w04_subset_seed","Random seed",value=12345,min=0,step=1),
+                  uiOutput("w04_subset_create_control"),
                   textOutput("w04_subset_registry_status"),
                   uiOutput("w04_subset_registry_history"))
               ),
