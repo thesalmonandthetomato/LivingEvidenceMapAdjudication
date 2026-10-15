@@ -1053,6 +1053,9 @@ server <- function(input, output, session) {
   w04_idx <- reactiveVal(1L)
   w04_decisions <- reactiveVal(list())
   w04_screening_notes_rv <- reactiveVal(list())
+  w04_manual_abstract_edits_rv <- reactiveVal(list())
+  w04_manual_abstract_edit_rv <- reactiveVal(FALSE)
+  w04_manual_abstract_status_rv <- reactiveVal("")
   w04_note_status <- reactiveVal("")
   w04_batch_status_rv <- reactiveVal("")
   w04_status <- reactiveVal("")
@@ -3559,6 +3562,10 @@ server <- function(input, output, session) {
       w04_exclude_terms(w04_highlight_version_rv()$exclude)
     }
     w04_decisions(result$decisions)
+    w04_manual_abstract_edits_rv(tryCatch(
+      active_sheet_w04_manual_abstract_edits(q$queue_sha256,session_reviewer_id()),
+      error=function(e){w04_manual_abstract_status_rv(paste("Abstract edits unavailable:",conditionMessage(e)));list()}))
+    w04_manual_abstract_edit_rv(FALSE)
     w04_idx(1L)
     w04_manual_queue_status_rv(sprintf("Loaded assigned subset %s (%d records).",q$subset_id,length(q$cases)))
   })
@@ -8618,6 +8625,11 @@ server <- function(input, output, session) {
             w04_exclude_terms(w04_highlight_version_rv()$exclude)
           }
           w04_decisions(w04_batch_decisions)
+          w04_manual_abstract_edits_rv(tryCatch(
+            active_sheet_w04_manual_abstract_edits(w04_batch$queue_sha256,
+              as.character(normalise_user_row(login_user)$user_id)),
+            error=function(e){w04_manual_abstract_status_rv(paste("Abstract edits unavailable:",conditionMessage(e)));list()}))
+          w04_manual_abstract_edit_rv(FALSE)
           w04_validation_finalize_requested_rv(
             tryCatch(
               w04_validation_finalize_request_exists(
@@ -9873,6 +9885,58 @@ server <- function(input, output, session) {
             sprintf("%s%%",pct)))
   })
 
+  w04_manual_current_abstract_edit <- reactive({
+    z <- w04_current_case()
+    current <- w04_manual_abstract_edits_rv() %||% list()
+    hits <- Filter(function(x) {
+      identical(as.character(x$review_case_id %||% ""),as.character(z$review_case_id %||% "")) &&
+        identical(as.character(x$reviewer %||% ""),session_reviewer_id())
+    },current)
+    if(length(hits)) hits[[1L]] else NULL
+  })
+  w04_manual_effective_abstract <- reactive({
+    edit <- w04_manual_current_abstract_edit()
+    if(!is.null(edit) && nzchar(trimws(as.character(edit$abstract %||% ""))))
+      return(as.character(edit$abstract))
+    z <- w04_current_case()
+    original <- (z$bibliographic %||% list())[["abstract"]] %||% ""
+    if(grepl("^pending_workflow[0-9]+\\\\s*;\\\\s*[0-9]+$",trimws(as.character(original)),ignore.case=TRUE))
+      return("")
+    as.character(original)
+  })
+  output$w04_manual_abstract_status <- renderText(w04_manual_abstract_status_rv())
+  observeEvent(input$w04_manual_edit_abstract,{
+    w04_manual_abstract_edit_rv(!isTRUE(w04_manual_abstract_edit_rv()))
+  })
+  observeEvent(input$w04_manual_save_abstract,{
+    req(authenticated())
+    if(!session_can("adjudicate_assigned")) {
+      w04_manual_abstract_status_rv("You do not have permission to edit abstracts.")
+      return()
+    }
+    z <- w04_current_case()
+    value <- trimws(as.character(input$w04_manual_abstract_text %||% ""))
+    if(!nzchar(value)) {
+      w04_manual_abstract_status_rv("Enter a non-empty abstract before saving.")
+      return()
+    }
+    prior <- w04_manual_current_abstract_edit()
+    edit <- list(review_case_id=as.character(z$review_case_id),
+      record_id=as.character(z$record_id),abstract=value,
+      reviewer=session_reviewer_id(),
+      saved_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
+      queue_sha256=w04_queue_sha_rv())
+    saved <- tryCatch(append_sheet_w04_manual_abstract_edit(edit,prior_edit=prior),
+      error=function(e){w04_manual_abstract_status_rv(paste("Abstract save failed:",conditionMessage(e)));NULL})
+    if(is.null(saved)) return()
+    current <- w04_manual_abstract_edits_rv() %||% list()
+    current <- Filter(function(x)!(
+      identical(as.character(x$review_case_id %||% ""),as.character(z$review_case_id)) &&
+      identical(as.character(x$reviewer %||% ""),session_reviewer_id())),current)
+    w04_manual_abstract_edits_rv(c(list(saved),current))
+    w04_manual_abstract_edit_rv(FALSE)
+    w04_manual_abstract_status_rv("Abstract saved to review Google Sheet.")
+  })
   output$w04_case_view <- renderUI({
     z <- w04_current_case()
     b <- z$bibliographic %||% list()
@@ -9906,11 +9970,28 @@ server <- function(input, output, session) {
           div(class="w04-citation-item",span(class="w04-citation-label","Pages"),span(class="w04-citation-value",b$pages %||% ""))
         ),
         div(class="w04-doi",tags$strong("DOI: "),doi_link(b$doi %||% "")),
-        tags$h6(class="abstract-heading","Abstract"),
-        div(
-          class="abstract-text",
-          highlight_screening_text(display_sentence_case_if_all_caps(b$abstract %||% ""),w04_include_terms(),w04_exclude_terms())
+        div(class="d-flex justify-content-between align-items-center mt-2",
+          tags$h6(class="abstract-heading mb-0","Abstract"),
+          div(class="d-flex align-items-center gap-2",
+            if(isTRUE(w04_manual_abstract_edit_rv()))
+              actionButton("w04_manual_save_abstract","Save abstract",class="btn-sm btn-primary"),
+            actionButton("w04_manual_edit_abstract",
+              if(isTRUE(w04_manual_abstract_edit_rv())) "Cancel edit" else "Edit abstract",
+              class="btn-sm btn-outline-secondary")
+          )
         ),
+        if(isTRUE(w04_manual_abstract_edit_rv())) {
+          textAreaInput("w04_manual_abstract_text",label=NULL,
+            value=w04_manual_effective_abstract(),rows=10,width="100%",
+            placeholder="Paste the abstract from a verified source.")
+        } else {
+          div(class="abstract-text",
+            if(nzchar(trimws(w04_manual_effective_abstract())))
+              highlight_screening_text(display_sentence_case_if_all_caps(w04_manual_effective_abstract()),
+                w04_include_terms(),w04_exclude_terms())
+            else tags$span(class="text-secondary","No abstract available"))
+        },
+        tags$div(class="saved-note",textOutput("w04_manual_abstract_status",inline=TRUE)),
 
         div(
           class="w04-keywords",
@@ -10107,6 +10188,7 @@ server <- function(input, output, session) {
   }
 
   advance_w04 <- function() {
+    w04_manual_abstract_edit_rv(FALSE)
     unresolved <- w04_unresolved_indices()
     if(!length(unresolved)) {
       all_complete <- workflow_all_assignments_complete(
@@ -11615,8 +11697,14 @@ server <- function(input, output, session) {
   observeEvent(input$w04_uncertain, {
     if(save_w04_choice("uncertain")) advance_w04()
   })
-  observeEvent(input$w04_previous, if(w04_idx()>1L) w04_idx(w04_idx()-1L))
-  observeEvent(input$w04_next, if(w04_idx()<length(w04_cases_rv())) w04_idx(w04_idx()+1L))
+  observeEvent(input$w04_previous, {
+    w04_manual_abstract_edit_rv(FALSE)
+    if(w04_idx()>1L) w04_idx(w04_idx()-1L)
+  })
+  observeEvent(input$w04_next, {
+    w04_manual_abstract_edit_rv(FALSE)
+    if(w04_idx()<length(w04_cases_rv())) w04_idx(w04_idx()+1L)
+  })
 
   observeEvent(input$w02_accept_field, {
     if (save_w02_choice("accept_provider_field")) advance_w02()
