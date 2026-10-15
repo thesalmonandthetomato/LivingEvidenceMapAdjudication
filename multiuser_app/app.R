@@ -1056,6 +1056,7 @@ server <- function(input, output, session) {
   w04_manual_abstract_edits_rv <- reactiveVal(list())
   w04_manual_abstract_edit_rv <- reactiveVal(FALSE)
   w04_manual_abstract_status_rv <- reactiveVal("")
+  w04_manual_abstract_status_case_rv <- reactiveVal("")
   w04_note_status <- reactiveVal("")
   w04_batch_status_rv <- reactiveVal("")
   w04_status <- reactiveVal("")
@@ -9908,7 +9909,17 @@ server <- function(input, output, session) {
       return("")
     as.character(original)
   })
-  output$w04_manual_abstract_status <- renderText(w04_manual_abstract_status_rv())
+  output$w04_manual_abstract_status <- renderText({
+    status <- w04_manual_abstract_status_rv()
+    if (!nzchar(status)) return("")
+    case_id <- as.character(w04_current_case()$review_case_id %||% "")
+    if (!identical(case_id,w04_manual_abstract_status_case_rv())) return("")
+    status
+  })
+  observeEvent(w04_current_case()$review_case_id, {
+    w04_manual_abstract_status_rv("")
+    w04_manual_abstract_status_case_rv("")
+  }, ignoreInit=TRUE)
   observeEvent(input$w04_manual_edit_abstract,{
     w04_manual_abstract_edit_rv(!isTRUE(w04_manual_abstract_edit_rv()))
   })
@@ -9919,6 +9930,7 @@ server <- function(input, output, session) {
       return()
     }
     z <- w04_current_case()
+    w04_manual_abstract_status_case_rv(as.character(z$review_case_id %||% ""))
     value <- trimws(as.character(input$w04_manual_abstract_text %||% ""))
     if(!nzchar(value)) {
       w04_manual_abstract_status_rv("Enter a non-empty abstract before saving.")
