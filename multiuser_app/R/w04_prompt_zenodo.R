@@ -42,7 +42,8 @@ w04_prompt_review_metadata <- function() {
     as.character(data$key)))
 }
 w04_prompt_draft_id <- function(meta) {
-  id <- meta$values[["w04_prompt_zenodo_draft_id"]]
+  id <- if("w04_prompt_zenodo_draft_id" %in% names(meta$values))
+    meta$values[["w04_prompt_zenodo_draft_id"]] else NULL
   if(is.null(id)||is.na(id)||!nzchar(id)) return("")
   if(!grepl("^[0-9]+$",id)) stop("Invalid stored W04 draft ID",call.=FALSE)
   id
