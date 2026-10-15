@@ -3418,8 +3418,12 @@ server <- function(input, output, session) {
     w04_batch_id_rv(q$batch_id)
     w04_batch_status_rv(q$batch_status %||% "active")
     w04_decisions(existing_decisions)
-    w04_include_terms(if(is.null(w04_highlight_version_rv())) character() else w04_highlight_version_rv()$include)
-    w04_exclude_terms(if(is.null(w04_highlight_version_rv())) character() else w04_highlight_version_rv()$exclude)
+    # Highlight configuration belongs to the review, not the loaded subset.
+    # Preserve already loaded values; the login/configuration reader refreshes them.
+    if(!is.null(w04_highlight_version_rv())) {
+      w04_include_terms(w04_highlight_version_rv()$include)
+      w04_exclude_terms(w04_highlight_version_rv()$exclude)
+    }
     w04_idx(1L)
     msg <- sprintf("%s screening queue %s with %d records. It is now active under W04 Manual screening → Manage assignments.",
       if(isTRUE(result$created))"Created" else "Loaded",q$batch_id,length(q$cases))
@@ -3507,8 +3511,12 @@ server <- function(input, output, session) {
     w04_queue_sha_rv(q$queue_sha256)
     w04_batch_id_rv(q$batch_id)
     w04_batch_status_rv(q$batch_status %||% "active")
-    w04_include_terms(if(is.null(w04_highlight_version_rv())) character() else w04_highlight_version_rv()$include)
-    w04_exclude_terms(if(is.null(w04_highlight_version_rv())) character() else w04_highlight_version_rv()$exclude)
+    # Highlight configuration belongs to the review, not the loaded subset.
+    # Preserve already loaded values; the login/configuration reader refreshes them.
+    if(!is.null(w04_highlight_version_rv())) {
+      w04_include_terms(w04_highlight_version_rv()$include)
+      w04_exclude_terms(w04_highlight_version_rv()$exclude)
+    }
     w04_decisions(result$decisions)
     w04_idx(1L)
     w04_manual_queue_status_rv(sprintf("Loaded assigned subset %s (%d records).",q$subset_id,length(q$cases)))
@@ -5993,11 +6001,17 @@ server <- function(input, output, session) {
       if (has_w02_batch) w02_batch_id_rv() else "no-active-queue",
       ASSIGNMENT_MODES[["shared_work_pool"]]
     )
-    add_empty_group(
-      "04","manual_screening",
-      if (has_w04_batch) w04_batch_id_rv() else "no-active-queue",
-      ASSIGNMENT_MODES[["independent_blind_review"]]
-    )
+    # Do not add a zero-case placeholder when registered human subset
+    # assignments exist but the administrator has not loaded a personal queue.
+    if (!any(vapply(group_progress, function(g)
+      identical(g$meta$workflow,"04") &&
+      identical(g$meta$task_type,"manual_screening"), logical(1)))) {
+      add_empty_group(
+        "04","manual_screening",
+        if (has_w04_batch) w04_batch_id_rv() else "no-active-queue",
+        ASSIGNMENT_MODES[["independent_blind_review"]]
+      )
+    }
     add_empty_group(
       "04","conflict_resolution",
       if (has_w04_conflict_batch) w04_active_conflict_batch_id() else "no-active-queue",
@@ -8545,8 +8559,11 @@ server <- function(input, output, session) {
           w04_queue_sha_rv(w04_batch$queue_sha256)
           w04_batch_id_rv(w04_batch$batch_id)
           w04_batch_status_rv(w04_batch$batch_status %||% "")
-          w04_include_terms(if(is.null(w04_highlight_version_rv())) w04_batch$highlight_include %||% character() else w04_highlight_version_rv()$include)
-          w04_exclude_terms(if(is.null(w04_highlight_version_rv())) w04_batch$highlight_exclude %||% character() else w04_highlight_version_rv()$exclude)
+          # Never restore legacy queue-specific terms over review-level terms.
+          if(!is.null(w04_highlight_version_rv())) {
+            w04_include_terms(w04_highlight_version_rv()$include)
+            w04_exclude_terms(w04_highlight_version_rv()$exclude)
+          }
           w04_decisions(w04_batch_decisions)
           w04_validation_finalize_requested_rv(
             tryCatch(
