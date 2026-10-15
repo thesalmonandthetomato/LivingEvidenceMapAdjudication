@@ -1644,11 +1644,18 @@ append_w04_decision_to_tab <- function(decision, prior_decision=NULL, tab, prefi
     stringsAsFactors=FALSE
   )
   googlesheets4::sheet_append(ss,data=row,sheet=tab)
-  x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
-  hits <- x[as.character(x$decision_id)==decision_id,,drop=FALSE]
-  if(nrow(hits)!=1L) stop("W04 Google Sheets write could not be verified",call.=FALSE)
+  # Verify the append using only the decision-id column instead of
+  # downloading every historical decision and its payload on every click.
+  # The row we just submitted is already available locally.
+  written_ids <- googlesheets4::read_sheet(
+    ss, sheet=tab, range=googlesheets4::cell_cols("A"),
+    col_types="c"
+  )
+  if(!"decision_id" %in% names(written_ids) ||
+     sum(as.character(written_ids$decision_id)==decision_id,na.rm=TRUE)!=1L)
+    stop("W04 Google Sheets write could not be verified",call.=FALSE)
   normalise_saved_decision_event(
-    as.list(hits[1,,drop=FALSE]),
+    as.list(row[1,,drop=FALSE]),
     prior_decision = prior_decision,
     case_fields = c("case_id", "review_case_id")
   )
