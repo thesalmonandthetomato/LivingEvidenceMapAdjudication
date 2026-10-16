@@ -1,0 +1,25 @@
+name: Temporary Stage 2 login read validation
+on:
+  push:
+    paths:
+      - '.github/workflows/temporary-stage2-login-read-validation.yml'
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - name: Parse application and check login refresh guard
+        shell: Rscript {0}
+        run: |
+          source_file <- "multiuser_app/app.R"
+          parse(file=source_file)
+          x <- readLines(source_file, warn=FALSE)
+          anchor <- grep("observeEvent\\(app_view\\(\\), \\{", x)
+          stopifnot(length(anchor) >= 1L)
+          sections <- vapply(anchor, function(i) paste(x[i:min(i+22L,length(x))], collapse="\n"), character(1))
+          stopifnot(any(grepl("if \\(isTRUE\\(login_initialising\\(\\)\\)\\) return\\(\\)", sections)))
+          cat("R parse and login duplicate-refresh guard PASS\n")
