@@ -1164,35 +1164,15 @@ server <- function(input, output, session) {
   search_scope_active_version_rv <- reactiveVal("original")
   search_scope_running_version_rv <- reactiveVal("")
 
-  observe({
-    req(authenticated())
-    invalidateLater(30000, session)
-    if (!identical(app_view(), "tasks")) return()
-    refreshed <- tryCatch(
-      if(identical(storage_backend(),"google_sheets")) read_latest_pipeline_status() else NULL,
-      error=function(e) NULL
-    )
-    if(identical(storage_backend(),"google_sheets")) pipeline_status_rv(NULL)
-    if(!is.null(refreshed)) {
-      pipeline_status_rv(refreshed)
-      if (w08_status_is_final(refreshed)) {
-        authoritative_w08_rv(tryCatch(
-          read_authoritative_w08_metrics(),
-          error = function(e) NULL
-        ))
-      } else {
-        authoritative_w08_rv(NULL)
-      }
-    }
-  })
+  # Pipeline status is loaded once during authentication. Task navigation
+  # must not trigger repeated Google Sheets reads under the shared account.
 
   # Review-scoped publication receipts change only on workflow publication.
   # Poll less often than interactive review queues to avoid exhausting the
   # shared service-account read quota during idle task-page sessions.
-  observe({
+  observeEvent(authenticated(), {
     req(authenticated(),identical(storage_backend(),"google_sheets"))
-    invalidateLater(180000,session)
-    if(!identical(app_view(),"tasks"))return()
+    # Publication receipts are loaded once per login, not polled while idle.
     metrics <- tryCatch({
       ss <- sheet_id_from_env()
       metadata <- read_review_metadata_cached(ss)
@@ -1249,26 +1229,8 @@ server <- function(input, output, session) {
     which(!ids %in% w02_resolved_ids())
   }
 
-  # Login already reads manual-screening metrics. Do not duplicate that
-  # Google Sheets request immediately in the first background refresh.
-  manual_metrics_poll_armed <- reactiveVal(FALSE)
-  observe({
-    req(authenticated())
-    if (!identical(app_view(), "tasks")) return()
-    invalidateLater(300000, session)
-    if (!isTRUE(isolate(manual_metrics_poll_armed()))) {
-      manual_metrics_poll_armed(TRUE)
-      return()
-    }
-    refreshed <- tryCatch(read_manual_screening_metrics(),error=function(e)e)
-    if (inherits(refreshed,"error")) {
-      if (session_can("manage_assignments")) {
-        w04_consistency_status(paste("Kappa registry integrity error:",conditionMessage(refreshed)))
-      }
-    } else {
-      manual_screening_rv(refreshed)
-    }
-  })
+  # Manual-screening metrics are loaded into local reactive state at login.
+  # They are updated after local writes or explicit user refresh, not polled.
 
   load_w02_batch <- function() {
     if (!identical(storage_backend(), "google_sheets")) return(NULL)
@@ -9465,9 +9427,9 @@ server <- function(input, output, session) {
     )
   })
 
-  observe({
+  observeEvent(authenticated(), {
     req(authenticated(),identical(storage_backend(),"google_sheets"))
-    invalidateLater(30000,session)
+    # Refresh optional-pause status once at login, not every 30 seconds.
     state <- tryCatch(w02_optional_pause_current(),error=function(e)NULL)
     if(is.null(state)) {
       w02_optional_pause_rv(NULL)
@@ -9698,9 +9660,9 @@ server <- function(input, output, session) {
   })
 
   # The optional queue is independent of normal W02 conflicts and decisions.
-  observe({
+  observeEvent(authenticated(), {
     req(authenticated(),identical(storage_backend(),"google_sheets"))
-    invalidateLater(30000,session)
+    # The queue can be refreshed through workflow actions; no idle poll.
     q <- tryCatch(w02_missing_abstract_queue(),error=function(e) {
       w02_abstract_status_rv(paste("Abstract queue unavailable:",conditionMessage(e)))
       NULL
