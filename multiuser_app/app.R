@@ -8699,6 +8699,16 @@ server <- function(input, output, session) {
         }
         w02_batch <- login_timed_read("W02 queue",load_w02_batch)
 
+        # Reuse one W02 decision snapshot for the historical repair check and
+        # normal W02 queue initialisation, unless the repair changes its status.
+        w02_login_decision_snapshot <- NULL
+        read_w02_login_decisions <- function() {
+          if (is.null(w02_login_decision_snapshot))
+            w02_login_decision_snapshot <<- login_timed_read(
+              "W02 decisions", active_sheet_w02_decisions)
+          w02_login_decision_snapshot
+        }
+
         # One-off lifecycle repair for the completed historical W02 batch.
         # Finalizer run 37016080508 successfully applied and published all 13
         # decisions from source run 36989928117 before consumed-status
@@ -8709,7 +8719,7 @@ server <- function(input, output, session) {
           identical(as.character(w02_batch$batch_id), "w02-run-36989928117") &&
           identical(as.character(w02_batch$batch_status %||% ""), "review_complete")
         ) {
-          repair_decisions <- active_sheet_w02_decisions()
+          repair_decisions <- read_w02_login_decisions()
           repair_decisions <- w02_filter_batch_decisions(repair_decisions, w02_batch$queue_sha256)
           repair_ids <- w02_resolved_ids(repair_decisions)
           repair_case_ids <- vapply(w02_batch$cases, function(x) as.character(x$review_case_id), character(1))
@@ -8731,7 +8741,7 @@ server <- function(input, output, session) {
         }
 
         if (!is.null(w02_batch)) {
-          w02_all_decisions <- active_sheet_w02_decisions()
+          w02_all_decisions <- read_w02_login_decisions()
           w02_batch_decisions <- w02_filter_batch_decisions(w02_all_decisions, w02_batch$queue_sha256)
           w02_all_cases_rv(w02_batch$cases)
           w02_visible_cases <- cases_for_assignment_user(
