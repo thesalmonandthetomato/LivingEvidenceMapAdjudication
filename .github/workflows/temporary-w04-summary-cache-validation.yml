@@ -1,0 +1,40 @@
+name: Temporary W04 summary cache validation
+on:
+  push:
+    paths: ['.github/workflows/temporary-w04-summary-cache-validation.yml']
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+      - name: Check summary cache on assignment re-render
+        shell: Rscript {0}
+        run: |
+          parse(file="multiuser_app/app.R")
+          text <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\n")
+          start <- regexpr("w04_summary_history_cache <- new.env",text,fixed=TRUE)[1]
+          end <- regexpr("    group_progress <- lapply(grouped",text,fixed=TRUE)[1]
+          stopifnot(start>0L,end>start)
+          segment <- substr(text,start,end-1L)
+          stopifnot(grepl("exists(cache_key,envir=w04_summary_history_cache,inherits=FALSE)",segment,fixed=TRUE))
+          stopifnot(grepl("assign(cache_key,loaded,envir=w04_summary_history_cache)",segment,fixed=TRUE))
+          stopifnot(grepl("if(is.null(loaded)) return(list())",segment,fixed=TRUE))
+          stopifnot(grepl("w04_filter_batch_decisions(all,queue$queue_sha256)",segment,fixed=TRUE))
+          stopifnot(regexpr("if(exists(cache_key",segment,fixed=TRUE)[1] <
+                    regexpr("active_sheet_w04_decisions()",segment,fixed=TRUE)[1])
+          # Validate session-local cache semantics without connecting to Sheets.
+          cache <- new.env(parent=emptyenv())
+          reads <- 0L
+          load_batch <- function(key) {
+            if(exists(key,envir=cache,inherits=FALSE)) return(get(key,envir=cache,inherits=FALSE))
+            reads <<- reads+1L
+            x <- list(case_id=key)
+            assign(key,x,envir=cache)
+            x
+          }
+          stopifnot(identical(load_batch("old"),load_batch("old")),reads==1L)
+          load_batch("other")
+          stopifnot(reads==2L,identical(load_batch("old")$case_id,"old"))
+          cat("PASS: W04 older-subset snapshots cached per session and repeated render reads avoided\n")
