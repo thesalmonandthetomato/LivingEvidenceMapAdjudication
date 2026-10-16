@@ -18,6 +18,7 @@ source("R/w04_human_kappa_registry.R", local = TRUE)
 source("R/w04_prompt_versions.R", local = TRUE)
 source("R/w04_prompt_zenodo.R", local = TRUE)
 source("R/w04_shiny_model_launch.R", local = TRUE)
+source("R/w04_model_batches.R", local = TRUE)
 source("R/w04_highlight_sheets.R", local = TRUE)
 source("R/w04_subset_registry.R", local = TRUE)
 source("R/w04_subset_storage.R", local = TRUE)
@@ -1054,6 +1055,11 @@ server <- function(input, output, session) {
   w04_model_versions_rv <- reactiveVal(list())
   w04_model_status_rv <- reactiveVal("")
   w04_model_launch_busy_rv <- reactiveVal(FALSE)
+  w04_model_batches_rv <- reactiveVal(list())
+  w04_model_results_rv <- reactiveVal(NULL)
+  w04_model_selected_batch_rv <- reactiveVal(NULL)
+  w04_model_comparison_rv <- reactiveVal(NULL)
+  w04_model_return_status_rv <- reactiveVal("")
   w04_all_cases_rv <- reactiveVal(list())
   w04_cases_rv <- reactiveVal(NULL)
   w04_queue_sha_rv <- reactiveVal("")
@@ -4175,6 +4181,15 @@ server <- function(input, output, session) {
                   tags$div(id="w04_model_launch_busy",class="saved-note",
                     style="display:none;","Archiving selected subset and launching model screening…"),
                   textOutput("w04_model_status"),
+                  tags$hr(),
+                  tags$h5("Completed model screening batches"),
+                  actionButton("w04_model_batches_refresh","Load completed model batches",class="btn-outline-secondary btn-sm"),
+                  uiOutput("w04_model_batch_selector"),
+                  actionButton("w04_model_batch_open","Open selected model batch",class="btn-outline-primary btn-sm"),
+                  actionButton("w04_model_batch_compare","Compare with human screening",class="btn-outline-secondary btn-sm"),
+                  textOutput("w04_model_return_status"),
+                  uiOutput("w04_model_batch_summary"),
+                  tableOutput("w04_model_comparison_table"),
                   tags$a("View W04 subset model runs",
                     href="https://github.com/thesalmonandthetomato/LivingEvidenceMap/actions/workflows/w04_shiny_subset_launcher.yml",
                     target="_blank",rel="noopener noreferrer")
