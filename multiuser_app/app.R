@@ -8803,17 +8803,20 @@ server <- function(input, output, session) {
           w02_resume_requested_rv(FALSE)
         }
 
-        w04_screening_notes_rv(
-          if (identical(storage_backend(),"google_sheets")) {
-            tryCatch(login_timed_read("W04 screening notes",active_sheet_w04_screening_notes), error=function(e) list())
-          } else list()
-        )
+        # First identify whether W04 has an active manual-screening queue.
+        # Avoid reading screening notes for sessions without that queue.
 
         w04_batch <- login_timed_read("W04 queue",function() load_w04_batch(login_user))
         if (!is.null(w04_batch) && identical(as.character(w04_batch$review_mode %||% ""), "resolution")) {
           w04_batch <- NULL
         }
         if (!is.null(w04_batch)) {
+          w04_screening_notes_rv(
+            if (identical(storage_backend(),"google_sheets")) {
+              tryCatch(login_timed_read("W04 screening notes",active_sheet_w04_screening_notes),
+                error=function(e) list())
+            } else list()
+          )
           w04_all_decisions <- login_timed_read("W04 decisions",active_sheet_w04_decisions)
           w04_batch_decisions <- w04_filter_batch_decisions(w04_all_decisions, w04_batch$queue_sha256)
           w04_all_cases_rv(w04_batch$cases)
