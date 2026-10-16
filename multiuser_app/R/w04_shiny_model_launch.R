@@ -52,6 +52,7 @@ w04_shiny_model_bundle_build <- function(meta, subset, queue, prompt, decisions,
   }
   list(schema="lem-w04-shiny-subset-input-v1",
     review_id=as.character(meta$review_id),
+    review_sheet_id=as.character(meta$sheet_id),
     subset_id=as.character(subset$subset_id),
     queue_sha256=as.character(queue$queue_sha256),
     source_checkpoint_sha256=tolower(as.character(subset$source_checkpoint_sha256)),
