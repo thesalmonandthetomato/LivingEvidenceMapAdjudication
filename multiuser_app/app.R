@@ -8679,6 +8679,7 @@ server <- function(input, output, session) {
       login_status("")
       login_initialising(TRUE)
       session$onFlushed(function() {
+      shiny::isolate({
       loaded <- tryCatch({
         user_registry_rv(registry)
         loaded_assignments <- login_timed_read("assignments",function() read_assignment_registry(assignment_path))
@@ -9081,6 +9082,7 @@ server <- function(input, output, session) {
       } else {
         login_initialising(FALSE)
       }
+      })
       }, once=TRUE)
     } else {
       n <- failed_attempts() + 1L
