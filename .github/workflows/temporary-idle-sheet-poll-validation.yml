@@ -1,0 +1,32 @@
+name: Temporary idle Sheets polling validation
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/temporary-idle-sheet-poll-validation.yml']
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.6.0'
+          use-public-rspm: true
+      - name: Parse app and inspect polling isolation
+        shell: Rscript {0}
+        run: |
+          parse("multiuser_app/app.R")
+          x <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\n")
+          stopifnot(!grepl("invalidateLater(300000, session)",x,fixed=TRUE))
+          stopifnot(!grepl("invalidateLater(180000,session)",x,fixed=TRUE))
+          stopifnot(!grepl("invalidateLater(30000,session)",x,fixed=TRUE))
+          stopifnot(!grepl("invalidateLater(30000, session)",x,fixed=TRUE))
+          stopifnot(!grepl("invalidateLater(15000,session)\n    record <- tryCatch",x,fixed=TRUE))
+          stopifnot(grepl("observeEvent(authenticated(), {\n    req(authenticated(),identical(storage_backend(),\"google_sheets\"))",x,fixed=TRUE))
+          stopifnot(grepl('login_timed_read("pipeline status",read_latest_pipeline_status)',x,fixed=TRUE))
+          stopifnot(grepl('login_timed_read("manual screening metrics",read_manual_screening_metrics)',x,fixed=TRUE))
+          stopifnot(grepl("invalidateLater(5000,session)",x,fixed=TRUE))
+          stopifnot(grepl("invalidateLater(15000,session)",x,fixed=TRUE))
+          cat("PASS: app parses; idle polling removed and active monitoring retained\n")
