@@ -1,0 +1,26 @@
+name: Temporary login error regression
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/temporary-login-error-regression.yml']
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.6.0'
+          use-public-rspm: true
+      - name: Parse login and check fail-closed handling
+        shell: Rscript {0}
+        run: |
+          parse("multiuser_app/app.R")
+          x <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\n")
+          stopifnot(grepl('message("LEM review data initialisation failed: ", detail)',x,fixed=TRUE))
+          stopifnot(grepl('authenticated(FALSE)\n        current_user(NULL)\n        login_initialising(FALSE)',x,fixed=TRUE))
+          stopifnot(grepl('login_status(paste("Review data could not be loaded:", detail))',x,fixed=TRUE))
+          stopifnot(grepl('session$onFlushed(function()',x,fixed=TRUE))
+          cat("PASS: login fail-closed error reporting and R syntax\n")
