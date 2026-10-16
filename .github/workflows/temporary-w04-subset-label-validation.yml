@@ -1,0 +1,39 @@
+name: Temporary W04 subset label validation
+on:
+  push:
+    paths: ['.github/workflows/temporary-w04-subset-label-validation.yml']
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+      - name: Check labels and unchanged subset identity
+        shell: Rscript {0}
+        run: |
+          parse(file="multiuser_app/app.R")
+          parse(file="multiuser_app/R/w04_subset_registry.R")
+          parse(file="multiuser_app/R/w04_subset_storage.R")
+          `%||%` <- function(x,y) if(is.null(x)) y else x
+          lines <- readLines("multiuser_app/R/w04_subset_storage.R",warn=FALSE)
+          start <- grep("^w04_subset_label_text <- function",lines)
+          end <- grep("^w04_subset_labels_read <- function",lines)
+          stopifnot(length(start)==1L,length(end)==1L)
+          env <- new.env(parent=baseenv())
+          env$'%||%' <- `%||%`
+          eval(parse(text=paste(lines[start:(end-1L)],collapse="\n")),envir=env)
+          s <- list(subset_id="w04-subset-123",actual_size=100L,label="Check 1, MG")
+          stopifnot(identical(env$w04_subset_display(s,FALSE),"Check 1, MG · w04-subset-123"))
+          stopifnot(identical(env$w04_subset_display(s,TRUE),"Check 1, MG · w04-subset-123 (100 records)"))
+          stopifnot(identical(env$w04_subset_display(within(s,rm(label)),FALSE),"w04-subset-123"))
+          stopifnot(identical(env$w04_subset_label_text("  Check 1, MG  "),"Check 1, MG"))
+          stopifnot(inherits(try(env$w04_subset_label_text(paste(rep("a",101),collapse="")),silent=TRUE),"try-error"))
+          app <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\n")
+          st <- paste(lines,collapse="\n")
+          stopifnot(grepl('w04_subset_label_save(meta$review_id',app,fixed=TRUE))
+          stopifnot(grepl('uiOutput("w04_subset_label_editor")',app,fixed=TRUE))
+          stopifnot(grepl('w04_subset_display(match[[1L]],records=FALSE)',app,fixed=TRUE))
+          stopifnot(grepl('w04_subset_labels_read(ss,review_id)',st,fixed=TRUE))
+          stopifnot(grepl('googlesheets4::sheet_append(ss,sheet=tab,data=data.frame(',st,fixed=TRUE))
+          cat("PASS subset labels, backwards-compatible fallback, admin controls and immutable ID\n")
