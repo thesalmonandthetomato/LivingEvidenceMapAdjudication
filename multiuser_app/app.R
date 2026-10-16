@@ -3766,8 +3766,16 @@ server <- function(input, output, session) {
     versions <- w04_model_versions_rv()
     if(!length(versions)) return(tags$span(class="saved-note","No archived W04 prompts loaded."))
     ids <- vapply(versions,function(x)as.character(x$version_id),character(1))
-    labels <- vapply(versions,function(x)
-      sprintf("%s · %s · %s",x$version_id,x$status,x$created_at_utc),character(1))
+    labels <- vapply(versions,function(x) {
+      filename <- trimws(as.character(x$original_filename %||% ""))
+      notes <- trimws(as.character(x$notes %||% ""))
+      descriptive <- if(nzchar(filename)) filename else if(nzchar(notes))
+        substr(notes,1L,65L) else "Untitled prompt"
+      sprintf("%s | %s | %s | %s",descriptive,
+        as.character(x$status %||% "draft"),
+        substr(as.character(x$created_at_utc %||% ""),1L,16L),
+        as.character(x$version_id %||% ""))
+    },character(1))
     selectInput("w04_model_prompt_selected","Immutable archived prompt",
       choices=stats::setNames(ids,labels))
   })
