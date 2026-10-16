@@ -11977,7 +11977,7 @@ server <- function(input, output, session) {
     if (!identical(app_view(), "tasks")) return()
     # Login initialisation already reads these metrics. Do not launch a
     # concurrent duplicate refresh when the initial Tasks view appears.
-    if (isTRUE(login_initialising())) return()
+    if (isTRUE(shiny::isolate(login_initialising()))) return()
 
     refreshed <- tryCatch(
       if(identical(storage_backend(),"google_sheets")) read_latest_pipeline_status() else NULL,
