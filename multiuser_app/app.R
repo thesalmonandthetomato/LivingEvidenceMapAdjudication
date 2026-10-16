@@ -8790,7 +8790,7 @@ server <- function(input, output, session) {
 
         w04_screening_notes_rv(
           if (identical(storage_backend(),"google_sheets")) {
-            tryCatch(active_sheet_w04_screening_notes(), error=function(e) list())
+            tryCatch(login_timed_read("W04 screening notes",active_sheet_w04_screening_notes), error=function(e) list())
           } else list()
         )
 
@@ -8822,8 +8822,8 @@ server <- function(input, output, session) {
           }
           w04_decisions(w04_batch_decisions)
           w04_manual_abstract_edits_rv(tryCatch(
-            active_sheet_w04_manual_abstract_edits(w04_batch$queue_sha256,
-              as.character(normalise_user_row(login_user)$user_id)),
+            login_timed_read("W04 abstract edits",function() active_sheet_w04_manual_abstract_edits(w04_batch$queue_sha256,
+              as.character(normalise_user_row(login_user)$user_id))),
             error=function(e){w04_manual_abstract_status_rv(paste("Abstract edits unavailable:",conditionMessage(e)));list()}))
           w04_manual_abstract_edit_rv(FALSE)
           w04_validation_finalize_requested_rv(
@@ -8879,7 +8879,7 @@ server <- function(input, output, session) {
           )
           w04_resolution_abstract_edits_rv(
             tryCatch(
-              active_sheet_w04_resolution_abstract_edits(w04_resolution_batch$queue_sha256),
+              login_timed_read("W04 resolution edits",function() active_sheet_w04_resolution_abstract_edits(w04_resolution_batch$queue_sha256)),
               error=function(e) list()
             )
           )
