@@ -1246,10 +1246,17 @@ server <- function(input, output, session) {
     which(!ids %in% w02_resolved_ids())
   }
 
+  # Login already reads manual-screening metrics. Do not duplicate that
+  # Google Sheets request immediately in the first background refresh.
+  manual_metrics_poll_armed <- reactiveVal(FALSE)
   observe({
     req(authenticated())
-    invalidateLater(300000, session)
     if (!identical(app_view(), "tasks")) return()
+    invalidateLater(300000, session)
+    if (!isTRUE(manual_metrics_poll_armed())) {
+      manual_metrics_poll_armed(TRUE)
+      return()
+    }
     refreshed <- tryCatch(read_manual_screening_metrics(),error=function(e)e)
     if (inherits(refreshed,"error")) {
       if (session_can("manage_assignments")) {
