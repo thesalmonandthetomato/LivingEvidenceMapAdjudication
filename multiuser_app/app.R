@@ -3841,9 +3841,27 @@ server <- function(input, output, session) {
       "· No full-review finalisation or automatic W05 hand-off."))
   })
 
+  # Delay construction of the large configuration tree until an administrator
+  # explicitly opens it. Do not delay user identity, logout, or the task page.
+  configure_review_requested <- reactiveVal(FALSE)
+  observeEvent(input$open_configure_review,{
+    req(authenticated())
+    if(identical(as.character(current_user()$role %||% ""),"administrator"))
+      configure_review_requested(TRUE)
+  })
+  observeEvent(authenticated(),{
+    if(!isTRUE(authenticated())) configure_review_requested(FALSE)
+  })
+
   output$configure_review <- renderUI({
     req(authenticated())
     if (!identical(as.character(current_user()$role %||% ""),"administrator")) return(NULL)
+    if(!isTRUE(configure_review_requested())) return(
+      card(class="assignment-summary",
+        actionButton("open_configure_review","Configure review",
+          class="btn-outline-secondary w-100 text-start",
+          title="Load review configuration controls on demand"))
+    )
     # Administrator access controls this menu; individual operations retain their own permission checks.
 
     request_active <- nzchar(as.character(search_scope_request_id_rv() %||% ""))
@@ -3855,6 +3873,7 @@ server <- function(input, output, session) {
       tags$details(
         class="assignment-disclosure",
         `data-accordion-key`="configure-review",
+        open="open",
         tags$summary(
           div(
             class="d-inline-flex flex-wrap align-items-center gap-2 p-3",
@@ -4147,7 +4166,7 @@ server <- function(input, output, session) {
   })
 
   observe({
-    req(authenticated())
+    req(authenticated(),configure_review_requested())
     if (!session_can("run_search_scoping")) return()
     if (!is.null(search_source_groups_rv())) return()
     cfg <- tryCatch(
