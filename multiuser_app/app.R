@@ -7668,11 +7668,14 @@ server <- function(input, output, session) {
       w04_consistency_history_loaded(TRUE)
       return()
     }
+    # Reviewer conflict sets are already loaded from Sheets at login.
+    # Reuse that snapshot rather than immediately rereading the same tab.
+    conflict_snapshot <- isolate(w04_conflict_sets_rv())
     loaded <- tryCatch(
       list(
         analyses=read_w04_consistency_analyses(),
         human_kappa=read_w04_human_kappa_registry(),
-        conflict_sets=read_w04_conflict_sets()
+        conflict_sets=conflict_snapshot
       ),
       error=function(e)e
     )
