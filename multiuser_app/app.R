@@ -17,6 +17,7 @@ source("R/w04_kappa_registry.R", local = TRUE)
 source("R/w04_human_kappa_registry.R", local = TRUE)
 source("R/w04_prompt_versions.R", local = TRUE)
 source("R/w04_prompt_zenodo.R", local = TRUE)
+source("R/w04_shiny_model_launch.R", local = TRUE)
 source("R/w04_highlight_sheets.R", local = TRUE)
 source("R/w04_subset_registry.R", local = TRUE)
 source("R/w04_subset_storage.R", local = TRUE)
@@ -1046,6 +1047,10 @@ server <- function(input, output, session) {
   w04_subsets_rv <- reactiveVal(list())
   w04_prompt_status_rv <- reactiveVal("")
   w04_prompt_versions_rv <- reactiveVal(list())
+  w04_model_subsets_rv <- reactiveVal(list())
+  w04_model_versions_rv <- reactiveVal(list())
+  w04_model_status_rv <- reactiveVal("")
+  w04_model_launch_busy_rv <- reactiveVal(FALSE)
   w04_all_cases_rv <- reactiveVal(list())
   w04_cases_rv <- reactiveVal(NULL)
   w04_queue_sha_rv <- reactiveVal("")
@@ -3747,6 +3752,87 @@ server <- function(input, output, session) {
     session$sendCustomMessage("w04_prompt_feedback",list(done=TRUE))
   })
 
+  output$w04_model_status <- renderText(w04_model_status_rv())
+  output$w04_model_subset_selector <- renderUI({
+    xs <- w04_model_subsets_rv()
+    if(!length(xs)) return(tags$span(class="saved-note","No registered subsets loaded."))
+    ids <- vapply(xs,function(x)as.character(x$subset_id),character(1))
+    labels <- vapply(xs,function(x)sprintf("%s (%d records)",
+      as.character(x$subset_id),length(x$record_ids)),character(1))
+    selectInput("w04_model_subset_selected","Registered human-screened subset",
+      choices=stats::setNames(ids,labels))
+  })
+  output$w04_model_prompt_selector <- renderUI({
+    versions <- w04_model_versions_rv()
+    if(!length(versions)) return(tags$span(class="saved-note","No archived W04 prompts loaded."))
+    ids <- vapply(versions,function(x)as.character(x$version_id),character(1))
+    labels <- vapply(versions,function(x)
+      sprintf("%s · %s · %s",x$version_id,x$status,x$created_at_utc),character(1))
+    selectInput("w04_model_prompt_selected","Immutable archived prompt",
+      choices=stats::setNames(ids,labels))
+  })
+  observeEvent(input$w04_model_refresh,{
+    on.exit(session$sendCustomMessage("lem_busy_finished",list(id="w04_model_refresh")),add=TRUE)
+    req(authenticated())
+    if(!session_can("control_workflows")) return()
+    result <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      list(subsets=w04_subset_registry_read(meta$review_id),
+           versions=w04_prompt_archive_versions(meta))
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_model_status_rv(paste("Could not load model input options:",conditionMessage(result)))
+      return()
+    }
+    w04_model_subsets_rv(result$subsets)
+    w04_model_versions_rv(result$versions)
+    w04_model_status_rv(sprintf("%d registered subsets and %d prompt versions available.",
+      length(result$subsets),length(result$versions)))
+  })
+  observeEvent(input$w04_model_launch,{
+    on.exit(session$sendCustomMessage("lem_busy_finished",list(id="w04_model_launch")),add=TRUE)
+    req(authenticated())
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role),"administrator")) {
+      w04_model_status_rv("Only an administrator may launch W04 model screening.")
+      return()
+    }
+    if(isTRUE(w04_model_launch_busy_rv())) return()
+    w04_model_launch_busy_rv(TRUE)
+    on.exit(w04_model_launch_busy_rv(FALSE),add=TRUE)
+    result <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      subset_id <- as.character(input$w04_model_subset_selected %||% "")
+      version_id <- as.character(input$w04_model_prompt_selected %||% "")
+      subsets <- w04_model_subsets_rv()
+      versions <- w04_model_versions_rv()
+      selected <- Filter(function(x)identical(as.character(x$subset_id),subset_id),subsets)
+      prompt <- Filter(function(x)identical(as.character(x$version_id),version_id),versions)
+      if(length(selected)!=1L||length(prompt)!=1L)
+        stop("Choose a registered subset and immutable prompt version",call.=FALSE)
+      subset <- selected[[1L]]
+      queue <- w04_subset_queue_read(subset_id,meta$review_id)
+      if(is.null(queue)) stop("Registered subset screening queue is missing",call.=FALSE)
+      ds <- w04_filter_batch_decisions(active_sheet_w04_decisions(),queue$queue_sha256)
+      edits <- active_sheet_w04_manual_abstract_edits(queue$queue_sha256)
+      bundle <- w04_shiny_model_bundle_build(meta,subset,queue,prompt[[1L]],ds,edits)
+      source <- w04_subset_review_source_pointers()
+      if(!identical(tolower(as.character(source$lean$lean_canonical_sha256)),
+                    tolower(as.character(bundle$source_checkpoint_sha256))))
+        stop("Registered subset does not match the review-bound W03 source",call.=FALSE)
+      archived <- w04_shiny_model_bundle_archive(meta,bundle)
+      w04_shiny_model_dispatch(meta,source,subset,archived)
+      archived
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_model_status_rv(paste("W04 model launch was not confirmed:",conditionMessage(result)))
+      return()
+    }
+    w04_model_status_rv(paste("Dispatched W04 subset screening to GitHub. Archived input:",
+      result$filename,"· SHA-256",result$sha256,
+      "· No full-review finalisation or automatic W05 hand-off."))
+  })
+
   output$configure_review <- renderUI({
     req(authenticated())
     if (!identical(as.character(current_user()$role %||% ""),"administrator")) return(NULL)
@@ -3968,6 +4054,29 @@ server <- function(input, output, session) {
                   textOutput("w04_prompt_archive_status"),
                   uiOutput("w04_prompt_archive_history"),
                   uiOutput("w04_prompt_zenodo_link")
+                )
+              ),
+              tags$details(class="assignment-disclosure",
+                tags$summary(tags$strong("Model screening of human-screened subsets")),
+                div(class="px-3 pb-3",
+                  tags$p(class="saved-note",
+                    "Run the shared W04 model screener against a registered subset after human screening. The selected immutable Zenodo prompt and agreed manual abstract corrections are used. This validation does not publish a full W04 review or launch W05."),
+                  actionButton("w04_model_refresh","Load subsets and prompts",
+                    class="btn-outline-secondary btn-sm",
+                    onclick="window.lemBusyStart('w04_model_refresh','Loading review-bound model input options…')"),
+                  tags$div(id="w04_model_refresh_busy",class="saved-note",
+                    style="display:none;","Loading registered subsets and archived prompts…"),
+                  uiOutput("w04_model_subset_selector"),
+                  uiOutput("w04_model_prompt_selector"),
+                  actionButton("w04_model_launch","Run model on selected subset",
+                    class="btn-primary btn-sm",
+                    onclick="window.lemBusyStart('w04_model_launch','Validating and archiving W04 inputs, then dispatching GitHub…')"),
+                  tags$div(id="w04_model_launch_busy",class="saved-note",
+                    style="display:none;","Archiving selected subset and launching model screening…"),
+                  textOutput("w04_model_status"),
+                  tags$a("View W04 subset model runs",
+                    href="https://github.com/thesalmonandthetomato/LivingEvidenceMap/actions/workflows/w04_shiny_subset_launcher.yml",
+                    target="_blank",rel="noopener noreferrer")
                 )
               ),
               tags$details(class="assignment-disclosure",
