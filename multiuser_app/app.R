@@ -3885,6 +3885,21 @@ server <- function(input, output, session) {
     )
   })
 
+  # These frequently changing scoping values update their own output bindings.
+  # They must not invalidate the full Configure review tree and remount the
+  # W04 prompt, highlighting and subset input controls.
+  output$configure_scope_status <- renderText({
+    req(authenticated(), configure_review_requested())
+    search_scope_status_rv()
+  })
+  output$configure_scope_versions <- renderUI({
+    req(authenticated(), configure_review_requested())
+    versions <- search_scope_versions_rv()
+    if (length(versions) <= 1L) return(NULL)
+    tags$div(class="saved-note mb-2",
+      paste("Temporary versions in this session:",paste(names(versions),collapse=", ")))
+  })
+
   output$configure_review_contents <- renderUI({
     req(authenticated(), configure_review_requested())
     if (!identical(as.character(current_user()$role %||% ""), "administrator")) return(NULL)
@@ -3940,12 +3955,7 @@ server <- function(input, output, session) {
             "Use an asterisk (*) at the end of a word stem to search for multiple word endings, including regular plurals (e.g. vegetable* retrieves vegetable and vegetables). Truncation can also retrieve related terms (e.g. farm* may retrieve farm, farms, farmer and farming). Irregular plurals, such as woman and women, should be entered separately. Wildcard behaviour varies between databases, so check that your terms capture the intended variants."),
           if (!request_active && !isTRUE(original_complete))
             textOutput("search_scope_validation_message"),
-          if (length(search_scope_versions_rv()) > 1L) {
-            tags$div(
-              class="saved-note mb-2",
-              paste("Temporary versions in this session:", paste(names(search_scope_versions_rv()), collapse=", "))
-            )
-          },
+          uiOutput("configure_scope_versions"),
           div(
             class="d-flex align-items-center gap-2 flex-wrap mb-2",
             if (request_active && !counts_resolved) {
@@ -3955,7 +3965,7 @@ server <- function(input, output, session) {
             } else {
               uiOutput("search_scope_run_control")
             },
-            tags$span(class="saved-note", search_scope_status_rv())
+            tags$span(class="saved-note", textOutput("configure_scope_status", inline=TRUE))
           ),
           uiOutput("search_scope_progress"),
           uiOutput("search_scope_table"),
