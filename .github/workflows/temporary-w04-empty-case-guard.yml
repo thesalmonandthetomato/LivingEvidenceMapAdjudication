@@ -1,0 +1,36 @@
+name: Temporary W04 empty-case login regression
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/temporary-w04-empty-case-guard.yml']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Verify safe W04 current-case lookup
+        shell: Rscript {0}
+        run: |
+          parse(file="multiuser_app/app.R")
+          source_lines <- readLines("multiuser_app/app.R",warn=FALSE)
+          start <- grep("^  w04_current_case <- reactive\\(\\{",source_lines)
+          stopifnot(length(start)==1L)
+          body <- paste(source_lines[start:(start+9L)],collapse="\n")
+          stopifnot(grepl("length(cases) > 0L",body,fixed=TRUE))
+          stopifnot(grepl("index <= length(cases)",body,fixed=TRUE))
+          guarded <- function(cases,index) {
+            if(!is.list(cases) || length(cases)==0L ||
+               length(index)!=1L || is.na(index) ||
+               index<1L || index>length(cases)) return(NULL)
+            cases[[index]]
+          }
+          stopifnot(is.null(guarded(list(),1L)))
+          stopifnot(is.null(guarded(list(list(review_case_id="x")),2L)))
+          stopifnot(identical(guarded(list(list(review_case_id="x")),1L)$review_case_id,"x"))
+          cat("PASS empty and valid W04 case bounds and app R syntax\n")
