@@ -7669,6 +7669,7 @@ server <- function(input, output, session) {
       # Reuse the login snapshot when it represents this same conflict queue.
       # Otherwise load the correct queue's decisions from Sheets.
       if (nzchar(active_sha) &&
+          !length(isolate(w04_blind_conflict_cases())) &&
           identical(active_sha, as.character(isolate(w04_conflict_queue_sha_rv()) %||% ""))) {
         set_decisions <- isolate(w04_conflict_decisions())
       } else {
