@@ -1,0 +1,31 @@
+name: Temporary W04 resolution isolation validation
+on:
+  push:
+    paths:
+      - '.github/workflows/temporary-w04-resolution-isolation.yml'
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Validate independent active decisions
+        shell: Rscript {0}
+        run: |
+          source("multiuser_app/R/decision_events.R")
+          source("multiuser_app/R/storage_sheets.R")
+          `%||%` <- function(x,y) if(is.null(x)) y else x
+          e <- function(id,sha,decision) list(decision_id=id,review_case_id="w04-resolution-recordX",record_id="recordX",queue_sha256=sha,decision=decision,reviewer="usr-neal")
+          records <- list(e("a1","sha_A","retain"),e("b1","sha_B","exclude"),e("a2","sha_A","exclude"))
+          read_sheet_w04_decision_log_from_tab <- function(tab) records
+          w04_resolution_decision_tab <- function() "decisions_w04_resolution"
+          z <- active_sheet_w04_resolution_decisions()
+          stopifnot(length(z)==2L)
+          stopifnot(identical(vapply(z,function(x)x$decision_id,character(1)),c("b1","a2")))
+          stopifnot(identical(vapply(z,function(x)x$queue_sha256,character(1)),c("sha_B","sha_A")))
+          stopifnot(length(Filter(function(x)x$queue_sha256=="sha_A",z))==1L)
+          cat("PASS W04 resolution run isolation\n")
