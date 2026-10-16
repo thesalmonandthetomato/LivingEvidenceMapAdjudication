@@ -10,6 +10,25 @@ suppressPackageStartupMessages({
 .lem_gs4_cache$sheet_names_at <- list()
 .lem_gs4_cache$batch_status <- list()
 .lem_gs4_cache$batch_status_at <- list()
+.lem_gs4_cache$review_metadata <- list()
+.lem_gs4_cache$review_metadata_at <- list()
+
+# Briefly coalesce repeated metadata reads in the same worker. Review metadata
+# is not a reviewer decision log; subsequent reads refresh within 10 seconds.
+read_review_metadata_cached <- function(ss) {
+  gs4_auth_from_env()
+  key <- as.character(ss)
+  now <- as.numeric(Sys.time())
+  cached <- .lem_gs4_cache$review_metadata[[key]]
+  cached_at <- .lem_gs4_cache$review_metadata_at[[key]]
+  if (!is.null(cached) && !is.null(cached_at) &&
+      (now - cached_at) < 10) return(cached)
+  value <- googlesheets4::read_sheet(ss,sheet="review_metadata",col_types="cc")
+  .lem_gs4_cache$review_metadata[[key]] <- value
+  .lem_gs4_cache$review_metadata_at[[key]] <- as.numeric(Sys.time())
+  value
+}
+
 
 # Cache workflow status briefly, never decisions or assignments.
 invalidate_batch_status_cache <- function() {
