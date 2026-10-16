@@ -1,0 +1,29 @@
+name: Temporary W04 lazy login notes validation
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/temporary-w04-notes-lazy-login-check.yml']
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.6.0'
+          use-public-rspm: true
+      - name: Validate queue-gated W04 note loading
+        shell: Rscript {0}
+        run: |
+          parse("multiuser_app/app.R")
+          x <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\n")
+          start <- regexpr('w04_batch <- login_timed_read("W04 queue"',x,fixed=TRUE)[1]
+          gate <- regexpr('if (!is.null(w04_batch)) {',substr(x,start,nchar(x)),fixed=TRUE)[1]
+          notes <- regexpr('login_timed_read("W04 screening notes"',substr(x,start,nchar(x)),fixed=TRUE)[1]
+          decisions <- regexpr('login_timed_read("W04 decisions"',substr(x,start,nchar(x)),fixed=TRUE)[1]
+          stopifnot(start>0,gate>0,notes>gate,decisions>notes)
+          stopifnot(grepl('w04_screening_notes_rv(list())',x,fixed=TRUE))
+          stopifnot(grepl('append_sheet_w04_screening_note',x,fixed=TRUE))
+          cat("PASS: W04 notes read only after confirmed active queue; note persistence unchanged\n")
