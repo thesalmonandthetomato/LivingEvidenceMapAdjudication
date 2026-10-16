@@ -1,0 +1,25 @@
+name: Temporary login supplemental timings validation
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/temporary-login-supplement-timing-check.yml']
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.6.0'
+          use-public-rspm: true
+      - name: Parse and verify all W04 supplemental timings
+        shell: Rscript {0}
+        run: |
+          parse("multiuser_app/app.R")
+          z <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\n")
+          for (label in c("W04 screening notes","W04 abstract edits","W04 resolution edits"))
+            stopifnot(grepl(paste0('login_timed_read("',label,'"'),z,fixed=TRUE))
+          stopifnot(grepl("login_initialising(FALSE)",z,fixed=TRUE))
+          cat("PASS: app parses and supplementary W04 timings present\n")
