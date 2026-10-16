@@ -4863,8 +4863,9 @@ server <- function(input, output, session) {
   # W01 production remains fail-closed. These outputs become live when
   # review-isolated launch, monitoring and result publication are integrated.
   w01_persisted_lock_rv <- reactiveVal(TRUE)
-  observeEvent(authenticated(), {
-    if(!isTRUE(authenticated()) || !identical(storage_backend(),"google_sheets")) return()
+  observeEvent(list(authenticated(), configure_review_requested()), {
+    if(!isTRUE(authenticated()) || !isTRUE(configure_review_requested()) ||
+       !identical(storage_backend(),"google_sheets")) return()
     locked <- tryCatch({
       sheet <- sheet_id_from_env()
       meta <- read_review_metadata_cached(sheet)
@@ -4974,8 +4975,9 @@ server <- function(input, output, session) {
   # Export is intentionally unavailable until a review-specific final W01
   # receipt exists. The RIS is created on demand, not polled from Google Sheets.
   w01_final_receipt_rv <- reactiveVal(NULL)
-  observeEvent(authenticated(), {
-    if(!isTRUE(authenticated()) || !identical(storage_backend(),"google_sheets")) return()
+  observeEvent(list(authenticated(), configure_review_requested()), {
+    if(!isTRUE(authenticated()) || !isTRUE(configure_review_requested()) ||
+       !identical(storage_backend(),"google_sheets")) return()
     receipt <- tryCatch({
       sheet <- sheet_id_from_env()
       metadata <- read_review_metadata_cached(sheet)
