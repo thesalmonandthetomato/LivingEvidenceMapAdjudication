@@ -26,12 +26,12 @@ w04_prompt_deposit_endpoint <- function(id="") {
     stop("Invalid W04 Zenodo deposit ID",call.=FALSE)
   paste0("https://zenodo.org/api/deposit/depositions",if(nzchar(id)) paste0("/",id) else "")
 }
-w04_prompt_review_metadata <- function() {
+w04_prompt_review_metadata <- function(force=FALSE) {
   if(!identical(storage_backend(),"google_sheets"))
     stop("W04 prompt archives require the review-specific Google Sheets backend",call.=FALSE)
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
-  data <- as.data.frame(googlesheets4::read_sheet(ss,sheet="review_metadata",col_types="cc"))
+  data <- as.data.frame(read_review_metadata_cached(ss,force=force))
   if(!all(c("key","value")%in%names(data))) stop("Invalid review_metadata",call.=FALSE)
   if(anyDuplicated(data$key)) stop("Duplicate keys in review_metadata",call.=FALSE)
   review_id <- as.character(data$value[match("review_id",data$key)])
@@ -52,7 +52,7 @@ w04_prompt_create_draft <- function(meta) {
   existing <- w04_prompt_draft_id(meta)
   if(nzchar(existing)) return(existing)
   # Re-read before creating to avoid needless duplicate records across sessions.
-  fresh <- w04_prompt_review_metadata()
+  fresh <- w04_prompt_review_metadata(force=TRUE)
   if(!identical(meta$review_id,fresh$review_id)) stop("Review changed",call.=FALSE)
   existing <- w04_prompt_draft_id(fresh)
   if(nzchar(existing)) return(existing)
@@ -79,7 +79,7 @@ w04_prompt_create_draft <- function(meta) {
     googlesheets4::sheet_append(meta$sheet_id,
       data=data.frame(key="w04_prompt_zenodo_draft_id",value=id),
       sheet="review_metadata")
-    verified <- w04_prompt_review_metadata()
+    verified <- w04_prompt_review_metadata(force=TRUE)
     if(!identical(verified$review_id,meta$review_id) ||
        !identical(w04_prompt_draft_id(verified),id))
       stop("Review metadata did not verify the Zenodo draft ID",call.=FALSE)
