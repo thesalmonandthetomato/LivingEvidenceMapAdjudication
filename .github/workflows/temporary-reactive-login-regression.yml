@@ -1,0 +1,32 @@
+name: Temporary reactive login regression
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/temporary-reactive-login-regression.yml']
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.6.0'
+          use-public-rspm: true
+      - name: Install minimal Shiny
+        shell: Rscript {0}
+        run: install.packages("shiny")
+      - name: Parse application and exercise isolated reactive reads
+        shell: Rscript {0}
+        run: |
+          parse("multiuser_app/app.R")
+          x <- paste(readLines("multiuser_app/app.R",warn=FALSE), collapse="\n")
+          stopifnot(grepl("session$onFlushed(function() {\n      shiny::isolate({",x,fixed=TRUE))
+          stopifnot(grepl("      })\n      }, once=TRUE)",x,fixed=TRUE))
+          value <- shiny::reactiveVal("loaded")
+          err <- tryCatch(value(),error=function(e)e)
+          stopifnot(inherits(err,"error"))
+          stopifnot(identical(shiny::isolate(value()),"loaded"))
+          cat("PASS: reactive context restored, login R parses\n")
