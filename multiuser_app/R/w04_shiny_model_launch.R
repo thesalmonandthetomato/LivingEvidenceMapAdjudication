@@ -113,9 +113,24 @@ w04_shiny_model_dispatch <- function(meta,source,subset,bundle_info) {
     github_dispatch_repo()
   )
   recent <- github_api_get_json(run_url)$workflow_runs %||% list()
-  if(any(vapply(recent,function(x)
-    identical(as.character(x$display_title %||% ""),label),logical(1))))
-    stop("This exact subset/prompt/abstract bundle was already launched; inspect or rerun its GitHub Actions run",call.=FALSE)
+  matching <- Filter(function(x)
+    identical(as.character(x$display_title %||% ""),label),recent)
+  # A startup_failure has no jobs: GitHub rejected the workflow before model
+  # screening could run. Such attempts do not consume the immutable bundle.
+  # Keep the duplicate guard for queued, running, successful, cancelled and
+  # ordinary failed jobs, whose effects cannot safely be assumed absent.
+  blocking <- Filter(function(x)
+    !identical(as.character(x$conclusion %||% ""), "startup_failure"),matching)
+  if(length(blocking)) {
+    runs <- vapply(blocking,function(x) {
+      url <- as.character(x$html_url %||% "")
+      status <- as.character(x$conclusion %||% x$status %||% "unknown")
+      paste0(status,if(nzchar(url)) paste0(" (",url,")") else "")
+    },character(1))
+    stop(paste0("This exact subset/prompt/abstract bundle has an existing GitHub Actions attempt: ",
+      paste(runs,collapse="; "),". Inspect that run before trying again."),
+      call.=FALSE)
+  }
   endpoint <- sprintf(
     "https://api.github.com/repos/%s/actions/workflows/w04_shiny_subset_launcher.yml/dispatches",
     github_dispatch_repo()
