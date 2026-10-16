@@ -7231,7 +7231,7 @@ server <- function(input, output, session) {
             tags$span(class="task-badge","Administrator only"),
             tags$span(
               class="text-secondary small",
-              if (!has_w04_batch) {
+              if (!has_w04_batch && is.null(snapshot)) {
                 "Historical validation agreement"
               } else if (length(selected_raters) < 2L) {
                 "Select at least two raters"
@@ -7258,7 +7258,7 @@ server <- function(input, output, session) {
           uiOutput("w04_kappa_history"),
           tags$hr(),
           uiOutput("w04_human_kappa_history"),
-          if (!has_w04_batch) {
+          if (!has_w04_batch && is.null(snapshot)) {
             tags$div(
               class="text-secondary small",
               "No active W04 manual-screening batch. Historical kappa data remain available above."
