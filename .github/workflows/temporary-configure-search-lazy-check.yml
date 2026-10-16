@@ -1,0 +1,27 @@
+name: Temporary Configure Searching lazy load check
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/temporary-configure-search-lazy-check.yml']
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.6.0'
+          use-public-rspm: true
+      - name: Validate R and Searching lazy trigger
+        shell: Rscript {0}
+        run: |
+          parse("multiuser_app/app.R")
+          x <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\n")
+          stopifnot(grepl('ontoggle="if (this.open && window.Shiny) Shiny.setInputValue',x,fixed=TRUE))
+          stopifnot(grepl('observeEvent(input$configure_searching_opened, {',x,fixed=TRUE))
+          stopifnot(!grepl('observe({\n    req(authenticated(),configure_review_requested())',x,fixed=TRUE))
+          stopifnot(grepl('search_source_groups_parse(read_github_text_file("config/workflow00_source_groups.json"))',x,fixed=TRUE))
+          stopifnot(grepl('read_w00_scoping_source_catalogue()',x,fixed=TRUE))
+          cat("PASS: R parses, lazy Searching event, unchanged W00 catalogue read paths\n")
