@@ -3396,6 +3396,8 @@ server <- function(input, output, session) {
         parent=parent,source_checkpoint_sha256=corpus$checkpoint_sha256,
         created_by=session_reviewer_id(),existing=previous)
       w04_subset_registry_append(subset)
+      new_label <- w04_subset_label_text(input$w04_subset_new_label %||% "")
+      if(nzchar(new_label)) w04_subset_label_save(corpus$review_id,subset$subset_id,new_label,session_reviewer_id())
       list(id=subset$subset_id,all=w04_subset_registry_read(corpus$review_id),
            n=subset$actual_size)
       },error=function(e)e)
@@ -3492,7 +3494,7 @@ server <- function(input, output, session) {
     if(!length(subsets)) return(tags$p(class="saved-note","Register a subset before preparing screening."))
     ids <- vapply(subsets,function(x)as.character(x$subset_id),character(1))
     selectInput("w04_subset_queue_selected","Subset for manual screening",
-      choices=stats::setNames(ids,paste0(ids," (",vapply(subsets,function(x)x$actual_size,integer(1))," records)")))
+      choices=stats::setNames(ids,vapply(subsets,w04_subset_display,character(1))))
   })
   observeEvent(input$w04_manual_find_queues,{
     on.exit(session$sendCustomMessage("lem_busy_finished",list(id="w04_manual_find_queues")),add=TRUE)
@@ -3522,7 +3524,7 @@ server <- function(input, output, session) {
     xs <- w04_manual_queue_choices_rv()
     if(!length(xs)) return(NULL)
     ids <- vapply(xs,function(x)x$subset_id,character(1))
-    selectInput("w04_manual_queue_selected","Assigned subset",choices=stats::setNames(ids,ids))
+    selectInput("w04_manual_queue_selected","Assigned subset",choices=stats::setNames(ids,vapply(xs,w04_subset_display,character(1))))
   })
   output$w04_manual_queue_status <- renderText(w04_manual_queue_status_rv())
   observeEvent(input$w04_manual_load_queue,{
@@ -3632,7 +3634,7 @@ server <- function(input, output, session) {
     subsets <- w04_subsets_rv()
     if(!length(subsets)) return(tags$p(class="saved-note","No registered subsets loaded."))
     tags$ul(lapply(subsets,function(s)tags$li(
-      tags$strong(as.character(s$subset_id)),
+      tags$strong(w04_subset_display(s,records=FALSE)),
       paste(" · ",s$actual_size,"records · seed ",s$random_seed,
         " · checkpoint ",substr(s$source_checkpoint_sha256,1,12),
         if(nzchar(s$parent_subset_id)) paste(" · child of",s$parent_subset_id) else "")
@@ -3749,8 +3751,7 @@ server <- function(input, output, session) {
     xs <- w04_model_subsets_rv()
     if(!length(xs)) return(tags$span(class="saved-note","No registered subsets loaded."))
     ids <- vapply(xs,function(x)as.character(x$subset_id),character(1))
-    labels <- vapply(xs,function(x)sprintf("%s (%d records)",
-      as.character(x$subset_id),length(x$record_ids)),character(1))
+    labels <- vapply(xs,w04_subset_display,character(1))
     selectInput("w04_model_subset_selected","Registered human-screened subset",
       choices=stats::setNames(ids,labels))
   })
@@ -4177,6 +4178,7 @@ server <- function(input, output, session) {
                     style="display:none;",class="saved-note","Loading review-specific subset registry…"),
                   uiOutput("w04_subset_parent_select"),
                   numericInput("w04_subset_size","Number of records",value=100,min=1,step=1),
+                  textInput("w04_subset_new_label","Optional subset label",placeholder="e.g. Check 1, MG"),
                   uiOutput("w04_subset_create_control"),
                   uiOutput("w04_subset_registry_history"),
                   tags$hr(),
@@ -8198,8 +8200,7 @@ server <- function(input, output, session) {
     available <- w04_subsets_rv()
     ids <- if(length(available)) vapply(available,function(s)as.character(s$subset_id),character(1)) else character()
     selectInput("w04_assignment_subset_id","Registered human-screening subset",
-      choices=c("Select a registered subset"="",stats::setNames(ids,
-        paste0(ids," (",vapply(available,function(s)as.character(s$actual_size),character(1))," records)"))))
+      choices=c("Select a registered subset"="",stats::setNames(ids,vapply(available,w04_subset_display,character(1)))))
   })
   w04_assignment_plan <- reactive({
     req(authenticated())
