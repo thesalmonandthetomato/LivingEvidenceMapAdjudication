@@ -7665,11 +7665,16 @@ server <- function(input, output, session) {
     )
     if (length(current_sets)) {
       active_set <- current_sets[[length(current_sets)]]
-      all_conf <- tryCatch(active_sheet_w04_conflict_decisions(),error=function(e)list())
-      set_decisions <- w04_filter_batch_decisions(
-        all_conf,
-        as.character(active_set$conflict_queue_sha256 %||% "")
-      )
+      active_sha <- as.character(active_set$conflict_queue_sha256 %||% "")
+      # Reuse the login snapshot when it represents this same conflict queue.
+      # Otherwise load the correct queue's decisions from Sheets.
+      if (nzchar(active_sha) &&
+          identical(active_sha, as.character(isolate(w04_conflict_queue_sha_rv()) %||% ""))) {
+        set_decisions <- isolate(w04_conflict_decisions())
+      } else {
+        all_conf <- tryCatch(active_sheet_w04_conflict_decisions(),error=function(e)list())
+        set_decisions <- w04_filter_batch_decisions(all_conf, active_sha)
+      }
       w04_conflict_decisions(set_decisions)
       w04_conflict_idx(1L)
     }
