@@ -1,0 +1,28 @@
+name: Temporary W04 login read validation
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/temporary-w04-login-read-validation.yml']
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.6.0'
+          use-public-rspm: true
+      - name: Parse and check login decision snapshot
+        shell: Rscript {0}
+        run: |
+          parse("multiuser_app/app.R")
+          a <- readLines("multiuser_app/app.R",warn=FALSE)
+          start <- grep("observeEvent\\(input\\$login,",a)
+          end <- grep("current_case <- reactive",a)
+          z <- paste(a[start[1]:(end[1]-1)],collapse="\n")
+          stopifnot(length(gregexpr("all_conf <- login_conflict_decisions()",z,fixed=TRUE)[[1]])==1L)
+          stopifnot(grepl("all_blind_conf <- login_conflict_decisions()",z,fixed=TRUE))
+          stopifnot(sum(grepl("active_sheet_w04_conflict_decisions",strsplit(z,"\n",fixed=TRUE)[[1]],fixed=TRUE))==1L)
+          cat("PASS: app parses, both conflict paths share one fetch per login\n")
