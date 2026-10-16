@@ -1,0 +1,33 @@
+name: Temporary W04 registry refresh validation
+on:
+  push:
+    paths: ['.github/workflows/temporary-w04-registry-refresh.yml']
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Check explicit refresh and review isolation
+        shell: Rscript {0}
+        run: |
+          expr <- parse(file="multiuser_app/R/w04_model_batches.R")
+          reg <- Filter(function(x)is.call(x) && identical(as.character(x[[1L]]),"<-") && identical(as.character(x[[2L]]),"w04_model_batch_registry_read"),as.list(expr))
+          stopifnot(length(reg)==1L)
+          eval(reg[[1L]],envir=.GlobalEnv)
+          calls <- character()
+          w04_prompt_review_metadata <- function() list(review_id="r1",sheet_id="test")
+          gs4_auth_from_env <- function() invisible(NULL)
+          sheet_names_cached <- function(ss,refresh=FALSE) {
+            stopifnot(identical(ss,"test"))
+            calls <<- c(calls,as.character(refresh))
+            character()
+          }
+          z <- w04_model_batch_registry_read("r1")
+          stopifnot(length(z)==0L,identical(calls,"TRUE"))
+          err <- tryCatch(w04_model_batch_registry_read("wrong"),error=function(e)e)
+          stopifnot(inherits(err,"error"))
+          cat("PASS W04 registry refresh and review isolation\n")
