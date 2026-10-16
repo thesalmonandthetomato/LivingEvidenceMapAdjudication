@@ -1379,13 +1379,14 @@ server <- function(input, output, session) {
     }
 
     latest_decisions <- tryCatch(active_sheet_w04_decisions(),error=function(e)e)
+    if (inherits(latest_decisions,"error")) {
+      if (isTRUE(show_status)) w04_refresh_status(paste("Refresh failed:",conditionMessage(latest_decisions)))
+      return(invisible(FALSE))
+    }
+    # Do not make a second Sheets request when the first has already failed.
     latest_assignments <- tryCatch(read_sheet_assignments(create_if_missing=FALSE),error=function(e)e)
-
-    errs <- character()
-    if (inherits(latest_decisions,"error")) errs <- c(errs,conditionMessage(latest_decisions))
-    if (inherits(latest_assignments,"error")) errs <- c(errs,conditionMessage(latest_assignments))
-    if (length(errs)) {
-      if (isTRUE(show_status)) w04_refresh_status(paste("Refresh failed:",paste(unique(errs),collapse="; ")))
+    if (inherits(latest_assignments,"error")) {
+      if (isTRUE(show_status)) w04_refresh_status(paste("Refresh failed:",conditionMessage(latest_assignments)))
       return(invisible(FALSE))
     }
 
