@@ -8,6 +8,15 @@ suppressPackageStartupMessages({
 .lem_gs4_cache$credential_path <- ""
 .lem_gs4_cache$sheet_names <- list()
 .lem_gs4_cache$sheet_names_at <- list()
+.lem_gs4_cache$batch_status <- list()
+.lem_gs4_cache$batch_status_at <- list()
+
+# Cache workflow status briefly, never decisions or assignments.
+invalidate_batch_status_cache <- function() {
+  .lem_gs4_cache$batch_status <- list()
+  .lem_gs4_cache$batch_status_at <- list()
+  invisible(TRUE)
+}
 reg.finalizer(
   .lem_gs4_cache,
   function(e) {
@@ -129,14 +138,25 @@ read_batch_status_log <- function() {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tab <- batch_status_tab()
+  key <- paste(ss,tab,sep="|")
+  cached <- .lem_gs4_cache$batch_status[[key]]
+  cached_at <- .lem_gs4_cache$batch_status_at[[key]]
+  if (!is.null(cached) && !is.null(cached_at) &&
+      (as.numeric(Sys.time()) - cached_at) < 10) return(cached)
   tabs <- sheet_names_cached(ss)
-  if(!tab %in% tabs) return(data.frame())
-  x <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
-  if(!nrow(x)) return(data.frame())
+  x <- if (!tab %in% tabs) data.frame() else googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
+  if(!nrow(x)) {
+    .lem_gs4_cache$batch_status[[key]] <- data.frame()
+    .lem_gs4_cache$batch_status_at[[key]] <- as.numeric(Sys.time())
+    return(data.frame())
+  }
   required <- c("event_id","stage","batch_id","queue_sha256","status","event_at_utc","workflow_run_id","source_run_id","output_sha256","message")
   missing <- setdiff(required,names(x))
   if(length(missing)) stop("Batch-status tab missing field(s): ",paste(missing,collapse=", "),call.=FALSE)
-  x[,required,drop=FALSE]
+  value <- x[,required,drop=FALSE]
+  .lem_gs4_cache$batch_status[[key]] <- value
+  .lem_gs4_cache$batch_status_at[[key]] <- as.numeric(Sys.time())
+  value
 }
 
 latest_batch_status <- function(stage,batch_id,queue_sha256) {
@@ -191,6 +211,7 @@ append_batch_status <- function(stage,batch_id,queue_sha256,status,workflow_run_
     stringsAsFactors=FALSE
   )
   googlesheets4::sheet_append(ss,data=row,sheet=tab)
+  invalidate_batch_status_cache()
   verify <- googlesheets4::read_sheet(ss,sheet=tab,col_types="c")
   if(sum(as.character(verify$event_id)==event_id)!=1L) stop("Batch-status write verification failed",call.=FALSE)
   invisible(status)
