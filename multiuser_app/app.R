@@ -3640,6 +3640,44 @@ server <- function(input, output, session) {
         if(nzchar(s$parent_subset_id)) paste(" · child of",s$parent_subset_id) else "")
     )))
   })
+  output$w04_subset_label_editor <- renderUI({
+    req(authenticated())
+    if(!identical(as.character(current_user()$role %||% ""),"administrator")) return(NULL)
+    xs <- w04_subsets_rv()
+    if(!length(xs)) return(NULL)
+    ids <- vapply(xs,function(x)as.character(x$subset_id),character(1))
+    selected <- as.character(input$w04_subset_label_selected %||% "")
+    if(!selected %in% ids) selected <- ids[[1L]]
+    current <- Filter(function(x)identical(x$subset_id,selected),xs)[[1L]]
+    tagList(
+      tags$hr(),
+      tags$h5("Edit subset label"),
+      selectInput("w04_subset_label_selected","Registered subset",
+        choices=stats::setNames(ids,vapply(xs,w04_subset_display,character(1))),
+        selected=selected),
+      textInput("w04_subset_label_value","Label (optional, maximum 100 characters)",
+        value=as.character(current$label %||% "")),
+      actionButton("w04_subset_label_save","Save label",class="btn-outline-primary btn-sm")
+    )
+  })
+  observeEvent(input$w04_subset_label_save,{
+    req(authenticated())
+    if(!identical(as.character(current_user()$role %||% ""),"administrator")) return()
+    result <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      w04_subset_label_save(meta$review_id,
+        as.character(input$w04_subset_label_selected %||% ""),
+        as.character(input$w04_subset_label_value %||% ""),
+        session_reviewer_id())
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_subset_status_rv(paste("Subset label was not saved:",conditionMessage(result)))
+      return()
+    }
+    w04_subsets_rv(result)
+    w04_model_subsets_rv(result)
+    w04_subset_status_rv("Subset label saved and verified.")
+  })
   observeEvent(input$w04_subset_registry_refresh,{
     on.exit(session$sendCustomMessage("lem_busy_finished",list(id="w04_subset_registry_refresh")),add=TRUE)
     req(authenticated())
@@ -4181,6 +4219,7 @@ server <- function(input, output, session) {
                   textInput("w04_subset_new_label","Optional subset label",placeholder="e.g. Check 1, MG"),
                   uiOutput("w04_subset_create_control"),
                   uiOutput("w04_subset_registry_history"),
+                  uiOutput("w04_subset_label_editor"),
                   tags$hr(),
                   tags$h5("Prepare human screening from a registered subset"),
                   tags$p(class="saved-note","Choose a registered subset to assign to human reviewers. This does not launch an LLM run. Model execution will use the same subset registry separately."),
@@ -6688,7 +6727,14 @@ server <- function(input, output, session) {
         tags$summary(
           div(
             class = "d-inline-flex flex-wrap align-items-center gap-2",
-            tags$strong(paste0(workflow_label, " · ", task_label)),
+            tags$strong(paste0(workflow_label, " · ", task_label,
+              if(identical(z$workflow,"04") && identical(z$task_type,"manual_screening") &&
+                 startsWith(z$batch_id,"w04-human-")) {
+                subset_id <- sub("^w04-human-","",z$batch_id)
+                match <- Filter(function(x)identical(as.character(x$subset_id),subset_id),w04_subsets_rv())
+                if(length(match)) paste0(" · ",w04_subset_display(match[[1L]],records=FALSE))
+                else paste0(" · ",subset_id)
+              } else "")),
             tags$span(class = "task-badge", mode_label),
             tags$span(
               class = "text-secondary small",
