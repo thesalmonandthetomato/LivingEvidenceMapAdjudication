@@ -3864,7 +3864,7 @@ server <- function(input, output, session) {
           actionButton("open_configure_review", "Configure review",
             class="btn-outline-secondary w-100 text-start",
             title="Load review configuration controls on demand")),
-      uiOutput("configure_review_contents", suspendWhenHidden=TRUE)
+      uiOutput("configure_review_contents")
     )
   })
 
