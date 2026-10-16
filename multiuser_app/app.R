@@ -6235,14 +6235,19 @@ server <- function(input, output, session) {
       if (has_w02_batch) w02_batch_id_rv() else "no-active-queue",
       ASSIGNMENT_MODES[["shared_work_pool"]]
     )
-    # Do not add a zero-case placeholder when registered human subset
-    # assignments exist but the administrator has not loaded a personal queue.
-    if (!any(vapply(group_progress, function(g)
+    # A newly prepared W04 subset needs its own assignment panel even
+    # when other registered subsets already have reviewer assignments.
+    # add_empty_group() checks the exact batch ID, so existing batches remain.
+    if (has_w04_batch) {
+      add_empty_group(
+        "04","manual_screening",w04_batch_id_rv(),
+        ASSIGNMENT_MODES[["independent_blind_review"]]
+      )
+    } else if (!any(vapply(group_progress, function(g)
       identical(g$meta$workflow,"04") &&
       identical(g$meta$task_type,"manual_screening"), logical(1)))) {
       add_empty_group(
-        "04","manual_screening",
-        if (has_w04_batch) w04_batch_id_rv() else "no-active-queue",
+        "04","manual_screening","no-active-queue",
         ASSIGNMENT_MODES[["independent_blind_review"]]
       )
     }
