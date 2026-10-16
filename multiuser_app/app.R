@@ -8638,6 +8638,14 @@ server <- function(input, output, session) {
     login_status("")
   })
 
+  # Read-only login timing: no changes to backend retries, writes or caches.
+  login_timed_read <- function(label, operation) {
+    started <- proc.time()[["elapsed"]]
+    on.exit(message(sprintf("LEM login read [%s]: %.2f seconds",
+      label, proc.time()[["elapsed"]] - started)), add=TRUE)
+    operation()
+  }
+
   observeEvent(input$login, {
     now <- Sys.time()
     until <- lock_until()
@@ -8673,14 +8681,14 @@ server <- function(input, output, session) {
       session$onFlushed(function() {
       loaded <- tryCatch({
         user_registry_rv(registry)
-        loaded_assignments <- read_assignment_registry(assignment_path)
+        loaded_assignments <- login_timed_read("assignments",function() read_assignment_registry(assignment_path))
         if (identical(storage_backend(), "local")) {
           loaded_assignments <- resolve_fixture_assignment_users(loaded_assignments, registry)
         }
         assignment_registry_rv(loaded_assignments)
-        pipeline_status_rv(if(identical(storage_backend(),"google_sheets")) read_latest_pipeline_status() else NULL)
-        manual_screening_rv(read_manual_screening_metrics())
-        batch <- load_batch()
+        pipeline_status_rv(if(identical(storage_backend(),"google_sheets")) login_timed_read("pipeline status",read_latest_pipeline_status) else NULL)
+        manual_screening_rv(login_timed_read("manual screening metrics",read_manual_screening_metrics))
+        batch <- login_timed_read("W01 queue",load_batch)
         current_decisions <- list()
         if (!is.null(batch)) {
           all_decisions <- read_active_decisions(decision_path)
@@ -8689,7 +8697,7 @@ server <- function(input, output, session) {
         } else {
           w01_repairs_rv(list())
         }
-        w02_batch <- load_w02_batch()
+        w02_batch <- login_timed_read("W02 queue",load_w02_batch)
 
         # One-off lifecycle repair for the completed historical W02 batch.
         # Finalizer run 37016080508 successfully applied and published all 13
@@ -8776,7 +8784,7 @@ server <- function(input, output, session) {
           } else list()
         )
 
-        w04_batch <- load_w04_batch(login_user)
+        w04_batch <- login_timed_read("W04 queue",function() load_w04_batch(login_user))
         if (!is.null(w04_batch) && identical(as.character(w04_batch$review_mode %||% ""), "resolution")) {
           w04_batch <- NULL
         }
@@ -8838,7 +8846,7 @@ server <- function(input, output, session) {
           w04_conflict_sets_rv(list())
         }
 
-        w04_resolution_batch <- load_w04_resolution_batch()
+        w04_resolution_batch <- login_timed_read("W04 resolution queue",load_w04_resolution_batch)
         if (!is.null(w04_resolution_batch)) {
           all_res <- active_sheet_w04_resolution_decisions()
           w04_resolution_all_cases_rv(w04_resolution_batch$cases)
@@ -8886,7 +8894,7 @@ server <- function(input, output, session) {
           w04_resolution_abstract_edit_rv(FALSE)
         }
 
-        w04_conflict_batch <- load_w04_conflict_batch()
+        w04_conflict_batch <- login_timed_read("W04 conflict queue",load_w04_conflict_batch)
         if (!is.null(w04_conflict_batch)) {
           all_conf <- active_sheet_w04_conflict_decisions()
           w04_conflict_cases_rv(w04_conflict_batch$cases)
@@ -8906,7 +8914,7 @@ server <- function(input, output, session) {
           w04_conflict_idx(if(length(cr)) cr[[1L]] else max(1L,length(w04_blind_conflict_cases())))
         }
 
-        w08_batch <- load_w08_batch()
+        w08_batch <- login_timed_read("W08 queue",load_w08_batch)
         if (!is.null(w08_batch)) {
           w08_all_decisions <- active_sheet_w08_decisions()
           w08_batch_decisions <- w08_filter_batch_decisions(w08_all_decisions,w08_batch$queue_sha256)
