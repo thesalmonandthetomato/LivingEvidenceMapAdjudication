@@ -1095,6 +1095,7 @@ server <- function(input, output, session) {
   w04_resolution_queue_sha_rv <- reactiveVal("")
   w04_resolution_batch_id_rv <- reactiveVal("")
   w04_resolution_source_run_id_rv <- reactiveVal("")
+  w04_resolution_origin_rv <- reactiveVal("production")
   w04_resolution_idx <- reactiveVal(1L)
   w04_resolution_decisions <- reactiveVal(list())
   w04_resolution_abstract_edits_rv <- reactiveVal(list())
@@ -3863,6 +3864,7 @@ server <- function(input, output, session) {
       w04_resolution_queue_sha_rv(q$queue_sha256)
       w04_resolution_batch_id_rv(q$batch_id)
       w04_resolution_source_run_id_rv(q$source_run_id)
+      w04_resolution_origin_rv("shiny_model")
       w04_resolution_batch_status_rv(q$batch_status %||% "")
       w04_resolution_decisions(result$decisions)
       w04_resolution_resume_requested_rv(FALSE)
@@ -3969,6 +3971,7 @@ server <- function(input, output, session) {
     w04_resolution_queue_sha_rv(q$queue_sha256)
     w04_resolution_batch_id_rv(q$batch_id)
     w04_resolution_source_run_id_rv(q$source_run_id)
+    w04_resolution_origin_rv("shiny_model")
     w04_resolution_batch_status_rv(q$batch_status %||% "")
     w04_resolution_decisions(result$decisions)
     w04_resolution_resume_requested_rv(FALSE)
@@ -7109,6 +7112,7 @@ server <- function(input, output, session) {
             identical(z$workflow, "04") &&
             identical(z$task_type, "model_uncertainty") &&
             isTRUE(w04_resolution_handoff_ready()) &&
+            !identical(w04_resolution_origin_rv(),"shiny_model") &&
             session_can("control_workflows")
           ) {
             tags$div(
@@ -9157,6 +9161,7 @@ server <- function(input, output, session) {
         w04_resolution_batch <- login_timed_read("W04 resolution queue",load_w04_resolution_batch)
         if (!is.null(w04_resolution_batch)) {
           all_res <- login_timed_read("W04 resolution decisions",active_sheet_w04_resolution_decisions)
+          w04_resolution_origin_rv("production")
           w04_resolution_all_cases_rv(w04_resolution_batch$cases)
           w04_resolution_queue_sha_rv(w04_resolution_batch$queue_sha256)
           w04_resolution_batch_id_rv(w04_resolution_batch$batch_id)
@@ -10964,6 +10969,10 @@ server <- function(input, output, session) {
   dispatch_completed_w04_resolution <- function() {
     if (!session_can("control_workflows")) {
       w04_resolution_status("Review complete. Awaiting an administrator to send Workflow 04 to GitHub.")
+      return(FALSE)
+    }
+    if (identical(w04_resolution_origin_rv(),"shiny_model")) {
+      w04_resolution_status("Experimental model uncertainty decisions remain in Shiny; no production W04 finalisation is permitted.")
       return(FALSE)
     }
     if (!isTRUE(w04_resolution_handoff_ready())) {
