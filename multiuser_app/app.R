@@ -3943,24 +3943,42 @@ server <- function(input, output, session) {
   },striped=TRUE,bordered=TRUE,spacing="xs")
   observeEvent(input$w04_reviewer_batches_refresh,{
     req(authenticated())
-    if(!session_can("adjudicate_assigned")) return()
+    if(!session_can("adjudicate_assigned")) {
+      w04_reviewer_model_status_rv("Your account does not have permission to review model uncertainties.")
+      return()
+    }
+    w04_reviewer_model_status_rv("Checking completed model runs and reviewer assignments...")
     result <- tryCatch({
       meta <- w04_prompt_review_metadata()
       xs <- w04_model_batch_registry_read(meta$review_id)
-      if(session_can("manage_assignments")) xs else Filter(function(b) {
-        if(!nzchar(as.character(b$resolution_tab %||% "")))return(FALSE)
+      with_uncertainties <- Filter(function(b)
+        nzchar(as.character(b$resolution_tab %||% "")) &&
+        !is.na(suppressWarnings(as.integer(b$uncertain))) &&
+        as.integer(b$uncertain)>0L,xs)
+      available <- if(session_can("manage_assignments")) with_uncertainties else Filter(function(b) {
         batch_id <- paste0("w04-resolution-",b$run_id,"-",
           substr(as.character(b$resolution_queue_sha256),1L,12L))
         length(assignments_for_user(assignment_registry_rv(),"04",batch_id,
           session_reviewer_id(),"model_uncertainty"))>0L
-      },xs)
+      },with_uncertainties)
+      list(all=xs,with_uncertainties=with_uncertainties,available=available)
     },error=function(e)e)
     if(inherits(result,"error")) {
-      w04_reviewer_model_status_rv(paste("Could not load assigned model batches:",conditionMessage(result)))
+      w04_reviewer_model_batches_rv(list())
+      w04_reviewer_model_status_rv(paste("Could not load model uncertainty batches:",conditionMessage(result)))
       return()
     }
-    w04_reviewer_model_batches_rv(result)
-    w04_reviewer_model_status_rv(sprintf("%d available model uncertainty batch(es).",length(result)))
+    w04_reviewer_model_batches_rv(result$available)
+    message <- if(!length(result$all)) {
+      "No completed W04 model runs have been published to this review spreadsheet. A model run must finish and publish before uncertainty batches appear."
+    } else if(!length(result$with_uncertainties)) {
+      sprintf("%d completed model run(s) found, but none has uncertain records to adjudicate.",length(result$all))
+    } else if(!length(result$available)) {
+      sprintf("%d model run(s) with uncertainties exist, but none is assigned to your account. Ask an administrator to assign an uncertainty batch.",length(result$with_uncertainties))
+    } else {
+      sprintf("%d model uncertainty batch(es) available to load.",length(result$available))
+    }
+    w04_reviewer_model_status_rv(message)
   })
   output$w04_reviewer_model_batch_selector <- renderUI({
     xs <- w04_reviewer_model_batches_rv()
