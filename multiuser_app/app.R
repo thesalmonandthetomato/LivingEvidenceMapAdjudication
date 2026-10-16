@@ -9502,9 +9502,9 @@ server <- function(input, output, session) {
   })
 
   # Restore review-bound W02 launch monitoring from Google Sheets on login.
-  observe({
+  observeEvent(authenticated(), {
     req(authenticated(),session_can("control_workflows"))
-    invalidateLater(15000,session)
+    # Restore launch registry once per login; active run monitoring is separate.
     record <- tryCatch({
       ss <- sheet_id_from_env()
       m <- read_review_metadata_cached(ss)
