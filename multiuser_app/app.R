@@ -3912,6 +3912,7 @@ server <- function(input, output, session) {
           tags$details(
             class="assignment-disclosure",
             `data-accordion-key`="configure-review-searching",
+            ontoggle="if (this.open && window.Shiny) Shiny.setInputValue('configure_searching_opened', true, {priority: 'event'});",
             tags$summary(tags$strong("Searching")),
             div(class="px-3 pb-3",
           tags$details(
@@ -4191,7 +4192,7 @@ server <- function(input, output, session) {
     )
   })
 
-  observe({
+  observeEvent(input$configure_searching_opened, {
     req(authenticated(),configure_review_requested())
     if (!session_can("run_search_scoping")) return()
     if (!is.null(search_source_groups_rv())) return()
