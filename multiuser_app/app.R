@@ -8608,15 +8608,6 @@ server <- function(input, output, session) {
 
     if (!is.null(login_user)) {
       loaded <- tryCatch({
-        login_timer <- proc.time()[["elapsed"]]
-        login_last <- login_timer
-        login_mark <- function(stage) {
-          now <- proc.time()[["elapsed"]]
-          message(sprintf("LEM login load | %s | stage %.2fs | total %.2fs",
-            stage,now-login_last,now-login_timer))
-          login_last <<- now
-          invisible(NULL)
-        }
         user_registry_rv(registry)
         loaded_assignments <- read_assignment_registry(assignment_path)
         if (identical(storage_backend(), "local")) {
@@ -8624,7 +8615,6 @@ server <- function(input, output, session) {
         }
         assignment_registry_rv(loaded_assignments)
         pipeline_status_rv(if(identical(storage_backend(),"google_sheets")) read_latest_pipeline_status() else NULL)
-        login_mark("registry/assignments/metrics")
         manual_screening_rv(read_manual_screening_metrics())
         batch <- load_batch()
         current_decisions <- list()
@@ -8716,7 +8706,6 @@ server <- function(input, output, session) {
           w02_resume_requested_rv(FALSE)
         }
 
-        login_mark("W01 and W02 loads")
         w04_screening_notes_rv(
           if (identical(storage_backend(),"google_sheets")) {
             tryCatch(active_sheet_w04_screening_notes(), error=function(e) list())
@@ -8776,7 +8765,6 @@ server <- function(input, output, session) {
           }
         }
 
-        login_mark("W04 manual loads")
         # Generated W04 conflict sets are reviewer work, not admin-only
         # reporting metadata. Load them for every authenticated user so an
         # assigned reviewer can reconstruct and open their conflict queue.
@@ -8835,10 +8823,8 @@ server <- function(input, output, session) {
         }
 
         w04_conflict_batch <- load_w04_conflict_batch()
-        w04_conflict_decision_log <- NULL
         if (!is.null(w04_conflict_batch)) {
-          w04_conflict_decision_log <- active_sheet_w04_conflict_decisions()
-          all_conf <- w04_conflict_decision_log
+          all_conf <- active_sheet_w04_conflict_decisions()
           w04_conflict_cases_rv(w04_conflict_batch$cases)
           w04_conflict_queue_sha_rv(w04_conflict_batch$queue_sha256)
           w04_conflict_batch_id_rv(w04_conflict_batch$batch_id)
@@ -8849,16 +8835,13 @@ server <- function(input, output, session) {
         }
 
         if (length(w04_blind_conflict_cases())) {
-          if(is.null(w04_conflict_decision_log))
-            w04_conflict_decision_log <- active_sheet_w04_conflict_decisions()
-          all_blind_conf <- w04_conflict_decision_log
+          all_blind_conf <- active_sheet_w04_conflict_decisions()
           blind_conf_decisions <- w04_filter_batch_decisions(all_blind_conf,w04_queue_sha_rv())
           w04_conflict_decisions(blind_conf_decisions)
           cr <- w04_conflict_unresolved_indices()
           w04_conflict_idx(if(length(cr)) cr[[1L]] else max(1L,length(w04_blind_conflict_cases())))
         }
 
-        login_mark("W04 resolution/conflict loads")
         w08_batch <- load_w08_batch()
         if (!is.null(w08_batch)) {
           w08_all_decisions <- active_sheet_w08_decisions()
@@ -8930,7 +8913,6 @@ server <- function(input, output, session) {
           w08_resume_requested_rv(FALSE)
         }
 
-        login_mark("W08 loads")
         if (!is.null(batch)) {
           w01_all_cases_rv(batch$cases)
           visible_cases <- cases_for_assignment_user(
@@ -8990,7 +8972,6 @@ server <- function(input, output, session) {
           idx(1L)
           complete(FALSE)
         }
-        login_mark("final reactive setup")
         TRUE
       }, error = function(e) {
         login_status(paste("Batch could not be loaded:", conditionMessage(e)))
