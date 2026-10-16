@@ -1,0 +1,27 @@
+name: Temporary Stage 2 refresh failfast
+on:
+  push:
+    paths:
+      - '.github/workflows/temporary-stage2-refresh-failfast.yml'
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+      - name: Validate R parser and refresh guards
+        shell: Rscript {0}
+        run: |
+          f <- "multiuser_app/app.R"
+          parse(file=f)
+          x <- paste(readLines(f,warn=FALSE), collapse="\n")
+          start <- regexpr("refresh_w04_admin_state <- function",x,fixed=TRUE)[1]
+          stopifnot(start>0L)
+          section <- substr(x,start,start+1900L)
+          a <- regexpr('latest_decisions <- tryCatch(',section,fixed=TRUE)[1]
+          b <- regexpr('if (inherits(latest_decisions,"error"))',section,fixed=TRUE)[1]
+          c <- regexpr('latest_assignments <- tryCatch(',section,fixed=TRUE)[1]
+          stopifnot(a>0L,b>a,c>b)
+          stopifnot(grepl('if (inherits(latest_assignments,"error"))',section,fixed=TRUE))
+          cat("PASS: refresh fails before secondary read and R parses\n")
