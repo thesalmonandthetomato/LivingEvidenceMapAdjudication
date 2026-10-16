@@ -3847,6 +3847,8 @@ server <- function(input, output, session) {
            !identical(as.character(queue$source_run_id),id) ||
            !identical(as.character(queue$queue_sha256),as.character(batch$resolution_queue_sha256)))
           stop("Model run uncertainty queue is missing or does not match its batch",call.=FALSE)
+        if(length(queue$cases)!=as.integer(batch$uncertain))
+          stop("Model uncertainty queue count differs from batch registry",call.=FALSE)
         decisions <- w04_filter_batch_decisions(active_sheet_w04_resolution_decisions(),queue$queue_sha256)
       }
       list(batch=batch,rows=rows,queue=queue,decisions=decisions)
@@ -3873,6 +3875,15 @@ server <- function(input, output, session) {
         "Opened run %s: %d model uncertainties in W04 Model uncertainty resolution. Assign these cases to a reviewer below.",
         result$batch$run_id,length(q$cases)))
     } else {
+      w04_resolution_all_cases_rv(list())
+      w04_resolution_queue_sha_rv("")
+      w04_resolution_batch_id_rv("")
+      w04_resolution_source_run_id_rv("")
+      w04_resolution_origin_rv("")
+      w04_resolution_batch_status_rv("")
+      w04_resolution_decisions(list())
+      w04_resolution_resume_requested_rv(FALSE)
+      w04_resolution_idx(1L)
       w04_model_return_status_rv(sprintf(
         "Opened run %s: no model uncertainties requiring adjudication.",result$batch$run_id))
     }
