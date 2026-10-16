@@ -1,0 +1,28 @@
+name: Temporary metadata cache validation
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/temporary-metadata-cache-validation.yml']
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.6.0'
+          use-public-rspm: true
+      - name: Parse R and verify metadata cache
+        shell: Rscript {0}
+        run: |
+          parse("multiuser_app/R/storage_sheets.R")
+          parse("multiuser_app/app.R")
+          a <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\n")
+          b <- paste(readLines("multiuser_app/R/storage_sheets.R",warn=FALSE),collapse="\n")
+          stopifnot(length(gregexpr("read_review_metadata_cached(",a,fixed=TRUE)[[1]]) == 8L)
+          stopifnot(grepl("(now - cached_at) < 10",b,fixed=TRUE))
+          stopifnot(grepl('read_review_metadata_cached <- function(ss)',b,fixed=TRUE))
+          stopifnot(grepl('googlesheets4::read_sheet(ss,sheet="review_metadata",col_types="cc")',b,fixed=TRUE))
+          cat("PASS: metadata reads coalesced; both R scripts parse\n")
