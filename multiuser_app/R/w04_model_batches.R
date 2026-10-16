@@ -32,8 +32,16 @@ w04_model_batch_results_read <- function(batch) {
      any(as.character(x$prompt_sha256)!=as.character(batch$prompt_sha256)) ||
      anyDuplicated(as.character(x$record_id)))
     stop("W04 model results have inconsistent provenance or coverage",call.=FALSE)
-  if(any(!as.character(x$decision) %in% c("retain","exclude","uncertain")))
-    stop("W04 model results contain invalid decisions",call.=FALSE)
+  if(anyNA(x$record_id) || any(!nzchar(as.character(x$record_id))) ||
+     anyNA(x$decision) ||
+     any(!as.character(x$decision) %in% c("retain","exclude","uncertain")))
+    stop("W04 model results contain missing IDs or invalid decisions",call.=FALSE)
+  observed <- table(factor(as.character(x$decision),
+    levels=c("retain","exclude","uncertain")))
+  expected <- suppressWarnings(as.integer(unlist(batch[c("retain","exclude","uncertain")],use.names=FALSE)))
+  if(length(expected)!=3L || anyNA(expected) ||
+     !identical(as.integer(observed),expected) || sum(expected)!=nrow(x))
+    stop("W04 model decision counts differ from published batch registry",call.=FALSE)
   x
 }
 w04_model_batch_comparison <- function(results, human_events, subset_id) {
