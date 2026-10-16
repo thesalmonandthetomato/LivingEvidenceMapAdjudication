@@ -1190,7 +1190,7 @@ server <- function(input, output, session) {
     if(!identical(app_view(),"tasks"))return()
     metrics <- tryCatch({
       ss <- sheet_id_from_env()
-      metadata <- googlesheets4::read_sheet(ss,sheet="review_metadata",col_types="cc")
+      metadata <- read_review_metadata_cached(ss)
       review <- as.character(metadata$value[match("review_id",metadata$key)])
       if(length(review)!=1L||is.na(review)||!grepl("^[A-Za-z0-9._-]{3,128}$",review))
         stop("Missing valid review_id in the active review_metadata tab")
@@ -4816,7 +4816,7 @@ server <- function(input, output, session) {
     identity <- tryCatch({
       if(!grepl("^[A-Za-z0-9_-]{15,150}$",sheet_id))
         stop("Review Google Sheet ID is missing or invalid")
-      metadata <- googlesheets4::read_sheet(sheet_id,sheet="review_metadata",col_types="cc")
+      metadata <- read_review_metadata_cached(sheet_id)
       if(!all(c("key","value") %in% names(metadata))) stop("Invalid review_metadata")
       review_id <- as.character(metadata$value[match("review_id",metadata$key)])
       if(length(review_id)!=1L || is.na(review_id) ||
@@ -4858,7 +4858,7 @@ server <- function(input, output, session) {
     if(!isTRUE(authenticated()) || !identical(storage_backend(),"google_sheets")) return()
     locked <- tryCatch({
       sheet <- sheet_id_from_env()
-      meta <- googlesheets4::read_sheet(sheet,sheet="review_metadata",col_types="cc")
+      meta <- read_review_metadata_cached(sheet)
       review <- as.character(meta$value[match("review_id",meta$key)])
       if(length(review)!=1L || is.na(review) || !nzchar(review)) stop("Missing review identity")
       w01_has_published_review_run(review,sheet)
@@ -4969,7 +4969,7 @@ server <- function(input, output, session) {
     if(!isTRUE(authenticated()) || !identical(storage_backend(),"google_sheets")) return()
     receipt <- tryCatch({
       sheet <- sheet_id_from_env()
-      metadata <- googlesheets4::read_sheet(sheet,sheet="review_metadata",col_types="cc")
+      metadata <- read_review_metadata_cached(sheet)
       review <- as.character(metadata$value[match("review_id",metadata$key)])
       if(length(review)!=1L || is.na(review) ||
          !grepl("^[A-Za-z0-9._-]{3,128}$",review)) return(NULL)
@@ -9527,7 +9527,7 @@ server <- function(input, output, session) {
     invalidateLater(15000,session)
     record <- tryCatch({
       ss <- sheet_id_from_env()
-      m <- googlesheets4::read_sheet(ss,sheet="review_metadata",col_types="cc")
+      m <- read_review_metadata_cached(ss)
       review <- as.character(m$value[match("review_id",m$key)])
       if(!length(review)||is.na(review)||!nzchar(review)) return(NULL)
       w02_launch_record(review,ss)
@@ -9630,7 +9630,7 @@ server <- function(input, output, session) {
     launched_at <- format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ")
     result <- tryCatch({
       sheet_id <- sheet_id_from_env()
-      meta <- googlesheets4::read_sheet(sheet_id,sheet="review_metadata",col_types="cc")
+      meta <- read_review_metadata_cached(sheet_id)
       if(!all(c("key","value") %in% names(meta))) stop("Invalid review_metadata")
       review_id <- as.character(meta$value[match("review_id",meta$key)])
       if(length(review_id)!=1L || is.na(review_id) ||
@@ -9862,7 +9862,7 @@ server <- function(input, output, session) {
         append_w01_export_request(queue_sha_rv(),batch_id_rv(),"dispatching")
       }
       sheet_id <- trimws(sheet_id_from_env())
-      meta <- googlesheets4::read_sheet(sheet_id,sheet="review_metadata",col_types="cc")
+      meta <- read_review_metadata_cached(sheet_id)
       if(!all(c("key","value") %in% names(meta))) stop("Invalid review_metadata")
       review_id <- as.character(meta$value[match("review_id",meta$key)])
       if(length(review_id)!=1L || is.na(review_id) ||
@@ -9902,7 +9902,7 @@ server <- function(input, output, session) {
     invalidateLater(15000,session)
     result <- tryCatch({
       sheet <- sheet_id_from_env()
-      meta <- googlesheets4::read_sheet(sheet,sheet="review_metadata",col_types="cc")
+      meta <- read_review_metadata_cached(sheet)
       review <- as.character(meta$value[match("review_id",meta$key)])
       if(length(review)!=1L || is.na(review) || !nzchar(review))
         stop("Cannot identify review in Google Sheets")
