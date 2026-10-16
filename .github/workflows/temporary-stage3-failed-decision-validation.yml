@@ -1,0 +1,54 @@
+name: Temporary Stage 3 failed decision validation
+on:
+  push:
+    paths:
+      - '.github/workflows/temporary-stage3-failed-decision-validation.yml'
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+      - name: Exercise W04 decision failure and success
+        shell: Rscript {0}
+        run: |
+          p <- "multiuser_app/app.R"
+          parse(file=p)
+          lines <- readLines(p,warn=FALSE)
+          start <- grep("^  save_w04_choice <- function\\(choice\\) \\{",lines)
+          end <- grep("^  advance_w04 <- function\\(\\) \\{",lines)
+          stopifnot(length(start)==1L,length(end)==1L,end>start)
+          fn <- parse(text=paste(lines[start:(end-1L)],collapse="\n"))[[1L]]
+          env <- new.env(parent=baseenv())
+          env$'%||%' <- function(x,y) if(is.null(x)) y else x
+          env$session_can <- function(x) TRUE
+          env$session_reviewer_id <- function() "reviewer-a"
+          env$w04_current_case <- function() list(review_case_id="c1",record_id="r1")
+          env$w04_queue_sha_rv <- function() "queue1"
+          env$decision_user_id <- function(x) x$reviewer
+          state <- new.env(parent=emptyenv())
+          state$decisions <- list(list(review_case_id="c1",reviewer="reviewer-a",decision="exclude"))
+          state$status <- ""
+          state$should_fail <- TRUE
+          env$w04_decisions <- function(value) {
+            if(missing(value)) return(state$decisions)
+            state$decisions <- value
+          }
+          env$w04_status <- function(value) state$status <- value
+          env$append_sheet_w04_decision <- function(decision,prior_decision=NULL) {
+            stopifnot(identical(prior_decision$decision,"exclude"))
+            if(state$should_fail) stop("synthetic persistence failure")
+            decision
+          }
+          eval(fn,envir=env)
+          previous <- state$decisions
+          stopifnot(identical(env$save_w04_choice("include"),FALSE))
+          stopifnot(identical(state$decisions,previous))
+          stopifnot(grepl("Save failed:",state$status,fixed=TRUE))
+          state$should_fail <- FALSE
+          stopifnot(identical(env$save_w04_choice("include"),TRUE))
+          stopifnot(length(state$decisions)==1L)
+          stopifnot(identical(state$decisions[[1L]]$decision,"include"))
+          stopifnot(grepl("Saved include",state$status,fixed=TRUE))
+          cat("PASS: failure preserves W04 decision state; successful persistence updates it\n")
