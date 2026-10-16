@@ -8702,7 +8702,10 @@ server <- function(input, output, session) {
         }
         assignment_registry_rv(loaded_assignments)
         pipeline_status_rv(if(identical(storage_backend(),"google_sheets")) login_timed_read("pipeline status",read_latest_pipeline_status) else NULL)
-        manual_screening_rv(login_timed_read("manual screening metrics",read_manual_screening_metrics))
+        # W04 kappa registry is administrator-only; reviewer queue access does not need it.
+        if (user_can(login_user,"manage_assignments")) {
+          manual_screening_rv(login_timed_read("manual screening metrics",read_manual_screening_metrics))
+        }
         batch <- login_timed_read("W01 queue",load_batch)
         current_decisions <- list()
         if (!is.null(batch)) {
@@ -11995,9 +11998,11 @@ server <- function(input, output, session) {
       }
     }
 
-    screening <- tryCatch(read_manual_screening_metrics(), error=function(e)e)
-    if (!inherits(screening,"error")) {
-      manual_screening_rv(screening)
+    if (session_can("manage_assignments")) {
+      screening <- tryCatch(read_manual_screening_metrics(), error=function(e)e)
+      if (!inherits(screening,"error")) {
+        manual_screening_rv(screening)
+      }
     }
   }, ignoreInit=TRUE)
 
