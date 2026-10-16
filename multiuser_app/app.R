@@ -10403,6 +10403,9 @@ server <- function(input, output, session) {
     w04_note_status(sprintf("Note saved at %s",format(Sys.time(),"%H:%M:%S")))
   })
 
+  # Retain the exact attempted event until its Google Sheets outcome is known.
+  # A retry must retain the original timestamp/ID rather than append a new event.
+  w04_pending_save_rv <- reactiveVal(NULL)
   save_w04_choice <- function(choice) {
     if(!session_can("adjudicate_assigned")) {
       w04_status("You do not have permission to adjudicate records.")
@@ -10422,7 +10425,16 @@ server <- function(input, output, session) {
       if(length(hits)) prior <- hits[[1L]]
     }
 
-    decision <- list(
+    pending <- isolate(w04_pending_save_rv())
+    if (!is.null(pending) && !(
+      identical(as.character(pending$decision$review_case_id),as.character(z$review_case_id)) &&
+      identical(as.character(pending$decision$queue_sha256),as.character(w04_queue_sha_rv())) &&
+      identical(as.character(pending$decision$decision),as.character(choice))
+    )) {
+      w04_status("Previous save is unverified. Retry the same decision before changing records or choices.")
+      return(FALSE)
+    }
+    decision <- if (!is.null(pending)) pending$decision else list(
       review_case_id=as.character(z$review_case_id),
       record_id=as.character(z$record_id),
       decision=choice,
@@ -10431,12 +10443,15 @@ server <- function(input, output, session) {
       resolved_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
       queue_sha256=w04_queue_sha_rv()
     )
+    if (is.null(pending)) w04_pending_save_rv(list(decision=decision))
 
     saved <- tryCatch(
-      append_sheet_w04_decision(decision,prior_decision=prior),
-      error=function(e){w04_status(paste("Save failed:",conditionMessage(e)));NULL}
+      append_sheet_w04_decision(decision,prior_decision=prior,
+        recover_existing=!is.null(pending)),
+      error=function(e){w04_status(paste("Save could not be verified. Retry the same decision:",conditionMessage(e)));NULL}
     )
     if(is.null(saved)) return(FALSE)
+    w04_pending_save_rv(NULL)
 
     remaining <- Filter(
       function(x) !(
