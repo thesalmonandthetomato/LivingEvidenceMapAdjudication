@@ -600,14 +600,17 @@ ui <- page_fillable(
         function restoreDetails(root) {
           (root || document).querySelectorAll('details[data-accordion-key]').forEach(function(el) {
             const key = storagePrefix + el.getAttribute('data-accordion-key');
-            const saved = sessionStorage.getItem(key);
-            if (saved === 'open') el.open = true;
-            if (saved === 'closed') el.open = false;
+            // Restore only on newly mounted elements. Reapplying stale
+            // sessionStorage state to existing details races the toggle event
+            // and can collapse a disclosure immediately after opening it.
             if (!el.dataset.lemBound) {
+              el.dataset.lemBound = '1';
+              const saved = sessionStorage.getItem(key);
+              if (saved === 'open') el.open = true;
+              if (saved === 'closed') el.open = false;
               el.addEventListener('toggle', function() {
                 sessionStorage.setItem(key, el.open ? 'open' : 'closed');
               });
-              el.dataset.lemBound = '1';
             }
           });
         }
