@@ -1740,7 +1740,7 @@ active_sheet_w04_conflict_decisions <- function() {
   active_w04_decisions_from_tab(w04_conflict_decision_tab(), identity_scope = "case")
 }
 
-append_w04_decision_to_tab <- function(decision, prior_decision=NULL, tab, prefix="w04-dec-") {
+append_w04_decision_to_tab <- function(decision, prior_decision=NULL, tab, prefix="w04-dec-", recover_existing=FALSE) {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tabs <- sheet_names_cached(ss)
@@ -1778,6 +1778,23 @@ append_w04_decision_to_tab <- function(decision, prior_decision=NULL, tab, prefi
     supersedes_decision_id=supersedes,
     stringsAsFactors=FALSE
   )
+  # Only retry attempts perform a preflight read. A previously accepted write
+  # must not be appended again when its verification response was lost.
+  if (isTRUE(recover_existing)) {
+    existing_ids <- googlesheets4::read_sheet(
+      ss, sheet=tab, range=googlesheets4::cell_cols("A"), col_types="c"
+    )
+    matches <- if ("decision_id" %in% names(existing_ids)) {
+      sum(as.character(existing_ids$decision_id)==decision_id,na.rm=TRUE)
+    } else 0L
+    if (matches > 1L) stop("W04 retry found duplicate decision IDs; manual inspection required",call.=FALSE)
+    if (matches == 1L) {
+      return(normalise_saved_decision_event(
+        as.list(row[1,,drop=FALSE]), prior_decision=prior_decision,
+        case_fields=c("case_id","review_case_id")
+      ))
+    }
+  }
   googlesheets4::sheet_append(ss,data=row,sheet=tab)
   # Verify the append using only the decision-id column instead of
   # downloading every historical decision and its payload on every click.
@@ -1796,8 +1813,8 @@ append_w04_decision_to_tab <- function(decision, prior_decision=NULL, tab, prefi
   )
 }
 
-append_sheet_w04_decision <- function(decision, prior_decision=NULL) {
-  append_w04_decision_to_tab(decision,prior_decision,w04_decision_tab(),"w04-val-dec-")
+append_sheet_w04_decision <- function(decision, prior_decision=NULL, recover_existing=FALSE) {
+  append_w04_decision_to_tab(decision,prior_decision,w04_decision_tab(),"w04-val-dec-",recover_existing=recover_existing)
 }
 append_sheet_w04_resolution_decision <- function(decision, prior_decision=NULL) {
   append_w04_decision_to_tab(decision,prior_decision,w04_resolution_decision_tab(),"w04-res-dec-")
