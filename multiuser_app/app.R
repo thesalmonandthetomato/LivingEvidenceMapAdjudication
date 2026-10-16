@@ -1058,7 +1058,6 @@ server <- function(input, output, session) {
   w04_model_batches_rv <- reactiveVal(list())
   w04_model_results_rv <- reactiveVal(NULL)
   w04_model_selected_batch_rv <- reactiveVal(NULL)
-  w04_model_comparison_rv <- reactiveVal(NULL)
   w04_model_return_status_rv <- reactiveVal("")
   w04_reviewer_model_batches_rv <- reactiveVal(list())
   w04_reviewer_model_status_rv <- reactiveVal("")
@@ -3851,7 +3850,6 @@ server <- function(input, output, session) {
     }
     w04_model_selected_batch_rv(result$batch)
     w04_model_results_rv(result$rows)
-    w04_model_comparison_rv(NULL)
     if(!is.null(result$queue)) {
       q <- result$queue
       w04_resolution_all_cases_rv(q$cases)
@@ -3880,28 +3878,6 @@ server <- function(input, output, session) {
         "Opened run %s: no model uncertainties requiring adjudication.",result$batch$run_id))
     }
   })
-  observeEvent(input$w04_model_batch_compare,{
-    req(authenticated())
-    if(!session_can("control_workflows")) return()
-    batch <- w04_model_selected_batch_rv()
-    rows <- w04_model_results_rv()
-    if(is.null(batch)||is.null(rows)) {
-      w04_model_return_status_rv("Open a model batch before comparing decisions.")
-      return()
-    }
-    result <- tryCatch({
-      human <- active_sheet_w04_decisions()
-      w04_model_batch_comparison(rows,human,as.character(batch$subset_id))
-    },error=function(e)e)
-    if(inherits(result,"error")) {
-      w04_model_return_status_rv(paste("Model-human comparison failed:",conditionMessage(result)))
-      return()
-    }
-    w04_model_comparison_rv(result)
-    w04_model_return_status_rv(sprintf(
-      "Compared %d model records against available human decisions for subset %s.",
-      nrow(result),as.character(batch$subset_id)))
-  })
   output$w04_model_batch_summary <- renderUI({
     b <- w04_model_selected_batch_rv()
     if(is.null(b)) return(NULL)
@@ -3910,29 +3886,6 @@ server <- function(input, output, session) {
       b$run_id,b$total,b$retain,b$exclude,b$uncertain,
       substr(as.character(b$prompt_sha256),1L,12L)))
   })
-  output$w04_model_comparison_summary <- renderUI({
-    x <- w04_model_comparison_rv()
-    if(is.null(x)||!nrow(x)) return(NULL)
-    reviewers <- setdiff(names(x),c("record_id","model"))
-    if(!length(reviewers))
-      return(tags$p(class="saved-note","No human decisions found for this subset."))
-    tags$ul(lapply(reviewers,function(uid) {
-      human <- as.character(x[[uid]])
-      usable <- !is.na(human) & nzchar(human) & x$model!="uncertain" &
-        human!="uncertain"
-      comparable <- sum(usable)
-      agreeing <- sum(human[usable]==as.character(x$model[usable]))
-      tags$li(sprintf("%s: %d/%d comparable decisions agree (%s); %d records have human decisions",
-        uid,agreeing,comparable,
-        if(comparable) paste0(round(100*agreeing/comparable,1),"%") else "not calculable",
-        sum(!is.na(human)&nzchar(human))))
-    }))
-  })
-  output$w04_model_comparison_table <- renderTable({
-    x <- w04_model_comparison_rv()
-    if(is.null(x)||!nrow(x)) return(NULL)
-    x
-  },striped=TRUE,bordered=TRUE,spacing="xs")
   observeEvent(input$w04_reviewer_batches_refresh,{
     req(authenticated())
     if(!session_can("adjudicate_assigned")) {
@@ -4414,11 +4367,8 @@ server <- function(input, output, session) {
                   actionButton("w04_model_batches_refresh","Load completed model batches",class="btn-outline-secondary btn-sm"),
                   uiOutput("w04_model_batch_selector"),
                   actionButton("w04_model_batch_open","Open selected model batch",class="btn-outline-primary btn-sm"),
-                  actionButton("w04_model_batch_compare","Compare with human screening",class="btn-outline-secondary btn-sm"),
                   textOutput("w04_model_return_status"),
                   uiOutput("w04_model_batch_summary"),
-                  uiOutput("w04_model_comparison_summary"),
-                  tableOutput("w04_model_comparison_table"),
                   tags$a("View W04 subset model runs",
                     href="https://github.com/thesalmonandthetomato/LivingEvidenceMap/actions/workflows/w04_shiny_subset_launcher.yml",
                     target="_blank",rel="noopener noreferrer")
