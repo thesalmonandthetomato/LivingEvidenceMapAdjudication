@@ -1,0 +1,68 @@
+name: Temporary Stage 2 state behaviour
+on:
+  push:
+    paths: ['.github/workflows/temporary-stage2-state-behaviour.yml']
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+      - name: Exercise W04 admin refresh without Google Sheets
+        shell: Rscript {0}
+        run: |
+          p <- "multiuser_app/app.R"
+          parse(file=p)
+          x <- paste(readLines(p,warn=FALSE),collapse="\n")
+          start <- regexpr("refresh_w04_admin_state <- function(show_status=FALSE) {", x, fixed=TRUE)[1]
+          end <- regexpr("  observeEvent(input$w04_refresh_status_button,{",x,fixed=TRUE)[1]
+          stopifnot(start>0L,end>start)
+          expr <- parse(text=substr(x,start,end-1L))[[1]]
+          calls <- character()
+          state <- new.env(parent=emptyenv())
+          state$decisions <- list("old")
+          state$assignments <- list("old")
+          state$err_decisions <- TRUE
+          state$err_assignments <- FALSE
+          rv <- function(key) function(value) {
+            if(missing(value)) return(state[[key]])
+            state[[key]] <- value
+          }
+          env <- new.env(parent=baseenv())
+          env$storage_backend <- function() "google_sheets"
+          env$w04_batch_id_rv <- function() "batch1"
+          env$w04_queue_sha_rv <- function() "queue1"
+          env$active_sheet_w04_decisions <- function() {
+            calls <<- c(calls,"decisions")
+            if(state$err_decisions) stop("decision read failed")
+            list("new")
+          }
+          env$read_sheet_assignments <- function(create_if_missing=FALSE) {
+            stopifnot(identical(create_if_missing,FALSE))
+            calls <<- c(calls,"assignments")
+            if(state$err_assignments) stop("assignment read failed")
+            list("new")
+          }
+          env$w04_filter_batch_decisions <- function(d,s) d
+          env$w04_decision_signature <- identity
+          env$assignment_registry_signature <- identity
+          env$w04_decisions <- rv("decisions")
+          env$assignment_registry_rv <- rv("assignments")
+          env$w04_refresh_status <- rv("status")
+          env$'%||%' <- function(x,y) if(is.null(x)) y else x
+          eval(expr,envir=env)
+          stopifnot(identical(env$refresh_w04_admin_state(TRUE),FALSE))
+          stopifnot(identical(calls,"decisions"))
+          stopifnot(identical(state$decisions,list("old")),identical(state$assignments,list("old")))
+          calls <- character()
+          state$err_decisions <- FALSE
+          state$err_assignments <- TRUE
+          stopifnot(identical(env$refresh_w04_admin_state(TRUE),FALSE))
+          stopifnot(identical(calls,c("decisions","assignments")))
+          stopifnot(identical(state$decisions,list("old")),identical(state$assignments,list("old")))
+          calls <- character()
+          state$err_assignments <- FALSE
+          stopifnot(identical(env$refresh_w04_admin_state(TRUE),TRUE))
+          stopifnot(identical(state$decisions,list("new")),identical(state$assignments,list("new")))
+          cat("PASS: W04 refresh preserves snapshots on either read failure and updates both on success\n")
