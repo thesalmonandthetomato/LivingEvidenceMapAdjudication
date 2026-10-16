@@ -1,0 +1,24 @@
+name: Temporary Stage 2 validation
+on:
+  push:
+    paths:
+      - '.github/workflows/temporary-stage2-validation.yml'
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+      - name: Validate Shiny parse and login guard
+        shell: Rscript {0}
+        run: |
+          src <- "multiuser_app/app.R"
+          parse(file=src)
+          lines <- readLines(src, warn=FALSE)
+          pos <- grep("observeEvent\\(app_view\\(\\), \\{", lines)
+          stopifnot(length(pos) == 1L)
+          fragment <- paste(lines[pos:min(pos+12L,length(lines))], collapse="\n")
+          stopifnot(grepl("login_initialising", fragment, fixed=TRUE))
+          stopifnot(grepl("if (isTRUE(login_initialising())) return()", fragment, fixed=TRUE))
+          cat("PASS: parse + login guard\n")
