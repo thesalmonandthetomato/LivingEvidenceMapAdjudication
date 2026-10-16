@@ -9065,15 +9065,22 @@ server <- function(input, output, session) {
         }
         TRUE
       }, error = function(e) {
-        login_status(paste("Batch could not be loaded:", conditionMessage(e)))
+        detail <- conditionMessage(e)
+        message("LEM review data initialisation failed: ", detail)
+        login_status(paste("Review data could not be loaded:", detail))
         FALSE
       })
 
       if (!isTRUE(loaded)) {
-        showNotification("Review data could not be loaded. Log out and sign in again to retry.",
-          type="error",duration=NULL)
+        # Never expose a partially initialised workflow as ready for review.
+        authenticated(FALSE)
+        current_user(NULL)
+        login_initialising(FALSE)
+        showNotification("Review data loading failed. See the sign-in error for details; you can retry without logging out.",
+          type="error",duration=12)
+      } else {
+        login_initialising(FALSE)
       }
-      login_initialising(FALSE)
       }, once=TRUE)
     } else {
       n <- failed_attempts() + 1L
