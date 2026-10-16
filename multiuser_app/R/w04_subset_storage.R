@@ -4,6 +4,64 @@ w04_subset_registry_tab <- function() "w04_subset_registry"
 w04_subset_registry_columns <- c("review_id","subset_id","parent_subset_id",
   "source_checkpoint_sha256","membership_sha256","actual_size",
   "created_at_utc","subset_json")
+# Mutable display labels are maintained separately from immutable subset JSON.
+# Each edit appends a small review-scoped event; subset membership never changes.
+w04_subset_label_text <- function(x) {
+  x <- trimws(as.character(x %||% ""))
+  if(length(x)!=1L || is.na(x) || nchar(x,type="chars")>100L ||
+     grepl("[\\r\\n]",x)) stop("Subset label must be one line (maximum 100 characters)",call.=FALSE)
+  x
+}
+w04_subset_display <- function(subset, records=TRUE) {
+  id <- as.character(subset$subset_id)
+  label <- trimws(as.character(subset$label %||% ""))
+  name <- if(nzchar(label)) paste0(label," · ",id) else id
+  if(isTRUE(records)) sprintf("%s (%d records)",name,as.integer(subset$actual_size)) else name
+}
+w04_subset_label_tab <- function() "w04_subset_labels"
+w04_subset_labels_read <- function(ss, review_id) {
+  tab <- w04_subset_label_tab()
+  if(!tab %in% sheet_names_cached(ss)) return(list())
+  rows <- as.data.frame(googlesheets4::read_sheet(ss,sheet=tab,col_types="c"))
+  required <- c("review_id","subset_id","label","changed_at_utc","actor_user_id")
+  if(!all(required %in% names(rows))) stop("W04 subset label registry is malformed",call.=FALSE)
+  if(!nrow(rows)) return(list())
+  rows <- rows[!is.na(rows$review_id) & rows$review_id==review_id,,drop=FALSE]
+  latest <- list()
+  for(i in seq_len(nrow(rows))) {
+    id <- as.character(rows$subset_id[[i]])
+    if(nzchar(id)) latest[[id]] <- as.character(rows$label[[i]] %||% "")
+  }
+  latest
+}
+w04_subset_label_save <- function(review_id,subset_id,label,actor_user_id="") {
+  label <- w04_subset_label_text(label)
+  meta <- w04_prompt_review_metadata()
+  if(!identical(as.character(meta$review_id),as.character(review_id)))
+    stop("W04 subset label belongs to a different review",call.=FALSE)
+  registered <- w04_subset_registry_read(review_id)
+  if(!any(vapply(registered,function(x)identical(x$subset_id,subset_id),logical(1))))
+    stop("Cannot label an unregistered subset",call.=FALSE)
+  if(identical(as.character(Filter(function(x)identical(x$subset_id,subset_id),registered)[[1L]]$label %||% ""),label))
+    return(invisible(registered))
+  ss <- meta$sheet_id
+  tab <- w04_subset_label_tab()
+  if(!tab %in% sheet_names_cached(ss)) {
+    cols <- c("review_id","subset_id","label","changed_at_utc","actor_user_id")
+    empty <- as.data.frame(stats::setNames(replicate(length(cols),character(),simplify=FALSE),cols),stringsAsFactors=FALSE)
+    googlesheets4::sheet_write(empty,ss=ss,sheet=tab)
+    invalidate_sheet_names_cache(ss)
+  }
+  googlesheets4::sheet_append(ss,sheet=tab,data=data.frame(
+    review_id=review_id,subset_id=subset_id,label=label,
+    changed_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%OS6Z"),
+    actor_user_id=as.character(actor_user_id),stringsAsFactors=FALSE))
+  verified <- w04_subset_registry_read(review_id)
+  found <- Filter(function(x)identical(x$subset_id,subset_id),verified)
+  if(length(found)!=1L || !identical(as.character(found[[1L]]$label %||% ""),label))
+    stop("W04 subset label update could not be verified",call.=FALSE)
+  invisible(verified)
+}
 w04_subset_registry_read <- function(review_id) {
   if(!identical(storage_backend(),"google_sheets"))
     stop("Persistent W04 subsets require Google Sheets",call.=FALSE)
@@ -34,6 +92,9 @@ w04_subset_registry_read <- function(review_id) {
   })
   ids <- vapply(result,function(x)x$subset_id,character(1))
   if(anyDuplicated(ids)) stop("W04 registry contains duplicate subset IDs",call.=FALSE)
+  labels <- w04_subset_labels_read(ss,review_id)
+  for(i in seq_along(result))
+    result[[i]]$label <- as.character(labels[[result[[i]]$subset_id]] %||% "")
   result
 }
 w04_subset_registry_append <- function(subset) {
