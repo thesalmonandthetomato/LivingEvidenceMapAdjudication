@@ -2620,17 +2620,6 @@ server <- function(input, output, session) {
               }
             )
           ),
-          if(session_can("adjudicate_assigned")) div(
-            class = "col-12",
-            card(class="assignment-summary",
-              tags$strong("W04: Assigned model uncertainty batches"),
-              tags$p(class="saved-note","Find and open a completed model run assigned to you. Administrators manage completed runs in Configure review → W04."),
-              actionButton("w04_reviewer_batches_refresh","Find model uncertainty batches",class="btn-outline-secondary btn-sm"),
-              uiOutput("w04_reviewer_model_batch_selector"),
-              actionButton("w04_reviewer_model_batch_open","Load selected uncertainty batch",class="btn-outline-primary btn-sm"),
-              textOutput("w04_reviewer_model_status")
-            )
-          ),
           div(
             class = "col-12 col-lg-6",
             stage_card(
