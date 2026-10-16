@@ -105,16 +105,12 @@ w04_shiny_model_bundle_archive <- function(meta,bundle) {
 w04_shiny_model_blocking_runs <- function(runs, label) {
   matching <- Filter(function(x)
     identical(as.character(x$display_title %||% ""), label), runs)
+  # Completed attempts, whether successful or failed, must never prevent
+  # intentionally rerunning the same immutable bundle. Only an active attempt
+  # remains blocked to avoid accidentally dispatching twice concurrently.
   Filter(function(x) {
-    conclusion <- as.character(x$conclusion %||% "")
-    # Both inspected attempts failed during preparation before screening or
-    # paid model calls; keep all other attempts blocked. Do not weaken duplicate
-    # protection for other failed, running or successful attempts.
-    safe_pre_screen_failure <- as.character(x$id %||% "") %in% c("38913167294", "38938199697") &&
-      identical(conclusion, "failure") &&
-      identical(as.character(x$display_title %||% ""),
-        "W04 Shiny subset almeria-map w04-model-input-b5035344d31700e91e01.json")
-    !identical(conclusion, "startup_failure") && !safe_pre_screen_failure
+    status <- tolower(as.character(x$status %||% ""))
+    status %in% c("queued", "in_progress", "waiting", "pending", "requested")
   }, matching)
 }
 
