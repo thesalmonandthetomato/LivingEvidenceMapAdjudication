@@ -1,0 +1,34 @@
+name: Temporary W04 repeat-launch validation
+on:
+  push:
+    paths: ['.github/workflows/temporary-w04-repeat-launch-validation.yml']
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+      - name: Validate completed attempts allow rerun
+        shell: Rscript {0}
+        run: |
+          parse(file="multiuser_app/R/w04_shiny_model_launch.R")
+          x <- paste(readLines("multiuser_app/R/w04_shiny_model_launch.R",warn=FALSE),collapse="\n")
+          a <- regexpr("w04_shiny_model_blocking_runs <- function",x,fixed=TRUE)[1]
+          b <- regexpr("w04_shiny_model_dispatch <- function",x,fixed=TRUE)[1]
+          stopifnot(a>0L,b>a)
+          env <- new.env(parent=baseenv())
+          env$'%||%' <- function(a,b) if(is.null(a)) b else a
+          eval(parse(text=substr(x,a,b-1L)),envir=env)
+          label <- "W04 Shiny subset review bundle.json"
+          run <- function(id,status,conclusion=NULL,title=label) list(id=id,status=status,conclusion=conclusion,display_title=title)
+          xs <- list(run(1,"completed","failure"),run(2,"completed","success"),
+                     run(3,"completed","cancelled"),run(4,"in_progress",NULL),
+                     run(5,"queued",NULL),run(6,"completed","startup_failure"),
+                     run(7,"in_progress",NULL,"other bundle"))
+          result <- env$w04_shiny_model_blocking_runs(xs,label)
+          ids <- vapply(result,function(z)z$id,numeric(1))
+          stopifnot(identical(ids,c(4,5)))
+          stopifnot(length(env$w04_shiny_model_blocking_runs(xs[1:3],label))==0L)
+          stopifnot(grepl("active GitHub Actions attempt",x,fixed=TRUE))
+          cat("PASS repeated completed bundle launches allowed, active duplicates protected\n")
