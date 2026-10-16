@@ -1183,10 +1183,12 @@ server <- function(input, output, session) {
     }
   })
 
-  # Review-scoped publication receipts, independent of the legacy global status.
+  # Review-scoped publication receipts change only on workflow publication.
+  # Poll less often than interactive review queues to avoid exhausting the
+  # shared service-account read quota during idle task-page sessions.
   observe({
     req(authenticated(),identical(storage_backend(),"google_sheets"))
-    invalidateLater(60000,session)
+    invalidateLater(180000,session)
     if(!identical(app_view(),"tasks"))return()
     metrics <- tryCatch({
       ss <- sheet_id_from_env()
