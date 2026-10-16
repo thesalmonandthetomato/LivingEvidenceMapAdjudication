@@ -9940,8 +9940,13 @@ server <- function(input, output, session) {
   })
 
   w04_current_case <- reactive({
-    req(authenticated(), w04_cases_rv())
-    w04_cases_rv()[[w04_idx()]]
+    req(authenticated())
+    cases <- w04_cases_rv()
+    index <- w04_idx()
+    req(is.list(cases), length(cases) > 0L,
+        length(index) == 1L, !is.na(index),
+        index >= 1L, index <= length(cases))
+    cases[[index]]
   })
 
   w04_current_saved_choice <- reactive({
