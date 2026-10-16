@@ -3790,6 +3790,116 @@ server <- function(input, output, session) {
     session$sendCustomMessage("w04_prompt_feedback",list(done=TRUE))
   })
 
+  observeEvent(input$w04_model_batches_refresh,{
+    req(authenticated())
+    if(!session_can("control_workflows")) return()
+    result <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      w04_model_batch_registry_read(meta$review_id)
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_model_return_status_rv(paste("Cannot load model batches:",conditionMessage(result)))
+      return()
+    }
+    w04_model_batches_rv(result)
+    w04_model_return_status_rv(sprintf("%d completed model run(s) available.",length(result)))
+  })
+  output$w04_model_batch_selector <- renderUI({
+    req(authenticated())
+    xs <- w04_model_batches_rv()
+    if(!length(xs)) return(tags$p(class="saved-note","Load completed batches after a model run has finished."))
+    ids <- vapply(xs,function(x)as.character(x$run_id),character(1))
+    subsets <- w04_subsets_rv()
+    labels <- vapply(xs,function(x) {
+      id <- as.character(x$subset_id)
+      found <- Filter(function(s)identical(as.character(s$subset_id),id),subsets)
+      name <- if(length(found)) w04_subset_display(found[[1L]],records=FALSE) else id
+      sprintf("%s · run %s · %s uncertain",name,x$run_id,x$uncertain)
+    },character(1))
+    selectInput("w04_model_batch_selected","Model screening run",
+      choices=stats::setNames(ids,labels))
+  })
+  observeEvent(input$w04_model_batch_open,{
+    req(authenticated())
+    if(!session_can("control_workflows")) return()
+    result <- tryCatch({
+      id <- as.character(input$w04_model_batch_selected %||% "")
+      xs <- Filter(function(x)identical(as.character(x$run_id),id),w04_model_batches_rv())
+      if(length(xs)!=1L)stop("Choose a registered model run",call.=FALSE)
+      batch <- xs[[1L]]
+      rows <- w04_model_batch_results_read(batch)
+      queue <- NULL
+      decisions <- list()
+      if(as.integer(batch$uncertain)>0L) {
+        queue <- read_sheet_w04_resolution_queue(as.character(batch$resolution_tab))
+        if(is.null(queue) ||
+           !identical(as.character(queue$source_run_id),id) ||
+           !identical(as.character(queue$queue_sha256),as.character(batch$resolution_queue_sha256)))
+          stop("Model run uncertainty queue is missing or does not match its batch",call.=FALSE)
+        decisions <- w04_filter_batch_decisions(active_sheet_w04_resolution_decisions(),queue$queue_sha256)
+      }
+      list(batch=batch,rows=rows,queue=queue,decisions=decisions)
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_model_return_status_rv(paste("Model batch could not be opened:",conditionMessage(result)))
+      return()
+    }
+    w04_model_selected_batch_rv(result$batch)
+    w04_model_results_rv(result$rows)
+    w04_model_comparison_rv(NULL)
+    if(!is.null(result$queue)) {
+      q <- result$queue
+      w04_resolution_all_cases_rv(q$cases)
+      w04_resolution_queue_sha_rv(q$queue_sha256)
+      w04_resolution_batch_id_rv(q$batch_id)
+      w04_resolution_source_run_id_rv(q$source_run_id)
+      w04_resolution_batch_status_rv(q$batch_status %||% "")
+      w04_resolution_decisions(result$decisions)
+      w04_resolution_resume_requested_rv(FALSE)
+      w04_resolution_idx(1L)
+      w04_model_return_status_rv(sprintf(
+        "Opened run %s: %d model uncertainties in W04 Model uncertainty resolution. Assign these cases to a reviewer below.",
+        result$batch$run_id,length(q$cases)))
+    } else {
+      w04_model_return_status_rv(sprintf(
+        "Opened run %s: no model uncertainties requiring adjudication.",result$batch$run_id))
+    }
+  })
+  observeEvent(input$w04_model_batch_compare,{
+    req(authenticated())
+    if(!session_can("control_workflows")) return()
+    batch <- w04_model_selected_batch_rv()
+    rows <- w04_model_results_rv()
+    if(is.null(batch)||is.null(rows)) {
+      w04_model_return_status_rv("Open a model batch before comparing decisions.")
+      return()
+    }
+    result <- tryCatch({
+      human <- active_sheet_w04_decisions()
+      w04_model_batch_comparison(rows,human,as.character(batch$subset_id))
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_model_return_status_rv(paste("Model-human comparison failed:",conditionMessage(result)))
+      return()
+    }
+    w04_model_comparison_rv(result)
+    w04_model_return_status_rv(sprintf(
+      "Compared %d model records against available human decisions for subset %s.",
+      nrow(result),as.character(batch$subset_id)))
+  })
+  output$w04_model_batch_summary <- renderUI({
+    b <- w04_model_selected_batch_rv()
+    if(is.null(b)) return(NULL)
+    tags$p(class="saved-note",sprintf(
+      "Run %s · %s records · %s retain · %s exclude · %s uncertain · prompt %s",
+      b$run_id,b$total,b$retain,b$exclude,b$uncertain,
+      substr(as.character(b$prompt_sha256),1L,12L)))
+  })
+  output$w04_model_comparison_table <- renderTable({
+    x <- w04_model_comparison_rv()
+    if(is.null(x)||!nrow(x)) return(NULL)
+    x
+  },striped=TRUE,bordered=TRUE,spacing="xs")
   output$w04_model_status <- renderText(w04_model_status_rv())
   output$w04_model_subset_selector <- renderUI({
     xs <- w04_model_subsets_rv()
