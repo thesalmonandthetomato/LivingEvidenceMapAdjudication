@@ -15,13 +15,13 @@ suppressPackageStartupMessages({
 
 # Briefly coalesce repeated metadata reads in the same worker. Review metadata
 # is not a reviewer decision log; subsequent reads refresh within 60 seconds.
-read_review_metadata_cached <- function(ss) {
+read_review_metadata_cached <- function(ss, force=FALSE) {
   gs4_auth_from_env()
   key <- as.character(ss)
   now <- as.numeric(Sys.time())
   cached <- .lem_gs4_cache$review_metadata[[key]]
   cached_at <- .lem_gs4_cache$review_metadata_at[[key]]
-  if (!is.null(cached) && !is.null(cached_at) &&
+  if (!isTRUE(force) && !is.null(cached) && !is.null(cached_at) &&
       (now - cached_at) < 60) return(cached)
   value <- googlesheets4::read_sheet(ss,sheet="review_metadata",col_types="cc")
   .lem_gs4_cache$review_metadata[[key]] <- value
