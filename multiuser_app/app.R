@@ -2379,6 +2379,22 @@ server <- function(input, output, session) {
       ))
     }
 
+    # Authentication is independent of the slower workflow registry reads.
+    # Do not show empty queues as if they were confirmed empty during loading.
+    if (isTRUE(login_initialising())) {
+      return(div(class="app-shell",
+        div(class="d-flex justify-content-between align-items-center mb-3",
+          tags$h2("LivingEvidenceMap adjudication"),
+          div(uiOutput("session_identity"),
+            actionButton("logout","Log out",class="btn-outline-secondary btn-sm"))),
+        card(class="assignment-summary",
+          tags$p(class="mb-2",tags$strong("Signed in. Loading review data…")),
+          tags$p(class="saved-note mb-0",
+            "Retrieving assignments and workflow queues. No decisions are being changed by this loading screen."),
+          tags$div(class="spinner-border spinner-border-sm mt-3",role="status",
+            tags$span(class="visually-hidden","Loading")))))
+    }
+
     if (identical(app_view(), "record_table")) {
       return(div(
         class="app-shell",
@@ -2908,6 +2924,7 @@ server <- function(input, output, session) {
   })
 
   login_status <- reactiveVal("")
+  login_initialising <- reactiveVal(FALSE)
   output$login_status <- renderText(login_status())
 
 
@@ -8643,6 +8660,17 @@ server <- function(input, output, session) {
     })
 
     if (!is.null(login_user)) {
+      # Authenticate and flush the identity/loading screen before performing
+      # legacy workflow initialisation. The existing queue/decision logic is
+      # deliberately retained verbatim until workflow-specific loading is split.
+      user_registry_rv(registry)
+      current_user(login_user)
+      authenticated(TRUE)
+      app_view("tasks")
+      failed_attempts(0L)
+      login_status("")
+      login_initialising(TRUE)
+      session$onFlushed(function() {
       loaded <- tryCatch({
         user_registry_rv(registry)
         loaded_assignments <- read_assignment_registry(assignment_path)
@@ -9014,13 +9042,12 @@ server <- function(input, output, session) {
         FALSE
       })
 
-      if (isTRUE(loaded)) {
-        current_user(login_user)
-        authenticated(TRUE)
-        app_view("tasks")
-        failed_attempts(0L)
-        login_status("")
+      if (!isTRUE(loaded)) {
+        showNotification("Review data could not be loaded. Log out and sign in again to retry.",
+          type="error",duration=NULL)
       }
+      login_initialising(FALSE)
+      }, once=TRUE)
     } else {
       n <- failed_attempts() + 1L
       failed_attempts(n)
