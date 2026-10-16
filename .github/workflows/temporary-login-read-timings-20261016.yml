@@ -1,0 +1,27 @@
+name: Temporary login read timings validation
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/temporary-login-read-timings-20261016.yml']
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.6.0'
+          use-public-rspm: true
+      - name: Parse and verify read-only instrumentation
+        shell: Rscript {0}
+        run: |
+          parse("multiuser_app/app.R")
+          x <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\n")
+          for (name in c("user registry","W01 decisions","W01 repairs","W04 decisions","W04 conflict sets","W04 resolution decisions","W08 decisions"))
+            stopifnot(grepl(paste0('login_timed_read("',name,'"'),x,fixed=TRUE))
+          stopifnot(grepl("login_timed_read <- function(label, operation)",x,fixed=TRUE))
+          stopifnot(grepl('w04_conflict_decision_snapshot <- NULL',x,fixed=TRUE))
+          stopifnot(grepl("session$onFlushed(function()",x,fixed=TRUE))
+          cat("PASS: R parse and login read instrumentation\n")
