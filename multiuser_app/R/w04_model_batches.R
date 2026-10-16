@@ -5,7 +5,7 @@ w04_model_batch_registry_read <- function(review_id) {
     stop("W04 model batch registry belongs to a different review",call.=FALSE)
   gs4_auth_from_env()
   ss <- meta$sheet_id
-  if(!"w04_model_batch_registry" %in% sheet_names_cached(ss)) return(list())
+  if(!"w04_model_batch_registry" %in% sheet_names_cached(ss,refresh=TRUE)) return(list())
   rows <- as.data.frame(googlesheets4::read_sheet(ss,sheet="w04_model_batch_registry",col_types="c"))
   required <- c("review_id","run_id","subset_id","prompt_version_id","prompt_sha256",
     "model_sha256","result_tab","resolution_tab","resolution_queue_sha256",
