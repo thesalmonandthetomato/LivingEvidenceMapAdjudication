@@ -26,12 +26,13 @@ w04_subset_review_source_pointers <- function() {
     z <- jsonlite::fromJSON(read_github_text_file(paste0(dir,"/",name)),
                             simplifyVector=FALSE)
     if(identical(tolower(w04_subset_scalar(z$lean_canonical_sha256)),lean_sha))
-      matches[[length(matches)+1L]] <- z
+      matches[[length(matches)+1L]] <- list(pointer=z,path=paste0(dir,"/",name))
   }
   if(!length(matches)) stop("Cannot find W03 upstream published lean pointer",call.=FALSE)
   # Identical SHA means the underlying canonical source bytes are identical.
-  lean <- matches[[1L]]
+  lean <- matches[[1L]]$pointer
   w04_subset_valid_pointer_pair(lean,w03)
   list(review_id=meta$review_id,lean=lean,w03=w03,
+       lean_path=matches[[1L]]$path,w03_path=w03_path,
        source_run_id=as.character(state$run_id))
 }
