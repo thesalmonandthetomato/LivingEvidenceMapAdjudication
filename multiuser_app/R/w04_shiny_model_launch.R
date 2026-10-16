@@ -101,6 +101,14 @@ w04_shiny_model_bundle_archive <- function(meta,bundle) {
   list(deposit_id=as.character(fresh$id),filename=filename,sha256=sha)
 }
 
+# A GitHub startup_failure has no runnable jobs and can be safely retried.
+w04_shiny_model_blocking_runs <- function(runs, label) {
+  matching <- Filter(function(x)
+    identical(as.character(x$display_title %||% ""), label), runs)
+  Filter(function(x)
+    !identical(as.character(x$conclusion %||% ""), "startup_failure"), matching)
+}
+
 w04_shiny_model_dispatch <- function(meta,source,subset,bundle_info) {
   if(!identical(meta$review_id,source$review_id) ||
      !identical(tolower(as.character(subset$source_checkpoint_sha256)),
@@ -113,14 +121,7 @@ w04_shiny_model_dispatch <- function(meta,source,subset,bundle_info) {
     github_dispatch_repo()
   )
   recent <- github_api_get_json(run_url)$workflow_runs %||% list()
-  matching <- Filter(function(x)
-    identical(as.character(x$display_title %||% ""),label),recent)
-  # A startup_failure has no jobs: GitHub rejected the workflow before model
-  # screening could run. Such attempts do not consume the immutable bundle.
-  # Keep the duplicate guard for queued, running, successful, cancelled and
-  # ordinary failed jobs, whose effects cannot safely be assumed absent.
-  blocking <- Filter(function(x)
-    !identical(as.character(x$conclusion %||% ""), "startup_failure"),matching)
+  blocking <- w04_shiny_model_blocking_runs(recent, label)
   if(length(blocking)) {
     runs <- vapply(blocking,function(x) {
       url <- as.character(x$html_url %||% "")
