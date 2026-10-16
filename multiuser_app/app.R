@@ -1049,6 +1049,8 @@ server <- function(input, output, session) {
   w04_manual_queue_choices_rv <- reactiveVal(list())
   w04_manual_queue_status_rv <- reactiveVal("")
   w04_subsets_rv <- reactiveVal(list())
+  w04_consistency_subset_snapshot_rv <- reactiveVal(NULL)
+  w04_consistency_subset_status_rv <- reactiveVal("")
   w04_prompt_status_rv <- reactiveVal("")
   w04_prompt_versions_rv <- reactiveVal(list())
   w04_model_subsets_rv <- reactiveVal(list())
@@ -7158,7 +7160,8 @@ server <- function(input, output, session) {
       if (is.null(u)) uid else u$display_name
     }
 
-    w04_outcomes_now <- w04_blind_outcomes()
+    snapshot <- w04_consistency_subset_snapshot_rv()
+    w04_outcomes_now <- if(is.null(snapshot)) w04_blind_outcomes() else snapshot$outcomes
     available_raters <- w04_available_consistency_raters(w04_outcomes_now)
     rater_choices <- stats::setNames(
       available_raters,
@@ -7181,7 +7184,7 @@ server <- function(input, output, session) {
     human_scope_now <- if (
       length(selected_raters) >= 2L &&
       !"model" %in% selected_raters
-    ) w04_selected_human_consistency_scope() else NULL
+    ) if(is.null(snapshot)) w04_selected_human_consistency_scope() else NULL else NULL
     w04_selected_analysis <- if (!is.null(human_scope_now)) {
       human_scope_now$analysis
     } else {
@@ -7248,6 +7251,10 @@ server <- function(input, output, session) {
         ),
         div(
           class="pt-2",
+          tags$p(class="text-secondary small","Choose the W04 subset to inspect. Loading results for comparison does not change the active screening queue."),
+          uiOutput("w04_consistency_subset_selector"),
+          actionButton("w04_consistency_subset_load","Load selected subset for κ",class="btn-outline-secondary btn-sm"),
+          textOutput("w04_consistency_subset_status"),
           uiOutput("w04_kappa_history"),
           tags$hr(),
           uiOutput("w04_human_kappa_history"),
@@ -7873,6 +7880,40 @@ server <- function(input, output, session) {
 
   output$w04_consistency_status <- renderText(w04_consistency_status())
 
+  output$w04_consistency_subset_selector <- renderUI({
+    if(!session_can("manage_assignments")) return(NULL)
+    xs <- w04_subsets_rv()
+    if(!length(xs)) return(tags$p(class="saved-note","Load registered W04 subsets from Configure review first."))
+    ids <- vapply(xs,function(x)as.character(x$subset_id),character(1))
+    labels <- vapply(xs,w04_subset_display,character(1))
+    selectInput("w04_consistency_subset_selected","Subset for consistency checking",
+      choices=stats::setNames(ids,labels))
+  })
+  output$w04_consistency_subset_status <- renderText(w04_consistency_subset_status_rv())
+  observeEvent(input$w04_consistency_subset_load,{
+    req(authenticated())
+    if(!session_can("manage_assignments")) return()
+    id <- as.character(input$w04_consistency_subset_selected %||% "")
+    result <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      registered <- w04_subset_registry_read(meta$review_id)
+      if(length(Filter(function(x)identical(as.character(x$subset_id),id),registered))!=1L)
+        stop("Subset not registered in this review",call.=FALSE)
+      q <- w04_subset_queue_read(id,meta$review_id)
+      if(is.null(q)) stop("The selected subset has no saved manual-screening queue",call.=FALSE)
+      decisions <- w04_filter_batch_decisions(active_sheet_w04_decisions(),q$queue_sha256)
+      batch <- paste0("w04-human-",id)
+      outcomes <- w04_blind_case_outcomes(q$cases,assignment_registry_rv(),decisions,
+        batch_id=batch,task_type="manual_screening")
+      list(subset_id=id,batch_id=batch,outcomes=outcomes)
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_consistency_subset_status_rv(paste("Subset could not be loaded:",conditionMessage(result)))
+      return()
+    }
+    w04_consistency_subset_snapshot_rv(result)
+    w04_consistency_subset_status_rv(sprintf("Loaded %s (%d cases) for read-only consistency analysis.",id,length(result$outcomes)))
+  })
   observeEvent(input$w04_consistency_opened, {
     req(authenticated())
     if (!session_can("manage_assignments")) return()
@@ -8158,6 +8199,10 @@ server <- function(input, output, session) {
     req(authenticated())
     if (!session_can("manage_assignments")) {
       w04_consistency_status("Administrator permission is required.")
+      return()
+    }
+    if(!is.null(w04_consistency_subset_snapshot_rv())) {
+      w04_consistency_status("Subset inspection is read-only. Save analyses only from the active screening batch.")
       return()
     }
     rater_ids <- unique(as.character(input$w04_consistency_raters %||% character()))
