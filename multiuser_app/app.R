@@ -3900,6 +3900,38 @@ server <- function(input, output, session) {
       paste("Temporary versions in this session:",paste(names(versions),collapse=", ")))
   })
 
+  # Keep W01 launch status and formal-search availability independent of
+  # unrelated W04 input controls in the large configuration tree.
+  output$configure_w01_launch_state <- renderUI({
+    req(authenticated(), configure_review_requested())
+    if (!identical(as.character(current_user()$role %||% ""), "administrator")) return(NULL)
+    tagList(
+              if (isTRUE(w01_persisted_lock_rv()) || nzchar(batch_id_rv()))
+                tags$p(class="small text-muted mt-2",
+                  if (nzchar(batch_id_rv()))
+                    "W01 has run for this review. Complete human adjudication and finalisation before a subsequent update."
+                  else
+                    "W01 launch unavailable: the prior run is already published or launch eligibility has not yet been verified.")
+              else if (!is.null(w01_launch_request_rv()))
+                tags$p(class="small text-muted mt-2","W01 has been launched; awaiting workflow completion.")
+              else if (session_can("run_search_scoping") && identical(as.character(current_user()$role),"administrator"))
+                actionButton("w01_begin_deduplication","Begin deduplication",class="btn-primary btn-sm",
+                  disabled=if (isTRUE(w01_launch_configuration()$ready)) NULL else "disabled",
+                  title=w01_launch_configuration()$reason),
+              if (!isTRUE(w01_launch_configuration()$ready))
+                tags$p(class="small text-muted mt-2",w01_launch_configuration()$reason),
+    )
+  })
+  output$configure_formal_start_control <- renderUI({
+    req(authenticated(), configure_review_requested())
+    if (!identical(as.character(current_user()$role %||% ""), "administrator")) return(NULL)
+    tagList(
+      if (!search_formal_launched_rv())
+        actionButton("search_formal_start", "Start search", class="btn-primary btn-sm mt-2"),
+      textOutput("search_formal_finalisation_message")
+    )
+  })
+
   output$configure_review_contents <- renderUI({
     req(authenticated(), configure_review_requested())
     if (!identical(as.character(current_user()$role %||% ""), "administrator")) return(NULL)
@@ -3997,10 +4029,7 @@ server <- function(input, output, session) {
               textOutput("search_formal_validation_message"),
               uiOutput("search_source_group_controls"),
               textOutput("search_source_selection_preview"),
-              if (identical(as.character(current_user()$role %||% ""), "administrator")) tagList(
-                if (!search_formal_launched_rv()) actionButton("search_formal_start", "Start search", class="btn-primary btn-sm mt-2"),
-                textOutput("search_formal_finalisation_message")
-              ),
+              uiOutput("configure_formal_start_control"),
               uiOutput("search_formal_progress"),
               tags$p(class="saved-note",
                 "Start search requires successful scoping counts for the same search string and selected databases, then saves the strategy version and launches W00 on development main.")
@@ -4058,20 +4087,7 @@ server <- function(input, output, session) {
             `data-accordion-key`="configure-review-deduplication",
             tags$summary(tags$strong("Deduplication (W01)")),
             div(class="px-3 pb-3",
-              if (isTRUE(w01_persisted_lock_rv()) || nzchar(batch_id_rv()))
-                tags$p(class="small text-muted mt-2",
-                  if (nzchar(batch_id_rv()))
-                    "W01 has run for this review. Complete human adjudication and finalisation before a subsequent update."
-                  else
-                    "W01 launch unavailable: the prior run is already published or launch eligibility has not yet been verified.")
-              else if (!is.null(w01_launch_request_rv()))
-                tags$p(class="small text-muted mt-2","W01 has been launched; awaiting workflow completion.")
-              else if (session_can("run_search_scoping") && identical(as.character(current_user()$role),"administrator"))
-                actionButton("w01_begin_deduplication","Begin deduplication",class="btn-primary btn-sm",
-                  disabled=if (isTRUE(w01_launch_configuration()$ready)) NULL else "disabled",
-                  title=w01_launch_configuration()$reason),
-              if (!isTRUE(w01_launch_configuration()$ready))
-                tags$p(class="small text-muted mt-2",w01_launch_configuration()$reason),
+              uiOutput("configure_w01_launch_state"),
               uiOutput("w01_launch_progress"),
               uiOutput("w01_launch_results"),
               uiOutput("w01_ris_controls"),
