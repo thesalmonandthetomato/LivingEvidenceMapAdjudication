@@ -107,10 +107,10 @@ w04_shiny_model_blocking_runs <- function(runs, label) {
     identical(as.character(x$display_title %||% ""), label), runs)
   Filter(function(x) {
     conclusion <- as.character(x$conclusion %||% "")
-    # This exact attempt was inspected: its prepare job failed before any
-    # screening or paid model calls started. Do not weaken duplicate
+    # Both inspected attempts failed during preparation before screening or
+    # paid model calls; keep all other attempts blocked. Do not weaken duplicate
     # protection for other failed, running or successful attempts.
-    safe_pre_screen_failure <- identical(as.character(x$id %||% ""), "38913167294") &&
+    safe_pre_screen_failure <- as.character(x$id %||% "") %in% c("38913167294", "38938199697") &&
       identical(conclusion, "failure") &&
       identical(as.character(x$display_title %||% ""),
         "W04 Shiny subset almeria-map w04-model-input-b5035344d31700e91e01.json")
