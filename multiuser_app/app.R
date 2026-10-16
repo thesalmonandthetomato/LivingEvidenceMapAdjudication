@@ -8894,9 +8894,18 @@ server <- function(input, output, session) {
           w04_resolution_abstract_edit_rv(FALSE)
         }
 
+        # A single decision-log snapshot serves both ordinary conflict and
+        # double-blind conflict views during this login initialisation.
+        w04_conflict_decision_snapshot <- NULL
+        login_conflict_decisions <- function() {
+          if (is.null(w04_conflict_decision_snapshot))
+            w04_conflict_decision_snapshot <<- login_timed_read(
+              "W04 conflict decisions",active_sheet_w04_conflict_decisions)
+          w04_conflict_decision_snapshot
+        }
         w04_conflict_batch <- login_timed_read("W04 conflict queue",load_w04_conflict_batch)
         if (!is.null(w04_conflict_batch)) {
-          all_conf <- active_sheet_w04_conflict_decisions()
+          all_conf <- login_conflict_decisions()
           w04_conflict_cases_rv(w04_conflict_batch$cases)
           w04_conflict_queue_sha_rv(w04_conflict_batch$queue_sha256)
           w04_conflict_batch_id_rv(w04_conflict_batch$batch_id)
@@ -8907,7 +8916,7 @@ server <- function(input, output, session) {
         }
 
         if (length(w04_blind_conflict_cases())) {
-          all_blind_conf <- active_sheet_w04_conflict_decisions()
+          all_blind_conf <- login_conflict_decisions()
           blind_conf_decisions <- w04_filter_batch_decisions(all_blind_conf,w04_queue_sha_rv())
           w04_conflict_decisions(blind_conf_decisions)
           cr <- w04_conflict_unresolved_indices()
