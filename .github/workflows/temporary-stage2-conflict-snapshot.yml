@@ -18,5 +18,6 @@ jobs:
           x <- paste(readLines(p,warn=FALSE),collapse="\n")
           stopifnot(grepl("identical(active_sha, as.character(isolate(w04_conflict_queue_sha_rv())",x,fixed=TRUE))
           stopifnot(grepl("set_decisions <- isolate(w04_conflict_decisions())",x,fixed=TRUE))
+          stopifnot(grepl("!length(isolate(w04_blind_conflict_cases()))",x,fixed=TRUE))
           stopifnot(grepl("active_sheet_w04_conflict_decisions()",x,fixed=TRUE))
           cat("PASS: R parse and conflict decision snapshot fallback\n")
