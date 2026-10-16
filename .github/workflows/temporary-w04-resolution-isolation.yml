@@ -17,7 +17,10 @@ jobs:
         shell: Rscript {0}
         run: |
           source("multiuser_app/R/decision_events.R")
-          source("multiuser_app/R/storage_sheets.R")
+          expr <- parse(file="multiuser_app/R/storage_sheets.R")
+          hits <- Filter(function(x)is.call(x) && identical(as.character(x[[1L]]),"<-") && identical(as.character(x[[2L]]),"active_sheet_w04_resolution_decisions"),as.list(expr))
+          stopifnot(length(hits)==1L)
+          eval(hits[[1L]],envir=.GlobalEnv)
           `%||%` <- function(x,y) if(is.null(x)) y else x
           e <- function(id,sha,decision) list(decision_id=id,review_case_id="w04-resolution-recordX",record_id="recordX",queue_sha256=sha,decision=decision,reviewer="usr-neal")
           records <- list(e("a1","sha_A","retain"),e("b1","sha_B","exclude"),e("a2","sha_A","exclude"))
