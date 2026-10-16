@@ -3907,6 +3907,24 @@ server <- function(input, output, session) {
       b$run_id,b$total,b$retain,b$exclude,b$uncertain,
       substr(as.character(b$prompt_sha256),1L,12L)))
   })
+  output$w04_model_comparison_summary <- renderUI({
+    x <- w04_model_comparison_rv()
+    if(is.null(x)||!nrow(x)) return(NULL)
+    reviewers <- setdiff(names(x),c("record_id","model"))
+    if(!length(reviewers))
+      return(tags$p(class="saved-note","No human decisions found for this subset."))
+    tags$ul(lapply(reviewers,function(uid) {
+      human <- as.character(x[[uid]])
+      usable <- !is.na(human) & nzchar(human) & x$model!="uncertain" &
+        human!="uncertain"
+      comparable <- sum(usable)
+      agreeing <- sum(human[usable]==as.character(x$model[usable]))
+      tags$li(sprintf("%s: %d/%d comparable decisions agree (%s); %d records have human decisions",
+        uid,agreeing,comparable,
+        if(comparable) paste0(round(100*agreeing/comparable,1),"%") else "not calculable",
+        sum(!is.na(human)&nzchar(human))))
+    }))
+  })
   output$w04_model_comparison_table <- renderTable({
     x <- w04_model_comparison_rv()
     if(is.null(x)||!nrow(x)) return(NULL)
@@ -4377,6 +4395,7 @@ server <- function(input, output, session) {
                   actionButton("w04_model_batch_compare","Compare with human screening",class="btn-outline-secondary btn-sm"),
                   textOutput("w04_model_return_status"),
                   uiOutput("w04_model_batch_summary"),
+                  uiOutput("w04_model_comparison_summary"),
                   tableOutput("w04_model_comparison_table"),
                   tags$a("View W04 subset model runs",
                     href="https://github.com/thesalmonandthetomato/LivingEvidenceMap/actions/workflows/w04_shiny_subset_launcher.yml",
