@@ -15,7 +15,7 @@ jobs:
           parse(file="multiuser_app/app.R")
           lines <- readLines("multiuser_app/app.R",warn=FALSE)
           a <- grep("^[[:space:]]*add_empty_group <- function",lines)
-          b <- grep('^[[:space:]]*add_empty_group\\("01","deduplication"',lines)
+          b <- grep('^[[:space:]]*add_empty_group\\(',lines)[1L]
           stopifnot(length(a)==1L,length(b)==1L,b>a)
           add <- parse(text=paste(lines[a:(b-1L)],collapse="\n"))[[1L]]
           env <- new.env(parent=baseenv())
