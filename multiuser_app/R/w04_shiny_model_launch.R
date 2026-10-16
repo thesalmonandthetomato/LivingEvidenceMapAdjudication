@@ -133,7 +133,7 @@ w04_shiny_model_dispatch <- function(meta,source,subset,bundle_info) {
       status <- as.character(x$conclusion %||% x$status %||% "unknown")
       paste0(status,if(nzchar(url)) paste0(" (",url,")") else "")
     },character(1))
-    stop(paste0("This exact subset/prompt/abstract bundle has an existing GitHub Actions attempt: ",
+    stop(paste0("This exact subset/prompt/abstract bundle already has an active GitHub Actions attempt: ",
       paste(runs,collapse="; "),". Inspect that run before trying again."),
       call.=FALSE)
   }
