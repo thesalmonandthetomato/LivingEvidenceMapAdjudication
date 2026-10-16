@@ -6073,6 +6073,9 @@ server <- function(input, output, session) {
     length(ids) > 0L && all(nzchar(ids)) && all(ids %in% resolved)
   })
 
+  # Prior W04 subset metrics are stable across unrelated assignment updates.
+  # Do not perform Google Sheets reads inside every summary re-render.
+  w04_summary_history_cache <- new.env(parent=emptyenv())
   output$assignment_progress <- renderUI({
     req(authenticated())
     if (!session_can("manage_assignments")) return(NULL)
@@ -6162,14 +6165,22 @@ server <- function(input, output, session) {
         identical(z$task_type, "manual_screening")
       ) {
         if(identical(z$batch_id,w04_batch_id_rv())) return(w04_active_assignment_events())
-        all <- tryCatch(active_sheet_w04_decisions(),error=function(e) list())
-        subset_id <- sub("^w04-human-","",z$batch_id)
-        queue <- tryCatch({
+        cache_key <- as.character(z$batch_id)
+        if(exists(cache_key,envir=w04_summary_history_cache,inherits=FALSE))
+          return(get(cache_key,envir=w04_summary_history_cache,inherits=FALSE))
+        subset_id <- sub("^w04-human-","",cache_key)
+        loaded <- tryCatch({
           meta <- w04_prompt_review_metadata()
-          w04_subset_queue_read(subset_id,meta$review_id)
+          queue <- w04_subset_queue_read(subset_id,meta$review_id)
+          if(is.null(queue)) return(NULL)
+          all <- active_sheet_w04_decisions()
+          w04_filter_batch_decisions(all,queue$queue_sha256)
         },error=function(e)NULL)
-        if(is.null(queue)) return(list())
-        return(w04_filter_batch_decisions(all,queue$queue_sha256))
+        # Cache only successful reads. Missing queues or Sheets errors remain
+        # eligible for retry rather than being recorded as empty results.
+        if(is.null(loaded)) return(list())
+        assign(cache_key,loaded,envir=w04_summary_history_cache)
+        return(loaded)
       }
       if (
         identical(z$workflow, "04") &&
