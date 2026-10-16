@@ -3916,8 +3916,7 @@ server <- function(input, output, session) {
     result <- tryCatch({
       meta <- w04_prompt_review_metadata()
       xs <- w04_model_batch_registry_read(meta$review_id)
-      if(session_can("manage_assignments")) return(xs)
-      Filter(function(b) {
+      if(session_can("manage_assignments")) xs else Filter(function(b) {
         if(!nzchar(as.character(b$resolution_tab %||% "")))return(FALSE)
         batch_id <- paste0("w04-resolution-",b$run_id,"-",
           substr(as.character(b$resolution_queue_sha256),1L,12L))
