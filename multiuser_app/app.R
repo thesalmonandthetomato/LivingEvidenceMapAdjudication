@@ -7674,7 +7674,11 @@ server <- function(input, output, session) {
           identical(active_sha, as.character(isolate(w04_conflict_queue_sha_rv()) %||% ""))) {
         set_decisions <- isolate(w04_conflict_decisions())
       } else {
-        all_conf <- tryCatch(active_sheet_w04_conflict_decisions(),error=function(e)list())
+        all_conf <- tryCatch(active_sheet_w04_conflict_decisions(),error=function(e)e)
+        if (inherits(all_conf,"error")) {
+          w04_consistency_status(paste("Could not load W04 conflict decisions:",conditionMessage(all_conf)))
+          return()
+        }
         set_decisions <- w04_filter_batch_decisions(all_conf, active_sha)
       }
       w04_conflict_decisions(set_decisions)
