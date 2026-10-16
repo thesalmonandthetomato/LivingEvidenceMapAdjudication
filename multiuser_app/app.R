@@ -1253,7 +1253,7 @@ server <- function(input, output, session) {
     req(authenticated())
     if (!identical(app_view(), "tasks")) return()
     invalidateLater(300000, session)
-    if (!isTRUE(manual_metrics_poll_armed())) {
+    if (!isTRUE(isolate(manual_metrics_poll_armed()))) {
       manual_metrics_poll_armed(TRUE)
       return()
     }
