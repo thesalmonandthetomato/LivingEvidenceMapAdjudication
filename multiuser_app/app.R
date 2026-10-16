@@ -7630,6 +7630,12 @@ server <- function(input, output, session) {
       w04_consistency_history_loaded(TRUE)
       return()
     }
+    kappa_result <- tryCatch(read_manual_screening_metrics(), error=function(e)e)
+    if (inherits(kappa_result,"error")) {
+      w04_consistency_status(paste("Could not load W04 kappa history:",conditionMessage(kappa_result)))
+      return()
+    }
+    manual_screening_rv(kappa_result)
     # Reviewer conflict sets are already loaded from Sheets at login.
     # Reuse that snapshot rather than immediately rereading the same tab.
     conflict_snapshot <- isolate(w04_conflict_sets_rv())
@@ -8702,10 +8708,7 @@ server <- function(input, output, session) {
         }
         assignment_registry_rv(loaded_assignments)
         pipeline_status_rv(if(identical(storage_backend(),"google_sheets")) login_timed_read("pipeline status",read_latest_pipeline_status) else NULL)
-        # W04 kappa registry is administrator-only; reviewer queue access does not need it.
-        if (user_can(login_user,"manage_assignments")) {
-          manual_screening_rv(login_timed_read("manual screening metrics",read_manual_screening_metrics))
-        }
+        # Administrative W04 kappa history loads when Consistency checking opens.
         batch <- login_timed_read("W01 queue",load_batch)
         current_decisions <- list()
         if (!is.null(batch)) {
@@ -11998,12 +12001,6 @@ server <- function(input, output, session) {
       }
     }
 
-    if (session_can("manage_assignments")) {
-      screening <- tryCatch(read_manual_screening_metrics(), error=function(e)e)
-      if (!inherits(screening,"error")) {
-        manual_screening_rv(screening)
-      }
-    }
   }, ignoreInit=TRUE)
 
   observeEvent(input$back_to_tasks_complete, {
