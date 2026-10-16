@@ -3853,15 +3853,24 @@ server <- function(input, output, session) {
     if(!isTRUE(authenticated())) configure_review_requested(FALSE)
   })
 
+  # Keep the administrator entry point independent of the expensive configuration
+  # renderer. Once mounted, the entry point remains available during reactivity.
   output$configure_review <- renderUI({
     req(authenticated())
-    if (!identical(as.character(current_user()$role %||% ""),"administrator")) return(NULL)
-    if(!isTRUE(configure_review_requested())) return(
-      card(class="assignment-summary",
-        actionButton("open_configure_review","Configure review",
-          class="btn-outline-secondary w-100 text-start",
-          title="Load review configuration controls on demand"))
+    if (!identical(as.character(current_user()$role %||% ""), "administrator")) return(NULL)
+    tagList(
+      if (!isTRUE(configure_review_requested()))
+        card(class="assignment-summary",
+          actionButton("open_configure_review", "Configure review",
+            class="btn-outline-secondary w-100 text-start",
+            title="Load review configuration controls on demand")),
+      uiOutput("configure_review_contents", suspendWhenHidden=TRUE)
     )
+  })
+
+  output$configure_review_contents <- renderUI({
+    req(authenticated(), configure_review_requested())
+    if (!identical(as.character(current_user()$role %||% ""), "administrator")) return(NULL)
     # Administrator access controls this menu; individual operations retain their own permission checks.
 
     request_active <- nzchar(as.character(search_scope_request_id_rv() %||% ""))
