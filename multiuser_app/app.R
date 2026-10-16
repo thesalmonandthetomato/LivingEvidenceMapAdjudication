@@ -2544,14 +2544,6 @@ server <- function(input, output, session) {
         pipeline_summary_ui(),
         uiOutput("configure_review"),
         uiOutput("assignment_progress"),
-        card(class="assignment-summary",
-          tags$strong("W04 model uncertainty batches"),
-          tags$p(class="saved-note","Load a specific completed model run when assigned to resolve its uncertain records."),
-          actionButton("w04_reviewer_batches_refresh","Find model uncertainty batches",class="btn-outline-secondary btn-sm"),
-          uiOutput("w04_reviewer_model_batch_selector"),
-          actionButton("w04_reviewer_model_batch_open","Load selected uncertainty batch",class="btn-outline-primary btn-sm"),
-          textOutput("w04_reviewer_model_status")
-        ),
         div(
           class = "row g-3",
           div(
@@ -2626,6 +2618,17 @@ server <- function(input, output, session) {
               } else {
                 "No records awaiting review"
               }
+            )
+          ),
+          if(session_can("adjudicate_assigned")) div(
+            class = "col-12",
+            card(class="assignment-summary",
+              tags$strong("W04: Assigned model uncertainty batches"),
+              tags$p(class="saved-note","Find and open a completed model run assigned to you. Administrators manage completed runs in Configure review → W04."),
+              actionButton("w04_reviewer_batches_refresh","Find model uncertainty batches",class="btn-outline-secondary btn-sm"),
+              uiOutput("w04_reviewer_model_batch_selector"),
+              actionButton("w04_reviewer_model_batch_open","Load selected uncertainty batch",class="btn-outline-primary btn-sm"),
+              textOutput("w04_reviewer_model_status")
             )
           ),
           div(
@@ -4417,7 +4420,8 @@ server <- function(input, output, session) {
                     style="display:none;","Archiving selected subset and launching model screening…"),
                   textOutput("w04_model_status"),
                   tags$hr(),
-                  tags$h5("Completed model screening batches"),
+                  tags$h5("Review completed model screening runs"),
+                  tags$p(class="saved-note","Select a completed run to review model results and compare human screening. Manage uncertainty assignments below; assigned reviewers access their cases from the W04 review area."),
                   actionButton("w04_model_batches_refresh","Load completed model batches",class="btn-outline-secondary btn-sm"),
                   uiOutput("w04_model_batch_selector"),
                   actionButton("w04_model_batch_open","Open selected model batch",class="btn-outline-primary btn-sm"),
