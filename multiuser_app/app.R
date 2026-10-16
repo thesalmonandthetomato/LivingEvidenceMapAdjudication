@@ -1060,6 +1060,8 @@ server <- function(input, output, session) {
   w04_model_selected_batch_rv <- reactiveVal(NULL)
   w04_model_comparison_rv <- reactiveVal(NULL)
   w04_model_return_status_rv <- reactiveVal("")
+  w04_reviewer_model_batches_rv <- reactiveVal(list())
+  w04_reviewer_model_status_rv <- reactiveVal("")
   w04_all_cases_rv <- reactiveVal(list())
   w04_cases_rv <- reactiveVal(NULL)
   w04_queue_sha_rv <- reactiveVal("")
@@ -2541,6 +2543,14 @@ server <- function(input, output, session) {
         pipeline_summary_ui(),
         uiOutput("configure_review"),
         uiOutput("assignment_progress"),
+        card(class="assignment-summary",
+          tags$strong("W04 model uncertainty batches"),
+          tags$p(class="saved-note","Load a specific completed model run when assigned to resolve its uncertain records."),
+          actionButton("w04_reviewer_batches_refresh","Find model uncertainty batches",class="btn-outline-secondary btn-sm"),
+          uiOutput("w04_reviewer_model_batch_selector"),
+          actionButton("w04_reviewer_model_batch_open","Load selected uncertainty batch",class="btn-outline-primary btn-sm"),
+          textOutput("w04_reviewer_model_status")
+        ),
         div(
           class = "row g-3",
           div(
@@ -3900,6 +3910,72 @@ server <- function(input, output, session) {
     if(is.null(x)||!nrow(x)) return(NULL)
     x
   },striped=TRUE,bordered=TRUE,spacing="xs")
+  observeEvent(input$w04_reviewer_batches_refresh,{
+    req(authenticated())
+    if(!session_can("adjudicate_assigned")) return()
+    result <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      xs <- w04_model_batch_registry_read(meta$review_id)
+      if(session_can("manage_assignments")) return(xs)
+      Filter(function(b) {
+        if(!nzchar(as.character(b$resolution_tab %||% "")))return(FALSE)
+        batch_id <- paste0("w04-resolution-",b$run_id,"-",
+          substr(as.character(b$resolution_queue_sha256),1L,12L))
+        length(assignments_for_user(assignment_registry_rv(),"04",batch_id,
+          session_reviewer_id(),"model_uncertainty"))>0L
+      },xs)
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_reviewer_model_status_rv(paste("Could not load assigned model batches:",conditionMessage(result)))
+      return()
+    }
+    w04_reviewer_model_batches_rv(result)
+    w04_reviewer_model_status_rv(sprintf("%d available model uncertainty batch(es).",length(result)))
+  })
+  output$w04_reviewer_model_batch_selector <- renderUI({
+    xs <- w04_reviewer_model_batches_rv()
+    if(!length(xs)) return(NULL)
+    ids <- vapply(xs,function(b)as.character(b$run_id),character(1))
+    labels <- vapply(xs,function(b)sprintf("%s · run %s · %s uncertain",
+      b$subset_id,b$run_id,b$uncertain),character(1))
+    selectInput("w04_reviewer_model_batch_selected","W04 model run",choices=stats::setNames(ids,labels))
+  })
+  observeEvent(input$w04_reviewer_model_batch_open,{
+    req(authenticated())
+    if(!session_can("adjudicate_assigned")) return()
+    result <- tryCatch({
+      run_id <- as.character(input$w04_reviewer_model_batch_selected %||% "")
+      matches <- Filter(function(b)identical(as.character(b$run_id),run_id),w04_reviewer_model_batches_rv())
+      if(length(matches)!=1L)stop("Select an available model run",call.=FALSE)
+      b <- matches[[1L]]
+      if(!nzchar(as.character(b$resolution_tab %||% "")))
+        stop("This model batch has no uncertain cases",call.=FALSE)
+      q <- read_sheet_w04_resolution_queue(as.character(b$resolution_tab))
+      if(is.null(q)||!identical(as.character(q$source_run_id),run_id) ||
+         !identical(as.character(q$queue_sha256),as.character(b$resolution_queue_sha256)))
+        stop("W04 model uncertainty queue identity mismatch",call.=FALSE)
+      if(!session_can("manage_assignments") &&
+         !length(assignments_for_user(assignment_registry_rv(),"04",q$batch_id,
+           session_reviewer_id(),"model_uncertainty")))
+        stop("This batch is not assigned to the current reviewer",call.=FALSE)
+      ds <- w04_filter_batch_decisions(active_sheet_w04_resolution_decisions(),q$queue_sha256)
+      list(queue=q,decisions=ds)
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_reviewer_model_status_rv(paste("Cannot load W04 model batch:",conditionMessage(result)))
+      return()
+    }
+    q <- result$queue
+    w04_resolution_all_cases_rv(q$cases)
+    w04_resolution_queue_sha_rv(q$queue_sha256)
+    w04_resolution_batch_id_rv(q$batch_id)
+    w04_resolution_source_run_id_rv(q$source_run_id)
+    w04_resolution_batch_status_rv(q$batch_status %||% "")
+    w04_resolution_decisions(result$decisions)
+    w04_resolution_resume_requested_rv(FALSE)
+    w04_resolution_idx(1L)
+    w04_reviewer_model_status_rv(sprintf("Loaded model run %s: %d uncertainties.",q$source_run_id,length(q$cases)))
+  })
   output$w04_model_status <- renderText(w04_model_status_rv())
   output$w04_model_subset_selector <- renderUI({
     xs <- w04_model_subsets_rv()
