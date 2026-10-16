@@ -1,0 +1,35 @@
+name: Temporary W04 known failures retry gate
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/temporary-w04-two-retries-check.yml']
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.6.0'
+          use-public-rspm: true
+      - name: Test strict duplicate-run gate
+        shell: Rscript {0}
+        run: |
+          expr <- parse("multiuser_app/R/w04_shiny_model_launch.R")
+          `%||%` <- function(x,y) if(is.null(x)) y else x
+          def <- Filter(function(e) is.call(e) && identical(e[[1]],as.name("<-")) && identical(e[[2]],as.name("w04_shiny_model_blocking_runs")),as.list(expr))
+          stopifnot(length(def)==1L)
+          eval(def[[1]])
+          label <- "W04 Shiny subset almeria-map w04-model-input-b5035344d31700e91e01.json"
+          item <- function(id,conclusion,title=label) list(id=id,conclusion=conclusion,display_title=title)
+          for (id in c("38913167294","38938199697")) {
+            stopifnot(length(w04_shiny_model_blocking_runs(list(item(id,"failure")),label))==0L)
+            stopifnot(length(w04_shiny_model_blocking_runs(list(item(id,"success")),label))==1L)
+          }
+          stopifnot(length(w04_shiny_model_blocking_runs(list(item("38938199698","failure")),label))==1L)
+          stopifnot(length(w04_shiny_model_blocking_runs(list(item("38938199698",NULL)),label))==1L)
+          stopifnot(length(w04_shiny_model_blocking_runs(list(item("38938199698","success")),label))==1L)
+          stopifnot(length(w04_shiny_model_blocking_runs(list(item("38938199697","failure","different")),label))==0L)
+          cat("PASS: only two inspected pre-screen failures are retryable\n")
