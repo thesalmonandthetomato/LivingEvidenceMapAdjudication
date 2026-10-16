@@ -8660,7 +8660,7 @@ server <- function(input, output, session) {
           call. = FALSE
         )
       }
-      registry <- read_user_registry()
+      registry <- login_timed_read("user registry", read_user_registry)
       authenticate_registered_user(registry, input$login_email, input$access_key)
     }, error = function(e) {
       login_status(paste("Login configuration error:", conditionMessage(e)))
@@ -8691,9 +8691,9 @@ server <- function(input, output, session) {
         batch <- login_timed_read("W01 queue",load_batch)
         current_decisions <- list()
         if (!is.null(batch)) {
-          all_decisions <- read_active_decisions(decision_path)
+          all_decisions <- login_timed_read("W01 decisions", function() read_active_decisions(decision_path))
           current_decisions <- filter_batch_decisions(all_decisions, batch$queue_sha256)
-          w01_repairs_rv(read_active_w01_repairs(w01_repair_path, batch$queue_sha256))
+          w01_repairs_rv(login_timed_read("W01 repairs", function() read_active_w01_repairs(w01_repair_path, batch$queue_sha256)))
         } else {
           w01_repairs_rv(list())
         }
@@ -8799,7 +8799,7 @@ server <- function(input, output, session) {
           w04_batch <- NULL
         }
         if (!is.null(w04_batch)) {
-          w04_all_decisions <- active_sheet_w04_decisions()
+          w04_all_decisions <- login_timed_read("W04 decisions",active_sheet_w04_decisions)
           w04_batch_decisions <- w04_filter_batch_decisions(w04_all_decisions, w04_batch$queue_sha256)
           w04_all_cases_rv(w04_batch$cases)
           w04_visible_cases <- cases_for_assignment_user(
@@ -8851,14 +8851,14 @@ server <- function(input, output, session) {
         # reporting metadata. Load them for every authenticated user so an
         # assigned reviewer can reconstruct and open their conflict queue.
         if (identical(storage_backend(),"google_sheets")) {
-          w04_conflict_sets_rv(read_w04_conflict_sets())
+          w04_conflict_sets_rv(login_timed_read("W04 conflict sets",read_w04_conflict_sets))
         } else {
           w04_conflict_sets_rv(list())
         }
 
         w04_resolution_batch <- login_timed_read("W04 resolution queue",load_w04_resolution_batch)
         if (!is.null(w04_resolution_batch)) {
-          all_res <- active_sheet_w04_resolution_decisions()
+          all_res <- login_timed_read("W04 resolution decisions",active_sheet_w04_resolution_decisions)
           w04_resolution_all_cases_rv(w04_resolution_batch$cases)
           w04_resolution_queue_sha_rv(w04_resolution_batch$queue_sha256)
           w04_resolution_batch_id_rv(w04_resolution_batch$batch_id)
@@ -8935,7 +8935,7 @@ server <- function(input, output, session) {
 
         w08_batch <- login_timed_read("W08 queue",load_w08_batch)
         if (!is.null(w08_batch)) {
-          w08_all_decisions <- active_sheet_w08_decisions()
+          w08_all_decisions <- login_timed_read("W08 decisions",active_sheet_w08_decisions)
           w08_batch_decisions <- w08_filter_batch_decisions(w08_all_decisions,w08_batch$queue_sha256)
           w08_all_cases_rv(w08_batch$cases)
           w08_visible_cases <- cases_for_assignment_user(
