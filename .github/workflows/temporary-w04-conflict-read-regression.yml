@@ -1,0 +1,30 @@
+name: Temporary W04 conflict-read regression
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/temporary-w04-conflict-read-regression.yml']
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.6.0'
+          use-public-rspm: true
+      - name: Parse and assert conflict snapshot reuse
+        shell: Rscript {0}
+        run: |
+          parse("multiuser_app/app.R")
+          x <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\n")
+          a <- regexpr("observeEvent(input$w04_consistency_opened, {",x,fixed=TRUE)[1]
+          b <- regexpr("output$w04_refresh_status <-",x,fixed=TRUE)[1]
+          stopifnot(a>0,b>a)
+          observer <- substr(x,a,b-1)
+          stopifnot(grepl("conflict_snapshot <- isolate(w04_conflict_sets_rv())",observer,fixed=TRUE))
+          stopifnot(grepl("conflict_sets=conflict_snapshot",observer,fixed=TRUE))
+          stopifnot(!grepl("conflict_sets=read_w04_conflict_sets()",observer,fixed=TRUE))
+          stopifnot(grepl('w04_conflict_sets_rv(login_timed_read("W04 conflict sets",read_w04_conflict_sets))',x,fixed=TRUE))
+          cat("PASS: consistency reuses login snapshot; reviewer conflict loading retained\n")
