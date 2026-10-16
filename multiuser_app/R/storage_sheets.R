@@ -1734,7 +1734,23 @@ active_sheet_w04_decisions <- function() {
   active_w04_decisions_from_tab(w04_decision_tab(), identity_scope = "case_user")
 }
 active_sheet_w04_resolution_decisions <- function() {
-  active_w04_decisions_from_tab(w04_resolution_decision_tab(), identity_scope = "case")
+  # The same source record may recur in independent model-validation runs.
+  # Resolve the latest decision within each queue, not across all queues.
+  events <- read_sheet_w04_decision_log_from_tab(w04_resolution_decision_tab())
+  if(!length(events)) return(list())
+  shas <- vapply(events,function(x)as.character(x$queue_sha256 %||% ""),character(1))
+  if(any(!nzchar(shas))) stop("W04 resolution decision lacks queue provenance",call.=FALSE)
+  groups <- split(seq_along(events),shas)
+  active_indices <- unlist(lapply(groups,function(idx) {
+    selected <- active_decision_events(events[idx],
+      case_fields=c("case_id","review_case_id"),identity_scope="case")
+    if(!length(selected)) return(integer())
+    original_ids <- vapply(events[idx],function(x)as.character(x$decision_id %||% ""),character(1))
+    chosen_ids <- vapply(selected,function(x)as.character(x$decision_id %||% ""),character(1))
+    idx[match(chosen_ids,original_ids)]
+  }),use.names=FALSE)
+  if(anyNA(active_indices)) stop("Unable to identify active W04 resolution event",call.=FALSE)
+  events[sort(active_indices)]
 }
 active_sheet_w04_conflict_decisions <- function() {
   active_w04_decisions_from_tab(w04_conflict_decision_tab(), identity_scope = "case")
