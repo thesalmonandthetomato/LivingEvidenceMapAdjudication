@@ -6990,11 +6990,12 @@ server <- function(input, output, session) {
 
     w04_results_panel <- if (
       session_can("manage_assignments") &&
-      (has_w04_batch || nrow(w04_kappa_registry_rv()) > 0L || nrow(w04_human_kappa_registry_rv()) > 0L)
+      (has_w04_batch || !isTRUE(w04_consistency_history_loaded()) || nrow(w04_kappa_registry_rv()) > 0L || nrow(w04_human_kappa_registry_rv()) > 0L)
     ) {
       tags$details(
         class="assignment-workflow assignment-submenu wf-w04 mb-2",
         `data-accordion-key`="w04-consistency-checking",
+        ontoggle="if (this.open && window.Shiny) Shiny.setInputValue('w04_consistency_opened', true, {priority: 'event'});",
         tags$summary(
           div(
             class="d-inline-flex flex-wrap align-items-center gap-2",
@@ -7656,7 +7657,7 @@ server <- function(input, output, session) {
 
   output$w04_consistency_status <- renderText(w04_consistency_status())
 
-  observe({
+  observeEvent(input$w04_consistency_opened, {
     req(authenticated())
     if (!session_can("manage_assignments")) return()
     if (isTRUE(w04_consistency_history_loaded())) return()
