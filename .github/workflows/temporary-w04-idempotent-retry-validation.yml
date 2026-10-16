@@ -1,0 +1,48 @@
+name: Temporary W04 idempotent retry validation
+on:
+  push:
+    paths: ['.github/workflows/temporary-w04-idempotent-retry-validation.yml']
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+      - name: Parse app and check W04 retry invariants
+        shell: Rscript {0}
+        run: |
+          parse(file="multiuser_app/app.R")
+          parse(file="multiuser_app/R/storage_sheets.R")
+          app <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\n")
+          st <- paste(readLines("multiuser_app/R/storage_sheets.R",warn=FALSE),collapse="\n")
+          a <- regexpr("save_w04_choice <- function(choice)",app,fixed=TRUE)[1]
+          b <- regexpr("advance_w04 <- function()",app,fixed=TRUE)[1]
+          stopifnot(a>0L,b>a)
+          f <- substr(app,a,b)
+          checks <- c(
+            "w04_pending_save_rv <- reactiveVal(NULL)",
+            "pending <- isolate(w04_pending_save_rv())",
+            "decision <- if (!is.null(pending)) pending$decision else list(",
+            "if (is.null(pending)) w04_pending_save_rv(list(decision=decision))",
+            "recover_existing=!is.null(pending)",
+            "if(is.null(saved)) return(FALSE)",
+            "w04_pending_save_rv(NULL)",
+            "w04_decisions(c(remaining,list(saved)))",
+            "Save could not be verified"
+          )
+          stopifnot(all(vapply(checks,function(x)grepl(x,app,fixed=TRUE),logical(1))))
+          p <- regexpr("append_w04_decision_to_tab <- function",st,fixed=TRUE)[1]
+          q <- regexpr("append_sheet_w04_decision <- function",st,fixed=TRUE)[1]
+          stopifnot(p>0L,q>p)
+          h <- substr(st,p,q-1L)
+          stopifnot(grepl("if (isTRUE(recover_existing))",h,fixed=TRUE))
+          stopifnot(grepl("if (matches == 1L)",h,fixed=TRUE))
+          stopifnot(grepl("if (matches > 1L)",h,fixed=TRUE))
+          stopifnot(regexpr("if (matches == 1L)",h,fixed=TRUE)[1] <
+                    regexpr("googlesheets4::sheet_append(ss,data=row,sheet=tab)",h,fixed=TRUE)[1])
+          stopifnot(regexpr("if(is.null(saved)) return(FALSE)",f,fixed=TRUE)[1] <
+                    regexpr("w04_pending_save_rv(NULL)",f,fixed=TRUE)[1])
+          stopifnot(regexpr("w04_pending_save_rv(NULL)",f,fixed=TRUE)[1] <
+                    regexpr("w04_decisions(c(remaining,list(saved)))",f,fixed=TRUE)[1])
+          cat("PASS W04 retry ID, lookup-before-reappend, failure preservation and R parsing\n")
