@@ -3932,36 +3932,14 @@ server <- function(input, output, session) {
     )
   })
 
-  output$configure_review_contents <- renderUI({
+  # Scoping changes only replace the scoping panel, never W04 input controls.
+  output$configure_scoping_panel <- renderUI({
     req(authenticated(), configure_review_requested())
     if (!identical(as.character(current_user()$role %||% ""), "administrator")) return(NULL)
-    # Administrator access controls this menu; individual operations retain their own permission checks.
-
     request_active <- nzchar(as.character(search_scope_request_id_rv() %||% ""))
     counts_resolved <- search_scope_counts_resolved()
     original_rows <- (search_scope_results_rv() %||% list())[["original"]]
     original_complete <- search_scope_counts_resolved(original_rows)
-    card(
-      class="assignment-summary",
-      tags$details(
-        class="assignment-disclosure",
-        `data-accordion-key`="configure-review",
-        open="open",
-        tags$summary(
-          div(
-            class="d-inline-flex flex-wrap align-items-center gap-2 p-3",
-            tags$strong("Configure review"),
-            tags$span(class="task-badge","Search scoping")
-          )
-        ),
-        div(
-          class="px-3 pb-3",
-          tags$details(
-            class="assignment-disclosure",
-            `data-accordion-key`="configure-review-searching",
-            ontoggle="if (this.open && window.Shiny) Shiny.setInputValue('configure_searching_opened', true, {priority: 'event'});",
-            tags$summary(tags$strong("Searching")),
-            div(class="px-3 pb-3",
           tags$details(
             class="assignment-disclosure",
             `data-accordion-key`="configure-review-scoping",
@@ -4010,7 +3988,36 @@ server <- function(input, output, session) {
             )
           )
             )
-          ),
+          )
+  })
+
+  output$configure_review_contents <- renderUI({
+    req(authenticated(), configure_review_requested())
+    if (!identical(as.character(current_user()$role %||% ""), "administrator")) return(NULL)
+    # Administrator access controls this menu; individual operations retain their own permission checks.
+
+    card(
+      class="assignment-summary",
+      tags$details(
+        class="assignment-disclosure",
+        `data-accordion-key`="configure-review",
+        open="open",
+        tags$summary(
+          div(
+            class="d-inline-flex flex-wrap align-items-center gap-2 p-3",
+            tags$strong("Configure review"),
+            tags$span(class="task-badge","Search scoping")
+          )
+        ),
+        div(
+          class="px-3 pb-3",
+          tags$details(
+            class="assignment-disclosure",
+            `data-accordion-key`="configure-review-searching",
+            ontoggle="if (this.open && window.Shiny) Shiny.setInputValue('configure_searching_opened', true, {priority: 'event'});",
+            tags$summary(tags$strong("Searching")),
+            div(class="px-3 pb-3",
+          uiOutput("configure_scoping_panel"),
           tags$details(
             class="assignment-disclosure",
             `data-accordion-key`="configure-review-api-searching",
