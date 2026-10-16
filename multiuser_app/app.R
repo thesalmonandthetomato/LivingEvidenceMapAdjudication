@@ -7649,7 +7649,7 @@ server <- function(input, output, session) {
     )
     if (inherits(loaded,"error")) {
       w04_consistency_status(paste("Could not load saved W04 analysis history:",conditionMessage(loaded)))
-      w04_consistency_history_loaded(TRUE)
+      # Keep the history eligible for a retry when the administrator reopens it.
       return()
     }
     w04_consistency_analyses_rv(loaded$analyses)
