@@ -38,3 +38,5 @@ jobs:
             "w04_reviewer_model_batches_rv","w04_reviewer_model_batch_open")
           stopifnot(all(vapply(checks,function(x)grepl(x,app,fixed=TRUE),logical(1))))
           cat("PASS: Shiny batch controls and subset-scoped comparisons\n")
+
+# Recheck after experiment finalisation guard
