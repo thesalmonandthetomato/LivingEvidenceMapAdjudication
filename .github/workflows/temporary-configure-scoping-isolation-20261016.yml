@@ -1,0 +1,33 @@
+name: Temporary Configure scoping isolation check
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/temporary-configure-scoping-isolation-20261016.yml']
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.6.0'
+          use-public-rspm: true
+      - name: Parse and check panel isolation
+        shell: Rscript {0}
+        run: |
+          parse("multiuser_app/app.R")
+          x <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\n")
+          a <- regexpr("output$configure_review_contents <- renderUI({",x,fixed=TRUE)[1]
+          b <- regexpr("observeEvent(input$configure_searching_opened,",x,fixed=TRUE)[1]
+          stopifnot(a>0,b>a)
+          main <- substr(x,a,b-1)
+          stopifnot(grepl('uiOutput("configure_scoping_panel")',main,fixed=TRUE))
+          stopifnot(!grepl("search_scope_request_id_rv()",main,fixed=TRUE))
+          stopifnot(!grepl("search_scope_results_rv()",main,fixed=TRUE))
+          stopifnot(!grepl("search_scope_counts_resolved()",main,fixed=TRUE))
+          stopifnot(grepl('output$configure_scoping_panel <- renderUI({',x,fixed=TRUE))
+          for (id in c("search_scope_input_text","search_scope_finalise_to_searching","w04_model_launch","w04_prompt_text","w04_highlight_include","w04_subset_size"))
+            stopifnot(grepl(paste0('"',id,'"'),x,fixed=TRUE))
+          cat("PASS: R parsed; scoping no longer invalidates the W04 Configure tree\n")
