@@ -1,0 +1,23 @@
+name: Temporary W04 kappa history isolation
+on:
+  push:
+    paths: ['.github/workflows/temporary-w04-kappa-history-isolation.yml']
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Validate subset-only kappa presentation
+        shell: Rscript {0}
+        run: |
+          parse(file="multiuser_app/app.R")
+          x <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\n")
+          stopifnot(!grepl('uiOutput("w04_kappa_history")',x,fixed=TRUE))
+          stopifnot(!grepl('uiOutput("w04_human_kappa_history")',x,fixed=TRUE))
+          stopifnot(grepl('Historic review-wide kappa figures are not part of this comparison',x,fixed=TRUE))
+          stopifnot(grepl('w04_consistency_analysis(w04_outcomes_now,selected_raters)',x,fixed=TRUE))
+          cat("PASS W04 selected-subset kappa presentation\n")
