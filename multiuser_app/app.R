@@ -6819,6 +6819,17 @@ server <- function(input, output, session) {
       )
     }
 
+    # Resolve W04 selection before building the assignment cards. The selector
+    # within each card requires these values during lapply evaluation.
+    manual_groups <- Filter(function(g)
+      identical(g$meta$workflow,"04") &&
+      identical(g$meta$task_type,"manual_screening") &&
+      startsWith(as.character(g$meta$batch_id),"w04-human-"),group_progress)
+    manual_ids <- vapply(manual_groups,function(g)as.character(g$meta$batch_id),character(1))
+    chosen_manual <- as.character(input$w04_admin_manual_subset %||% "")
+    if(!chosen_manual %in% manual_ids)
+      chosen_manual <- if(length(manual_ids)) manual_ids[[1L]] else ""
+
     workflow_sections <- lapply(group_progress, function(g) {
       z <- g$meta
       p <- g$progress
@@ -7459,14 +7470,6 @@ server <- function(input, output, session) {
 
     # Show only one W04 manual-screening assignment section at a time.
     # All subset assignments remain intact in the registry and audit history.
-    manual_groups <- Filter(function(g)
-      identical(g$meta$workflow,"04") &&
-      identical(g$meta$task_type,"manual_screening") &&
-      startsWith(as.character(g$meta$batch_id),"w04-human-"),group_progress)
-    manual_ids <- vapply(manual_groups,function(g)as.character(g$meta$batch_id),character(1))
-    chosen_manual <- as.character(input$w04_admin_manual_subset %||% "")
-    if(!chosen_manual %in% manual_ids)
-      chosen_manual <- if(length(manual_ids)) manual_ids[[1L]] else ""
     visible_group_indices <- which(!vapply(group_progress,function(g)
       identical(g$meta$workflow,"04") &&
       identical(g$meta$task_type,"manual_screening") &&
