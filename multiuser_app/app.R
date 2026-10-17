@@ -3922,10 +3922,9 @@ server <- function(input, output, session) {
       batch <- w04_model_selected_batch_rv()
       if(is.null(batch))stop("Open the completed model run first",call.=FALSE)
       prior <- w04_refinement_find_existing(meta,batch)
-      if(!is.null(prior) && !w04_refinement_can_retry_failed(meta,prior))
-        stop(paste("A refinement request already exists for this run.",
-          "Retrieve its result, or inspect the linked GitHub Actions run.",
-          "A retry is permitted only after a confirmed failure before the OpenAI call."),call.=FALSE)
+      if(!w04_refinement_can_start_new(meta,prior))
+        stop(paste("A previous refinement is still active or its result cannot be verified.",
+          "Retrieve its result or inspect the GitHub Actions run before requesting another."),call.=FALSE)
       if(!identical(as.character(w04_resolution_source_run_id_rv()),as.character(batch$run_id)) ||
          !identical(w04_resolution_origin_rv(),"shiny_model"))
         stop("Open this model run's uncertainty queue before requesting a revision",call.=FALSE)

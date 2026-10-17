@@ -180,3 +180,24 @@ w04_refinement_can_retry_failed <- function(meta,info) {
   if(started %in% names || response %in% names) return(FALSE)
   TRUE
 }
+
+
+# Another explicitly requested iteration is legitimate after the previous
+# proposal has completed and its response is safely archived. Never unlock
+# an active or uncertain request, even if its GitHub status cannot be read.
+w04_refinement_can_start_new <- function(meta,prior) {
+  if(is.null(prior)) return(TRUE)
+  status <- w04_refinement_run_status(prior)
+  if(!nzchar(as.character(status$url %||% ""))) return(FALSE)
+  draft <- w04_prompt_fetch_draft(meta)
+  if(is.null(draft) || !identical(as.character(draft$id),as.character(prior$draft_id)))
+    stop("Cannot verify archived refinement state",call.=FALSE)
+  names <- vapply(draft$files %||% list(),
+    function(x)as.character(x$filename %||% ""),character(1))
+  started <- sub("^w04-refinement-request-","w04-refinement-started-",prior$filename)
+  completed <- identical(status$state,"completed") &&
+    prior$response_file %in% names
+  failed_before_call <- identical(status$state,"failed") &&
+    !started %in% names && !prior$response_file %in% names
+  completed || failed_before_call
+}
