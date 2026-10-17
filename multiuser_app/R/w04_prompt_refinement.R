@@ -144,3 +144,20 @@ w04_refinement_diff_ui <- function(original,proposal) {
         new[[i]])
     }))
 }
+
+w04_refinement_run_status <- function(info) {
+  assert_development_github_target()
+  endpoint <- sprintf("https://api.github.com/repos/%s/actions/workflows/w04_prompt_refinement.yml/runs?branch=main&event=workflow_dispatch&per_page=100",
+    github_dispatch_repo())
+  runs <- github_api_get_json(endpoint)$workflow_runs %||% list()
+  label <- paste("W04 prompt refinement",info$review_id,info$filename)
+  matches <- Filter(function(x)identical(as.character(x$display_title %||% ""),label),runs)
+  if(!length(matches))return(list(state="queued",url=""))
+  z <- matches[[1L]]
+  status <- as.character(z$status %||% "")
+  conclusion <- as.character(z$conclusion %||% "")
+  state <- if(identical(status,"completed")) {
+    if(identical(conclusion,"success")) "completed" else "failed"
+  } else if(status %in% c("in_progress","waiting","pending","requested")) "running" else "queued"
+  list(state=state,url=as.character(z$html_url %||% ""),conclusion=conclusion)
+}
