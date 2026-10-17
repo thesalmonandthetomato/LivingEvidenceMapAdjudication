@@ -14,6 +14,7 @@ jobs:
       - name: Parse R and test immutable refinement input
         shell: Rscript {0}
         run: |
+          install.packages("digest",repos="https://cloud.r-project.org",quiet=TRUE)
           parse(file="multiuser_app/app.R")
           source("multiuser_app/R/w04_prompt_refinement.R")
           `%||%` <- function(x,y) if(is.null(x))y else x
