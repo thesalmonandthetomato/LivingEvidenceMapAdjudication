@@ -1,0 +1,47 @@
+name: W04 repeat refinement guard test (temporary)
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Validate repeat refinement guard without API calls
+        shell: Rscript {0}
+        run: |
+          invisible(parse("multiuser_app/app.R"))
+          source("multiuser_app/R/w04_prompt_refinement.R", local=FALSE)
+          `%||%` <- function(a,b) if(is.null(a)) b else a
+          prior <- list(filename="w04-refinement-request-aaaaaaaaaaaaaaaaaaaa.json",
+                        response_file="w04-refinement-response-aaaaaaaaaaaaaaaaaaaa.json",
+                        draft_id="123")
+          meta <- list(review_id="example")
+          files <- character()
+          status <- list(state="completed",url="https://github.com/example/run")
+          w04_refinement_run_status <- function(info) status
+          w04_prompt_fetch_draft <- function(meta)
+            list(id="123",files=lapply(files,function(x)list(filename=x)))
+          check <- function(expected) stopifnot(identical(w04_refinement_can_start_new(meta,prior),expected))
+          stopifnot(isTRUE(w04_refinement_can_start_new(meta,NULL)))
+          check(FALSE)
+          files <- prior$response_file;check(TRUE)
+          status <- list(state="running",url="https://github.com/example/run");check(FALSE)
+          status <- list(state="queued",url="https://github.com/example/run");check(FALSE)
+          status <- list(state="failed",url="https://github.com/example/run");check(FALSE)
+          files <- character();check(TRUE)
+          files <- "w04-refinement-started-aaaaaaaaaaaaaaaaaaaa.json";check(FALSE)
+          status <- list(state="completed",url="");check(FALSE)
+          status <- list(state="completed",url="https://github.com/example/run")
+          files <- prior$response_file;check(TRUE)
+          w04_prompt_fetch_draft <- function(meta) NULL
+          stopifnot(inherits(try(w04_refinement_can_start_new(meta,prior),silent=TRUE),"try-error"))
+          stopifnot(any(grepl("w04_refinement_can_start_new\\(meta,prior\\)",
+            readLines("multiuser_app/app.R",warn=FALSE))))
+          cat("PASS: completed proposals permit new iterations; active/unknown requests blocked.\n")
