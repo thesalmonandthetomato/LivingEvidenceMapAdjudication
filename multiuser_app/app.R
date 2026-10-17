@@ -1260,12 +1260,6 @@ server <- function(input, output, session) {
     read_sheet_w02_queue()
   }
 
-  w04_filter_batch_decisions <- function(ds, sha) {
-    if (!length(ds)) return(list())
-    keep <- vapply(ds, function(x) identical(as.character(x$queue_sha256 %||% ""), sha), logical(1))
-    ds[keep]
-  }
-
   w04_decision_ids <- function(ds = w04_decisions(), user_id = session_reviewer_id()) {
     if (!length(ds)) return(character())
     mine <- Filter(
