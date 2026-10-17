@@ -1,0 +1,33 @@
+name: W04 prompt labels check temporary
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Validate stable archived prompt numbering
+        shell: Rscript {0}
+        run: |
+          invisible(parse("multiuser_app/app.R"))
+          source("multiuser_app/R/w04_prompt_refinement.R",local=FALSE)
+          `%||%` <- function(x,y)if(is.null(x))y else x
+          v <- list(list(version_id="v3abcdefgh",created_at_utc="2026-10-17T14:00:00Z",notes=""),
+                    list(version_id="v1abcdefgh",created_at_utc="2026-10-15T09:00:00Z",notes="Original"),
+                    list(version_id="v2abcdefgh",created_at_utc="2026-10-16T12:00:00Z",notes="Revised"))
+          labels <- w04_prompt_display_labels(v)
+          stopifnot(startsWith(labels[[1]],"Version 03"),
+                    startsWith(labels[[2]],"Version 01"),
+                    startsWith(labels[[3]],"Version 02"),
+                    grepl("17 Oct 2026",labels[[1]],fixed=TRUE),
+                    grepl("Original",labels[[2]],fixed=TRUE))
+          lines <- readLines("multiuser_app/app.R",warn=FALSE)
+          stopifnot(sum(grepl("w04_prompt_display_labels(versions)",lines,fixed=TRUE))==3L)
+          cat("PASS: chronological numbering and consistent selector labels.\n")
