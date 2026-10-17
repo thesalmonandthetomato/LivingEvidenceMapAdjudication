@@ -1049,6 +1049,7 @@ server <- function(input, output, session) {
   w04_manual_queue_choices_rv <- reactiveVal(list())
   w04_manual_queue_status_rv <- reactiveVal("")
   w04_subsets_rv <- reactiveVal(list())
+  w04_consistency_registry_rv <- reactiveVal(list())
   w04_consistency_subset_snapshot_rv <- reactiveVal(NULL)
   w04_consistency_model_runs_rv <- reactiveVal(list())
   w04_consistency_model_status_rv <- reactiveVal("")
@@ -7254,6 +7255,7 @@ server <- function(input, output, session) {
         div(
           class="pt-2",
           tags$p(class="text-secondary small","Choose the W04 subset to inspect. Loading results for comparison does not change the active screening queue."),
+          actionButton("w04_consistency_subset_refresh","Refresh registered subsets",class="btn-outline-secondary btn-sm"),
           uiOutput("w04_consistency_subset_selector"),
           actionButton("w04_consistency_subset_load","Load selected subset for κ",class="btn-outline-secondary btn-sm"),
           textOutput("w04_consistency_subset_status"),
@@ -7911,23 +7913,40 @@ server <- function(input, output, session) {
 
   output$w04_consistency_subset_selector <- renderUI({
     if(!session_can("manage_assignments")) return(NULL)
-    xs <- w04_subsets_rv()
-    if(!length(xs)) return(tags$p(class="saved-note","Load registered W04 subsets from Configure review first."))
+    xs <- w04_consistency_registry_rv()
+    if(!length(xs)) return(tags$p(class="saved-note","Refresh the review's registered subsets to select a comparison."))
     ids <- vapply(xs,function(x)as.character(x$subset_id),character(1))
     labels <- vapply(xs,w04_subset_display,character(1))
     selectInput("w04_consistency_subset_selected","Subset for consistency checking",
       choices=stats::setNames(ids,labels))
   })
   output$w04_consistency_subset_status <- renderText(w04_consistency_subset_status_rv())
+  refresh_w04_consistency_registry <- function() {
+    meta <- w04_prompt_review_metadata()
+    registered <- w04_subset_registry_read(meta$review_id)
+    w04_consistency_registry_rv(registered)
+    registered
+  }
+  observeEvent(input$w04_consistency_subset_refresh,{
+    req(authenticated())
+    if(!session_can("manage_assignments")) return()
+    result <- tryCatch(refresh_w04_consistency_registry(),error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_consistency_subset_status_rv(paste("Cannot refresh registered subsets:",conditionMessage(result)))
+    } else {
+      w04_consistency_subset_status_rv(sprintf("%d subset(s) registered in this review.",length(result)))
+    }
+  })
   observeEvent(input$w04_consistency_subset_load,{
     req(authenticated())
     if(!session_can("manage_assignments")) return()
     id <- as.character(input$w04_consistency_subset_selected %||% "")
     result <- tryCatch({
+      registered <- refresh_w04_consistency_registry()
+      matches <- Filter(function(x)identical(as.character(x$subset_id),id),registered)
+      if(length(matches)!=1L)
+        stop("Subset selection was not found in the current review registry. The list has been refreshed; select a subset and try again.",call.=FALSE)
       meta <- w04_prompt_review_metadata()
-      registered <- w04_subset_registry_read(meta$review_id)
-      if(length(Filter(function(x)identical(as.character(x$subset_id),id),registered))!=1L)
-        stop("Subset not registered in this review",call.=FALSE)
       q <- w04_subset_queue_read(id,meta$review_id)
       if(is.null(q)) stop("The selected subset has no saved manual-screening queue",call.=FALSE)
       decisions <- w04_filter_batch_decisions(active_sheet_w04_decisions(),q$queue_sha256)
