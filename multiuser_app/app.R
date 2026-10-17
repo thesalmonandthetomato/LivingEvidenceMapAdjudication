@@ -3830,12 +3830,8 @@ server <- function(input, output, session) {
     if(!length(xs)) return(tags$p(class="saved-note","Load completed batches after a model run has finished."))
     ids <- vapply(xs,function(x)as.character(x$run_id),character(1))
     subsets <- w04_subsets_rv()
-    labels <- vapply(xs,function(x) {
-      id <- as.character(x$subset_id)
-      found <- Filter(function(s)identical(as.character(s$subset_id),id),subsets)
-      name <- if(length(found)) w04_subset_display(found[[1L]],records=FALSE) else id
-      sprintf("%s · run %s · %s uncertain",name,x$run_id,x$uncertain)
-    },character(1))
+    labels <- vapply(xs,w04_model_run_display,character(1),
+      subsets=subsets,prompts=w04_model_versions_rv())
     selectInput("w04_model_batch_selected","Model screening run",
       choices=stats::setNames(ids,labels))
   })
