@@ -22,6 +22,7 @@ jobs:
             "Restored model queue identity/count mismatch",
             "length(w04_resolution_all_cases_rv() %||% list())",
             "w04_resolution_origin_rv(\"shiny_model\")",
-            "later::later(function()"))
+            "later::later(function()",
+            "shiny::isolate(restore_w04_model_uncertainty_on_login(user_id))"))
             stopifnot(grepl(term,x,fixed=TRUE))
           cat("PASS W04 auto-restoration code parse and provenance guards\n")
