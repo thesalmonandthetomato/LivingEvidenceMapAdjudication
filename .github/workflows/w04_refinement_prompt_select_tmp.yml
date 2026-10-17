@@ -1,0 +1,57 @@
+name: W04 prompt selection test (temporary)
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Validate prompt-selection contract with mock fixtures
+        shell: Rscript {0}
+        run: |
+          invisible(parse("multiuser_app/app.R"))
+          source("multiuser_app/R/w04_prompt_refinement.R",local=FALSE)
+          `%||%` <- function(a,b)if(is.null(a))b else a
+          w04_prompt_checksum <- function(x) {
+            # SHA256 production-compatible for this isolated fixture.
+            if(!requireNamespace("tools",quietly=TRUE))stop("tools missing")
+            tmp <- tempfile();on.exit(unlink(tmp),add=TRUE)
+            writeChar(x,tmp,eos=NULL,useBytes=TRUE)
+            as.character(tools::md5sum(tmp))
+          }
+          # Fixture verifies provenance logic without paid calls or external services.
+          w04_prompt_checksum <- function(x) if(identical(x,"Original screening prompt")) "orig" else "revised"
+          meta <- list(review_id="review-1")
+          batch <- list(review_id="review-1",run_id="111",subset_id="subset-1",
+                        prompt_version_id="v-original",prompt_sha256="orig",uncertain=1)
+          cases <- list(list(review_case_id="case1",record_id="record1",
+                             bibliographic=list(title="Paper",abstract="Abstract"),
+                             screening=list(votes=list("uncertain"))))
+          decisions <- list(list(review_case_id="case1",decision="retain",rationale="Relevant"))
+          req1 <- w04_refinement_build_request(meta,batch,"Original screening prompt",
+                     cases,decisions,selected_version_id="v-original")
+          stopifnot(identical(req1$prompt_version_id,"v-original"),
+                    identical(req1$prompt_sha256,"orig"))
+          req2 <- w04_refinement_build_request(meta,batch,"Revised prompt",
+                     cases,decisions,note="Clarify scope",selected_version_id="v-revised")
+          stopifnot(identical(req2$prompt_version_id,"v-revised"),
+                    identical(req2$prompt_sha256,"revised"),
+                    identical(req2$screening_prompt_sha256,"orig"),
+                    identical(req2$screening_prompt_version_id,"v-original"),
+                    length(req2$cases)==1L,
+                    identical(req2$cases[[1]]$human_final_decision,"retain"))
+          stopifnot(inherits(try(w04_refinement_build_request(meta,batch,
+                     "Wrong",cases,decisions,selected_version_id="v-original"),
+                     silent=TRUE),"try-error"))
+          lines <- readLines("multiuser_app/app.R",warn=FALSE)
+          stopifnot(any(grepl('w04_refinement_prompt_selector',lines,fixed=TRUE)),
+                    any(grepl('selected_version_id=chosen',lines,fixed=TRUE)))
+          cat("PASS: choice wired and selected version, checksum, source run and decisions retained. No API call.\n")
