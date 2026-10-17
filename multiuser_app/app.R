@@ -7672,8 +7672,6 @@ server <- function(input, output, session) {
                   textOutput("w04_consistency_status",inline=TRUE)
                 )
               ),
-              uiOutput("w04_consistency_history"),
-              uiOutput("w04_model_conflict_loader"),
               tags$div(
                 class="text-secondary small mt-2",
                 sprintf(
@@ -7683,7 +7681,13 @@ server <- function(input, output, session) {
                 )
               )
             )
-          }
+          },
+          tags$hr(),
+          tags$h5("Saved comparisons and conflict adjudication"),
+          tags$p(class="saved-note",
+            "Saved comparisons and their disagreements remain available even when the current rater selection is incomplete. The W04 decision count above is a separate manual-screening status."),
+          uiOutput("w04_consistency_history"),
+          uiOutput("w04_model_conflict_loader")
           )
         )
       )
