@@ -11745,6 +11745,12 @@ server <- function(input, output, session) {
     }
 
     human_ids <- setdiff(as.character(comparison_ids %||% character()),"model")
+    recorded_human_notes <- lapply(human_ids,function(uid) {
+      event <- (case_decisions[[uid]] %||% list())$event %||% list()
+      value <- trimws(as.character(event$note %||% event$rationale %||% ""))
+      list(uid=uid,note=value)
+    })
+    recorded_human_notes <- Filter(function(z)nzchar(z$note),recorded_human_notes)
     parent_sha <- {
       set <- w04_active_consistency_conflict_set()
       if (!is.null(set)) {
@@ -11822,6 +11828,12 @@ server <- function(input, output, session) {
             tags$strong("Decisions for this case: "),
             tagList(reviewer_badges)
           )
+        },
+        if (length(recorded_human_notes)) {
+          div(class="mt-3 p-2 border rounded",
+            tags$strong("Original human reviewer notes"),
+            tagList(lapply(recorded_human_notes,function(n) div(
+              tags$strong(rater_label(n$uid)),tags$div(n$note)))))
         },
         if (length(case_notes)) {
           div(
