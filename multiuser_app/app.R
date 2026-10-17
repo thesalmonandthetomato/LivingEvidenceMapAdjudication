@@ -2525,6 +2525,9 @@ server <- function(input, output, session) {
               if (identical(button_id,"open_w04")) {
                 actionButton(button_id,button_label,class="btn-primary mt-auto",
                   onclick="this.textContent='Opening manual screening…'; this.setAttribute('aria-busy','true');")
+              } else if(identical(button_id,"open_w04_resolution")) {
+                actionButton(button_id,button_label,class="btn-primary mt-auto",
+                  onclick="this.textContent='Opening model uncertainties…'; this.setAttribute('aria-busy','true'); this.disabled=true;")
               } else {
                 actionButton(button_id, button_label, class = "btn-primary mt-auto")
               }
@@ -11047,6 +11050,14 @@ server <- function(input, output, session) {
     div(class="progress mb-3",div(class="progress-bar",role="progressbar",style=sprintf("width:%s%%",pct),sprintf("%s%%",pct)))
   })
 
+  w04_resolution_highlight_include <- reactive({
+    configured <- w04_resolution_include_terms()
+    if(length(configured)) configured else w04_include_terms()
+  })
+  w04_resolution_highlight_exclude <- reactive({
+    configured <- w04_resolution_exclude_terms()
+    if(length(configured)) configured else w04_exclude_terms()
+  })
   output$w04_resolution_case_view <- renderUI({
     z<-w04_resolution_current_case(); b<-z$bibliographic %||% list()
     votes<-as.character((z$screening %||% list())$votes %||% character())
@@ -11058,7 +11069,7 @@ server <- function(input, output, session) {
       div(class="compact-record-body w04-text",
         div(
           class="d-flex align-items-start justify-content-between gap-2",
-          div(class="record-title flex-grow-1",highlight_screening_text(display_sentence_case_if_all_caps(b$title %||% ""),w04_resolution_include_terms(),w04_resolution_exclude_terms())),
+          div(class="record-title flex-grow-1",highlight_screening_text(display_sentence_case_if_all_caps(b$title %||% ""),w04_resolution_highlight_include(),w04_resolution_highlight_exclude())),
           google_scholar_button(b$title %||% "")
         ),
         div(class="w04-citation-grid",
@@ -11101,7 +11112,7 @@ server <- function(input, output, session) {
           )
         } else {
           tagList(
-            div(class="abstract-text",highlight_screening_text(display_sentence_case_if_all_caps(w04_resolution_effective_abstract()),w04_resolution_include_terms(),w04_resolution_exclude_terms())),
+            div(class="abstract-text",highlight_screening_text(display_sentence_case_if_all_caps(w04_resolution_effective_abstract()),w04_resolution_highlight_include(),w04_resolution_highlight_exclude())),
             if (!is.null(w04_resolution_current_abstract_edit())) {
               tags$div(class="text-secondary small mt-1","Manually edited abstract saved for this W04 resolution.")
             }
@@ -11111,7 +11122,7 @@ server <- function(input, output, session) {
           tags$strong("Model decisions: "),
           if(length(votes)) tagList(lapply(seq_along(votes),function(i)tags$span(class="task-badge me-1",sprintf("Pass %d: %s",i,votes[[i]])))) else tags$span(class="text-secondary","No model vote provenance available")
         ),
-        div(class="w04-keywords",tags$strong("Keywords: "),highlight_screening_text(b$keywords %||% "",w04_resolution_include_terms(),w04_resolution_exclude_terms()))
+        div(class="w04-keywords",tags$strong("Keywords: "),highlight_screening_text(b$keywords %||% "",w04_resolution_highlight_include(),w04_resolution_highlight_exclude()))
       )
     )
   })
@@ -12400,6 +12411,13 @@ server <- function(input, output, session) {
 
   observeEvent(input$back_to_tasks_w04, app_view("tasks"))
   observeEvent(input$open_w04_resolution, {
+    started <- proc.time()[["elapsed"]]
+    on.exit(message(sprintf("[W04 timing] open_model_uncertainties=%.3fs",
+      proc.time()[["elapsed"]]-started)),add=TRUE)
+    if(!length(w04_resolution_cases_rv() %||% list())) {
+      w04_resolution_status("No uncertainty records are assigned to your account. Ask the administrator to assign this model batch.")
+      return()
+    }
     unresolved<-w04_resolution_unresolved_indices()
     if(length(unresolved))w04_resolution_idx(unresolved[[1L]])
     w04_resolution_abstract_edit_rv(FALSE)
