@@ -1,6 +1,6 @@
 # Rebuild saved W04 human-vs-model conflict sets from immutable model runs
 # and the original human screening queue. No original decisions are changed.
-w04_model_conflict_reconstruct <- function(set, assignments) {
+w04_model_conflict_reconstruct <- function(set, assignments, load_vote_reasons=FALSE) {
   run <- sub("^w04-model-run-", "", as.character(set$parent_batch_id %||% ""))
   if (!grepl("^[0-9]+$",run) ||
       !identical(as.character(set$comparison_type %||% ""),"human_model"))
@@ -44,8 +44,11 @@ w04_model_conflict_reconstruct <- function(set, assignments) {
   cases <- w04_conflict_cases_for_raters(outcomes,raters,ids,
     analysis_id=as.character(set$analysis_id),conflict_set_id=as.character(set$conflict_set_id))
   model_by_id <- stats::setNames(seq_len(nrow(model)),as.character(model$record_id))
-  vote_results <- tryCatch(w04_model_vote_reasons_from_artifacts(run,
-      as.character(batch$prompt_sha256)),error=function(e)e)
+  # Keep assigning adjudication cases independent of slow artifact downloads.
+  # Archived explanations may be requested separately once the queue is loaded.
+  vote_results <- if(isTRUE(load_vote_reasons))
+    tryCatch(w04_model_vote_reasons_from_artifacts(run,
+      as.character(batch$prompt_sha256)),error=function(e)e) else list()
   vote_error <- if(inherits(vote_results,"error"))conditionMessage(vote_results) else ""
   if(inherits(vote_results,"error"))vote_results <- list()
   lapply(cases,function(z) {

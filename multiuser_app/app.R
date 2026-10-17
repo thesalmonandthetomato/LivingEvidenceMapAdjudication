@@ -2570,7 +2570,6 @@ server <- function(input, output, session) {
         pipeline_summary_ui(),
         uiOutput("configure_review"),
         uiOutput("assignment_progress"),
-        uiOutput("w04_model_conflict_task_loader"),
         div(
           class = "row g-3",
           div(
@@ -2841,6 +2840,10 @@ server <- function(input, output, session) {
             )
           )
         ),
+        if(identical(as.character((w04_active_consistency_conflict_set() %||% list())$comparison_type %||% ""),"human_model"))
+          div(class="mb-3",
+            actionButton("w04_load_conflict_vote_reasons","Load archived model explanations",class="btn-outline-secondary btn-sm"),
+            textOutput("w04_load_conflict_vote_reasons_status")),
         uiOutput("w04_conflict_case_view")
       ))
     }
@@ -7731,6 +7734,7 @@ server <- function(input, output, session) {
           ),
           workflow_sections_display,
           tags$hr(class = "my-3"),
+          uiOutput("w04_model_conflict_task_loader"),
           tags$details(
             class = "assignment-workflow border rounded",
             `data-accordion-key` = "backend-maintenance",
@@ -8836,6 +8840,33 @@ server <- function(input, output, session) {
     w04_consistency_status("Saved human consistency result deleted; cumulative statistics recalculated.")
   })
 
+  w04_load_conflict_vote_reasons_status_rv <- reactiveVal("")
+  output$w04_load_conflict_vote_reasons_status <- renderText(w04_load_conflict_vote_reasons_status_rv())
+  observeEvent(input$w04_load_conflict_vote_reasons,{
+    req(authenticated())
+    z <- w04_active_consistency_conflict_set()
+    if(is.null(z) || !identical(as.character(z$comparison_type %||% ""),"human_model"))return()
+    w04_load_conflict_vote_reasons_status_rv("Retrieving archived model-pass explanations. This can take a while.")
+    result <- tryCatch({
+      run <- sub("^w04-model-run-","",as.character(z$parent_batch_id))
+      meta <- w04_prompt_review_metadata()
+      batches <- w04_model_batch_registry_read(meta$review_id)
+      hit <- Filter(function(x)identical(as.character(x$run_id),run),batches)
+      if(length(hit)!=1L)stop("The archived model run could not be identified",call.=FALSE)
+      votes <- w04_model_vote_reasons_from_artifacts(run,as.character(hit[[1]]$prompt_sha256))
+      current <- w04_model_conflict_cases_rv()
+      if(!length(current))stop("Load the conflict cases before retrieving model explanations",call.=FALSE)
+      changed <- lapply(current,function(item) {
+        item$model_vote_details <- votes[[as.character(item$record_id %||% "")]] %||% list()
+        item
+      })
+      w04_model_conflict_cases_rv(changed)
+      sum(vapply(changed,function(item)length(item$model_vote_details %||% list())>0L,logical(1)))
+    },error=function(e)e)
+    w04_load_conflict_vote_reasons_status_rv(if(inherits(result,"error"))
+      paste("Archived explanations unavailable:",conditionMessage(result))
+      else sprintf("Archived model reasons loaded for %d conflicting records.",result))
+  })
   activate_w04_model_conflict <- function(z) {
     cases <- w04_model_conflict_reconstruct(z,assignment_registry_rv())
     w04_model_conflict_cases_rv(cases)
@@ -8884,14 +8915,19 @@ server <- function(input, output, session) {
                     as.character(current_user()$user_id %||% "")),logical(1)))
       },sets)
     }
-    if(!length(sets))return(NULL)
+    if(!length(sets)) {
+      if(session_can("manage_assignments"))
+        return(tags$p(class="saved-note",
+          "No saved human–model conflict set is available. In Consistency checking, select a saved comparison with disagreements and click Create conflict set."))
+      return(NULL)
+    }
     ids <- vapply(sets,function(z)as.character(z$conflict_set_id),character(1))
     labels <- vapply(sets,function(z)paste0("Run ",
       sub("^w04-model-run-","",as.character(z$parent_batch_id)),
       " | ",as.character(z$conflict_set_id)),character(1))
     card(class="assignment-summary",div(class="p-3",
       tags$strong("Saved human–model conflict sets"),
-      tags$p(class="saved-note","Load a saved set to continue adjudication and inspect archived model-vote explanations."),
+      tags$p(class="saved-note","Activate a saved set here to expose its cases in W04 · Conflict resolution above. Then open Manage assignments to allocate the cases. Archived model-vote explanations can be retrieved separately during adjudication."),
       selectInput("w04_task_model_conflict_selected","Model conflict set",
         choices=stats::setNames(ids,labels)),
       actionButton("w04_task_model_conflict_load","Load reviewer conflict cases",
@@ -8918,7 +8954,7 @@ server <- function(input, output, session) {
     loaded <- tryCatch(activate_w04_model_conflict(eligible[[1L]]),error=function(e)e)
     w04_task_model_conflict_status_rv(if(inherits(loaded,"error"))
       paste("Loading failed:",conditionMessage(loaded))
-      else sprintf("Loaded %d conflict records. Open the Reviewer conflict resolution task.",loaded))
+      else sprintf("Activated %d conflict records. In W04 · Conflict resolution above, expand Manage assignments, choose a reviewer and Apply assignments.",loaded))
   })
   observeEvent(input$w04_model_conflict_load,{
     req(authenticated())
