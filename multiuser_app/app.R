@@ -1050,6 +1050,8 @@ server <- function(input, output, session) {
   w04_manual_queue_status_rv <- reactiveVal("")
   w04_subsets_rv <- reactiveVal(list())
   w04_consistency_subset_snapshot_rv <- reactiveVal(NULL)
+  w04_consistency_model_runs_rv <- reactiveVal(list())
+  w04_consistency_model_status_rv <- reactiveVal("")
   w04_consistency_subset_status_rv <- reactiveVal("")
   w04_prompt_status_rv <- reactiveVal("")
   w04_prompt_versions_rv <- reactiveVal(list())
@@ -7255,6 +7257,10 @@ server <- function(input, output, session) {
           uiOutput("w04_consistency_subset_selector"),
           actionButton("w04_consistency_subset_load","Load selected subset for κ",class="btn-outline-secondary btn-sm"),
           textOutput("w04_consistency_subset_status"),
+          actionButton("w04_consistency_find_models","Find completed model runs for subset",class="btn-outline-secondary btn-sm"),
+          uiOutput("w04_consistency_model_selector"),
+          actionButton("w04_consistency_load_model","Load model for κ",class="btn-outline-primary btn-sm"),
+          textOutput("w04_consistency_model_status"),
           uiOutput("w04_kappa_history"),
           tags$hr(),
           uiOutput("w04_human_kappa_history"),
@@ -7934,8 +7940,74 @@ server <- function(input, output, session) {
       w04_consistency_subset_status_rv(paste("Subset could not be loaded:",conditionMessage(result)))
       return()
     }
+    result$human_outcomes <- result$outcomes
     w04_consistency_subset_snapshot_rv(result)
+    w04_consistency_model_runs_rv(list())
+    w04_consistency_model_status_rv("")
     w04_consistency_subset_status_rv(sprintf("Loaded %s (%d cases) for read-only consistency analysis.",id,length(result$outcomes)))
+  })
+  output$w04_consistency_model_selector <- renderUI({
+    xs <- w04_consistency_model_runs_rv()
+    if(!length(xs)) return(NULL)
+    ids <- vapply(xs,function(x)as.character(x$run_id),character(1))
+    labels <- vapply(xs,function(x)sprintf("Run %s · %s records · %s uncertain",x$run_id,x$total,x$uncertain),character(1))
+    selectInput("w04_consistency_model_selected","Completed model run",
+      choices=stats::setNames(ids,labels))
+  })
+  output$w04_consistency_model_status <- renderText(w04_consistency_model_status_rv())
+  observeEvent(input$w04_consistency_find_models,{
+    req(authenticated())
+    if(!session_can("manage_assignments")) return()
+    snap <- w04_consistency_subset_snapshot_rv()
+    if(is.null(snap)) {
+      w04_consistency_model_status_rv("Load a human-screening subset first.")
+      return()
+    }
+    found <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      Filter(function(x)identical(as.character(x$subset_id),snap$subset_id),
+        w04_model_batch_registry_read(meta$review_id))
+    },error=function(e)e)
+    if(inherits(found,"error")) {
+      w04_consistency_model_runs_rv(list())
+      w04_consistency_model_status_rv(paste("Model runs unavailable:",conditionMessage(found)))
+      return()
+    }
+    w04_consistency_model_runs_rv(found)
+    w04_consistency_model_status_rv(sprintf("%d completed model run(s) for selected subset.",length(found)))
+  })
+  observeEvent(input$w04_consistency_load_model,{
+    req(authenticated())
+    if(!session_can("manage_assignments")) return()
+    result <- tryCatch({
+      snap <- w04_consistency_subset_snapshot_rv()
+      if(is.null(snap)) stop("Load a human subset first",call.=FALSE)
+      id <- as.character(input$w04_consistency_model_selected %||% "")
+      hits <- Filter(function(x)identical(as.character(x$run_id),id),w04_consistency_model_runs_rv())
+      if(length(hits)!=1L || !identical(as.character(hits[[1L]]$subset_id),snap$subset_id))
+        stop("Choose a model run for the selected subset",call.=FALSE)
+      batch <- hits[[1L]]
+      model <- w04_model_batch_results_read(batch)
+      resolved <- list()
+      if(as.integer(batch$uncertain)>0L) {
+        queue <- read_sheet_w04_resolution_queue(as.character(batch$resolution_tab))
+        if(is.null(queue) || !identical(as.character(queue$source_run_id),id) ||
+           !identical(as.character(queue$queue_sha256),as.character(batch$resolution_queue_sha256)))
+          stop("The run-specific uncertainty queue is unavailable or inconsistent",call.=FALSE)
+        active <- w04_filter_batch_decisions(active_sheet_w04_resolution_decisions(),queue$queue_sha256)
+        resolved <- Filter(function(x)as.character(x$decision %||% "") %in% c("retain","exclude"),active)
+      }
+      w04_model_consistency_outcomes(snap$human_outcomes %||% snap$outcomes,model,resolved)
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_consistency_model_status_rv(paste("Model κ input unavailable:",conditionMessage(result)))
+      return()
+    }
+    snap <- w04_consistency_subset_snapshot_rv()
+    snap$outcomes <- result
+    w04_consistency_subset_snapshot_rv(snap)
+    w04_consistency_model_status_rv(sprintf("Loaded model run %s. Choose Matt and Model under Raters to compare; unresolved cases remain uncertain.",
+      as.character(input$w04_consistency_model_selected)))
   })
   observeEvent(input$w04_consistency_opened, {
     req(authenticated())
