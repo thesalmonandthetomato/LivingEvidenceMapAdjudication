@@ -1,0 +1,71 @@
+name: W04 model conflict integration test temporary
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Parse app and exercise saved human-model conflict reconstruction
+        shell: Rscript {0}
+        run: |
+          invisible(parse("multiuser_app/app.R"))
+          `%||%` <- function(x,y)if(is.null(x))y else x
+          source("multiuser_app/R/w04_blind_resolution.R",local=FALSE)
+          source("multiuser_app/R/w04_model_batches.R",local=FALSE)
+          source("multiuser_app/R/w04_model_conflicts.R",local=FALSE)
+          w04_normalise_screening_decision <- function(x)as.character(x %||% "")
+          run <- "39046381271"
+          sha <- paste(rep("a",64),collapse="")
+          b <- list(run_id=run,subset_id="sample",total="2",uncertain="0",
+                    model_sha256=sha,prompt_sha256=paste(rep("b",64),collapse=""))
+          set <- list(parent_batch_id=paste0("w04-model-run-",run),
+            comparison_type="human_model",parent_queue_sha256=sha,
+            rater_ids_json='["usr-matthew","model"]',
+            conflict_case_ids_json='["record-1"]',
+            analysis_id="analysis-1",conflict_set_id="set-1")
+          w04_prompt_review_metadata <- function()list(review_id="review")
+          w04_model_batch_registry_read <- function(review_id)list(b)
+          w04_subset_queue_read <- function(subset_id,review_id)
+            list(queue_sha256="q",cases=list())
+          w04_filter_batch_decisions <- function(events,queue_sha256)list()
+          active_sheet_w04_decisions <- function()list()
+          w04_blind_case_outcomes <- function(cases,assignments,decisions,batch_id,task_type) {
+            make <- function(id,hd)list(case_id=id,record_id=id,status="single_human",
+              assigned_user_ids="usr-matthew",completed_user_ids="usr-matthew",
+              reviewer_decisions=list("usr-matthew"=list(decision=hd,complete=TRUE,
+                event=list(note="Human reason"))),
+              case=list(record_id=id,review_case_id=id,
+                bibliographic=list(title=paste("Paper",id),abstract="Abstract",keywords="keywords")))
+            list(make("record-1","retain"),make("record-2","exclude"))
+          }
+          model <- data.frame(record_id=c("record-1","record-2"),
+            decision=c("exclude","exclude"),
+            result_json=c('{"screening":{"votes":["exclude","exclude"]}}',
+                          '{"screening":{"votes":["exclude","exclude"]}}'),
+            stringsAsFactors=FALSE)
+          w04_model_batch_results_read <- function(batch)model
+          w04_model_vote_reasons_from_artifacts <- function(run_id,prompt_sha256)
+            list("record-1"=list(list(pass=1,decision="exclude",
+                                     reason="No geographical match")))
+          z <- w04_model_conflict_reconstruct(set,list())
+          stopifnot(length(z)==1L,identical(z[[1]]$record_id,"record-1"),
+                    identical(z[[1]]$blind_review$reviewer_decisions$model$decision,"exclude"),
+                    identical(z[[1]]$blind_review$reviewer_decisions[["usr-matthew"]]$decision,"retain"),
+                    identical(z[[1]]$model_vote_details[[1]]$reason,"No geographical match"))
+          bad <- set;bad$parent_queue_sha256 <- "incorrect"
+          stopifnot(inherits(try(w04_model_conflict_reconstruct(bad,list()),silent=TRUE),"try-error"))
+          bad <- set;bad$conflict_case_ids_json <- '["record-2"]'
+          stopifnot(inherits(try(w04_model_conflict_reconstruct(bad,list()),silent=TRUE),"try-error"))
+          lines <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse=" ")
+          for(term in c("w04_model_conflict_task_loader","w04_model_conflict_load",
+                        "model_vote_details","w04_model_conflict_reconstruct",
+                        "w04_conflict_case_view"))stopifnot(grepl(term,lines,fixed=TRUE))
+          cat("PASS: model conflict routing, immutable provenance, original human/model decisions and archived reason display. No paid calls.\n")
