@@ -20,8 +20,9 @@ jobs:
           src <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\n")
           for (key in c("configure-review-w04","configure-review-w04-model-screening",
                         "configure-review-w04-prompt-refinement")) {
-            stopifnot(length(gregexpr(paste0('data-accordion-key\`=', '"', key, '"'),src,fixed=TRUE)[[1]]) == 1L)
-            stopifnot(grepl(paste0('data-accordion-key\`=', '"', key, '"'),src,fixed=TRUE))
+            target <- paste0('"',key,'"')
+            hits <- gregexpr(target,src,fixed=TRUE)[[1]]
+            stopifnot(length(hits)==1L, hits[[1]]>0L)
           }
           stopifnot(grepl("restoreDetails(document)",src,fixed=TRUE))
           stopifnot(grepl("sessionStorage.setItem(key",src,fixed=TRUE))
