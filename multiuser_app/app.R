@@ -9661,7 +9661,7 @@ server <- function(input, output, session) {
         user_id <- as.character(normalise_user_row(login_user)$user_id)
         later::later(function() {
           shiny::withReactiveDomain(session, {
-            restore_w04_model_uncertainty_on_login(user_id)
+            shiny::isolate(restore_w04_model_uncertainty_on_login(user_id))
           })
         },delay=0.5)
       }
