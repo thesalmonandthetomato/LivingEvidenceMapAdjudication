@@ -62,3 +62,31 @@ w04_model_batch_comparison <- function(results, human_events, subset_id) {
   }
   out
 }
+
+# Overlay adjudicated model decisions on a read-only subset snapshot for the
+# existing W04 kappa functions. Unresolved uncertainty is never treated as final.
+w04_model_consistency_outcomes <- function(outcomes, results, resolution_events=list()) {
+  if(!length(outcomes)) stop("No human subset outcomes loaded",call.=FALSE)
+  ids <- vapply(outcomes,function(x)as.character(x$record_id %||% ""),character(1))
+  mids <- as.character(results$record_id)
+  if(anyDuplicated(ids)||any(!nzchar(ids))||!setequal(ids,mids)||
+     length(ids)!=nrow(results)) stop("Model run does not match selected human subset",call.=FALSE)
+  decisions <- stats::setNames(as.character(results$decision),mids)
+  resolved <- list()
+  for(event in resolution_events) {
+    id <- as.character(event$record_id %||% "")
+    decision <- as.character(event$decision %||% "")
+    if(!id %in% ids || !identical(decisions[[id]],"uncertain") ||
+       !decision %in% c("retain","exclude"))
+      stop("Invalid model uncertainty resolution identity or decision",call.=FALSE)
+    if(!is.null(resolved[[id]])) stop("Multiple active model resolutions for one record",call.=FALSE)
+    resolved[[id]] <- decision
+  }
+  lapply(outcomes,function(x) {
+    id <- as.character(x$record_id)
+    value <- decisions[[id]]
+    if(identical(value,"uncertain") && !is.null(resolved[[id]])) value <- resolved[[id]]
+    x$case$model_decision <- value
+    x
+  })
+}
