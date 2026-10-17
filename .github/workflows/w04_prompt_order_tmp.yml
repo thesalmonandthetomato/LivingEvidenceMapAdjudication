@@ -1,0 +1,41 @@
+name: W04 prompt date-order validation temporary
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Validate date sorting in prompt selectors
+        shell: Rscript {0}
+        run: |
+          invisible(parse("multiuser_app/app.R"))
+          txt <- readLines("multiuser_app/app.R",warn=FALSE)
+          start <- grep("  w04_prompts_by_save_date <- function",txt,fixed=TRUE)
+          stopifnot(length(start)==1L)
+          helper <- paste(txt[start:(start+6L)],collapse="\n")
+          env <- new.env(parent=baseenv())
+          env$`%||%` <- function(x,y)if(is.null(x)) y else x
+          eval(parse(text=helper),env)
+          f <- env$w04_prompts_by_save_date
+          make <- function(id,date)list(version_id=id,created_at_utc=date)
+          xs <- list(make("v3","2026-10-16T09:00:00Z"),
+                     make("v1","2026-10-15T18:00:00Z"),
+                     make("v5","2026-10-17T21:00:00Z"),
+                     make("v4","2026-10-16T09:00:00Z"),
+                     make("v0",""))
+          ys <- f(xs)
+          ids <- vapply(ys,function(z)z$version_id,character(1))
+          stopifnot(identical(ids,c("v5","v4","v3","v1","v0")),
+                    length(f(list()))==0L)
+          stopifnot(any(grepl("versions <- w04_prompts_by_save_date(w04_model_versions_rv())",txt,fixed=TRUE)),
+                    any(grepl("versions <- w04_prompts_by_save_date(w04_refinement_versions_rv())",txt,fixed=TRUE)),
+                    any(grepl("versions <- w04_prompts_by_save_date(w04_prompt_versions_rv())",txt,fixed=TRUE)))
+          cat("PASS: W04 prompt history, run selector and refinement selector date order; no API calls.\n")
