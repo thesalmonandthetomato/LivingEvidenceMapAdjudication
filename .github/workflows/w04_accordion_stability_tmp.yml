@@ -1,0 +1,30 @@
+name: W04 accordion stability CI temporary
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Validate outer UI binding and nested batch refresh
+        shell: Rscript {0}
+        run: |
+          invisible(parse("multiuser_app/app.R"))
+          src <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\n")
+          outer <- regexpr("output$configure_review_contents <- renderUI({",src,fixed=TRUE)[[1]]
+          finish <- regexpr("observeEvent(input$configure_searching_opened",src,fixed=TRUE)[[1]]
+          stopifnot(outer>0,finish>outer)
+          block <- substr(src,outer,finish)
+          stopifnot(grepl("shiny::bindEvent(authenticated(), configure_review_requested(), ignoreNULL=FALSE)",block,fixed=TRUE))
+          stopifnot(grepl("configure-review-w04-model-screening",block,fixed=TRUE))
+          stopifnot(grepl("configure-review-w04-prompt-refinement",block,fixed=TRUE))
+          stopifnot(grepl("output$w04_model_batch_selector <- renderUI",src,fixed=TRUE))
+          stopifnot(grepl("observeEvent(input$w04_model_batches_refresh",src,fixed=TRUE))
+          cat("PASS: outer panel event-bound, nested model batch results remain reactive. No API calls.\n")
