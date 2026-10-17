@@ -7426,9 +7426,22 @@ server <- function(input, output, session) {
       )
     } else NULL
 
-    # Render a single consistency panel, irrespective of the number of W04
-    # subsets represented in assignment progress.
-    workflow_sections_display <- workflow_sections
+    # Show only one W04 manual-screening assignment section at a time.
+    # All subset assignments remain intact in the registry and audit history.
+    manual_groups <- Filter(function(g)
+      identical(g$meta$workflow,"04") &&
+      identical(g$meta$task_type,"manual_screening") &&
+      startsWith(as.character(g$meta$batch_id),"w04-human-"),group_progress)
+    manual_ids <- vapply(manual_groups,function(g)as.character(g$meta$batch_id),character(1))
+    chosen_manual <- as.character(input$w04_admin_manual_subset %||% "")
+    if(!chosen_manual %in% manual_ids)
+      chosen_manual <- if(length(manual_ids)) manual_ids[[1L]] else ""
+    visible_group_indices <- which(!vapply(group_progress,function(g)
+      identical(g$meta$workflow,"04") &&
+      identical(g$meta$task_type,"manual_screening") &&
+      startsWith(as.character(g$meta$batch_id),"w04-human-") &&
+      !identical(as.character(g$meta$batch_id),chosen_manual),logical(1)))
+    workflow_sections_display <- workflow_sections[visible_group_indices]
     if(!is.null(w04_results_panel))
       workflow_sections_display <- c(workflow_sections_display,list(w04_results_panel))
 
@@ -7456,6 +7469,16 @@ server <- function(input, output, session) {
             div(class = "assignment-kpi", tags$span("Completed"), tags$strong(record_table_link(total_completed_cases,"all","all","","resolved_cases",label="All workflows · Completed"))),
             div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(record_table_link(total_outstanding_cases,"all","all","","outstanding_cases",label="All workflows · Outstanding"))),
             div(class = "assignment-kpi", tags$span("Conflicts"), tags$strong(record_table_link(length(w04_all_conflict_cases()),"04","conflict_resolution",w04_active_conflict_batch_id(),"cases",label="W04 · Reviewer conflict resolution · Cases")))
+          ),
+          if(length(manual_ids)) div(
+            class="mb-3",
+            selectInput("w04_admin_manual_subset","W04 manual-screening subset",
+              choices=stats::setNames(manual_ids,vapply(manual_ids,function(b) {
+                id <- sub("^w04-human-","",b)
+                matches <- Filter(function(x)identical(as.character(x$subset_id),id),w04_subsets_rv())
+                if(length(matches)) w04_subset_display(matches[[1L]],records=FALSE) else id
+              },character(1))),
+              selected=chosen_manual)
           ),
           workflow_sections_display,
           tags$hr(class = "my-3"),
