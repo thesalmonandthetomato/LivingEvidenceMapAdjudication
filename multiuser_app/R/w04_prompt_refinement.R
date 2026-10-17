@@ -161,3 +161,22 @@ w04_refinement_run_status <- function(info) {
   } else if(status %in% c("in_progress","waiting","pending","requested")) "running" else "queued"
   list(state=state,url=as.character(z$html_url %||% ""),conclusion=conclusion)
 }
+
+
+# An archived request is not itself evidence that a paid call happened.
+# Permit a fresh, separately archived attempt only if GitHub explicitly
+# reports failure AND Zenodo contains neither a started marker nor response.
+w04_refinement_can_retry_failed <- function(meta,info) {
+  status <- w04_refinement_run_status(info)
+  if(!identical(status$state,"failed") || !nzchar(as.character(status$url %||% "")))
+    return(FALSE)
+  draft <- w04_prompt_fetch_draft(meta)
+  if(is.null(draft) || !identical(as.character(draft$id),as.character(info$draft_id)))
+    stop("Cannot verify archived refinement state",call.=FALSE)
+  names <- vapply(draft$files %||% list(),
+    function(x)as.character(x$filename %||% ""),character(1))
+  started <- sub("^w04-refinement-request-","w04-refinement-started-",info$filename)
+  response <- as.character(info$response_file)
+  if(started %in% names || response %in% names) return(FALSE)
+  TRUE
+}
