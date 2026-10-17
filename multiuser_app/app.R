@@ -7263,13 +7263,12 @@ server <- function(input, output, session) {
           uiOutput("w04_consistency_model_selector"),
           actionButton("w04_consistency_load_model","Load model for κ",class="btn-outline-primary btn-sm"),
           textOutput("w04_consistency_model_status"),
-          uiOutput("w04_kappa_history"),
-          tags$hr(),
-          uiOutput("w04_human_kappa_history"),
+          tags$p(class="text-secondary small",
+            "The statistics below are calculated only from the selected W04 subset and its loaded model run. Historic review-wide kappa figures are not part of this comparison."),
           if (!has_w04_batch && is.null(snapshot)) {
             tags$div(
               class="text-secondary small",
-              "No active W04 manual-screening batch. Historical kappa data remain available above."
+              "Load a W04 subset above to calculate subset-specific agreement and kappa."
             )
           } else tagList(
           tags$hr(),
