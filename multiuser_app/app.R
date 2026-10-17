@@ -3739,13 +3739,19 @@ server <- function(input, output, session) {
       target="_blank",rel="noopener noreferrer",
       paste("Open restricted W04 Zenodo draft",id))
   })
+  # Saved W04 prompt selectors use the archive's save timestamp, newest first.
+  # Missing dates are kept last; version_id breaks ties deterministically.
+  w04_prompts_by_save_date <- function(versions) {
+    if(!length(versions))return(versions)
+    dates <- vapply(versions,function(v)as.character(v$created_at_utc %||% ""),character(1))
+    ids <- vapply(versions,function(v)as.character(v$version_id %||% ""),character(1))
+    versions[order(!nzchar(dates),-xtfrm(dates),-xtfrm(ids))]
+  }
   output$w04_prompt_archive_history <- renderUI({
-    versions <- w04_prompt_versions_rv()
+    versions <- w04_prompts_by_save_date(w04_prompt_versions_rv())
     if(!length(versions)) return(tags$p(class="saved-note","No archived versions loaded."))
     labels <- w04_prompt_display_labels(versions)
-    ord <- order(vapply(versions,function(v)as.character(v$created_at_utc %||% ""),character(1)),
-                 vapply(versions,function(v)as.character(v$version_id),character(1)),decreasing=TRUE)
-    tags$ul(lapply(ord,function(i) tags$li(
+    tags$ul(lapply(seq_along(versions),function(i) tags$li(
       tags$strong(labels[[i]]),
       paste(" · ",versions[[i]]$status," · ",versions[[i]]$author,
         " · SHA-256 ",substr(versions[[i]]$sha256,1,16))
@@ -3919,7 +3925,7 @@ server <- function(input, output, session) {
   })
   output$w04_refinement_prompt_selector <- renderUI({
     batch <- w04_model_selected_batch_rv()
-    versions <- w04_refinement_versions_rv()
+    versions <- w04_prompts_by_save_date(w04_refinement_versions_rv())
     if(is.null(batch)||!length(versions))return(NULL)
     ids <- vapply(versions,function(v)as.character(v$version_id),character(1))
     labels <- w04_prompt_display_labels(versions)
@@ -4195,7 +4201,7 @@ server <- function(input, output, session) {
       choices=stats::setNames(ids,labels))
   })
   output$w04_model_prompt_selector <- renderUI({
-    versions <- w04_model_versions_rv()
+    versions <- w04_prompts_by_save_date(w04_model_versions_rv())
     if(!length(versions)) return(tags$span(class="saved-note","No archived W04 prompts loaded."))
     ids <- vapply(versions,function(x)as.character(x$version_id),character(1))
     labels <- w04_prompt_display_labels(versions)
