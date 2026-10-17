@@ -167,6 +167,8 @@ w04_fleiss_kappa <- function(decision_matrix) {
 }
 
 w04_model_decision_from_case <- function(case) {
+  if(isTRUE(case$model_consistency_overlay))
+    return(w04_normalise_screening_decision(case$model_decision %||% ""))
   screening <- case$screening %||% list()
   candidates <- list(
     case$model_decision,
