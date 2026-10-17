@@ -17,6 +17,7 @@ jobs:
         shell: Rscript {0}
         run: |
           invisible(parse("multiuser_app/app.R"))
+          if(!requireNamespace("jsonlite",quietly=TRUE)) install.packages("jsonlite",quiet=TRUE)
           stopifnot(requireNamespace("jsonlite",quietly=TRUE))
           app <- readLines("multiuser_app/app.R",warn=FALSE)
           start <- grep("  w04_consistency_choice_label <- function",app,fixed=TRUE)
