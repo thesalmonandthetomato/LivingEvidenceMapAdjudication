@@ -13,6 +13,16 @@ jobs:
         with:
           r-version: release
           use-public-rspm: true
+      - name: Install and verify R test dependencies
+        shell: Rscript {0}
+        run: |
+          needed <- c("jsonlite","digest")
+          install.packages(needed,dependencies=c("Depends","Imports","LinkingTo"),quiet=FALSE)
+          for (pkg in needed) {
+            if (!requireNamespace(pkg,quietly=TRUE))
+              stop("Missing required R package: ",pkg,call.=FALSE)
+            message("Verified ",pkg," ",as.character(packageVersion(pkg)))
+          }
       - name: Parse app and exercise saved human-model conflict reconstruction
         shell: Rscript {0}
         run: |
