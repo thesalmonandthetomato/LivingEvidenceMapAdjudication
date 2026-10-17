@@ -3732,10 +3732,13 @@ server <- function(input, output, session) {
   output$w04_prompt_archive_history <- renderUI({
     versions <- w04_prompt_versions_rv()
     if(!length(versions)) return(tags$p(class="saved-note","No archived versions loaded."))
-    tags$ul(lapply(rev(versions),function(v) tags$li(
-      tags$strong(as.character(v$version_id)),
-      paste(" · ",v$status," · ",v$created_at_utc," · ",v$author,
-        " · SHA-256 ",substr(v$sha256,1,16))
+    labels <- w04_prompt_display_labels(versions)
+    ord <- order(vapply(versions,function(v)as.character(v$created_at_utc %||% ""),character(1)),
+                 vapply(versions,function(v)as.character(v$version_id),character(1)),decreasing=TRUE)
+    tags$ul(lapply(ord,function(i) tags$li(
+      tags$strong(labels[[i]]),
+      paste(" · ",versions[[i]]$status," · ",versions[[i]]$author,
+        " · SHA-256 ",substr(versions[[i]]$sha256,1,16))
     )))
   })
   observeEvent(input$w04_prompt_upload,{
@@ -3913,10 +3916,10 @@ server <- function(input, output, session) {
     versions <- w04_refinement_versions_rv()
     if(is.null(batch)||!length(versions))return(NULL)
     ids <- vapply(versions,function(v)as.character(v$version_id),character(1))
-    choices <- stats::setNames(ids,vapply(versions,function(v)paste0(
-      as.character(v$version_id),
-      if(identical(as.character(v$version_id),as.character(batch$prompt_version_id))) " (screening-run original)" else " (archived draft)",
-      " | ",as.character(v$created_at_utc %||% "")),character(1)))
+    labels <- w04_prompt_display_labels(versions)
+    labels <- paste0(labels,ifelse(ids==as.character(batch$prompt_version_id),
+                                   " (screening-run original)",""))
+    choices <- stats::setNames(ids,labels)
     shiny::selectInput("w04_refinement_prompt_selected","Archived prompt to revise",
       choices=choices,selected=as.character(batch$prompt_version_id))
   })
@@ -4189,16 +4192,7 @@ server <- function(input, output, session) {
     versions <- w04_model_versions_rv()
     if(!length(versions)) return(tags$span(class="saved-note","No archived W04 prompts loaded."))
     ids <- vapply(versions,function(x)as.character(x$version_id),character(1))
-    labels <- vapply(versions,function(x) {
-      filename <- trimws(as.character(x$original_filename %||% ""))
-      notes <- trimws(as.character(x$notes %||% ""))
-      descriptive <- if(nzchar(filename)) filename else if(nzchar(notes))
-        substr(notes,1L,65L) else "Untitled prompt"
-      sprintf("%s | %s | %s | %s",descriptive,
-        as.character(x$status %||% "draft"),
-        substr(as.character(x$created_at_utc %||% ""),1L,16L),
-        as.character(x$version_id %||% ""))
-    },character(1))
+    labels <- w04_prompt_display_labels(versions)
     selectInput("w04_model_prompt_selected","Immutable archived prompt",
       choices=stats::setNames(ids,labels))
   })
