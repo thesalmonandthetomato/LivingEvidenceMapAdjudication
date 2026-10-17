@@ -7171,7 +7171,12 @@ server <- function(input, output, session) {
       vapply(available_raters, reviewer_name, character(1))
     )
     input_selection <- input$w04_consistency_raters
-    if (is.null(input_selection)) {
+    if (!is.null(snapshot) && nzchar(as.character(snapshot$model_run_id %||% "")) &&
+        (!length(intersect(as.character(input_selection %||% character()),"model")))) {
+      human_defaults <- setdiff(available_raters,"model")
+      match_matt <- Filter(function(uid)grepl("matt|matthew",reviewer_name(uid),ignore.case=TRUE),human_defaults)
+      selected_raters <- c(if(length(match_matt)) match_matt[[1L]] else if(length(human_defaults)) human_defaults[[1L]] else character(),"model")
+    } else if (is.null(input_selection)) {
       human_defaults <- setdiff(available_raters,"model")
       selected_raters <- if (length(human_defaults) >= 2L) {
         human_defaults
@@ -7254,15 +7259,24 @@ server <- function(input, output, session) {
         ),
         div(
           class="pt-2",
-          tags$p(class="text-secondary small","Choose the W04 subset to inspect. Loading results for comparison does not change the active screening queue."),
+          tags$h6("Step 1. Select and load the human-screening subset"),
+          tags$p(class="text-secondary small","Choose Matt's 100-record W04 subset. This does not change screening assignments or decisions."),
           actionButton("w04_consistency_subset_refresh","Refresh registered subsets",class="btn-outline-secondary btn-sm"),
           uiOutput("w04_consistency_subset_selector"),
-          actionButton("w04_consistency_subset_load","Load selected subset for κ",class="btn-outline-secondary btn-sm"),
+          actionButton("w04_consistency_subset_load","Load selected human subset",class="btn-outline-secondary btn-sm"),
           textOutput("w04_consistency_subset_status"),
-          actionButton("w04_consistency_find_models","Find completed model runs for subset",class="btn-outline-secondary btn-sm"),
-          uiOutput("w04_consistency_model_selector"),
-          actionButton("w04_consistency_load_model","Load model for κ",class="btn-outline-primary btn-sm"),
-          textOutput("w04_consistency_model_status"),
+          if(!is.null(snapshot)) tagList(
+            tags$hr(),
+            tags$h6("Step 2. Find and select the completed model run"),
+            actionButton("w04_consistency_find_models","Find model runs for this subset",class="btn-outline-secondary btn-sm"),
+            if(length(w04_consistency_model_runs_rv())) tagList(
+              uiOutput("w04_consistency_model_selector"),
+              actionButton("w04_consistency_load_model","Load selected model run",class="btn-outline-primary btn-sm")
+            ),
+            textOutput("w04_consistency_model_status")
+          ),
+          if(!is.null(snapshot) && nzchar(as.character(snapshot$model_run_id %||% "")))
+            tags$h6("Step 3. Compare the human reviewer with Model, then save the result"),
           tags$p(class="text-secondary small",
             "The statistics below are calculated only from the selected W04 subset and its loaded model run. Historic review-wide kappa figures are not part of this comparison."),
           if (!has_w04_batch && is.null(snapshot)) {
@@ -7292,7 +7306,8 @@ server <- function(input, output, session) {
               textOutput("w04_refresh_status",inline=TRUE)
             )
           ),
-          checkboxGroupInput(
+          if(!is.null(snapshot) && nzchar(as.character(snapshot$model_run_id %||% "")) ||
+             is.null(snapshot)) checkboxGroupInput(
             "w04_consistency_raters",
             "Raters to compare",
             choices=rater_choices,
@@ -7401,7 +7416,7 @@ server <- function(input, output, session) {
                   )
                 )
               },
-              div(
+              if(is.null(snapshot) || nzchar(as.character(snapshot$model_run_id %||% ""))) div(
                 class="d-flex align-items-center gap-2 mt-2",
                 actionButton(
                   "w04_save_consistency_analysis",
