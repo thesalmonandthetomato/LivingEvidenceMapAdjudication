@@ -1,10 +1,16 @@
 # W04 prompt improvement proposal. Each request and response is review-bound,
 # immutable and stored in the existing restricted W04 Zenodo development draft.
-w04_refinement_build_request <- function(meta,batch,original_prompt,cases,decisions,note="") {
+w04_refinement_build_request <- function(meta,batch,original_prompt,cases,decisions,note="",selected_version_id=NULL) {
   if(!identical(as.character(batch$review_id %||% meta$review_id),meta$review_id))
     stop("Model batch review does not match active review",call.=FALSE)
-  if(!nzchar(original_prompt) || !identical(w04_prompt_checksum(original_prompt),
-     as.character(batch$prompt_sha256)))stop("Archived source prompt checksum mismatch",call.=FALSE)
+  if(!nzchar(original_prompt)) stop("Selected prompt is empty",call.=FALSE)
+  selected_version_id <- as.character(selected_version_id %||% batch$prompt_version_id)
+  if(length(selected_version_id)!=1L || !nzchar(selected_version_id))
+    stop("Select exactly one archived prompt version",call.=FALSE)
+  selected_sha <- w04_prompt_checksum(original_prompt)
+  if(identical(selected_version_id,as.character(batch$prompt_version_id)) &&
+     !identical(selected_sha,as.character(batch$prompt_sha256)))
+    stop("Original screening prompt checksum mismatch",call.=FALSE)
   if(length(cases)!=as.integer(batch$uncertain) || !length(cases))
     stop("Uncertainty queue does not match selected model run",call.=FALSE)
   if(nchar(note,type="chars")>5000L)stop("Refinement note exceeds 5000 characters",call.=FALSE)
@@ -29,8 +35,10 @@ w04_refinement_build_request <- function(meta,batch,original_prompt,cases,decisi
   list(schema="lem-w04-prompt-refinement-request-v1",
     review_id=meta$review_id,source_run_id=as.character(batch$run_id),
     subset_id=as.character(batch$subset_id),
-    prompt_version_id=as.character(batch$prompt_version_id),
-    prompt_sha256=as.character(batch$prompt_sha256),
+    prompt_version_id=selected_version_id,
+    prompt_sha256=selected_sha,
+    screening_prompt_version_id=as.character(batch$prompt_version_id),
+    screening_prompt_sha256=as.character(batch$prompt_sha256),
     original_prompt=original_prompt,cases=rows,user_note=note,
     requested_at_utc=format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"))
 }
@@ -92,7 +100,7 @@ w04_refinement_find_existing <- function(meta,batch) {
     if(is.null(request) || !identical(request$schema,"lem-w04-prompt-refinement-request-v1") ||
        !identical(as.character(request$review_id),as.character(meta$review_id)) ||
        !identical(as.character(request$source_run_id),as.character(batch$run_id)) ||
-       !identical(as.character(request$prompt_sha256),as.character(batch$prompt_sha256)))
+       !identical(as.character(request$screening_prompt_sha256 %||% request$prompt_sha256),as.character(batch$prompt_sha256)))
       next
     sha <- digest::digest(raw,algo="sha256",serialize=FALSE)
     if(!identical(substr(sha,1L,20L),
@@ -101,7 +109,7 @@ w04_refinement_find_existing <- function(meta,batch) {
       draft_id=as.character(draft$id),filename=as.character(f$filename),
       sha256=sha,response_file=sub("request","response",as.character(f$filename)),
       review_id=meta$review_id,run_id=as.character(batch$run_id),
-      prompt_sha256=as.character(batch$prompt_sha256),
+      prompt_sha256=as.character(request$prompt_sha256),
       requested_at_utc=as.character(request$requested_at_utc %||% ""))
   }
   if(!length(matches))return(NULL)
