@@ -19,6 +19,7 @@ source("R/w04_prompt_versions.R", local = TRUE)
 source("R/w04_prompt_zenodo.R", local = TRUE)
 source("R/w04_shiny_model_launch.R", local = TRUE)
 source("R/w04_model_batches.R", local = TRUE)
+source("R/w04_prompt_refinement.R", local = TRUE)
 source("R/w04_highlight_sheets.R", local = TRUE)
 source("R/w04_subset_registry.R", local = TRUE)
 source("R/w04_subset_storage.R", local = TRUE)
@@ -1064,6 +1065,9 @@ server <- function(input, output, session) {
   w04_model_results_rv <- reactiveVal(NULL)
   w04_model_selected_batch_rv <- reactiveVal(NULL)
   w04_model_return_status_rv <- reactiveVal("")
+  w04_refinement_request_rv <- reactiveVal(NULL)
+  w04_refinement_response_rv <- reactiveVal(NULL)
+  w04_refinement_status_rv <- reactiveVal("")
   w04_reviewer_model_batches_rv <- reactiveVal(list())
   w04_reviewer_model_status_rv <- reactiveVal("")
   w04_all_cases_rv <- reactiveVal(list())
@@ -3886,6 +3890,110 @@ server <- function(input, output, session) {
         "Opened run %s: no model uncertainties requiring adjudication.",result$batch$run_id))
     }
   })
+  output$w04_refinement_status <- renderText(w04_refinement_status_rv())
+  output$w04_refinement_review <- renderUI({
+    ans <- w04_refinement_response_rv()
+    if(is.null(ans)) return(NULL)
+    shiny::tagList(
+      shiny::tags$strong("Proposed revised prompt"),
+      shiny::tags$p(class="saved-note","New or modified lines are shown in red. The complete proposed text is editable below."),
+      w04_refinement_diff_ui(as.character(ans$original_prompt),as.character(ans$proposed_prompt)),
+      shiny::tags$p(class="saved-note",paste("Suggested changes:",as.character(ans$explanation %||% ""))),
+      shiny::textAreaInput("w04_refinement_edited","Review or edit complete revised prompt",
+        value=as.character(ans$proposed_prompt),rows=15,width="100%"),
+      shiny::actionButton("w04_refinement_accept","Accept suggested prompt and save new draft",class="btn-primary btn-sm"),
+      shiny::actionButton("w04_refinement_save_edit","Save my edited prompt as new draft",class="btn-outline-primary btn-sm"),
+      shiny::actionButton("w04_refinement_reject","Reject suggestion",class="btn-outline-danger btn-sm")
+    )
+  })
+  observeEvent(input$w04_refinement_request,{
+    req(authenticated())
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role),"administrator"))return()
+    result <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      batch <- w04_model_selected_batch_rv()
+      if(is.null(batch))stop("Open the completed model run first",call.=FALSE)
+      if(!identical(as.character(w04_resolution_source_run_id_rv()),as.character(batch$run_id)) ||
+         !identical(w04_resolution_origin_rv(),"shiny_model"))
+        stop("Open this model run's uncertainty queue before requesting a revision",call.=FALSE)
+      versions <- w04_prompt_archive_versions(meta)
+      prompt <- Filter(function(x)identical(as.character(x$version_id),as.character(batch$prompt_version_id)),versions)
+      if(length(prompt)!=1L)stop("Archived original prompt is unavailable",call.=FALSE)
+      cases <- w04_resolution_all_cases_rv()
+      decisions <- w04_filter_batch_decisions(active_sheet_w04_resolution_decisions(),
+        w04_resolution_queue_sha_rv())
+      request <- w04_refinement_build_request(meta,batch,prompt[[1L]]$content,
+        cases,decisions,as.character(input$w04_refinement_note %||% ""))
+      info <- w04_refinement_archive_request(meta,request)
+      # Never automatically launch W04 screening. This dispatch runs only one
+      # prompt-suggestion call; the accepted draft is a separate user decision.
+      w04_refinement_dispatch(info)
+      info
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_refinement_status_rv(paste("Prompt revision request not dispatched:",conditionMessage(result)))
+      return()
+    }
+    w04_refinement_request_rv(result)
+    w04_refinement_response_rv(NULL)
+    w04_refinement_status_rv(paste("One refinement request dispatched to GitHub for run",
+      result$run_id,". When it completes, click Retrieve suggested prompt."))
+  })
+  observeEvent(input$w04_refinement_fetch,{
+    req(authenticated())
+    if(!session_can("control_workflows"))return()
+    result <- tryCatch({
+      info <- w04_refinement_request_rv()
+      if(is.null(info))stop("Request a revision in this session first",call.=FALSE)
+      w04_refinement_load_response(w04_prompt_review_metadata(),info)
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_refinement_status_rv(paste("Cannot retrieve proposed prompt:",conditionMessage(result)))
+    } else if(is.null(result)) {
+      w04_refinement_status_rv("The GitHub refinement workflow has not published its response yet.")
+    } else {
+      w04_refinement_response_rv(result)
+      w04_refinement_status_rv("Proposal retrieved. Review highlighted changes before accepting, editing or rejecting.")
+    }
+  })
+  save_w04_refined_prompt <- function(accept=TRUE) {
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role),"administrator"))return()
+    ans <- w04_refinement_response_rv()
+    if(is.null(ans)) {
+      w04_refinement_status_rv("Load a proposed prompt before saving.")
+      return()
+    }
+    text <- if(accept)as.character(ans$proposed_prompt) else as.character(input$w04_refinement_edited %||% "")
+    outcome <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      if(!identical(as.character(ans$review_id),meta$review_id))
+        stop("Review identity changed",call.=FALSE)
+      v <- w04_prompt_version(meta$review_id,text,session_reviewer_id(),
+        notes=paste0("Refinement of model run ",ans$source_run_id,
+          "; source prompt ",ans$prompt_version_id,
+          "; request ",substr(ans$request_sha256,1L,16L),
+          if(accept)"; accepted suggestion" else "; manually edited suggestion"),
+        status="draft",parent_version=as.character(ans$prompt_version_id))
+      w04_prompt_archive_save(meta,v)
+      v
+    },error=function(e)e)
+    if(inherits(outcome,"error")) {
+      w04_refinement_status_rv(paste("Revised prompt was not saved:",conditionMessage(outcome)))
+      return()
+    }
+    w04_refinement_response_rv(NULL)
+    w04_refinement_status_rv(paste("Saved immutable new W04 prompt draft",outcome$version_id,
+      ". Select this new version explicitly for the NEXT model run. The original prompt is unchanged."))
+  }
+  observeEvent(input$w04_refinement_accept,save_w04_refined_prompt(TRUE))
+  observeEvent(input$w04_refinement_save_edit,save_w04_refined_prompt(FALSE))
+  observeEvent(input$w04_refinement_reject,{
+    w04_refinement_response_rv(NULL)
+    w04_refinement_status_rv("Suggestion rejected. The original archived prompt remains unchanged.")
+  })
+
   output$w04_model_batch_summary <- renderUI({
     b <- w04_model_selected_batch_rv()
     if(is.null(b)) return(NULL)
@@ -4377,6 +4485,20 @@ server <- function(input, output, session) {
                   actionButton("w04_model_batch_open","Open selected model batch",class="btn-outline-primary btn-sm"),
                   textOutput("w04_model_return_status"),
                   uiOutput("w04_model_batch_summary"),
+                  tags$details(class="assignment-disclosure",
+                    tags$summary(tags$strong("Improve screening prompt from adjudicated model uncertainties")),
+                    div(class="px-3 pb-3",
+                      tags$p(class="saved-note",
+                        "After resolving every uncertain case in a completed model run, request one OpenAI suggestion for small changes to the archived original prompt. No screening is launched and no original prompt is overwritten."),
+                      textAreaInput("w04_refinement_note","Optional note for the suggested changes",
+                        rows=3,width="100%"),
+                      actionButton("w04_refinement_request","Request prompt improvement (one paid API call)",
+                        class="btn-outline-primary btn-sm"),
+                      actionButton("w04_refinement_fetch","Retrieve suggested prompt",class="btn-outline-secondary btn-sm"),
+                      textOutput("w04_refinement_status"),
+                      uiOutput("w04_refinement_review")
+                    )
+                  ),
                   tags$a("View W04 subset model runs",
                     href="https://github.com/thesalmonandthetomato/LivingEvidenceMap/actions/workflows/w04_shiny_subset_launcher.yml",
                     target="_blank",rel="noopener noreferrer")
