@@ -1,3 +1,13 @@
+# Shared helper used by both server observers and archived model conflict reconstruction.
+# It must be defined at file scope, not exclusively inside shinyServer().
+w04_filter_batch_decisions <- function(ds, sha) {
+  if (!length(ds)) return(list())
+  keep <- vapply(ds, function(x)
+    identical(as.character(x$queue_sha256 %||% ""), as.character(sha)),
+    logical(1))
+  ds[keep]
+}
+
 # Rebuild saved W04 human-vs-model conflict sets from immutable model runs
 # and the original human screening queue. No original decisions are changed.
 w04_model_conflict_reconstruct <- function(set, assignments, load_vote_reasons=FALSE) {
