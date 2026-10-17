@@ -1068,6 +1068,8 @@ server <- function(input, output, session) {
   w04_refinement_request_rv <- reactiveVal(NULL)
   w04_refinement_response_rv <- reactiveVal(NULL)
   w04_refinement_status_rv <- reactiveVal("")
+  w04_refinement_poll_active_rv <- reactiveVal(FALSE)
+  w04_refinement_run_url_rv <- reactiveVal("")
   w04_reviewer_model_batches_rv <- reactiveVal(list())
   w04_reviewer_model_status_rv <- reactiveVal("")
   w04_all_cases_rv <- reactiveVal(list())
@@ -3891,6 +3893,11 @@ server <- function(input, output, session) {
     }
   })
   output$w04_refinement_status <- renderText(w04_refinement_status_rv())
+  output$w04_refinement_run_link <- renderUI({
+    url <- w04_refinement_run_url_rv()
+    if(!nzchar(url))return(NULL)
+    tags$a("View refinement GitHub Actions run",href=url,target="_blank",rel="noopener noreferrer")
+  })
   output$w04_refinement_review <- renderUI({
     ans <- w04_refinement_response_rv()
     if(is.null(ans)) return(NULL)
@@ -3940,8 +3947,47 @@ server <- function(input, output, session) {
     }
     w04_refinement_request_rv(result)
     w04_refinement_response_rv(NULL)
+    w04_refinement_run_url_rv("")
+    w04_refinement_poll_active_rv(TRUE)
     w04_refinement_status_rv(paste("One refinement request dispatched to GitHub for run",
       result$run_id,". When it completes, click Retrieve suggested prompt."))
+  })
+  observe({
+    req(authenticated(),session_can("control_workflows"))
+    if(!isTRUE(w04_refinement_poll_active_rv()))return()
+    shiny::invalidateLater(20000,session)
+    info <- w04_refinement_request_rv()
+    if(is.null(info)) {
+      w04_refinement_poll_active_rv(FALSE)
+      return()
+    }
+    outcome <- tryCatch({
+      status <- w04_refinement_run_status(info)
+      proposed <- if(identical(status$state,"completed"))
+        w04_refinement_load_response(w04_prompt_review_metadata(),info) else NULL
+      list(status=status,proposed=proposed)
+    },error=function(e)e)
+    if(inherits(outcome,"error")) {
+      w04_refinement_status_rv(paste("Refinement status check failed; will retry:",conditionMessage(outcome)))
+      return()
+    }
+    status <- outcome$status
+    w04_refinement_run_url_rv(status$url)
+    if(identical(status$state,"failed")) {
+      w04_refinement_poll_active_rv(FALSE)
+      w04_refinement_status_rv(paste("Refinement workflow failed:",status$conclusion,
+        ". The original prompt is unchanged. View the GitHub Actions run for details."))
+    } else if(!is.null(outcome$proposed)) {
+      w04_refinement_response_rv(outcome$proposed)
+      w04_refinement_poll_active_rv(FALSE)
+      w04_refinement_status_rv("Refinement completed. The revised prompt has been loaded for review below.")
+      showNotification("W04 refinement completed: proposed prompt ready for review.",type="message",duration=10)
+    } else {
+      w04_refinement_status_rv(if(identical(status$state,"completed"))
+        "GitHub finished; awaiting the archived proposal. Checking again…" else
+        if(identical(status$state,"running")) "Refinement running. Checking automatically every 20 seconds…" else
+          "Refinement queued. Checking automatically every 20 seconds…")
+    }
   })
   observeEvent(input$w04_refinement_fetch,{
     req(authenticated())
@@ -3964,6 +4010,7 @@ server <- function(input, output, session) {
       w04_refinement_status_rv("The GitHub refinement workflow has not published its response yet.")
     } else {
       w04_refinement_response_rv(result)
+      w04_refinement_poll_active_rv(FALSE)
       w04_refinement_status_rv("Proposal retrieved. Review highlighted changes before accepting, editing or rejecting.")
     }
   })
@@ -4001,6 +4048,7 @@ server <- function(input, output, session) {
   observeEvent(input$w04_refinement_save_edit,save_w04_refined_prompt(FALSE))
   observeEvent(input$w04_refinement_reject,{
     w04_refinement_response_rv(NULL)
+    w04_refinement_poll_active_rv(FALSE)
     w04_refinement_status_rv("Suggestion rejected. The original archived prompt remains unchanged.")
   })
 
@@ -4506,6 +4554,7 @@ server <- function(input, output, session) {
                         class="btn-outline-primary btn-sm"),
                       actionButton("w04_refinement_fetch","Retrieve suggested prompt",class="btn-outline-secondary btn-sm"),
                       textOutput("w04_refinement_status"),
+                      uiOutput("w04_refinement_run_link"),
                       uiOutput("w04_refinement_review")
                     )
                   ),
