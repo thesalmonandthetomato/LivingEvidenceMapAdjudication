@@ -237,3 +237,33 @@ w04_prompt_display_labels <- function(versions) {
       " | ID ",substr(ids[[i]],1L,10L))
   },character(1))
 }
+
+
+# Display-only model-run labels; immutable run IDs remain the selector values.
+w04_model_run_display <- function(batch,subsets=list(),prompts=list()) {
+  id <- as.character(batch$run_id %||% "")
+  sid <- as.character(batch$subset_id %||% "")
+  found <- Filter(function(s)identical(as.character(s$subset_id %||% ""),sid),subsets)
+  subset_name <- if(length(found) && exists("w04_subset_display",mode="function"))
+    w04_subset_display(found[[1L]],records=FALSE) else paste0("Subset ",sid)
+  timestamp <- as.character(batch$completed_at_utc %||%
+    batch$created_at_utc %||% batch$launched_at_utc %||% "")
+  date_label <- if(nzchar(timestamp)) {
+    parsed <- suppressWarnings(as.POSIXct(timestamp,format="%Y-%m-%dT%H:%M:%OS",tz="UTC"))
+    if(!is.na(parsed)) format(parsed,"%d %b %Y, %H:%M UTC",tz="UTC")
+    else timestamp
+  } else "Date unavailable"
+  prompt_id <- as.character(batch$prompt_version_id %||% "")
+  prompt_label <- paste0("prompt ",if(nzchar(prompt_id))substr(prompt_id,1L,12L) else "unknown")
+  if(length(prompts)) {
+    pids <- vapply(prompts,function(p)as.character(p$version_id %||% ""),character(1))
+    which_prompt <- match(prompt_id,pids)
+    if(!is.na(which_prompt)) {
+      numbered <- w04_prompt_display_labels(prompts)
+      prompt_label <- sub(" \\| ID .*","",numbered[[which_prompt]])
+    }
+  }
+  sprintf("%s | %s | %s | %s | %s uncertain | run %s",
+    date_label,subset_name,prompt_label,
+    as.character(batch$total %||% "?"),as.character(batch$uncertain %||% "?"),id)
+}
