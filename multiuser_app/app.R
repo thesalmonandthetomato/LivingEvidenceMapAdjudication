@@ -8846,6 +8846,8 @@ server <- function(input, output, session) {
     w04_conflict_idx(1L)
     length(cases)
   }
+  w04_model_conflict_load_status_rv <- reactiveVal("")
+  output$w04_model_conflict_load_status <- renderText(w04_model_conflict_load_status_rv())
   output$w04_model_conflict_loader <- renderUI({
     sets <- Filter(function(z)
       identical(as.character(z$comparison_type %||% ""),"human_model"),
@@ -8858,7 +8860,12 @@ server <- function(input, output, session) {
     tagList(selectInput("w04_model_conflict_selected","Saved model disagreement set",
       choices=stats::setNames(ids,labels)),
       actionButton("w04_model_conflict_load","Load model conflicts for adjudication",
-        class="btn-outline-primary btn-sm"))
+        class="btn-outline-primary btn-sm",
+        onclick="this.setAttribute('aria-busy','true');"),
+      tags$div(class="saved-note mt-2",
+        "Loading a conflict set makes its records available to the existing W04 assignment controls. It does not assign records automatically."),
+      tags$div(class="saved-note mt-2",
+        textOutput("w04_model_conflict_load_status",inline=TRUE)))
   })
   output$w04_model_conflict_task_loader <- renderUI({
     req(authenticated())
@@ -8915,18 +8922,26 @@ server <- function(input, output, session) {
   })
   observeEvent(input$w04_model_conflict_load,{
     req(authenticated())
-    if(!session_can("manage_assignments"))return()
+    if(!session_can("manage_assignments")) {
+      w04_model_conflict_load_status_rv("Administrator permission is required.")
+      return()
+    }
+    w04_model_conflict_load_status_rv("Loading archived cases and individual model votes…")
     id <- as.character(input$w04_model_conflict_selected %||% "")
     sets <- Filter(function(z)identical(as.character(z$conflict_set_id),id) &&
       identical(as.character(z$comparison_type),"human_model"),
       w04_conflict_sets_rv() %||% list())
     if(length(sets)!=1L) {
-      w04_consistency_status("Select a saved model conflict set.");return()
+      w04_model_conflict_load_status_rv("Select a saved model conflict set.")
+      return()
     }
     loaded <- tryCatch(activate_w04_model_conflict(sets[[1L]]),error=function(e)e)
-    w04_consistency_status(if(inherits(loaded,"error"))
+    status <- if(inherits(loaded,"error"))
       paste("Loading model conflicts failed:",conditionMessage(loaded))
-      else sprintf("Loaded %d model conflicts. Assign them in W04 Conflict Resolution.",loaded))
+      else sprintf("Loaded %d model conflicts from run %s. Use the W04 Reviewer conflict resolution assignment controls below to allocate the cases.",
+        loaded,sub("^w04-model-run-","",as.character(sets[[1L]]$parent_batch_id)))
+    w04_model_conflict_load_status_rv(status)
+    w04_consistency_status(status)
   })
 
   observeEvent(input$w04_create_conflict_set,{
