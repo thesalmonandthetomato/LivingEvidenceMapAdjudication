@@ -2570,6 +2570,7 @@ server <- function(input, output, session) {
         pipeline_summary_ui(),
         uiOutput("configure_review"),
         uiOutput("assignment_progress"),
+        uiOutput("w04_model_conflict_task_loader"),
         div(
           class = "row g-3",
           div(
@@ -8855,6 +8856,59 @@ server <- function(input, output, session) {
       actionButton("w04_model_conflict_load","Load model conflicts for adjudication",
         class="btn-outline-primary btn-sm"))
   })
+  output$w04_model_conflict_task_loader <- renderUI({
+    req(authenticated())
+    if(!session_can("adjudicate_assigned") && !session_can("manage_assignments"))
+      return(NULL)
+    sets <- Filter(function(z)
+      identical(as.character(z$comparison_type %||% ""),"human_model"),
+      w04_conflict_sets_rv() %||% list())
+    if(!session_can("manage_assignments")) {
+      sets <- Filter(function(z) {
+        assignments <- active_assignments_for_batch(
+          assignment_registry_rv(),"04",as.character(z$conflict_set_id),
+          "conflict_resolution")
+        any(vapply(assignments,function(a)
+          identical(as.character(normalise_assignment_row(a)$user_id),
+                    as.character(current_user()$user_id %||% "")),logical(1)))
+      },sets)
+    }
+    if(!length(sets))return(NULL)
+    ids <- vapply(sets,function(z)as.character(z$conflict_set_id),character(1))
+    labels <- vapply(sets,function(z)paste0("Run ",
+      sub("^w04-model-run-","",as.character(z$parent_batch_id)),
+      " | ",as.character(z$conflict_set_id)),character(1))
+    card(class="assignment-summary",div(class="p-3",
+      tags$strong("Saved human–model conflict sets"),
+      tags$p(class="saved-note","Load a saved set to continue adjudication and inspect archived model-vote explanations."),
+      selectInput("w04_task_model_conflict_selected","Model conflict set",
+        choices=stats::setNames(ids,labels)),
+      actionButton("w04_task_model_conflict_load","Load reviewer conflict cases",
+        class="btn-outline-primary btn-sm"),
+      textOutput("w04_task_model_conflict_status")))
+  })
+  w04_task_model_conflict_status_rv <- reactiveVal("")
+  output$w04_task_model_conflict_status <- renderText(w04_task_model_conflict_status_rv())
+  observeEvent(input$w04_task_model_conflict_load,{
+    req(authenticated())
+    id <- as.character(input$w04_task_model_conflict_selected %||% "")
+    eligible <- Filter(function(z)identical(as.character(z$conflict_set_id),id) &&
+      identical(as.character(z$comparison_type),"human_model"),
+      w04_conflict_sets_rv() %||% list())
+    if(length(eligible)!=1L) return()
+    if(!session_can("manage_assignments")) {
+      assignments <- active_assignments_for_batch(assignment_registry_rv(),
+        "04",id,"conflict_resolution")
+      owned <- any(vapply(assignments,function(a)
+        identical(as.character(normalise_assignment_row(a)$user_id),
+                  as.character(current_user()$user_id %||% "")),logical(1)))
+      if(!owned)return()
+    }
+    loaded <- tryCatch(activate_w04_model_conflict(eligible[[1L]]),error=function(e)e)
+    w04_task_model_conflict_status_rv(if(inherits(loaded,"error"))
+      paste("Loading failed:",conditionMessage(loaded))
+      else sprintf("Loaded %d conflict records. Open the Reviewer conflict resolution task.",loaded))
+  })
   observeEvent(input$w04_model_conflict_load,{
     req(authenticated())
     if(!session_can("manage_assignments"))return()
@@ -11743,12 +11797,22 @@ server <- function(input, output, session) {
         div(class="abstract-text",highlight_screening_text(display_sentence_case_if_all_caps(b$abstract %||% ""),w04_include_terms(),w04_exclude_terms())),
         if("model" %in% names(case_decisions)) {
           div(class="mt-3 p-2 border rounded",
-            tags$strong("Model explanation and votes"),
-            tags$div(if(nzchar(as.character(z$model_reason %||% "")))
-              as.character(z$model_reason) else
-              "The published model consensus does not contain an individual explanation for this record."),
+            tags$strong("Individual model votes and explanations"),
+            if(length(z$model_vote_details %||% list()))
+              tagList(lapply(z$model_vote_details,function(v) {
+                div(class="small mt-2",
+                  tags$strong(sprintf("Pass %s: %s",
+                    as.character(v$pass),as.character(v$decision))),
+                  tags$div(as.character(v$reason %||% "No reason archived"))
+                )
+              }))
+            else tags$div(if(nzchar(as.character(z$model_reason %||% "")))
+              as.character(z$model_reason)
+              else if(nzchar(as.character(z$model_vote_error %||% "")))
+                paste("Archived vote reasons unavailable:",as.character(z$model_vote_error))
+              else "The published consensus contains no individual reason for this record."),
             if(length(z$model_votes %||% list()))
-              tags$div(class="small text-secondary",paste("Votes:",
+              tags$div(class="small text-secondary",paste("Consensus votes:",
                 paste(unlist(z$model_votes,use.names=FALSE),collapse=", ")))
           )
         },
