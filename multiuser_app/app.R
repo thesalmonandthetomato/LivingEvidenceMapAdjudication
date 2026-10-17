@@ -8510,6 +8510,26 @@ server <- function(input, output, session) {
     )
   })
 
+  w04_consistency_choice_label <- function(z) {
+    batch <- as.character(z$batch_id %||% "")
+    source <- if(startsWith(batch,"w04-model-run-"))
+      paste0("Model run ",sub("^w04-model-run-","",batch)) else
+      if(startsWith(batch,"w04-human-"))
+        paste0("Human subset ",sub("^w04-human-","",batch)) else batch
+    raters <- tryCatch(as.character(jsonlite::fromJSON(
+      as.character(z$rater_ids_json %||% "[]"))),error=function(e)character())
+    rater_labels <- vapply(raters,function(id) {
+      if(identical(id,"model") || startsWith(id,"model:"))return("Model")
+      user <- find_user_by_id(user_registry_rv(),id,require_active=FALSE)
+      if(is.null(user))id else as.character(normalise_user_row(user)$display_name %||% id)
+    },character(1))
+    saved <- as.character(z$created_at_utc %||% "")
+    if(nzchar(saved))saved <- gsub("T"," ",sub("Z$"," UTC",saved),fixed=TRUE)
+    n <- as.character(z$conflict_n %||% "0")
+    paste0(source," · ",if(length(rater_labels))paste(rater_labels,collapse=" vs ") else "Reviewers unavailable",
+      " · ",n,if(identical(n,"1"))" conflict" else " conflicts",
+      if(nzchar(saved))paste0(" · Saved ",saved) else "")
+  }
   output$w04_consistency_history <- renderUI({
     req(authenticated())
     if (!session_can("manage_assignments")) return(NULL)
@@ -8531,15 +8551,10 @@ server <- function(input, output, session) {
         "No saved consistency result currently contains conflicts."
       ))
     }
+    saved <- vapply(conflict_ready,function(x)as.character(x$created_at_utc %||% ""),character(1))
+    conflict_ready <- conflict_ready[order(saved,decreasing=TRUE)]
     ids <- vapply(conflict_ready,function(x)as.character(x$analysis_id %||% ""),character(1))
-    labels <- vapply(conflict_ready,function(x) {
-      sprintf(
-        "%s · %s conflict%s",
-        as.character(x$analysis_id %||% ""),
-        as.character(x$conflict_n %||% "0"),
-        if (identical(as.character(x$conflict_n %||% "0"),"1")) "" else "s"
-      )
-    },character(1))
+    labels <- vapply(conflict_ready,w04_consistency_choice_label,character(1))
     tagList(
       tags$hr(),
       tags$strong("Conflict resolution"),
@@ -8551,7 +8566,7 @@ server <- function(input, output, session) {
         "w04_conflict_analysis_id",
         "Saved consistency result",
         choices=stats::setNames(ids,labels),
-        selected=ids[[length(ids)]]
+        selected=ids[[1L]]
       ),
       actionButton(
         "w04_create_conflict_set",
