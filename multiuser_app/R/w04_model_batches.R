@@ -86,7 +86,8 @@ w04_model_consistency_outcomes <- function(outcomes, results, resolution_events=
     id <- as.character(x$record_id)
     value <- decisions[[id]]
     if(identical(value,"uncertain") && !is.null(resolved[[id]])) value <- resolved[[id]]
-    x$case$model_decision <- value
+    # Unresolved model votes are pending, not a completed third category for κ.
+    x$case$model_decision <- if(identical(value,"uncertain")) "" else value
     x
   })
 }
