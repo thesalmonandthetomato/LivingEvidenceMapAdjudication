@@ -8032,8 +8032,20 @@ server <- function(input, output, session) {
     snap <- w04_consistency_subset_snapshot_rv()
     snap$outcomes <- result
     w04_consistency_subset_snapshot_rv(snap)
-    w04_consistency_model_status_rv(sprintf("Loaded model run %s. Choose Matt and Model under Raters to compare; unresolved cases remain uncertain.",
-      as.character(input$w04_consistency_model_selected)))
+    human_ids <- w04_available_consistency_raters(result)
+    human_ids <- setdiff(human_ids,"model")
+    preferred <- Filter(function(uid) {
+      user <- find_user_by_id(user_registry_rv(),uid,require_active=FALSE)
+      !is.null(user) && grepl("matt|matthew",as.character(user$display_name %||% ""),ignore.case=TRUE)
+    },human_ids)
+    selected <- c(if(length(preferred)) preferred[[1L]] else if(length(human_ids)==1L) human_ids[[1L]] else character(),"model")
+    if(length(selected)==2L)
+      updateCheckboxGroupInput(session,"w04_consistency_raters",selected=selected)
+    w04_consistency_model_status_rv(sprintf(
+      "Loaded model run %s. %d human reviewer(s) available. %s",
+      as.character(input$w04_consistency_model_selected),length(human_ids),
+      if(length(selected)==2L) "Selected reviewer and Model for κ comparison below." else "Select the intended human reviewer and Model under Raters to compare."
+    ))
   })
   observeEvent(input$w04_consistency_opened, {
     req(authenticated())
