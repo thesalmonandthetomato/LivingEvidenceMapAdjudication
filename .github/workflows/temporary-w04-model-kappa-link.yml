@@ -16,11 +16,14 @@ jobs:
         run: |
           parse(file="multiuser_app/app.R")
           source("multiuser_app/R/w04_model_batches.R",local=TRUE)
+          source("multiuser_app/R/w04_blind_resolution.R",local=TRUE)
           `%||%` <- function(x,y) if(is.null(x))y else x
           z <- list(list(record_id="a",case=list(),reviewer_decisions=list()),list(record_id="b",case=list(),reviewer_decisions=list()))
           m <- data.frame(record_id=c("a","b"),decision=c("retain","uncertain"))
           unresolved <- w04_model_consistency_outcomes(z,m)
           stopifnot(identical(unresolved[[2]]$case$model_decision,""))
+          unresolved[[2]]$case$screening <- list(model_decision="retain")
+          stopifnot(identical(w04_model_decision_from_case(unresolved[[2]]$case),""))
           resolved <- w04_model_consistency_outcomes(z,m,list(list(record_id="b",decision="exclude")))
           stopifnot(identical(resolved[[2]]$case$model_decision,"exclude"))
           bad <- tryCatch(w04_model_consistency_outcomes(z,m,list(list(record_id="a",decision="exclude"))),error=identity)
