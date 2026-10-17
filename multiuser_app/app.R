@@ -1070,6 +1070,7 @@ server <- function(input, output, session) {
   w04_refinement_status_rv <- reactiveVal("")
   w04_refinement_poll_active_rv <- reactiveVal(FALSE)
   w04_refinement_run_url_rv <- reactiveVal("")
+  w04_refinement_versions_rv <- reactiveVal(list())
   w04_reviewer_model_batches_rv <- reactiveVal(list())
   w04_reviewer_model_status_rv <- reactiveVal("")
   w04_all_cases_rv <- reactiveVal(list())
@@ -3892,6 +3893,33 @@ server <- function(input, output, session) {
         "Opened run %s: no model uncertainties requiring adjudication.",result$batch$run_id))
     }
   })
+  observeEvent(input$w04_refinement_load_prompts,{
+    req(authenticated(),session_can("control_workflows"))
+    batch <- w04_model_selected_batch_rv()
+    if(is.null(batch)) {
+      w04_refinement_status_rv("Open a completed model run before loading prompt versions.")
+      return()
+    }
+    found <- tryCatch(w04_prompt_archive_versions(w04_prompt_review_metadata()),error=function(e)e)
+    if(inherits(found,"error")) {
+      w04_refinement_status_rv(paste("Cannot load archived prompts:",conditionMessage(found)))
+      return()
+    }
+    w04_refinement_versions_rv(found)
+    w04_refinement_status_rv(sprintf("%d archived prompt version(s) available. Choose the one to improve.",length(found)))
+  })
+  output$w04_refinement_prompt_selector <- renderUI({
+    batch <- w04_model_selected_batch_rv()
+    versions <- w04_refinement_versions_rv()
+    if(is.null(batch)||!length(versions))return(NULL)
+    ids <- vapply(versions,function(v)as.character(v$version_id),character(1))
+    choices <- stats::setNames(ids,vapply(versions,function(v)paste0(
+      as.character(v$version_id),
+      if(identical(as.character(v$version_id),as.character(batch$prompt_version_id))) " (screening-run original)" else " (archived draft)",
+      " | ",as.character(v$created_at_utc %||% "")),character(1)))
+    shiny::selectInput("w04_refinement_prompt_selected","Archived prompt to revise",
+      choices=choices,selected=as.character(batch$prompt_version_id))
+  })
   output$w04_refinement_status <- renderText(w04_refinement_status_rv())
   output$w04_refinement_run_link <- renderUI({
     url <- w04_refinement_run_url_rv()
@@ -3929,13 +3957,16 @@ server <- function(input, output, session) {
          !identical(w04_resolution_origin_rv(),"shiny_model"))
         stop("Open this model run's uncertainty queue before requesting a revision",call.=FALSE)
       versions <- w04_prompt_archive_versions(meta)
-      prompt <- Filter(function(x)identical(as.character(x$version_id),as.character(batch$prompt_version_id)),versions)
-      if(length(prompt)!=1L)stop("Archived original prompt is unavailable",call.=FALSE)
+      chosen <- as.character(input$w04_refinement_prompt_selected %||% "")
+      if(!nzchar(chosen))stop("Load and select an archived prompt to revise first",call.=FALSE)
+      prompt <- Filter(function(x)identical(as.character(x$version_id),chosen),versions)
+      if(length(prompt)!=1L)stop("Selected archived prompt is unavailable",call.=FALSE)
       cases <- w04_resolution_all_cases_rv()
       decisions <- w04_filter_batch_decisions(active_sheet_w04_resolution_decisions(),
         w04_resolution_queue_sha_rv())
       request <- w04_refinement_build_request(meta,batch,prompt[[1L]]$content,
-        cases,decisions,as.character(input$w04_refinement_note %||% ""))
+        cases,decisions,as.character(input$w04_refinement_note %||% ""),
+        selected_version_id=chosen)
       info <- w04_refinement_archive_request(meta,request)
       # Never automatically launch W04 screening. This dispatch runs only one
       # prompt-suggestion call; the accepted draft is a separate user decision.
@@ -4548,7 +4579,9 @@ server <- function(input, output, session) {
                     tags$summary(tags$strong("Improve screening prompt from adjudicated model uncertainties")),
                     div(class="px-3 pb-3",
                       tags$p(class="saved-note",
-                        "After resolving every uncertain case in a completed model run, request one OpenAI suggestion for small changes to the archived original prompt. No screening is launched and no original prompt is overwritten."),
+                        "After resolving every uncertain case in a completed model run, select any archived screening prompt or revised draft to improve. The 23 uncertain cases and human decisions remain tied to the selected model run. No screening is launched and no archived prompt is overwritten."),
+                      actionButton("w04_refinement_load_prompts","Load archived prompts",class="btn-outline-secondary btn-sm"),
+                      uiOutput("w04_refinement_prompt_selector"),
                       textAreaInput("w04_refinement_note","Optional note for the suggested changes",
                         rows=3,width="100%"),
                       actionButton("w04_refinement_request","Request prompt improvement (one paid API call)",
