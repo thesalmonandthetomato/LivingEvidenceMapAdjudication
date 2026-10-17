@@ -4550,6 +4550,7 @@ server <- function(input, output, session) {
                 )
               ),
               tags$details(class="assignment-disclosure",
+                `data-accordion-key`="configure-review-w04-model-screening",
                 tags$summary(tags$strong("Model screening of human-screened subsets")),
                 div(class="px-3 pb-3",
                   tags$p(class="saved-note",
@@ -4576,6 +4577,7 @@ server <- function(input, output, session) {
                   textOutput("w04_model_return_status"),
                   uiOutput("w04_model_batch_summary"),
                   tags$details(class="assignment-disclosure",
+                    `data-accordion-key`="configure-review-w04-prompt-refinement",
                     tags$summary(tags$strong("Improve screening prompt from adjudicated model uncertainties")),
                     div(class="px-3 pb-3",
                       tags$p(class="saved-note",
