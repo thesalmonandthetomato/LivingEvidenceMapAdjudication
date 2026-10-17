@@ -8031,6 +8031,8 @@ server <- function(input, output, session) {
     }
     snap <- w04_consistency_subset_snapshot_rv()
     snap$outcomes <- result
+    snap$model_run_id <- as.character(input$w04_consistency_model_selected)
+    snap$model_sha256 <- as.character(Filter(function(x)identical(as.character(x$run_id),snap$model_run_id),w04_consistency_model_runs_rv())[[1L]]$model_sha256)
     w04_consistency_subset_snapshot_rv(snap)
     human_ids <- w04_available_consistency_raters(result)
     human_ids <- setdiff(human_ids,"model")
@@ -8334,8 +8336,46 @@ server <- function(input, output, session) {
       w04_consistency_status("Administrator permission is required.")
       return()
     }
-    if(!is.null(w04_consistency_subset_snapshot_rv())) {
-      w04_consistency_status("Subset inspection is read-only. Save analyses only from the active screening batch.")
+    snapshot <- w04_consistency_subset_snapshot_rv()
+    if(!is.null(snapshot)) {
+      if(!nzchar(as.character(snapshot$model_run_id %||% ""))) {
+        w04_consistency_status("Step 3: load a completed model run before saving this subset's comparison.")
+        return()
+      }
+      rater_ids <- unique(as.character(input$w04_consistency_raters %||% character()))
+      if(length(rater_ids)!=2L || !"model" %in% rater_ids) {
+        w04_consistency_status("Select exactly one human reviewer and Model before saving.")
+        return()
+      }
+      analysis <- w04_consistency_analysis(snapshot$outcomes,rater_ids)
+      if(analysis$complete<1L) {
+        w04_consistency_status("No records have complete human and resolved model decisions; nothing to save.")
+        return()
+      }
+      run <- as.character(snapshot$model_run_id)
+      model_sha <- as.character(snapshot$model_sha256 %||% "")
+      if(!grepl("^[0-9]+$",run) || !grepl("^[0-9a-f]{64}$",model_sha)) {
+        w04_consistency_status("Model run provenance is incomplete; reload the model before saving.")
+        return()
+      }
+      # Bind the registry record to the immutable model run, not the active
+      # production screening batch. Incomplete model cases remain excluded.
+      saved <- tryCatch(append_w04_consistency_analysis(
+        analysis=analysis,batch_id=paste0("w04-model-run-",run),
+        queue_sha256=model_sha,review_mode="subset_model_validation",
+        created_by=session_reviewer_id()),error=function(e)e)
+      if(inherits(saved,"error")) {
+        w04_consistency_status(paste("Save failed:",conditionMessage(saved)))
+        return()
+      }
+      current <- w04_consistency_analyses_rv() %||% list()
+      if(!any(vapply(current,function(x)identical(as.character(x$analysis_id %||% ""),
+          as.character(saved$analysis_id %||% "")),logical(1))))
+        w04_consistency_analyses_rv(c(current,list(saved)))
+      w04_consistency_status(sprintf(
+        "Saved subset %s, model run %s: %d comparable records, %d pending or missing, Cohen's κ %s. This result is stored in this review's consistency registry.",
+        snapshot$subset_id,run,analysis$complete,analysis$missing,
+        if(is.na(analysis$kappa))"not calculable" else sprintf("%.3f",analysis$kappa)))
       return()
     }
     rater_ids <- unique(as.character(input$w04_consistency_raters %||% character()))
