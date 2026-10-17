@@ -3914,6 +3914,9 @@ server <- function(input, output, session) {
       meta <- w04_prompt_review_metadata()
       batch <- w04_model_selected_batch_rv()
       if(is.null(batch))stop("Open the completed model run first",call.=FALSE)
+      prior <- w04_refinement_find_existing(meta,batch)
+      if(!is.null(prior))
+        stop("A refinement has already been requested for this run. Use Retrieve suggested prompt rather than pay for another call.",call.=FALSE)
       if(!identical(as.character(w04_resolution_source_run_id_rv()),as.character(batch$run_id)) ||
          !identical(w04_resolution_origin_rv(),"shiny_model"))
         stop("Open this model run's uncertainty queue before requesting a revision",call.=FALSE)
@@ -3945,8 +3948,15 @@ server <- function(input, output, session) {
     if(!session_can("control_workflows"))return()
     result <- tryCatch({
       info <- w04_refinement_request_rv()
-      if(is.null(info))stop("Request a revision in this session first",call.=FALSE)
-      w04_refinement_load_response(w04_prompt_review_metadata(),info)
+      meta <- w04_prompt_review_metadata()
+      if(is.null(info)) {
+        batch <- w04_model_selected_batch_rv()
+        if(is.null(batch))stop("Open the completed model run first",call.=FALSE)
+        info <- w04_refinement_find_existing(meta,batch)
+        if(is.null(info))stop("No refinement request exists for this model run",call.=FALSE)
+        w04_refinement_request_rv(info)
+      }
+      w04_refinement_load_response(meta,info)
     },error=function(e)e)
     if(inherits(result,"error")) {
       w04_refinement_status_rv(paste("Cannot retrieve proposed prompt:",conditionMessage(result)))
