@@ -209,3 +209,31 @@ w04_refinement_can_start_new <- function(meta,prior) {
     !started %in% names && !prior$response_file %in% names
   completed || failed_before_call
 }
+
+
+# Human-readable labels are derived from immutable Zenodo metadata. Stable
+# numbering is chronological across the full archive, never from dropdown order.
+w04_prompt_display_labels <- function(versions) {
+  if(!length(versions))return(character())
+  ids <- vapply(versions,function(v)as.character(v$version_id %||% ""),character(1))
+  dates <- vapply(versions,function(v)as.character(v$created_at_utc %||% ""),character(1))
+  if(any(!nzchar(ids)) || anyDuplicated(ids))
+    stop("Archived prompt version identities must be present and unique",call.=FALSE)
+  ordinal <- integer(length(ids))
+  ordinal[order(dates,ids)] <- seq_along(ids)
+  vapply(seq_along(versions),function(i) {
+    v <- versions[[i]]
+    date <- as.character(v$created_at_utc %||% "")
+    display_date <- if(nzchar(date)) {
+      parsed <- suppressWarnings(as.POSIXct(date,format="%Y-%m-%dT%H:%M:%OS",tz="UTC"))
+      if(!is.na(parsed))format(parsed,"%d %b %Y, %H:%M UTC",tz="UTC") else date
+    } else "date unavailable"
+    notes <- trimws(as.character(v$notes %||% ""))
+    filename <- trimws(as.character(v$original_filename %||% ""))
+    description <- if(nzchar(notes))substr(notes,1L,65L) else if(nzchar(filename))
+      substr(filename,1L,65L) else ""
+    paste0(sprintf("Version %02d",ordinal[[i]])," | ",display_date,
+      if(nzchar(description))paste0(" | ",description) else "",
+      " | ID ",substr(ids[[i]],1L,10L))
+  },character(1))
+}
