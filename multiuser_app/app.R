@@ -9161,6 +9161,61 @@ server <- function(input, output, session) {
     operation()
   }
 
+  restore_w04_model_uncertainty_on_login <- function(user_id) {
+    # Do not overwrite an active production queue or a batch opened manually.
+    if(!isTRUE(authenticated()) || !identical(session_reviewer_id(),user_id) ||
+       length(w04_resolution_all_cases_rv() %||% list())) return(invisible(FALSE))
+    result <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      batches <- w04_model_batch_registry_read(meta$review_id)
+      batches <- Filter(function(b) {
+        n <- suppressWarnings(as.integer(b$uncertain %||% 0L))
+        length(n)==1L && !is.na(n) && n>0L &&
+          !is.na(b$resolution_tab) && nzchar(as.character(b$resolution_tab))
+      },batches)
+      if(!session_can("manage_assignments")) {
+        batches <- Filter(function(b) {
+          batch_id <- paste0("w04-resolution-",b$run_id,"-",
+            substr(as.character(b$resolution_queue_sha256),1L,12L))
+          length(assignments_for_user(assignment_registry_rv(),"04",batch_id,
+            user_id,"model_uncertainty"))>0L
+        },batches)
+      }
+      if(!length(batches)) return(NULL)
+      ord <- order(vapply(batches,function(b)as.character(b$published_at_utc %||% ""),
+        character(1)),decreasing=TRUE)
+      b <- batches[[ord[[1L]]]]
+      q <- read_sheet_w04_resolution_queue(as.character(b$resolution_tab))
+      if(is.null(q) || !identical(as.character(q$source_run_id),as.character(b$run_id)) ||
+         !identical(as.character(q$queue_sha256),as.character(b$resolution_queue_sha256)) ||
+         length(q$cases)!=as.integer(b$uncertain))
+        stop("Restored model queue identity/count mismatch",call.=FALSE)
+      ds <- w04_filter_batch_decisions(active_sheet_w04_resolution_decisions(),q$queue_sha256)
+      list(queue=q,decisions=ds,run_id=b$run_id)
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      message("LEM W04 model queue auto-restore failed: ",conditionMessage(result))
+      w04_model_return_status_rv(paste("Model uncertainty auto-restore unavailable:",conditionMessage(result)))
+      return(invisible(FALSE))
+    }
+    if(is.null(result) || !isTRUE(authenticated()) ||
+       !identical(session_reviewer_id(),user_id) ||
+       length(w04_resolution_all_cases_rv() %||% list())) return(invisible(FALSE))
+    q <- result$queue
+    w04_resolution_all_cases_rv(q$cases)
+    w04_resolution_queue_sha_rv(q$queue_sha256)
+    w04_resolution_batch_id_rv(q$batch_id)
+    w04_resolution_source_run_id_rv(q$source_run_id)
+    w04_resolution_origin_rv("shiny_model")
+    w04_resolution_batch_status_rv(q$batch_status %||% "")
+    w04_resolution_decisions(result$decisions)
+    w04_resolution_resume_requested_rv(FALSE)
+    w04_resolution_idx(1L)
+    w04_model_return_status_rv(sprintf("Restored model run %s: %d uncertainty cases.",
+      result$run_id,length(q$cases)))
+    invisible(TRUE)
+  }
+
   observeEvent(input$login, {
     now <- Sys.time()
     until <- lock_until()
@@ -9600,6 +9655,15 @@ server <- function(input, output, session) {
           type="error",duration=12)
       } else {
         login_initialising(FALSE)
+        # A deferred read restores the latest run-specific W04 uncertainty queue
+        # after login has completed. It does not block authentication or overwrite
+        # a batch already opened by the user.
+        user_id <- as.character(normalise_user_row(login_user)$user_id)
+        later::later(function() {
+          shiny::withReactiveDomain(session, {
+            restore_w04_model_uncertainty_on_login(user_id)
+          })
+        },delay=0.5)
       }
       })
       }, once=TRUE)
