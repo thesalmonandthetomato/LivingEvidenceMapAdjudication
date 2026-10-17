@@ -20,7 +20,7 @@ jobs:
           txt <- readLines("multiuser_app/app.R",warn=FALSE)
           start <- grep("  w04_prompts_by_save_date <- function",txt,fixed=TRUE)
           stopifnot(length(start)==1L)
-          helper <- paste(txt[start:(start+6L)],collapse="\n")
+          helper <- paste(txt[start:(start+5L)],collapse="\n")
           env <- new.env(parent=baseenv())
           env$`%||%` <- function(x,y)if(is.null(x)) y else x
           eval(parse(text=helper),env)
