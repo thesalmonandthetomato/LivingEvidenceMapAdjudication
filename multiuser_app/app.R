@@ -4648,7 +4648,7 @@ server <- function(input, output, session) {
         )
       )
     )
-  })
+  }) |> shiny::bindEvent(authenticated(), configure_review_requested(), ignoreNULL=FALSE)
 
   observeEvent(input$configure_searching_opened, {
     req(authenticated(),configure_review_requested())
