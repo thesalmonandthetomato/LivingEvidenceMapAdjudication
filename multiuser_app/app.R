@@ -19,6 +19,7 @@ source("R/w04_prompt_versions.R", local = TRUE)
 source("R/w04_prompt_zenodo.R", local = TRUE)
 source("R/w04_shiny_model_launch.R", local = TRUE)
 source("R/w04_model_batches.R", local = TRUE)
+source("R/w04_model_conflicts.R", local = TRUE)
 source("R/w04_prompt_refinement.R", local = TRUE)
 source("R/w04_highlight_sheets.R", local = TRUE)
 source("R/w04_subset_registry.R", local = TRUE)
@@ -1093,6 +1094,8 @@ server <- function(input, output, session) {
   w04_exclude_terms <- reactiveVal(character())
   w04_consistency_analyses_rv <- reactiveVal(list())
   w04_conflict_sets_rv <- reactiveVal(list())
+  w04_model_conflict_active_rv <- reactiveVal("")
+  w04_model_conflict_cases_rv <- reactiveVal(list())
   w04_kappa_registry_rv <- reactiveVal(w04_empty_kappa_registry())
   w04_human_kappa_registry_rv <- reactiveVal(w04_empty_human_kappa_registry())
   w04_pending_human_kappa_delete <- reactiveVal("")
@@ -1501,6 +1504,13 @@ server <- function(input, output, session) {
   w04_active_consistency_conflict_set <- reactive({
     xs <- w04_conflict_sets_rv() %||% list()
     if (!length(xs)) return(NULL)
+    model_id <- as.character(w04_model_conflict_active_rv() %||% "")
+    if(nzchar(model_id)) {
+      matches <- Filter(function(x)
+        identical(as.character(x$conflict_set_id %||% ""),model_id) &&
+        identical(as.character(x$comparison_type %||% ""),"human_model"),xs)
+      if(length(matches)==1L) return(matches[[1L]])
+    }
     xs <- Filter(
       function(x) identical(
         as.character(x$parent_batch_id %||% ""),
@@ -1523,6 +1533,8 @@ server <- function(input, output, session) {
       as.character(jsonlite::fromJSON(as.character(z$conflict_case_ids_json %||% "[]"))),
       error=function(e) character()
     )
+    if(identical(as.character(z$comparison_type %||% ""),"human_model"))
+      return(w04_model_conflict_cases_rv())
     w04_conflict_cases_for_raters(
       outcomes=w04_blind_outcomes(),
       rater_ids=rater_ids,
@@ -7660,6 +7672,7 @@ server <- function(input, output, session) {
                 )
               ),
               uiOutput("w04_consistency_history"),
+              uiOutput("w04_model_conflict_loader"),
               tags$div(
                 class="text-secondary small mt-2",
                 sprintf(
@@ -8491,13 +8504,11 @@ server <- function(input, output, session) {
   output$w04_consistency_history <- renderUI({
     req(authenticated())
     if (!session_can("manage_assignments")) return(NULL)
-    all_saved <- Filter(
-      function(x) identical(
-        as.character(x$batch_id %||% ""),
-        as.character(w04_batch_id_rv())
-      ),
-      w04_consistency_analyses_rv() %||% list()
-    )
+    all_saved <- Filter(function(x) {
+      id <- as.character(x$batch_id %||% "")
+      identical(id,as.character(w04_batch_id_rv())) ||
+        grepl("^w04-model-run-[0-9]+$",id)
+    },w04_consistency_analyses_rv() %||% list())
     conflict_ready <- Filter(
       function(x) {
         n <- suppressWarnings(as.integer(as.character(x$conflict_n %||% "0")))
@@ -8820,6 +8831,46 @@ server <- function(input, output, session) {
     w04_consistency_status("Saved human consistency result deleted; cumulative statistics recalculated.")
   })
 
+  activate_w04_model_conflict <- function(z) {
+    cases <- w04_model_conflict_reconstruct(z,assignment_registry_rv())
+    w04_model_conflict_cases_rv(cases)
+    w04_model_conflict_active_rv(as.character(z$conflict_set_id))
+    events <- active_sheet_w04_conflict_decisions()
+    w04_conflict_decisions(w04_filter_batch_decisions(events,
+      as.character(z$conflict_queue_sha256)))
+    w04_conflict_idx(1L)
+    length(cases)
+  }
+  output$w04_model_conflict_loader <- renderUI({
+    sets <- Filter(function(z)
+      identical(as.character(z$comparison_type %||% ""),"human_model"),
+      w04_conflict_sets_rv() %||% list())
+    if(!length(sets))return(NULL)
+    ids <- vapply(sets,function(z)as.character(z$conflict_set_id),character(1))
+    labels <- vapply(sets,function(z)paste0(
+      "Model run ",sub("^w04-model-run-","",as.character(z$parent_batch_id)),
+      " | ",as.character(z$created_at_utc %||% "")),character(1))
+    tagList(selectInput("w04_model_conflict_selected","Saved model disagreement set",
+      choices=stats::setNames(ids,labels)),
+      actionButton("w04_model_conflict_load","Load model conflicts for adjudication",
+        class="btn-outline-primary btn-sm"))
+  })
+  observeEvent(input$w04_model_conflict_load,{
+    req(authenticated())
+    if(!session_can("manage_assignments"))return()
+    id <- as.character(input$w04_model_conflict_selected %||% "")
+    sets <- Filter(function(z)identical(as.character(z$conflict_set_id),id) &&
+      identical(as.character(z$comparison_type),"human_model"),
+      w04_conflict_sets_rv() %||% list())
+    if(length(sets)!=1L) {
+      w04_consistency_status("Select a saved model conflict set.");return()
+    }
+    loaded <- tryCatch(activate_w04_model_conflict(sets[[1L]]),error=function(e)e)
+    w04_consistency_status(if(inherits(loaded,"error"))
+      paste("Loading model conflicts failed:",conditionMessage(loaded))
+      else sprintf("Loaded %d model conflicts. Assign them in W04 Conflict Resolution.",loaded))
+  })
+
   observeEvent(input$w04_create_conflict_set,{
     req(authenticated())
     if (!session_can("manage_assignments")) {
@@ -8862,6 +8913,13 @@ server <- function(input, output, session) {
       as.character(saved_set$conflict_queue_sha256 %||% "")
     ))
     w04_conflict_idx(1L)
+    if(identical(as.character(saved_set$comparison_type %||% ""),"human_model")) {
+      loaded <- tryCatch(activate_w04_model_conflict(saved_set),error=function(e)e)
+      if(inherits(loaded,"error")) {
+        w04_consistency_status(paste("Conflict set saved, but model cases could not be loaded:",conditionMessage(loaded)))
+        return()
+      }
+    }
     w04_consistency_status(sprintf(
       "Created conflict set %s from %s. Assign its cases in the W04 conflict-resolution section below.",
       as.character(saved_set$conflict_set_id %||% ""),
@@ -11683,6 +11741,17 @@ server <- function(input, output, session) {
         ),
         tags$h6(class="abstract-heading","Abstract"),
         div(class="abstract-text",highlight_screening_text(display_sentence_case_if_all_caps(b$abstract %||% ""),w04_include_terms(),w04_exclude_terms())),
+        if("model" %in% names(case_decisions)) {
+          div(class="mt-3 p-2 border rounded",
+            tags$strong("Model explanation and votes"),
+            tags$div(if(nzchar(as.character(z$model_reason %||% "")))
+              as.character(z$model_reason) else
+              "The published model consensus does not contain an individual explanation for this record."),
+            if(length(z$model_votes %||% list()))
+              tags$div(class="small text-secondary",paste("Votes:",
+                paste(unlist(z$model_votes,use.names=FALSE),collapse=", ")))
+          )
+        },
         if (length(reviewer_badges)) {
           div(
             class="mt-3 p-2 border rounded",
