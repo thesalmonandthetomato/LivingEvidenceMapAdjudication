@@ -6926,14 +6926,7 @@ server <- function(input, output, session) {
         tags$summary(
           div(
             class = "d-inline-flex flex-wrap align-items-center gap-2",
-            tags$strong(paste0(workflow_label, " · ", task_label,
-              if(identical(z$workflow,"04") && identical(z$task_type,"manual_screening") &&
-                 startsWith(z$batch_id,"w04-human-")) {
-                subset_id <- sub("^w04-human-","",z$batch_id)
-                match <- Filter(function(x)identical(as.character(x$subset_id),subset_id),w04_subsets_rv())
-                if(length(match)) paste0(" · ",w04_subset_display(match[[1L]],records=FALSE))
-                else paste0(" · ",subset_id)
-              } else "")),
+            tags$strong(paste0(workflow_label, " · ", task_label)),
             tags$span(class = "task-badge", mode_label),
             tags$span(
               class = "text-secondary small",
@@ -6947,6 +6940,19 @@ server <- function(input, output, session) {
         ),
         div(
           class = "pt-2",
+          if(identical(z$workflow,"04") && identical(z$task_type,"manual_screening") &&
+             startsWith(as.character(z$batch_id),"w04-human-")) {
+            div(class="mb-3",
+              tags$strong("Selected manual-screening subset"),
+              tags$p(class="saved-note",paste0("Assignment batch: ",z$batch_id)),
+              selectInput("w04_admin_manual_subset","Choose subset to manage",
+                choices=stats::setNames(manual_ids,vapply(manual_ids,function(b) {
+                  id <- sub("^w04-human-","",b)
+                  matches <- Filter(function(x)identical(as.character(x$subset_id),id),w04_subsets_rv())
+                  if(length(matches)) w04_subset_display(matches[[1L]],records=FALSE) else id
+                },character(1))),selected=chosen_manual)
+            )
+          },
           if (
             identical(z$workflow, "08") &&
             identical(z$task_type, "annotation") &&
@@ -7491,16 +7497,6 @@ server <- function(input, output, session) {
             div(class = "assignment-kpi", tags$span("Completed"), tags$strong(record_table_link(total_completed_cases,"all","all","","resolved_cases",label="All workflows · Completed"))),
             div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(record_table_link(total_outstanding_cases,"all","all","","outstanding_cases",label="All workflows · Outstanding"))),
             div(class = "assignment-kpi", tags$span("Conflicts"), tags$strong(record_table_link(length(w04_all_conflict_cases()),"04","conflict_resolution",w04_active_conflict_batch_id(),"cases",label="W04 · Reviewer conflict resolution · Cases")))
-          ),
-          if(length(manual_ids)) div(
-            class="mb-3",
-            selectInput("w04_admin_manual_subset","W04 manual-screening subset",
-              choices=stats::setNames(manual_ids,vapply(manual_ids,function(b) {
-                id <- sub("^w04-human-","",b)
-                matches <- Filter(function(x)identical(as.character(x$subset_id),id),w04_subsets_rv())
-                if(length(matches)) w04_subset_display(matches[[1L]],records=FALSE) else id
-              },character(1))),
-              selected=chosen_manual)
           ),
           workflow_sections_display,
           tags$hr(class = "my-3"),
