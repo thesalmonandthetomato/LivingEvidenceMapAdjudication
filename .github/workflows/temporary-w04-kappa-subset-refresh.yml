@@ -19,5 +19,6 @@ jobs:
           stopifnot(grepl('w04_consistency_registry_rv()',s,fixed=TRUE))
           stopifnot(grepl('refresh_w04_consistency_registry()',s,fixed=TRUE))
           stopifnot(grepl('w04_consistency_subset_refresh',s,fixed=TRUE))
+          stopifnot(grepl('if(length(w04_consistency_registry_rv())) return()',s,fixed=TRUE))
           stopifnot(grepl('The list has been refreshed; select a subset',s,fixed=TRUE))
           cat("PASS W04 subset selector registry-backed refresh and R syntax\n")
