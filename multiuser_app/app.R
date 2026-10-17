@@ -7927,6 +7927,14 @@ server <- function(input, output, session) {
     w04_consistency_registry_rv(registered)
     registered
   }
+  observeEvent(input$w04_consistency_opened,{
+    req(authenticated())
+    if(!session_can("manage_assignments")) return()
+    if(length(w04_consistency_registry_rv())) return()
+    result <- tryCatch(refresh_w04_consistency_registry(),error=function(e)e)
+    if(inherits(result,"error"))
+      w04_consistency_subset_status_rv(paste("Cannot load registered subsets:",conditionMessage(result)))
+  })
   observeEvent(input$w04_consistency_subset_refresh,{
     req(authenticated())
     if(!session_can("manage_assignments")) return()
