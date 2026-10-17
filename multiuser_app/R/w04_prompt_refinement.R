@@ -74,6 +74,40 @@ w04_refinement_dispatch <- function(info) {
     stop("W04 refinement GitHub dispatch not accepted",call.=FALSE)
   invisible(TRUE)
 }
+w04_refinement_find_existing <- function(meta,batch) {
+  draft <- w04_prompt_fetch_draft(meta)
+  if(is.null(draft))return(NULL)
+  files <- Filter(function(f)grepl("^w04-refinement-request-[0-9a-f]{20}\\.json$",
+    as.character(f$filename %||% "")),draft$files %||% list())
+  if(!length(files))return(NULL)
+  matches <- list()
+  for(f in files) {
+    url <- as.character(f$links$download %||% "")
+    if(!nzchar(url))next
+    resp <- httr2::req_perform(httr2::req_headers(httr2::request(url),
+      Authorization=paste("Bearer",Sys.getenv("ZENODO_ACCESS_TOKEN",unset=""))))
+    if(httr2::resp_status(resp)!=200L)next
+    raw <- httr2::resp_body_raw(resp)
+    request <- tryCatch(jsonlite::fromJSON(rawToChar(raw),simplifyVector=FALSE),error=function(e)NULL)
+    if(is.null(request) || !identical(request$schema,"lem-w04-prompt-refinement-request-v1") ||
+       !identical(as.character(request$review_id),as.character(meta$review_id)) ||
+       !identical(as.character(request$source_run_id),as.character(batch$run_id)) ||
+       !identical(as.character(request$prompt_sha256),as.character(batch$prompt_sha256)))
+      next
+    sha <- digest::digest(raw,algo="sha256",serialize=FALSE)
+    if(!identical(substr(sha,1L,20L),
+      sub("^w04-refinement-request-([0-9a-f]{20})\\.json$","\\1",as.character(f$filename))))next
+    matches[[length(matches)+1L]] <- list(
+      draft_id=as.character(draft$id),filename=as.character(f$filename),
+      sha256=sha,response_file=sub("request","response",as.character(f$filename)),
+      review_id=meta$review_id,run_id=as.character(batch$run_id),
+      prompt_sha256=as.character(batch$prompt_sha256),
+      requested_at_utc=as.character(request$requested_at_utc %||% ""))
+  }
+  if(!length(matches))return(NULL)
+  timestamps <- vapply(matches,function(x)x$requested_at_utc,character(1))
+  matches[[order(timestamps,decreasing=TRUE)[[1L]]]]
+}
 w04_refinement_load_response <- function(meta,info) {
   if(!identical(meta$review_id,info$review_id)||
      !identical(w04_prompt_draft_id(meta),info$draft_id))
