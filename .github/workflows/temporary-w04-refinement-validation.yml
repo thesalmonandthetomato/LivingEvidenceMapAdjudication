@@ -19,6 +19,24 @@ jobs:
           `%||%` <- function(x,y) if(is.null(x))y else x
           w04_prompt_checksum <- function(z) digest::digest(z,algo="sha256",serialize=FALSE)
           stopifnot(exists("w04_refinement_build_request"))
+          meta <- list(review_id="test-review")
+          original <- "Include farmed salmon. Exclude wild fish."
+          batch <- list(review_id=meta$review_id,uncertain="2",run_id="123",
+            subset_id="w04-subset-example",prompt_version_id="w04-00000000000000000000",
+            prompt_sha256=w04_prompt_checksum(original))
+          cs <- list(
+            list(record_id="a",review_case_id="s|a",bibliographic=list(title="A",abstract="Farming"),screening=list(votes=c("retain","exclude"))),
+            list(record_id="b",review_case_id="s|b",bibliographic=list(title="B",abstract="Wild"),screening=list(votes=c("exclude","retain")))
+          )
+          ds <- list(list(review_case_id="s|a",decision="retain"),
+                     list(review_case_id="s|b",decision="exclude"))
+          good <- w04_refinement_build_request(meta,batch,original,cs,ds,"Clarify ambiguous cases")
+          stopifnot(length(good$cases)==2L,
+            identical(good$cases[[1]]$human_final_decision,"retain"),
+            identical(good$cases[[2]]$human_final_decision,"exclude"))
+          bad <- tryCatch(w04_refinement_build_request(meta,batch,original,cs,ds[1]),error=identity)
+          stopifnot(inherits(bad,"error"))
+
           x <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\n")
           for(term in c("w04_refinement_request","w04_refinement_fetch","w04_refinement_accept","w04_refinement_save_edit","w04_refinement_reject"))
             stopifnot(grepl(term,x,fixed=TRUE))
