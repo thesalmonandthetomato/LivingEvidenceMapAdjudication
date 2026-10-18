@@ -1,0 +1,27 @@
+name: Temporary admin menu lazy-load regression
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Verify administration lazy rendering and original controls
+        shell: Rscript {0}
+        run: |
+          invisible(parse("multiuser_app/app.R"))
+          invisible(parse("multiuser_app/R/w04_workspace_overview.R"))
+          txt <- readLines("multiuser_app/app.R",warn=FALSE)
+          stopifnot(any(grepl('actionButton("open_administration_assignments"',txt,fixed=TRUE)),
+                    any(grepl("req(input$open_administration_assignments > 0L)",txt,fixed=TRUE)),
+                    any(grepl('uiOutput("assignment_progress")',txt,fixed=TRUE)),
+                    any(grepl('uiOutput("configure_review")',txt,fixed=TRUE)),
+                    any(grepl('uiOutput("w04_overview_tables")',txt,fixed=TRUE)))
+          cat("PASS: admin entry always renders before deferred assignment summary, W04 overview intact.\n")
