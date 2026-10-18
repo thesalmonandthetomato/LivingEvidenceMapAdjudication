@@ -3799,8 +3799,9 @@ server <- function(input, output, session) {
       sets <- read_w04_conflict_sets()
       decisions <- active_sheet_w04_decisions()
       conflict_decisions <- active_sheet_w04_conflict_decisions()
+      historical_assignments <- read_assignment_registry(assignment_path)
       w04_summary_backfill(meta$review_id,subsets,prompts,runs,analyses,sets,
-        assignments=assignment_registry_rv(),manual_decisions=decisions,
+        assignments=historical_assignments,manual_decisions=decisions,
         conflict_decisions=conflict_decisions,
         users=lapply(user_registry_rv(),normalise_user_row))
     },error=function(e)e)
