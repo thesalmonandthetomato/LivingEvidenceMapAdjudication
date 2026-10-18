@@ -22,28 +22,36 @@ jobs:
           `%||%` <- function(a,b)if(is.null(a))b else a
           source("multiuser_app/R/w04_workspace_overview.R")
           source("multiuser_app/R/w04_work_overview_sheets.R")
+          event <- function(type,id,at,payload)
+            list(event_id=paste(type,id,at),review_id="r",record_type=type,
+              entity_id=id,event_at_utc=at,
+              details_json=as.character(jsonlite::toJSON(payload,auto_unbox=TRUE)))
           x <- list(
-            list(event_id="x",review_id="r",record_type="subset",
-              entity_id="s1",event_at_utc="2026-10-16T10:00:00Z",
-              details_json='{"label":"Check 1","summary":"100 records"}'),
-            list(event_id="y",review_id="r",record_type="subset",
-              entity_id="s1",event_at_utc="2026-10-17T10:00:00Z",
-              details_json='{"label":"Check 1 renamed","summary":"100 records"}'),
-            list(event_id="z",review_id="r",record_type="model_run",
-              entity_id="123",event_at_utc="2026-10-17T12:00:00Z",
-              details_json='{"label":"Model run 123","summary":"100 records"}'))
+            event("subset","s1","2026-10-16T10:00:00Z",
+              list(label="Check 1",records="100")),
+            event("subset","s1","2026-10-17T10:00:00Z",
+              list(label="Check 1 renamed",records="100")),
+            event("prompt","p1","2026-10-15T10:00:00Z",
+              list(label="Prompt revision",author="Matthew")),
+            event("model_run","123","2026-10-17T12:00:00Z",
+              list(subset_id="s1",prompt_version_id="p1",total="100",uncertain="3")),
+            event("model_run","124","2026-10-18T12:00:00Z",
+              list(subset_id="s1",prompt_version_id="p1",total="100",uncertain="0")),
+            event("comparison","c1","2026-10-18T13:00:00Z",
+              list(comparison_type="Human–model",source_run="124",
+                raters="Matthew vs Model",conflicts="12",agreement="0.88")))
           z <- w04_summary_tables(x)
-          stopifnot(nrow(z$subsets)==1L,identical(z$subsets$Item[[1]],"Check 1 renamed"),
-             nrow(z$runs)==1L,nrow(z$prompts)==0L)
-          check <- function(s)list(subset_id=s,created_at_utc="2026-10-17T10:00:00Z",
-              actual_size="100",label="Check")
-          # Stub only the sheet-read/write layer, exercising idempotent batch backfill.
-          w04_summary_read <- function(...)list()
-          sheet_id_from_env <- function()"stub"
-          calls <- 0L
-          googlesheets4_append_test <- function(...) {calls <<- calls+1L}
-          # Exercise the pure stage by overriding the namespace binding in the local code text.
-          rows <- w04_summary_backfill
-          body_text <- paste(deparse(body(rows)),collapse="\n")
-          stopifnot(grepl("incoming\\$event_id",body_text),grepl("sheet_append",body_text))
+          stopifnot(nrow(z$subsets)==1L,
+            identical(z$subsets$Subset[[1]],"Check 1 renamed"),
+            identical(z$subsets$Models[[1]],2L),
+            identical(z$prompts$Models[[1]],2L),
+            identical(z$runs$Run[[1]],"124"),
+            identical(z$runs$Prompt[[1]],"Prompt revision"),
+            identical(z$comparisons$Conflicts[[1]],"12"),
+            nrow(z$conflicts)==0L)
+          stopifnot(all(c("subsets","prompts","runs","comparisons","conflicts")%in%names(z)))
+          # Historical reconstruction remains an explicit action and app parsing works.
+          body_text <- paste(deparse(body(w04_summary_backfill)),collapse="\\n")
+          stopifnot(grepl("incoming\\\\$event_id",body_text),
+            grepl("sheet_append",body_text,fixed=TRUE))
           cat("PASS R parsing, latest-by-entity, sorted summary and backfill references.\n")
