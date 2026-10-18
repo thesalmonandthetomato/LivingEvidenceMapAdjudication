@@ -114,3 +114,20 @@ w04_summary_backfill <- function(review_id,subsets,prompts,runs,analyses,conflic
   googlesheets4::sheet_append(sheet_id_from_env(),sheet=w04_summary_tab(),data=incoming)
   nrow(incoming)
 }
+
+# Successful authoritative W04 saves can call this safely. A failed summary
+# append is logged, never concealed as an authoritative save failure.
+w04_summary_record_safe <- function(type,id,at,label,summary,review_id=NULL) {
+  tryCatch({
+    if(is.null(review_id) || !nzchar(as.character(review_id)))
+      review_id <- w04_prompt_review_metadata()$review_id
+    w04_summary_append(as.character(review_id),type,as.character(id),
+      list(label=as.character(label),summary=as.character(summary)),
+      as.character(at %||% ""))
+    TRUE
+  },error=function(e) {
+    warning(sprintf("W04 summary update not confirmed for %s %s: %s",
+      type,id,conditionMessage(e)),call.=FALSE)
+    FALSE
+  })
+}
