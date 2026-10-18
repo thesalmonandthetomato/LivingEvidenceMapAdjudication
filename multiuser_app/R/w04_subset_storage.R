@@ -130,5 +130,9 @@ w04_subset_registry_append <- function(subset) {
   hits <- Filter(function(x)identical(x$subset_id,subset$subset_id),verified)
   if(length(hits)!=1L||!identical(hits[[1]]$membership_sha256,subset$membership_sha256))
     stop("W04 subset registry persistence could not be verified",call.=FALSE)
+  if(exists("w04_summary_record_safe",mode="function"))
+    w04_summary_record_safe("subset",subset$subset_id,subset$created_at_utc,
+      w04_overview_chr(subset$label,paste0("Subset ",substr(subset$subset_id,nchar(subset$subset_id)-5L,nchar(subset$subset_id)))),
+      paste0(subset$actual_size," records"),review_id=subset$review_id)
   invisible(subset$subset_id)
 }
