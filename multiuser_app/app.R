@@ -8528,6 +8528,22 @@ server <- function(input, output, session) {
       w04_conflict_idx(1L)
     }
     w04_consistency_history_loaded(TRUE)
+    # Repair comparisons that were saved authoritatively before their summary
+    # could be appended. Never backfill other W04 metadata during login.
+    sync <- tryCatch({
+      review_id <- w04_prompt_review_metadata()$review_id
+      repaired <- w04_summary_reconcile_comparisons(review_id,loaded$analyses)
+      if(repaired>0L) {
+        overview <- w04_summary_tables(w04_summary_read(review_id,create_if_missing=FALSE))
+        w04_overview_rv(overview)
+        w04_overview_status_rv(sprintf("Reconciled %d missing comparison(s).",repaired))
+      }
+      repaired
+    },error=function(e)e)
+    if(inherits(sync,"error"))
+      w04_consistency_status(paste(
+        "Saved comparisons loaded, but overview reconciliation failed:",
+        conditionMessage(sync)))
   })
 
   output$w04_refresh_status <- renderText(w04_refresh_status())
