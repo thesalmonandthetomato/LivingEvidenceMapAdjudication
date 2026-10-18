@@ -3760,6 +3760,25 @@ server <- function(input, output, session) {
     w04_overview_status_rv(sprintf("Loaded %d subsets, %d prompts, %d model runs and %d saved comparisons from one summary tab.",
       nrow(loaded$subsets),nrow(loaded$prompts),nrow(loaded$runs),nrow(loaded$comparisons)))
   })
+  w04_overview_backfill_status_rv <- reactiveVal("")
+  output$w04_overview_backfill_status <- renderText(w04_overview_backfill_status_rv())
+  observeEvent(input$w04_overview_backfill,{
+    req(authenticated())
+    if(!session_can("manage_assignments"))return()
+    w04_overview_backfill_status_rv("Importing historical metadata. This operation may take time; ordinary overview refresh does not.")
+    result <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      subsets <- w04_subset_registry_read(meta$review_id)
+      prompts <- w04_prompt_archive_versions(meta)
+      runs <- w04_model_batch_registry_read(meta$review_id)
+      analyses <- read_w04_consistency_analyses()
+      sets <- read_w04_conflict_sets()
+      w04_summary_backfill(meta$review_id,subsets,prompts,runs,analyses,sets)
+    },error=function(e)e)
+    w04_overview_backfill_status_rv(if(inherits(result,"error"))
+      paste("Historical import failed:",conditionMessage(result))
+      else sprintf("Historical import completed: %d new summary rows. Click Refresh overview to display them.",result))
+  })
   output$w04_overview_tables <- renderUI({
     x <- w04_overview_rv()
     if(is.null(x))return(tags$p(class="saved-note","No summary loaded yet. Refresh to read the W04 summary sheet."))
@@ -7796,6 +7815,11 @@ server <- function(input, output, session) {
             div(class="p-3",
               tags$p(class="saved-note","Saved metadata from one Google Sheets summary tab. Refresh to see changes; historical backfill is a separate administrator operation."),
               actionButton("w04_overview_refresh","Refresh overview",class="btn-outline-secondary btn-sm"),
+              tags$details(class="mt-2 mb-2",
+                tags$summary("Historical import (administrator only)"),
+                tags$p(class="saved-note","Populate missing historical summary records from existing registries and Zenodo. Use once; repeat imports skip identical events."),
+                actionButton("w04_overview_backfill","Import historical W04 metadata",class="btn-outline-secondary btn-sm"),
+                textOutput("w04_overview_backfill_status")),
               textOutput("w04_overview_status"),
               uiOutput("w04_overview_tables")
             )
