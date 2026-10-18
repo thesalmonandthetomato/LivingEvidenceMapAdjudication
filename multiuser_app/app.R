@@ -19,6 +19,7 @@ source("R/w04_prompt_versions.R", local = TRUE)
 source("R/w04_prompt_zenodo.R", local = TRUE)
 source("R/w04_shiny_model_launch.R", local = TRUE)
 source("R/w04_model_batches.R", local = TRUE)
+source("R/w04_workspace_overview.R", local = TRUE)
 source("R/w04_model_conflicts.R", local = TRUE)
 source("R/w04_prompt_refinement.R", local = TRUE)
 source("R/w04_highlight_sheets.R", local = TRUE)
@@ -1051,6 +1052,9 @@ server <- function(input, output, session) {
   w04_manual_queue_choices_rv <- reactiveVal(list())
   w04_manual_queue_status_rv <- reactiveVal("")
   w04_subsets_rv <- reactiveVal(list())
+  w04_overview_rv <- reactiveVal(NULL)
+  w04_overview_status_rv <- reactiveVal("Select Refresh overview to load saved W04 information.")
+  w04_overview_refreshed_rv <- reactiveVal("")
   w04_consistency_registry_rv <- reactiveVal(list())
   w04_consistency_subset_snapshot_rv <- reactiveVal(NULL)
   w04_consistency_model_runs_rv <- reactiveVal(list())
@@ -3726,6 +3730,64 @@ server <- function(input, output, session) {
     w04_subsets_rv(result)
     w04_subset_status_rv(sprintf("%d registered W04 subsets loaded.",length(result)))
   })
+
+  # One event-bound refresh, no polling, no recalculation of saved kappa.
+  output$w04_overview_status <- renderText({
+    paste(w04_overview_status_rv(),
+      if(nzchar(w04_overview_refreshed_rv()))paste("· Last refreshed",w04_overview_refreshed_rv()) else "")
+  })
+  observeEvent(input$w04_overview_refresh,{
+    req(authenticated())
+    if(!session_can("manage_assignments"))return()
+    w04_overview_status_rv("Reading saved W04 registries…")
+    loaded <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      list(subsets=w04_subset_registry_read(meta$review_id),
+           prompts=w04_prompt_archive_versions(meta),
+           runs=w04_model_batch_registry_read(meta$review_id),
+           analyses=read_w04_consistency_analyses(),
+           conflict_sets=read_w04_conflict_sets(),
+           human=active_sheet_w04_decisions(),
+           conflicts=active_sheet_w04_conflict_decisions())
+    },error=function(e)e)
+    if(inherits(loaded,"error")) {
+      w04_overview_status_rv(paste("Overview refresh failed:",conditionMessage(loaded)))
+      return()
+    }
+    out <- tryCatch(w04_overview_build(
+      loaded$subsets,loaded$prompts,loaded$runs,loaded$analyses,
+      loaded$conflict_sets,assignment_registry_rv(),loaded$human,
+      loaded$conflicts,lapply(user_registry_rv(),normalise_user_row)),
+      error=function(e)e)
+    if(inherits(out,"error")) {
+      w04_overview_status_rv(paste("Overview relationship check failed:",conditionMessage(out)))
+      return()
+    }
+    w04_overview_rv(out)
+    w04_overview_refreshed_rv(format(Sys.time(),"%d %b %Y %H:%M %Z",tz="Europe/London"))
+    w04_overview_status_rv(sprintf("Loaded %d subsets, %d prompts, %d model runs and %d saved comparisons.",
+      nrow(out$subsets),nrow(out$prompts),nrow(out$runs),nrow(out$comparisons)))
+  })
+  output$w04_overview_tables <- renderUI({
+    x <- w04_overview_rv()
+    if(is.null(x))return(tags$p(class="saved-note","No overview loaded yet. Refresh to read the saved registries."))
+    make_table <- function(data) {
+      if(!nrow(data))return(tags$p(class="saved-note","No saved records."))
+      shiny::tableOutput(NULL)
+    }
+    tagList(
+      tags$h5("Human-screened subsets"),tags$p(class="saved-note","Created date and completed decisions per assigned reviewer."),
+      tableOutput("w04_overview_subsets"),
+      tags$h5("Prompt versions"),tableOutput("w04_overview_prompts"),
+      tags$h5("Model runs"),tags$p(class="saved-note","Published is the confirmed model result publication date, not necessarily the launch date."),
+      tableOutput("w04_overview_runs"),
+      tags$h5("Saved comparisons and conflicts"),tableOutput("w04_overview_comparisons")
+    )
+  })
+  output$w04_overview_subsets <- renderTable({req(w04_overview_rv());w04_overview_rv()$subsets},striped=TRUE,hover=TRUE,spacing="xs")
+  output$w04_overview_prompts <- renderTable({req(w04_overview_rv());w04_overview_rv()$prompts},striped=TRUE,hover=TRUE,spacing="xs")
+  output$w04_overview_runs <- renderTable({req(w04_overview_rv());w04_overview_rv()$runs},striped=TRUE,hover=TRUE,spacing="xs")
+  output$w04_overview_comparisons <- renderTable({req(w04_overview_rv());w04_overview_rv()$comparisons},striped=TRUE,hover=TRUE,spacing="xs")
 
   output$w04_prompt_archive_status <- renderText(w04_prompt_status_rv())
   output$w04_prompt_zenodo_link <- renderUI({
@@ -7731,6 +7793,17 @@ server <- function(input, output, session) {
             div(class = "assignment-kpi", tags$span("Completed"), tags$strong(record_table_link(total_completed_cases,"all","all","","resolved_cases",label="All workflows · Completed"))),
             div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(record_table_link(total_outstanding_cases,"all","all","","outstanding_cases",label="All workflows · Outstanding"))),
             div(class = "assignment-kpi", tags$span("Conflicts"), tags$strong(record_table_link(length(w04_all_conflict_cases()),"04","conflict_resolution",w04_active_conflict_batch_id(),"cases",label="W04 · Reviewer conflict resolution · Cases")))
+          ),
+          tags$details(
+            class="assignment-workflow border rounded mb-3",
+            `data-accordion-key`="w04-overview",
+            tags$summary(tags$strong("W04 · Screening and validation overview")),
+            div(class="p-3",
+              tags$p(class="saved-note","Read-only overview of historical subsets, prompts, model runs and saved comparisons. Dates come from saved metadata. Refresh explicitly to include changes by other reviewers."),
+              actionButton("w04_overview_refresh","Refresh overview",class="btn-outline-secondary btn-sm"),
+              textOutput("w04_overview_status"),
+              uiOutput("w04_overview_tables")
+            )
           ),
           workflow_sections_display,
           tags$hr(class = "my-3"),
