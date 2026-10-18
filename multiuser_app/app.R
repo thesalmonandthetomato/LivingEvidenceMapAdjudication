@@ -8278,11 +8278,13 @@ server <- function(input, output, session) {
   output$w04_consistency_subset_selector <- renderUI({
     if(!session_can("manage_assignments")) return(NULL)
     xs <- w04_consistency_registry_rv()
-    if(!length(xs)) return(tags$p(class="saved-note","Refresh the review's registered subsets to select a comparison."))
+    if(!length(xs)) return(tags$p(class="saved-note","Loading the registered human-screening subsets…"))
     ids <- vapply(xs,function(x)as.character(x$subset_id),character(1))
     labels <- vapply(xs,w04_subset_display,character(1))
-    selectInput("w04_consistency_subset_selected","Subset for consistency checking",
-      choices=stats::setNames(ids,labels))
+    current <- isolate(as.character(input$w04_consistency_subset_selected %||% w04_comparison_loaded_subset()))
+    if(!current %in% ids)current <- ids[[1L]]
+    selectInput("w04_consistency_subset_selected","Human-screened subset",
+      choices=stats::setNames(ids,labels),selected=current)
   })
   output$w04_consistency_subset_status <- renderText(w04_consistency_subset_status_rv())
   refresh_w04_consistency_registry <- function() {
@@ -8311,6 +8313,23 @@ server <- function(input, output, session) {
     }
   })
     w04_comparison_loaded_subset <- reactiveVal("")
+  output$w04_consistency_model_selector <- renderUI({
+    xs <- w04_consistency_model_runs_rv()
+    if(!length(xs))return(NULL)
+    ids <- vapply(xs,function(x)as.character(x$run_id),character(1))
+    labels <- vapply(xs,function(x)sprintf("Run %s · %s records · %s uncertain",
+      x$run_id,x$total,x$uncertain),character(1))
+    selected <- isolate(as.character(input$w04_consistency_model_selected %||% ""))
+    if(!selected %in% ids) selected <- as.character(w04_comparison_loaded_run())
+    if(!selected %in% ids) {
+      dates <- vapply(xs,function(x)as.character(x$published_at_utc %||% ""),character(1))
+      selected <- ids[[order(dates,ids,decreasing=TRUE)[[1L]]]]
+    }
+    selectInput("w04_consistency_model_selected","Completed model run",
+      choices=stats::setNames(ids,labels),selected=selected)
+  })
+  output$w04_consistency_model_status <- renderText(w04_consistency_model_status_rv())
+
   w04_comparison_loaded_run <- reactiveVal("")
   w04_comparison_load_subset <- function(id) {
 
@@ -8436,7 +8455,9 @@ server <- function(input, output, session) {
     req(authenticated(),session_can("manage_assignments"))
     id <- as.character(input$w04_consistency_model_selected %||% "")
     if(!nzchar(id) || identical(id,w04_comparison_loaded_run()))return()
-    if(!length(w04_consistency_model_runs_rv()))return()
+    available <- vapply(w04_consistency_model_runs_rv(),function(x)
+      as.character(x$run_id),character(1))
+    if(!id %in% available)return()
     w04_comparison_load_model(id)
   })
 
