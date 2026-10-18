@@ -113,7 +113,7 @@ w04_summary_tables <- function(events) {
     data.frame(Type=get(z,"comparison_type",display(z,"Comparison")),
       Created=date(z),Source=get(z,"source_run","—"),
       Raters=get(z,"raters","—"),
-      Agreement=get(z,"agreement","—"),`Cohen’s κ`=get(z,"kappa","—"),Conflicts=get(z,"conflicts","0"),
+      Agreement=get(z,"agreement","—"),`Cohen’s κ`={ k <- suppressWarnings(as.numeric(get(z,"kappa",""))); if(length(k)!=1L || !is.finite(k)) "—" else sprintf("%.2f",k) },Conflicts=get(z,"conflicts","0"),
       Resolved=resolved,stringsAsFactors=FALSE)
   })
   conflict_rows <- lapply(conflicts,function(z) {
