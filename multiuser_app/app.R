@@ -2407,7 +2407,7 @@ server <- function(input, output, session) {
             actionButton("w04_overview_backfill","Import historical W04 metadata",
               class="btn-outline-secondary btn-sm"),
             textOutput("w04_overview_backfill_status")),
-          uiOutput("w04_overview_tables"))))
+          uiOutput("w04_overview_tables")))))
     }
 
     # Authentication is independent of the slower workflow registry reads.
