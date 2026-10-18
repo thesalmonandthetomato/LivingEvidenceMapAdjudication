@@ -2621,19 +2621,6 @@ server <- function(input, output, session) {
 
           ),
           if(!is.null(w02_optional_pause_rv())) uiOutput("w02_missing_abstract_editor"),
-          if(!isTRUE(w04_queue_loaded_rv())) {
-            div(class="col-12",
-              card(class="task-card workflow-card wf-w04",
-                div(class="p-3",
-                  tags$strong("Workflow 04 · Screening and validation"),
-                  tags$p(class="mt-2 mb-2","W04 task data are not loaded. Open them when you are ready to screen, assign or adjudicate."),
-                  div(class="d-flex flex-wrap gap-2",
-                    actionButton("w04_open_manual_on_demand","Open manual screening",class="btn-outline-primary btn-sm"),
-                    actionButton("w04_open_conflicts_on_demand","Open conflict resolution",class="btn-outline-primary btn-sm"),
-                    actionButton("w04_open_uncertainties_on_demand","Open model uncertainties",class="btn-outline-primary btn-sm")),
-                  textOutput("w04_queue_load_status")
-                )))
-          } else tagList(
           div(
             class = "col-12 col-lg-6",
             stage_card(
@@ -2694,7 +2681,6 @@ server <- function(input, output, session) {
                 "No records awaiting review"
               }
             )
-          ),
           ),
           div(
             class = "col-12 col-lg-6",
