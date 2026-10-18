@@ -3775,7 +3775,7 @@ server <- function(input, output, session) {
     if(!session_can("manage_assignments"))return()
     w04_overview_status_rv("Reading W04 summary sheet…")
     loaded <- tryCatch({
-      w04_summary_tables(w04_summary_read(create_if_missing=FALSE))
+      w04_summary_tables(w04_summary_read(review_id=w04_prompt_review_metadata()$review_id,create_if_missing=FALSE))
     },error=function(e)e)
     if(inherits(loaded,"error")) {
       w04_overview_status_rv(paste("Overview refresh failed:",conditionMessage(loaded)))
