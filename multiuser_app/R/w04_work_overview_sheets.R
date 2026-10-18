@@ -37,7 +37,7 @@ w04_summary_latest <- function(events,type) {
   x <- Filter(function(z)identical(w04_overview_chr(z$record_type),type),events)
   if(!length(x))return(list())
   times <- vapply(x,function(z)w04_overview_chr(z$event_at_utc),character(1))
-  x <- x[order(times,decreasing=FALSE,na.last=TRUE)]
+  x <- x[order(times,decreasing=TRUE,na.last=TRUE)]
   ids <- vapply(x,function(z)w04_overview_chr(z$entity_id),character(1))
   x[!duplicated(ids)]
 }
@@ -68,6 +68,10 @@ w04_summary_tables <- function(events) {
   prompt_label <- function(pid) {
     hits <- Filter(function(z)identical(id(z),pid),prompts)
     if(length(hits))display(hits[[1L]],short(pid,"Prompt")) else short(pid,"Prompt")
+  }
+  # Keep newest-state selection independent from oldest-first display ordering.
+  oldest_first <- function(rows) {
+    if(length(rows))rev(rows) else rows
   }
   bind <- function(rows,columns) {
     if(length(rows))return(do.call(rbind,rows))
@@ -117,11 +121,11 @@ w04_summary_tables <- function(events) {
       Comparison=get(z,"analysis_id","—"),
       Conflicts=get(z,"conflicts","—"),stringsAsFactors=FALSE)
   })
-  list(subsets=bind(subset_rows,c("Subset","Created","N","Reviewers","Done","Models")),
-    prompts=bind(prompt_rows,c("Prompt","Saved","Author","Models")),
-    runs=bind(run_rows,c("Run","Published","Subset","Prompt","N","Uncertain")),
-    comparisons=bind(comparison_rows,c("Type","Created","Source","Raters","Agreement","Conflicts","Resolved")),
-    conflicts=bind(conflict_rows,c("Set","Created","Comparison","Conflicts")))
+  list(subsets=bind(oldest_first(subset_rows),c("Subset","Created","N","Reviewers","Done","Models")),
+    prompts=bind(oldest_first(prompt_rows),c("Prompt","Saved","Author","Models")),
+    runs=bind(oldest_first(run_rows),c("Run","Published","Subset","Prompt","N","Uncertain")),
+    comparisons=bind(oldest_first(comparison_rows),c("Type","Created","Source","Raters","Agreement","Conflicts","Resolved")),
+    conflicts=bind(oldest_first(conflict_rows),c("Set","Created","Comparison","Conflicts")))
 }
 
 # Backfill is deliberately an explicit administrator operation, never part of login.
