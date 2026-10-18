@@ -178,6 +178,7 @@ w04_prompt_archive_save <- function(meta,version) {
   if(exists("w04_summary_record_safe",mode="function"))
     w04_summary_record_safe("prompt",version$version_id,version$created_at_utc,
       w04_overview_chr(version$notes,w04_overview_chr(version$original_filename,version$version_id)),
-      paste("Saved by",version$author),review_id=meta$review_id)
+      paste("Saved by",version$author),review_id=meta$review_id,
+      metadata=list(author=as.character(version$author),status=as.character(version$status)))
   invisible(version$version_id)
 }
