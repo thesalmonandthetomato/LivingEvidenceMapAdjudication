@@ -8328,12 +8328,15 @@ server <- function(input, output, session) {
       w04_consistency_subset_status_rv(sprintf("%d subset(s) registered in this review.",length(result)))
     }
   })
-  observeEvent(input$w04_consistency_subset_load,{
+    w04_comparison_loaded_subset <- reactiveVal("")
+  w04_comparison_loaded_run <- reactiveVal("")
+  w04_comparison_load_subset <- function(id) {
+
     req(authenticated())
     if(!session_can("manage_assignments")) return()
-    id <- as.character(input$w04_consistency_subset_selected %||% "")
     result <- tryCatch({
-      registered <- refresh_w04_consistency_registry()
+      registered <- w04_consistency_registry_rv()
+      if(!length(registered)) registered <- refresh_w04_consistency_registry()
       matches <- Filter(function(x)identical(as.character(x$subset_id),id),registered)
       if(length(matches)!=1L)
         stop("Subset selection was not found in the current review registry. The list has been refreshed; select a subset and try again.",call.=FALSE)
@@ -8355,17 +8358,13 @@ server <- function(input, output, session) {
     w04_consistency_model_runs_rv(list())
     w04_consistency_model_status_rv("")
     w04_consistency_subset_status_rv(sprintf("Loaded %s (%d cases) for read-only consistency analysis.",id,length(result$outcomes)))
-  })
-  output$w04_consistency_model_selector <- renderUI({
-    xs <- w04_consistency_model_runs_rv()
-    if(!length(xs)) return(NULL)
-    ids <- vapply(xs,function(x)as.character(x$run_id),character(1))
-    labels <- vapply(xs,function(x)sprintf("Run %s · %s records · %s uncertain",x$run_id,x$total,x$uncertain),character(1))
-    selectInput("w04_consistency_model_selected","Completed model run",
-      choices=stats::setNames(ids,labels))
-  })
-  output$w04_consistency_model_status <- renderText(w04_consistency_model_status_rv())
-  observeEvent(input$w04_consistency_find_models,{
+    if(!is.null(w04_consistency_subset_snapshot_rv()) &&
+       identical(w04_consistency_subset_snapshot_rv()$subset_id,id))
+      w04_comparison_loaded_subset(id)
+    w04_comparison_loaded_run("")
+  }
+  w04_comparison_find_runs <- function() {
+
     req(authenticated())
     if(!session_can("manage_assignments")) return()
     snap <- w04_consistency_subset_snapshot_rv()
@@ -8385,14 +8384,14 @@ server <- function(input, output, session) {
     }
     w04_consistency_model_runs_rv(found)
     w04_consistency_model_status_rv(sprintf("%d completed model run(s) for selected subset.",length(found)))
-  })
-  observeEvent(input$w04_consistency_load_model,{
+  }
+  w04_comparison_load_model <- function(id) {
+
     req(authenticated())
     if(!session_can("manage_assignments")) return()
     result <- tryCatch({
       snap <- w04_consistency_subset_snapshot_rv()
       if(is.null(snap)) stop("Load a human subset first",call.=FALSE)
-      id <- as.character(input$w04_consistency_model_selected %||% "")
       hits <- Filter(function(x)identical(as.character(x$run_id),id),w04_consistency_model_runs_rv())
       if(length(hits)!=1L || !identical(as.character(hits[[1L]]$subset_id),snap$subset_id))
         stop("Choose a model run for the selected subset",call.=FALSE)
@@ -8415,7 +8414,7 @@ server <- function(input, output, session) {
     }
     snap <- w04_consistency_subset_snapshot_rv()
     snap$outcomes <- result
-    snap$model_run_id <- as.character(input$w04_consistency_model_selected)
+    snap$model_run_id <- as.character(id)
     snap$model_sha256 <- as.character(Filter(function(x)identical(as.character(x$run_id),snap$model_run_id),w04_consistency_model_runs_rv())[[1L]]$model_sha256)
     w04_consistency_subset_snapshot_rv(snap)
     human_ids <- w04_available_consistency_raters(result)
@@ -8429,10 +8428,36 @@ server <- function(input, output, session) {
       updateCheckboxGroupInput(session,"w04_consistency_raters",selected=selected)
     w04_consistency_model_status_rv(sprintf(
       "Loaded model run %s. %d human reviewer(s) available. %s",
-      as.character(input$w04_consistency_model_selected),length(human_ids),
+      as.character(id),length(human_ids),
       if(length(selected)==2L) "Selected reviewer and Model for κ comparison below." else "Select the intended human reviewer and Model under Raters to compare."
     ))
+    if(identical(as.character(w04_consistency_subset_snapshot_rv()$model_run_id %||% ""),id))
+      w04_comparison_loaded_run(id)
+  }
+  observeEvent(input$w04_consistency_subset_selected,{
+    req(authenticated(),session_can("manage_assignments"))
+    id <- as.character(input$w04_consistency_subset_selected %||% "")
+    if(!nzchar(id) || identical(id,w04_comparison_loaded_subset())) return()
+    w04_comparison_load_subset(id)
+    if(!identical(id,w04_comparison_loaded_subset())) return()
+    w04_comparison_find_runs()
+    runs <- w04_consistency_model_runs_rv()
+    if(length(runs)){
+      dates <- vapply(runs,function(x)as.character(x$published_at_utc %||% ""),character(1))
+      ids <- vapply(runs,function(x)as.character(x$run_id %||% ""),character(1))
+      latest <- ids[[order(dates,ids,decreasing=TRUE)[[1L]]]]
+      updateSelectInput(session,"w04_consistency_model_selected",selected=latest)
+      w04_comparison_load_model(latest)
+    }
   })
+  observeEvent(input$w04_consistency_model_selected,{
+    req(authenticated(),session_can("manage_assignments"))
+    id <- as.character(input$w04_consistency_model_selected %||% "")
+    if(!nzchar(id) || identical(id,w04_comparison_loaded_run()))return()
+    if(!length(w04_consistency_model_runs_rv()))return()
+    w04_comparison_load_model(id)
+  })
+
   observeEvent(input$w04_consistency_opened, {
     req(authenticated())
     if (!session_can("manage_assignments")) return()
