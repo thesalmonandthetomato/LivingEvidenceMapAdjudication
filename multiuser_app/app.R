@@ -3770,8 +3770,9 @@ server <- function(input, output, session) {
     paste(w04_overview_status_rv(),
       if(nzchar(w04_overview_refreshed_rv()))paste("· Last refreshed",w04_overview_refreshed_rv()) else "")
   })
-  observeEvent(input$w04_workspace_tab,{
-    req(identical(input$w04_workspace_tab,"Overview"))
+  observeEvent(list(input$configure_workflow_tab,input$w04_workspace_tab),{
+    req(identical(input$configure_workflow_tab,"W04"),
+        identical(input$w04_workspace_tab,"Overview"))
     req(authenticated(),session_can("manage_assignments"))
     if(is.null(w04_overview_rv())) {
       meta <- tryCatch(w04_prompt_review_metadata(),error=function(e)e)
@@ -8288,8 +8289,9 @@ server <- function(input, output, session) {
     w04_consistency_registry_rv(registered)
     registered
   }
-  observeEvent(input$w04_workspace_tab,{
-    req(identical(input$w04_workspace_tab,"Comparisons"))
+  observeEvent(list(input$configure_workflow_tab,input$w04_workspace_tab),{
+    req(identical(input$configure_workflow_tab,"W04"),
+        identical(input$w04_workspace_tab,"Comparisons"))
     req(authenticated())
     if(!session_can("manage_assignments")) return()
     if(length(w04_consistency_registry_rv())) return()
@@ -8456,8 +8458,9 @@ server <- function(input, output, session) {
     w04_comparison_load_model(id)
   })
 
-  observeEvent(input$w04_workspace_tab, {
-    req(identical(input$w04_workspace_tab,"Comparisons"))
+  observeEvent(list(input$configure_workflow_tab,input$w04_workspace_tab), {
+    req(identical(input$configure_workflow_tab,"W04"),
+        identical(input$w04_workspace_tab,"Comparisons"))
     req(authenticated())
     if (!session_can("manage_assignments")) return()
     if (isTRUE(w04_consistency_history_loaded())) return()
