@@ -3810,6 +3810,8 @@ server <- function(input, output, session) {
       tags$h5("Prompt versions"),tableOutput("w04_overview_prompts"),
       tags$h5("Model runs"),tableOutput("w04_overview_runs"),
       tags$h5("Saved comparisons"),tableOutput("w04_overview_comparisons"),
+      uiOutput("w04_overview_conflict_action"),
+      textOutput("w04_overview_conflict_action_status"),
       tags$h5("Conflict sets"),tableOutput("w04_overview_conflicts")
     )
   })
@@ -3818,6 +3820,54 @@ server <- function(input, output, session) {
   output$w04_overview_runs <- renderTable({req(w04_overview_rv());w04_overview_rv()$runs},striped=TRUE,spacing="xs")
   output$w04_overview_comparisons <- renderTable({req(w04_overview_rv());w04_overview_rv()$comparisons},striped=TRUE,spacing="xs")
   output$w04_overview_conflicts <- renderTable({req(w04_overview_rv());w04_overview_rv()$conflicts},striped=TRUE,spacing="xs")
+  w04_overview_conflict_action_status_rv <- reactiveVal("")
+  output$w04_overview_conflict_action_status <- renderText(w04_overview_conflict_action_status_rv())
+  output$w04_overview_conflict_action <- renderUI({
+    req(authenticated(),session_can("manage_assignments"))
+    x <- w04_overview_rv()
+    if(is.null(x) || is.null(x$comparison_choices) || !nrow(x$comparison_choices))return(NULL)
+    rows <- x$comparison_choices
+    rows <- rows[!is.na(rows$conflicts) & rows$conflicts>0L & nzchar(rows$id),,drop=FALSE]
+    if(!nrow(rows))return(NULL)
+    div(class="d-flex flex-wrap align-items-end gap-2 mb-2",
+      div(style="min-width:340px;max-width:600px;flex:1",
+        selectInput("w04_overview_conflict_analysis","Comparison to examine",
+          choices=stats::setNames(rows$id,rows$label),selected=tail(rows$id,1L))),
+      actionButton("w04_overview_open_conflicts","Examine conflicts",class="btn-outline-primary btn-sm"))
+  })
+  observeEvent(input$w04_overview_open_conflicts,{
+    req(authenticated(),session_can("manage_assignments"))
+    id <- as.character(input$w04_overview_conflict_analysis %||% "")
+    overview <- isolate(w04_overview_rv())
+    valid <- !is.null(overview) && !is.null(overview$comparison_choices) &&
+      id %in% as.character(overview$comparison_choices$id)
+    if(!nzchar(id) || !isTRUE(valid))return()
+    w04_overview_conflict_action_status_rv("Retrieving the saved comparison…")
+    result <- tryCatch({
+      analyses <- read_w04_consistency_analyses()
+      matches <- Filter(function(z)identical(as.character(z$analysis_id %||% ""),id),analyses)
+      if(length(matches)!=1L)stop("Comparison not found uniquely in the authoritative history.")
+      n <- suppressWarnings(as.integer(as.character(matches[[1L]]$conflict_n %||% "0")))
+      if(is.na(n) || n<1L)stop("The saved comparison has no disagreements.")
+      saved <- append_w04_conflict_set(matches[[1L]],created_by=session_reviewer_id())
+      all_sets <- w04_conflict_sets_rv() %||% list()
+      sid <- as.character(saved$conflict_set_id %||% "")
+      if(!any(vapply(all_sets,function(z)identical(as.character(z$conflict_set_id %||% ""),sid),logical(1))))
+        w04_conflict_sets_rv(c(all_sets,list(saved)))
+      if(identical(as.character(saved$comparison_type %||% ""),"human_model")) {
+        loaded <- tryCatch(activate_w04_model_conflict(saved),error=function(e)e)
+        if(inherits(loaded,"error"))
+          stop(paste("Conflict set exists, but its cases could not be activated:",conditionMessage(loaded)))
+      }
+      fresh <- tryCatch(w04_summary_tables(w04_summary_read(
+        review_id=w04_prompt_review_metadata()$review_id,create_if_missing=FALSE)),error=function(e)e)
+      if(!inherits(fresh,"error"))w04_overview_rv(fresh)
+      sid
+    },error=function(e)e)
+    w04_overview_conflict_action_status_rv(if(inherits(result,"error"))
+      paste("Could not open conflicts:",conditionMessage(result))
+      else paste("Conflict set",result,"is available. Open W04 conflict resolution to examine its cases; assign them first if needed."))
+  })
 
   output$w04_prompt_archive_status <- renderText(w04_prompt_status_rv())
   output$w04_prompt_zenodo_link <- renderUI({
