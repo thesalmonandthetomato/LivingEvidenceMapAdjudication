@@ -2593,7 +2593,7 @@ server <- function(input, output, session) {
               div(class="p-3",
                 uiOutput("configure_review"),
                 tags$div(class="mt-3",
-                  tags$span(class="saved-note","W01, W02 and W08 assignment administration"),
+                  actionButton("open_administration_assignments","W01, W02 and W08 assignments",class="btn-outline-secondary btn-sm"),
                   textOutput("administration_load_status"),
                   uiOutput("assignment_progress"))))),
         div(
@@ -3770,7 +3770,8 @@ server <- function(input, output, session) {
     paste(w04_overview_status_rv(),
       if(nzchar(w04_overview_refreshed_rv()))paste("· Last refreshed",w04_overview_refreshed_rv()) else "")
   })
-  observeEvent(input$w04_overview_opened,{
+  observeEvent(input$w04_workspace_tab,{
+    req(identical(input$w04_workspace_tab,"Overview"))
     req(authenticated(),session_can("manage_assignments"))
     if(is.null(w04_overview_rv())) {
       meta <- tryCatch(w04_prompt_review_metadata(),error=function(e)e)
@@ -4631,32 +4632,48 @@ server <- function(input, output, session) {
             ontoggle="if(this.open && window.Shiny) Shiny.setInputValue('w04_overview_opened', Date.now(), {priority:'event'});",
             tags$summary(tags$strong("W04 · Screening and validation")),
             div(class="px-3 pb-3",
-              tags$details(class="assignment-disclosure mb-3",
-                `data-accordion-key`="w04-summary-overview",
-                ontoggle="if(this.open && window.Shiny) Shiny.setInputValue('w04_overview_opened', Date.now(), {priority:'event'});",
-                tags$summary(tags$strong("Overview")),
-                div(class="px-3 pb-3",
+              tabsetPanel(id="w04_workspace_tab",type="tabs",selected="Overview",
+                tabPanel("Overview",
+                  div(class="px-3 pb-3",
                   tags$p(class="saved-note","Saved W04 metadata from the summary sheet."),
                   actionButton("w04_overview_refresh","Refresh overview",class="btn-outline-secondary btn-sm"),
                   textOutput("w04_overview_status"),
                   uiOutput("w04_overview_tables"))),
-              tags$details(class="assignment-disclosure mt-2",
-                `data-accordion-key`="w04-compare-human-model",
-                ontoggle="if(this.open && window.Shiny) Shiny.setInputValue('w04_consistency_opened', true, {priority:'event'});",
-                tags$summary(tags$strong("Comparisons · human and model")),
-                div(class="px-3 pb-3",
-                  tags$p(class="saved-note",
-                    "Select a human-screened subset once. Associated model runs and reviewer choices load automatically; the latest completed model run is selected by default."),
-                  uiOutput("w04_comparison_body"))),
-              tags$details(class="assignment-disclosure mt-2",
-                tags$summary(tags$strong("Reviewer assignments, consistency and disagreements")),
-                div(class="px-3 pb-3",
-                  actionButton("open_administration_assignments",
-                    "Load assignment controls",class="btn-outline-secondary btn-sm"),
-                  uiOutput("w04_admin_controls"))),
-              tags$details(class="assignment-disclosure",
-                tags$summary(tags$strong("Prompt management")),
-                div(class="px-3 pb-3",
+                tabPanel("Subsets",
+                  div(class="px-3 pb-3",
+                  tags$p(class="saved-note","Verify the eligible corpus only when creating a new subset. Existing registered subsets can be loaded, prepared and assigned without repeating verification."),
+                  tags$h5("New subsets · Verify eligible corpus"),
+                  tags$p(class="saved-note","Check the review-specific W02/W03 source records. This does not run screening or modify records."),
+                  actionButton("w04_subset_load_corpus","1. Verify eligible corpus",class="btn-outline-primary btn-sm",
+                    onclick="window.lemBusyStart('w04_subset_load_corpus','Verifying W02/W03 corpus provenance…')"),
+                  tags$div(id="w04_subset_load_corpus_busy",role="status",`aria-live`="polite",
+                    style="display:none;",class="saved-note","Verifying W02/W03 corpus provenance…"),
+                  uiOutput("w04_subset_verification_state"),
+                  tags$hr(),
+                  tags$h5("Select an existing subset or create a new one"),
+                  actionButton("w04_subset_registry_refresh","Load registered subsets",class="btn-outline-secondary btn-sm",
+                    onclick="window.lemBusyStart('w04_subset_registry_refresh','Loading review-specific subset registry…')"),
+                  tags$div(id="w04_subset_registry_refresh_busy",role="status",`aria-live`="polite",
+                    style="display:none;",class="saved-note","Loading review-specific subset registry…"),
+                  uiOutput("w04_subset_parent_select"),
+                  numericInput("w04_subset_size","Number of records",value=100,min=1,step=1),
+                  textInput("w04_subset_new_label","Optional subset label",placeholder="e.g. Check 1, MG"),
+                  uiOutput("w04_subset_create_control"),
+                  uiOutput("w04_subset_registry_history"),
+                  uiOutput("w04_subset_label_editor"),
+                  tags$hr(),
+                  tags$h5("Prepare human screening from a registered subset"),
+                  tags$p(class="saved-note","Choose a registered subset to assign to human reviewers. This does not launch an LLM run. Model execution will use the same subset registry separately."),
+                  uiOutput("w04_subset_queue_selector"),
+                  uiOutput("w04_subset_prepare_control"),
+                  tags$div(id="w04_subset_prepare_queue_busy",role="status",`aria-live`="polite",
+                    style="display:none;",class="saved-note","Preparing and verifying subset screening queue…"),
+                  textOutput("w04_subset_registry_status")
+                )),
+                tabPanel("Prompts & models",
+                  tags$details(class="assignment-disclosure",
+                    tags$summary(tags$strong("Prompt management")),
+                    div(class="px-3 pb-3",
                   tags$p(class="saved-note","Drafts are archived in a separate, restricted review-specific Zenodo deposit. Saving never launches model screening."),
                   fileInput("w04_prompt_upload","Import prompt (TXT, Markdown, DOCX, PDF)",
                     accept=c(".txt",".md",".docx",".pdf")),
@@ -4677,12 +4694,10 @@ server <- function(input, output, session) {
                   textOutput("w04_prompt_archive_status"),
                   uiOutput("w04_prompt_archive_history"),
                   uiOutput("w04_prompt_zenodo_link")
-                )
-              ),
-              tags$details(class="assignment-disclosure",
-                `data-accordion-key`="configure-review-w04-model-screening",
-                tags$summary(tags$strong("Model screening of human-screened subsets")),
-                div(class="px-3 pb-3",
+                )),
+                  tags$details(class="assignment-disclosure",
+                    tags$summary(tags$strong("Model screening and completed runs")),
+                    div(class="px-3 pb-3",
                   tags$p(class="saved-note",
                     "Run the shared W04 model screener against a registered subset after human screening. The selected immutable Zenodo prompt and agreed manual abstract corrections are used. This validation does not publish a full W04 review or launch W05."),
                   actionButton("w04_model_refresh","Load subsets and prompts",
@@ -4727,11 +4742,10 @@ server <- function(input, output, session) {
                   tags$a("View W04 subset model runs",
                     href="https://github.com/thesalmonandthetomato/LivingEvidenceMap/actions/workflows/w04_shiny_subset_launcher.yml",
                     target="_blank",rel="noopener noreferrer")
-                )
-              ),
-              tags$details(class="assignment-disclosure",
-                tags$summary(tags$strong("Highlighted terms")),
-                div(class="px-3 pb-3",
+                )),
+                  tags$details(class="assignment-disclosure",
+                    tags$summary(tags$strong("Highlighted screening terms")),
+                    div(class="px-3 pb-3",
                   tags$p(class="saved-note","One term or phrase per line. Include terms appear green and exclude terms red in W04 titles, abstracts and keywords. Changes replace the current configuration in the review-specific Google Sheet; the prompt Zenodo draft remains unchanged."),
                   textAreaInput("w04_highlight_include","Terms for include (green)",rows=6,width="100%"),
                   textAreaInput("w04_highlight_exclude","Terms for exclude (red)",rows=6,width="100%"),
@@ -4744,40 +4758,16 @@ server <- function(input, output, session) {
                   tags$div(id="w04_highlight_load_busy",role="status",style="display:none;","Loading highlighted terms…"),
                   tags$div(id="w04_highlight_save_busy",role="status",style="display:none;","Saving highlighted terms…"),
                   textOutput("w04_highlight_status")
-                )
-              ),
-              tags$details(class="assignment-disclosure",
-                tags$summary(tags$strong("Subsets and validation")),
-                div(class="px-3 pb-3",
-                  tags$p(class="saved-note","Verify the eligible corpus only when creating a new subset. Existing registered subsets can be loaded, prepared and assigned without repeating verification."),
-                  tags$h5("New subsets · Verify eligible corpus"),
-                  tags$p(class="saved-note","Check the review-specific W02/W03 source records. This does not run screening or modify records."),
-                  actionButton("w04_subset_load_corpus","1. Verify eligible corpus",class="btn-outline-primary btn-sm",
-                    onclick="window.lemBusyStart('w04_subset_load_corpus','Verifying W02/W03 corpus provenance…')"),
-                  tags$div(id="w04_subset_load_corpus_busy",role="status",`aria-live`="polite",
-                    style="display:none;",class="saved-note","Verifying W02/W03 corpus provenance…"),
-                  uiOutput("w04_subset_verification_state"),
-                  tags$hr(),
-                  tags$h5("Select an existing subset or create a new one"),
-                  actionButton("w04_subset_registry_refresh","Load registered subsets",class="btn-outline-secondary btn-sm",
-                    onclick="window.lemBusyStart('w04_subset_registry_refresh','Loading review-specific subset registry…')"),
-                  tags$div(id="w04_subset_registry_refresh_busy",role="status",`aria-live`="polite",
-                    style="display:none;",class="saved-note","Loading review-specific subset registry…"),
-                  uiOutput("w04_subset_parent_select"),
-                  numericInput("w04_subset_size","Number of records",value=100,min=1,step=1),
-                  textInput("w04_subset_new_label","Optional subset label",placeholder="e.g. Check 1, MG"),
-                  uiOutput("w04_subset_create_control"),
-                  uiOutput("w04_subset_registry_history"),
-                  uiOutput("w04_subset_label_editor"),
-                  tags$hr(),
-                  tags$h5("Prepare human screening from a registered subset"),
-                  tags$p(class="saved-note","Choose a registered subset to assign to human reviewers. This does not launch an LLM run. Model execution will use the same subset registry separately."),
-                  uiOutput("w04_subset_queue_selector"),
-                  uiOutput("w04_subset_prepare_control"),
-                  tags$div(id="w04_subset_prepare_queue_busy",role="status",`aria-live`="polite",
-                    style="display:none;",class="saved-note","Preparing and verifying subset screening queue…"),
-                  textOutput("w04_subset_registry_status")
-                )
+                ))),
+                tabPanel("Assignments",
+                  div(class="px-3 pb-3",uiOutput("w04_admin_controls"))),
+                tabPanel("Comparisons",
+                  tags$p(class="saved-note",
+                    "Select one human-screened subset. Its saved decisions and associated model runs load automatically."),
+                  div(class="px-3 pb-3",
+                  tags$p(class="saved-note",
+                    "Select a human-screened subset once. Associated model runs and reviewer choices load automatically; the latest completed model run is selected by default."),
+                  uiOutput("w04_comparison_body")))
               ),
               tags$details(class="assignment-disclosure",
                 tags$summary(tags$strong("Model execution")),
@@ -6674,7 +6664,7 @@ server <- function(input, output, session) {
   admin_assignment_panels <- reactive({
     req(authenticated())
     if (!session_can("manage_assignments")) return(NULL)
-    req(isTRUE(input$open_administration_assignments > 0L) || isTRUE(input$w04_consistency_opened))
+    req(isTRUE(input$open_administration_assignments > 0L) || as.character(input$w04_workspace_tab %||% "") %in% c("Assignments","Comparisons"))
 
     all_assignments <- assignment_registry_rv()
     has_w01_batch <- nzchar(as.character(batch_id_rv())) && length(w01_all_cases_rv()) > 0L
@@ -8318,7 +8308,8 @@ server <- function(input, output, session) {
     w04_consistency_registry_rv(registered)
     registered
   }
-  observeEvent(input$w04_consistency_opened,{
+  observeEvent(input$w04_workspace_tab,{
+    req(identical(input$w04_workspace_tab,"Comparisons"))
     req(authenticated())
     if(!session_can("manage_assignments")) return()
     if(length(w04_consistency_registry_rv())) return()
@@ -8466,7 +8457,8 @@ server <- function(input, output, session) {
     w04_comparison_load_model(id)
   })
 
-  observeEvent(input$w04_consistency_opened, {
+  observeEvent(input$w04_workspace_tab, {
+    req(identical(input$w04_workspace_tab,"Comparisons"))
     req(authenticated())
     if (!session_can("manage_assignments")) return()
     if (isTRUE(w04_consistency_history_loaded())) return()
