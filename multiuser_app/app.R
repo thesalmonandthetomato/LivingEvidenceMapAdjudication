@@ -3777,11 +3777,8 @@ server <- function(input, output, session) {
   output$w04_overview_tables <- renderUI({
     x <- w04_overview_rv()
     if(is.null(x))return(tags$p(class="saved-note","No overview loaded yet. Refresh to read the saved registries."))
-    make_table <- function(data) {
-      if(!nrow(data))return(tags$p(class="saved-note","No saved records."))
-      shiny::tableOutput(NULL)
-    }
-    tagList(
+    tags$div(class="w04-compact-overview",
+      tags$style(HTML(".w04-compact-overview {font-size:0.82rem;line-height:1.25} .w04-compact-overview h5{font-size:0.96rem;margin:0.85rem 0 0.3rem} .w04-compact-overview .table{font-size:0.82rem;width:100%;margin-bottom:0.5rem} .w04-compact-overview .table th,.w04-compact-overview .table td{padding:0.25rem 0.35rem;vertical-align:top;overflow-wrap:anywhere} .w04-compact-overview .table-responsive{overflow-x:auto}")),
       tags$h5("Human-screened subsets"),tags$p(class="saved-note","Created date and completed decisions per assigned reviewer."),
       tableOutput("w04_overview_subsets"),
       tags$h5("Prompt versions"),tableOutput("w04_overview_prompts"),
