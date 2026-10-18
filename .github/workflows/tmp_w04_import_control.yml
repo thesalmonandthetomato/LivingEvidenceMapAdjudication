@@ -1,0 +1,26 @@
+name: Temporary W04 import control validation
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/tmp_w04_import_control.yml']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.4.3'
+          use-public-rspm: true
+      - name: Parse R and verify import control and guard
+        shell: Rscript {0}
+        run: |
+          invisible(parse(file="multiuser_app/app.R"))
+          s <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\n")
+          stopifnot(grepl('actionButton("w04_overview_backfill","Import historical W04 metadata"',s,fixed=TRUE))
+          stopifnot(grepl('observeEvent(input$w04_overview_backfill',s,fixed=TRUE))
+          stopifnot(grepl('if(!session_can("manage_assignments"))return()',s,fixed=TRUE))
+          cat("PASS: historical W04 import control and admin guard\n")
