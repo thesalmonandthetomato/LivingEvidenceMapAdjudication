@@ -4506,18 +4506,7 @@ server <- function(input, output, session) {
 
     card(
       class="assignment-summary",
-      tags$details(
-        class="assignment-disclosure",
-        `data-accordion-key`="configure-review",
-        open="open",
-        tags$summary(
-          div(
-            class="d-inline-flex flex-wrap align-items-center gap-2 p-3",
-            tags$strong("Configure review"),
-            tags$span(class="task-badge","Search scoping")
-          )
-        ),
-        div(
+      div(
           class="px-3 pb-3",
           tags$details(
             class="assignment-disclosure",
@@ -4771,7 +4760,6 @@ server <- function(input, output, session) {
             )
           )
         )
-      )
     )
   }) |> shiny::bindEvent(authenticated(), configure_review_requested(), ignoreNULL=FALSE)
 
