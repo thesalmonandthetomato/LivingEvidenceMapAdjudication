@@ -113,7 +113,7 @@ w04_summary_tables <- function(events) {
     data.frame(Type=get(z,"comparison_type",display(z,"Comparison")),
       Created=date(z),Source=get(z,"source_run","—"),
       Raters=get(z,"raters","—"),
-      Agreement=get(z,"agreement","—"),Conflicts=get(z,"conflicts","0"),
+      Agreement=get(z,"agreement","—"),`Cohen’s κ`=get(z,"kappa","—"),Conflicts=get(z,"conflicts","0"),
       Resolved=resolved,stringsAsFactors=FALSE)
   })
   conflict_rows <- lapply(conflicts,function(z) {
@@ -132,7 +132,7 @@ w04_summary_tables <- function(events) {
     subsets=bind(oldest_first(subset_rows),c("Subset","Created","N","Reviewers","Done","Models")),
     prompts=bind(oldest_first(prompt_rows),c("Prompt","Saved","Author","Models")),
     runs=bind(oldest_first(run_rows),c("Run","Published","Subset","Prompt","N","Uncertain")),
-    comparisons=bind(oldest_first(comparison_rows),c("Type","Created","Source","Raters","Agreement","Conflicts","Resolved")),
+    comparisons=bind(oldest_first(comparison_rows),c("Type","Created","Source","Raters","Agreement","Cohen’s κ","Conflicts","Resolved")),
     conflicts=bind(oldest_first(conflict_rows),c("Set","Created","Comparison","Conflicts")))
 }
 
