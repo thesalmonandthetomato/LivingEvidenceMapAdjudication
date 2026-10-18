@@ -60,3 +60,9 @@ For each stage: record commit SHA, precise changes, validation links and pass/fa
 
 ## Next action
 **User checkpoint after Stage 2:** redeploy `main/multiuser_app/`, open **Administration & assignments → W04 · Screening and validation overview**, click **Refresh overview**, and confirm subset counts, reviewers, dates and model-run associations. If errors appear, capture their exact text. Do not start Stage 3 until this passes.
+
+## 18 Oct: Administration loading safeguard
+- Screenshot after Stage 2 showed task cards but no Administration menu yet. Source inspection found `output$assignment_progress` performs potentially slow historical W04 Sheets reads synchronously during initial rendering.
+- Commit `22f91f1f644fb0ef811259ddedef4d1a63e17165` adds an immediately visible **Administration & assignments** entry button. Heavy assignment UI waits until that button is pressed; the existing accordion and W04 overview remain.
+- [Regression 39114310791](https://github.com/thesalmonandthetomato/LivingEvidenceMapAdjudication/actions/runs/39114310791) **PASS** for R syntax, deferred rendering guard and unchanged controls. Temporary workflow removed in `9970ef03213af935030f93c14e1a31d616574ee7`.
+- **Still unverified live:** entry button display timing, complete menu load after click, and W04 overview refresh. This does not establish that all historical Sheets reads are fast.
