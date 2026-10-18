@@ -32,7 +32,7 @@ jobs:
             rater_ids_json='["usr-matthew","model"]',raw_agreement="0.5",conflict_n="1")
           set <- list(analysis_id="a1",conflict_queue_sha256="sha")
           assign <- list(workflow="04",task_type="manual_screening",
-            batch_id="w04-human-w04-subset-a",user_id="usr-matthew",status="active")
+            batch_id="w04-human-w04-subset-a",user_id="usr-matthew",status="assigned")
           decision <- list(review_case_id="w04-subset-a|r1",reviewer="usr-matthew",decision="retain")
           conflict_decision <- list(queue_sha256="sha",review_case_id="r1")
           users <- list(list(user_id="usr-matthew",display_name="Matthew Grainger"),
