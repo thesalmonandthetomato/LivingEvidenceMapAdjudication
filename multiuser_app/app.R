@@ -6644,10 +6644,316 @@ server <- function(input, output, session) {
       return("Open to load administrator controls; historical assignment details are loaded only when needed.")
     "Administration controls requested. Historical assignment data may take time to load."
   })
+  # Independent comparison renderer: avoids rebuilding all assignment sections
+  # or reading historical assignment progress when raters/model selections change.
+  w04_consistency_panel <- reactive({
+    req(authenticated(),session_can("manage_assignments"))
+    has_w04_batch <- nzchar(as.character(w04_batch_id_rv())) &&
+      length(w04_all_cases_rv()) > 0L
+    fmt_agreement_pct <- function(x) {
+      if (is.na(x)) "—" else sprintf("%.1f%%",100*x)
+    }
+    fmt_kappa <- function(x) {
+      if (is.na(x)) "—" else sprintf("%.3f",x)
+    }
+    reviewer_name <- function(uid) {
+      if (identical(uid,"model")) return("Model")
+      u <- find_user_by_id(user_registry_rv(),uid,require_active=FALSE)
+      if (is.null(u)) uid else u$display_name
+    }
+
+    snapshot <- w04_consistency_subset_snapshot_rv()
+    w04_outcomes_now <- if(is.null(snapshot)) w04_blind_outcomes() else snapshot$outcomes
+    available_raters <- w04_available_consistency_raters(w04_outcomes_now)
+    rater_choices <- stats::setNames(
+      available_raters,
+      vapply(available_raters, reviewer_name, character(1))
+    )
+    input_selection <- input$w04_consistency_raters
+    if (!is.null(snapshot) && nzchar(as.character(snapshot$model_run_id %||% "")) &&
+        (!length(intersect(as.character(input_selection %||% character()),"model")))) {
+      human_defaults <- setdiff(available_raters,"model")
+      match_matt <- Filter(function(uid)grepl("matt|matthew",reviewer_name(uid),ignore.case=TRUE),human_defaults)
+      selected_raters <- c(if(length(match_matt)) match_matt[[1L]] else if(length(human_defaults)) human_defaults[[1L]] else character(),"model")
+    } else if (is.null(input_selection)) {
+      human_defaults <- setdiff(available_raters,"model")
+      selected_raters <- if (length(human_defaults) >= 2L) {
+        human_defaults
+      } else {
+        available_raters
+      }
+    } else {
+      selected_raters <- intersect(
+        as.character(input_selection %||% character()),
+        available_raters
+      )
+    }
+    human_scope_now <- if (
+      length(selected_raters) >= 2L &&
+      !"model" %in% selected_raters
+    ) if(is.null(snapshot)) w04_selected_human_consistency_scope() else NULL else NULL
+    w04_selected_analysis <- if (!is.null(human_scope_now)) {
+      human_scope_now$analysis
+    } else {
+      w04_consistency_analysis(w04_outcomes_now,selected_raters)
+    }
+
+    pairwise_rows <- lapply(w04_selected_analysis$pairwise,function(x) {
+      directional <- x$directional %||% list()
+      tags$tr(
+        tags$td(paste(reviewer_name(x$rater_a),"vs",reviewer_name(x$rater_b))),
+        tags$td(x$n),
+        tags$td(x$include_include),
+        tags$td(x$exclude_exclude),
+        tags$td(x$uncertain_uncertain),
+        tags$td(
+          paste0(
+            reviewer_name(x$rater_a)," Include / ",reviewer_name(x$rater_b)," Exclude: ",
+            directional$retain_exclude %||% 0L,
+            "; reverse: ",
+            directional$exclude_retain %||% 0L
+          )
+        ),
+        tags$td(fmt_agreement_pct(x$agreement)),
+        tags$td(fmt_kappa(x$kappa))
+      )
+    })
+
+    pattern_rows <- lapply(w04_selected_analysis$patterns,function(x) {
+      tags$tr(tags$td(x$pattern),tags$td(x$n))
+    })
+
+    # Comparison controls must remain accessible even when W04 queues are
+    # deferred, so an administrator can load any historical human subset
+    # and compare it with a completed model run on demand.
+    panel <- if (session_can("manage_assignments")) {
+      tags$details(
+        class="assignment-workflow assignment-submenu wf-w04 mb-2",
+        `data-accordion-key`="w04-consistency-checking",
+        ontoggle="if (this.open && window.Shiny) Shiny.setInputValue('w04_consistency_opened', true, {priority: 'event'});",
+        tags$summary(
+          div(
+            class="d-inline-flex flex-wrap align-items-center gap-2",
+            tags$strong("Consistency checking"),
+            tags$span(class="task-badge","Administrator only"),
+            tags$span(
+              class="text-secondary small",
+              if (!has_w04_batch && is.null(snapshot)) {
+                "Historical validation agreement"
+              } else if (length(selected_raters) < 2L) {
+                "Select at least two raters"
+              } else if (w04_selected_analysis$complete < 1L) {
+                "No complete cases for selected raters"
+              } else {
+                sprintf(
+                  "%d complete · %s agreement · %s = %s",
+                  w04_selected_analysis$complete,
+                  fmt_agreement_pct(w04_selected_analysis$raw_agreement),
+                  w04_selected_analysis$metric,
+                  fmt_kappa(w04_selected_analysis$kappa)
+                )
+              }
+            )
+          )
+        ),
+        div(
+          class="pt-2",
+          tags$h6("Human-screened subset"),
+          tags$p(class="text-secondary small","Choose a subset once. Associated model runs are discovered automatically."),
+          uiOutput("w04_consistency_subset_selector"),
+          textOutput("w04_consistency_subset_status"),
+          if(!is.null(snapshot)) tagList(
+            tags$hr(),
+            tags$h6("Completed model run (latest selected automatically)"),
+            if(length(w04_consistency_model_runs_rv())) uiOutput("w04_consistency_model_selector"),
+            textOutput("w04_consistency_model_status")
+          ),
+          if(!is.null(snapshot) && nzchar(as.character(snapshot$model_run_id %||% "")))
+            tags$h6("Compare and save"),
+          tags$p(class="text-secondary small",
+            "The statistics below are calculated only from the selected W04 subset and its loaded model run. Historic review-wide kappa figures are not part of this comparison."),
+          if (!has_w04_batch && is.null(snapshot)) {
+            tags$div(
+              class="text-secondary small",
+              "Load a W04 subset above to calculate subset-specific agreement and kappa."
+            )
+          } else tagList(
+          tags$hr(),
+          tags$p(
+            class="text-secondary small mb-1",
+            "Select any combination of human raters and the model. Statistics use complete cases for the selected raters only; no raw decisions are altered."
+          ),
+          tags$p(
+            class="text-secondary small fw-semibold mb-2",
+            "Agreement statistics update automatically when the selected raters change."
+          ),
+          div(
+            class="d-flex flex-wrap align-items-center gap-2 mb-2",
+            actionButton(
+              "w04_refresh_status_button",
+              "Refresh W04 status",
+              class="btn-outline-secondary btn-sm"
+            ),
+            tags$span(
+              class="saved-note",
+              textOutput("w04_refresh_status",inline=TRUE)
+            )
+          ),
+          if(!is.null(snapshot) && nzchar(as.character(snapshot$model_run_id %||% "")) ||
+             is.null(snapshot)) checkboxGroupInput(
+            "w04_consistency_raters",
+            "Raters to compare",
+            choices=rater_choices,
+            selected=selected_raters,
+            inline=TRUE
+          ),
+          if (
+            length(selected_raters) >= 2L &&
+            !"model" %in% selected_raters
+          ) {
+            tagList(
+              radioButtons(
+                "w04_consistency_scope",
+                "Consistency set",
+                choices=c(
+                  "Since last saved check (Partial)"="partial",
+                  "Entire assignment (Full)"="full"
+                ),
+                selected=as.character(input$w04_consistency_scope %||% "partial"),
+                inline=TRUE
+              ),
+              if (!is.null(human_scope_now)) {
+                tags$div(
+                  class="text-secondary small mb-2",
+                  if (identical(human_scope_now$scope_type,"partial")) {
+                    sprintf(
+                      "%d jointly assigned · %d complete · %d previously saved · %d new records in this Partial check.",
+                      human_scope_now$assigned_n %||% 0L,
+                      human_scope_now$complete_n %||% 0L,
+                      human_scope_now$previously_saved_n %||% 0L,
+                      length(human_scope_now$target_case_ids %||% character())
+                    )
+                  } else {
+                    sprintf(
+                      "%d jointly assigned · %d complete. A Full result can be saved only when all jointly assigned records are complete.",
+                      human_scope_now$assigned_n %||% 0L,
+                      human_scope_now$complete_n %||% 0L
+                    )
+                  }
+                )
+              }
+            )
+          },
+          if (length(selected_raters) < 2L) {
+            tags$div(
+              class="p-2 border rounded bg-light text-secondary small",
+              "Select at least two raters. Previous statistics are intentionally hidden until a valid comparison is selected."
+            )
+          } else if (w04_selected_analysis$complete < 1L) {
+            tags$div(
+              class="p-2 border rounded bg-light text-secondary small",
+              sprintf(
+                "No records have complete decisions for all selected raters. Eligible records: %d; missing for this comparison: %d. Agreement and kappa are not calculated.",
+                w04_selected_analysis$eligible,
+                w04_selected_analysis$missing
+              )
+            )
+          } else {
+            tagList(
+              div(
+                class="assignment-kpis",
+                div(class="assignment-kpi",tags$span("Eligible records"),tags$strong(w04_selected_analysis$eligible)),
+                div(class="assignment-kpi",tags$span("Complete cases"),tags$strong(w04_selected_analysis$complete)),
+                div(class="assignment-kpi",tags$span("Missing"),tags$strong(w04_selected_analysis$missing)),
+                div(class="assignment-kpi",tags$span("Agreements"),tags$strong(w04_selected_analysis$agreement_cases)),
+                div(class="assignment-kpi",tags$span("Conflicts"),tags$strong(w04_selected_analysis$conflict_cases)),
+                div(class="assignment-kpi",tags$span("Agreement"),tags$strong(fmt_agreement_pct(w04_selected_analysis$raw_agreement))),
+                div(class="assignment-kpi",tags$span(w04_selected_analysis$metric),tags$strong(fmt_kappa(w04_selected_analysis$kappa)))
+              ),
+              if(length(pairwise_rows)) {
+                tagList(
+                  tags$strong("Pairwise detail"),
+                  div(
+                    class="assignment-table-wrap mb-2",
+                    tags$table(
+                      class="assignment-table",
+                      tags$thead(tags$tr(
+                        tags$th("Comparison"),
+                        tags$th("N"),
+                        tags$th("Include / include"),
+                        tags$th("Exclude / exclude"),
+                        tags$th("Unsure / unsure"),
+                        tags$th("Directional include/exclude disagreement"),
+                        tags$th("Agreement"),
+                        tags$th("κ")
+                      )),
+                      tags$tbody(pairwise_rows)
+                    )
+                  )
+                )
+              },
+              if(length(pattern_rows) && length(selected_raters) > 2L) {
+                tagList(
+                  tags$strong("Multi-rater decision patterns"),
+                  tags$div(
+                    class="text-secondary small mb-1",
+                    "Rater order follows the selection shown above."
+                  ),
+                  div(
+                    class="assignment-table-wrap mb-2",
+                    tags$table(
+                      class="assignment-table",
+                      tags$thead(tags$tr(tags$th("Decision pattern"),tags$th("N"))),
+                      tags$tbody(pattern_rows)
+                    )
+                  )
+                )
+              },
+              if(is.null(snapshot) || nzchar(as.character(snapshot$model_run_id %||% ""))) div(
+                class="d-flex align-items-center gap-2 mt-2",
+                actionButton(
+                  "w04_save_consistency_analysis",
+                  if (
+                    length(selected_raters) >= 2L &&
+                    !"model" %in% selected_raters
+                  ) "Save consistency result" else "Save analysis",
+                  class="btn-primary btn-sm",
+                  disabled=if (!is.null(human_scope_now)) !isTRUE(human_scope_now$save_ready) else FALSE
+                ),
+                tags$span(
+                  class="saved-note",
+                  textOutput("w04_consistency_status",inline=TRUE)
+                )
+              ),
+              tags$div(
+                class="text-secondary small mt-2",
+                sprintf(
+                  "Current batch: %s · queue SHA: %s",
+                  w04_batch_id_rv(),
+                  substr(w04_queue_sha_rv(),1L,16L)
+                )
+              )
+            )
+          },
+          tags$hr(),
+          tags$h5("Saved comparisons and conflict adjudication"),
+          tags$p(class="saved-note",
+            "Saved comparisons and their disagreements remain available even when the current rater selection is incomplete. The W04 decision count above is a separate manual-screening status."),
+          uiOutput("w04_consistency_history"),
+          uiOutput("w04_model_conflict_loader")
+          )
+        )
+      )
+    } else NULL
+
+    panel
+  })
+
   admin_assignment_panels <- reactive({
     req(authenticated())
     if (!session_can("manage_assignments")) return(NULL)
-    req(isTRUE(input$open_administration_assignments > 0L) || as.character(input$w04_workspace_tab %||% "") %in% c("Assignments","Comparisons"))
+    req(isTRUE(input$open_administration_assignments > 0L) ||
+      identical(as.character(input$w04_workspace_tab %||% ""),"Assignments"))
 
     all_assignments <- assignment_registry_rv()
     has_w01_batch <- nzchar(as.character(batch_id_rv())) && length(w01_all_cases_rv()) > 0L
@@ -7497,302 +7803,6 @@ server <- function(input, output, session) {
       )
     })
 
-    fmt_agreement_pct <- function(x) {
-      if (is.na(x)) "—" else sprintf("%.1f%%",100*x)
-    }
-    fmt_kappa <- function(x) {
-      if (is.na(x)) "—" else sprintf("%.3f",x)
-    }
-    reviewer_name <- function(uid) {
-      if (identical(uid,"model")) return("Model")
-      u <- find_user_by_id(user_registry_rv(),uid,require_active=FALSE)
-      if (is.null(u)) uid else u$display_name
-    }
-
-    snapshot <- w04_consistency_subset_snapshot_rv()
-    w04_outcomes_now <- if(is.null(snapshot)) w04_blind_outcomes() else snapshot$outcomes
-    available_raters <- w04_available_consistency_raters(w04_outcomes_now)
-    rater_choices <- stats::setNames(
-      available_raters,
-      vapply(available_raters, reviewer_name, character(1))
-    )
-    input_selection <- input$w04_consistency_raters
-    if (!is.null(snapshot) && nzchar(as.character(snapshot$model_run_id %||% "")) &&
-        (!length(intersect(as.character(input_selection %||% character()),"model")))) {
-      human_defaults <- setdiff(available_raters,"model")
-      match_matt <- Filter(function(uid)grepl("matt|matthew",reviewer_name(uid),ignore.case=TRUE),human_defaults)
-      selected_raters <- c(if(length(match_matt)) match_matt[[1L]] else if(length(human_defaults)) human_defaults[[1L]] else character(),"model")
-    } else if (is.null(input_selection)) {
-      human_defaults <- setdiff(available_raters,"model")
-      selected_raters <- if (length(human_defaults) >= 2L) {
-        human_defaults
-      } else {
-        available_raters
-      }
-    } else {
-      selected_raters <- intersect(
-        as.character(input_selection %||% character()),
-        available_raters
-      )
-    }
-    human_scope_now <- if (
-      length(selected_raters) >= 2L &&
-      !"model" %in% selected_raters
-    ) if(is.null(snapshot)) w04_selected_human_consistency_scope() else NULL else NULL
-    w04_selected_analysis <- if (!is.null(human_scope_now)) {
-      human_scope_now$analysis
-    } else {
-      w04_consistency_analysis(w04_outcomes_now,selected_raters)
-    }
-
-    pairwise_rows <- lapply(w04_selected_analysis$pairwise,function(x) {
-      directional <- x$directional %||% list()
-      tags$tr(
-        tags$td(paste(reviewer_name(x$rater_a),"vs",reviewer_name(x$rater_b))),
-        tags$td(x$n),
-        tags$td(x$include_include),
-        tags$td(x$exclude_exclude),
-        tags$td(x$uncertain_uncertain),
-        tags$td(
-          paste0(
-            reviewer_name(x$rater_a)," Include / ",reviewer_name(x$rater_b)," Exclude: ",
-            directional$retain_exclude %||% 0L,
-            "; reverse: ",
-            directional$exclude_retain %||% 0L
-          )
-        ),
-        tags$td(fmt_agreement_pct(x$agreement)),
-        tags$td(fmt_kappa(x$kappa))
-      )
-    })
-
-    pattern_rows <- lapply(w04_selected_analysis$patterns,function(x) {
-      tags$tr(tags$td(x$pattern),tags$td(x$n))
-    })
-
-    # Comparison controls must remain accessible even when W04 queues are
-    # deferred, so an administrator can load any historical human subset
-    # and compare it with a completed model run on demand.
-    w04_results_panel <- if (session_can("manage_assignments")) {
-      tags$details(
-        class="assignment-workflow assignment-submenu wf-w04 mb-2",
-        `data-accordion-key`="w04-consistency-checking",
-        ontoggle="if (this.open && window.Shiny) Shiny.setInputValue('w04_consistency_opened', true, {priority: 'event'});",
-        tags$summary(
-          div(
-            class="d-inline-flex flex-wrap align-items-center gap-2",
-            tags$strong("Consistency checking"),
-            tags$span(class="task-badge","Administrator only"),
-            tags$span(
-              class="text-secondary small",
-              if (!has_w04_batch && is.null(snapshot)) {
-                "Historical validation agreement"
-              } else if (length(selected_raters) < 2L) {
-                "Select at least two raters"
-              } else if (w04_selected_analysis$complete < 1L) {
-                "No complete cases for selected raters"
-              } else {
-                sprintf(
-                  "%d complete · %s agreement · %s = %s",
-                  w04_selected_analysis$complete,
-                  fmt_agreement_pct(w04_selected_analysis$raw_agreement),
-                  w04_selected_analysis$metric,
-                  fmt_kappa(w04_selected_analysis$kappa)
-                )
-              }
-            )
-          )
-        ),
-        div(
-          class="pt-2",
-          tags$h6("Human-screened subset"),
-          tags$p(class="text-secondary small","Choose a subset once. Associated model runs are discovered automatically."),
-          uiOutput("w04_consistency_subset_selector"),
-          textOutput("w04_consistency_subset_status"),
-          if(!is.null(snapshot)) tagList(
-            tags$hr(),
-            tags$h6("Completed model run (latest selected automatically)"),
-            if(length(w04_consistency_model_runs_rv())) uiOutput("w04_consistency_model_selector"),
-            textOutput("w04_consistency_model_status")
-          ),
-          if(!is.null(snapshot) && nzchar(as.character(snapshot$model_run_id %||% "")))
-            tags$h6("Compare and save"),
-          tags$p(class="text-secondary small",
-            "The statistics below are calculated only from the selected W04 subset and its loaded model run. Historic review-wide kappa figures are not part of this comparison."),
-          if (!has_w04_batch && is.null(snapshot)) {
-            tags$div(
-              class="text-secondary small",
-              "Load a W04 subset above to calculate subset-specific agreement and kappa."
-            )
-          } else tagList(
-          tags$hr(),
-          tags$p(
-            class="text-secondary small mb-1",
-            "Select any combination of human raters and the model. Statistics use complete cases for the selected raters only; no raw decisions are altered."
-          ),
-          tags$p(
-            class="text-secondary small fw-semibold mb-2",
-            "Agreement statistics update automatically when the selected raters change."
-          ),
-          div(
-            class="d-flex flex-wrap align-items-center gap-2 mb-2",
-            actionButton(
-              "w04_refresh_status_button",
-              "Refresh W04 status",
-              class="btn-outline-secondary btn-sm"
-            ),
-            tags$span(
-              class="saved-note",
-              textOutput("w04_refresh_status",inline=TRUE)
-            )
-          ),
-          if(!is.null(snapshot) && nzchar(as.character(snapshot$model_run_id %||% "")) ||
-             is.null(snapshot)) checkboxGroupInput(
-            "w04_consistency_raters",
-            "Raters to compare",
-            choices=rater_choices,
-            selected=selected_raters,
-            inline=TRUE
-          ),
-          if (
-            length(selected_raters) >= 2L &&
-            !"model" %in% selected_raters
-          ) {
-            tagList(
-              radioButtons(
-                "w04_consistency_scope",
-                "Consistency set",
-                choices=c(
-                  "Since last saved check (Partial)"="partial",
-                  "Entire assignment (Full)"="full"
-                ),
-                selected=as.character(input$w04_consistency_scope %||% "partial"),
-                inline=TRUE
-              ),
-              if (!is.null(human_scope_now)) {
-                tags$div(
-                  class="text-secondary small mb-2",
-                  if (identical(human_scope_now$scope_type,"partial")) {
-                    sprintf(
-                      "%d jointly assigned · %d complete · %d previously saved · %d new records in this Partial check.",
-                      human_scope_now$assigned_n %||% 0L,
-                      human_scope_now$complete_n %||% 0L,
-                      human_scope_now$previously_saved_n %||% 0L,
-                      length(human_scope_now$target_case_ids %||% character())
-                    )
-                  } else {
-                    sprintf(
-                      "%d jointly assigned · %d complete. A Full result can be saved only when all jointly assigned records are complete.",
-                      human_scope_now$assigned_n %||% 0L,
-                      human_scope_now$complete_n %||% 0L
-                    )
-                  }
-                )
-              }
-            )
-          },
-          if (length(selected_raters) < 2L) {
-            tags$div(
-              class="p-2 border rounded bg-light text-secondary small",
-              "Select at least two raters. Previous statistics are intentionally hidden until a valid comparison is selected."
-            )
-          } else if (w04_selected_analysis$complete < 1L) {
-            tags$div(
-              class="p-2 border rounded bg-light text-secondary small",
-              sprintf(
-                "No records have complete decisions for all selected raters. Eligible records: %d; missing for this comparison: %d. Agreement and kappa are not calculated.",
-                w04_selected_analysis$eligible,
-                w04_selected_analysis$missing
-              )
-            )
-          } else {
-            tagList(
-              div(
-                class="assignment-kpis",
-                div(class="assignment-kpi",tags$span("Eligible records"),tags$strong(w04_selected_analysis$eligible)),
-                div(class="assignment-kpi",tags$span("Complete cases"),tags$strong(w04_selected_analysis$complete)),
-                div(class="assignment-kpi",tags$span("Missing"),tags$strong(w04_selected_analysis$missing)),
-                div(class="assignment-kpi",tags$span("Agreements"),tags$strong(w04_selected_analysis$agreement_cases)),
-                div(class="assignment-kpi",tags$span("Conflicts"),tags$strong(w04_selected_analysis$conflict_cases)),
-                div(class="assignment-kpi",tags$span("Agreement"),tags$strong(fmt_agreement_pct(w04_selected_analysis$raw_agreement))),
-                div(class="assignment-kpi",tags$span(w04_selected_analysis$metric),tags$strong(fmt_kappa(w04_selected_analysis$kappa)))
-              ),
-              if(length(pairwise_rows)) {
-                tagList(
-                  tags$strong("Pairwise detail"),
-                  div(
-                    class="assignment-table-wrap mb-2",
-                    tags$table(
-                      class="assignment-table",
-                      tags$thead(tags$tr(
-                        tags$th("Comparison"),
-                        tags$th("N"),
-                        tags$th("Include / include"),
-                        tags$th("Exclude / exclude"),
-                        tags$th("Unsure / unsure"),
-                        tags$th("Directional include/exclude disagreement"),
-                        tags$th("Agreement"),
-                        tags$th("κ")
-                      )),
-                      tags$tbody(pairwise_rows)
-                    )
-                  )
-                )
-              },
-              if(length(pattern_rows) && length(selected_raters) > 2L) {
-                tagList(
-                  tags$strong("Multi-rater decision patterns"),
-                  tags$div(
-                    class="text-secondary small mb-1",
-                    "Rater order follows the selection shown above."
-                  ),
-                  div(
-                    class="assignment-table-wrap mb-2",
-                    tags$table(
-                      class="assignment-table",
-                      tags$thead(tags$tr(tags$th("Decision pattern"),tags$th("N"))),
-                      tags$tbody(pattern_rows)
-                    )
-                  )
-                )
-              },
-              if(is.null(snapshot) || nzchar(as.character(snapshot$model_run_id %||% ""))) div(
-                class="d-flex align-items-center gap-2 mt-2",
-                actionButton(
-                  "w04_save_consistency_analysis",
-                  if (
-                    length(selected_raters) >= 2L &&
-                    !"model" %in% selected_raters
-                  ) "Save consistency result" else "Save analysis",
-                  class="btn-primary btn-sm",
-                  disabled=if (!is.null(human_scope_now)) !isTRUE(human_scope_now$save_ready) else FALSE
-                ),
-                tags$span(
-                  class="saved-note",
-                  textOutput("w04_consistency_status",inline=TRUE)
-                )
-              ),
-              tags$div(
-                class="text-secondary small mt-2",
-                sprintf(
-                  "Current batch: %s · queue SHA: %s",
-                  w04_batch_id_rv(),
-                  substr(w04_queue_sha_rv(),1L,16L)
-                )
-              )
-            )
-          },
-          tags$hr(),
-          tags$h5("Saved comparisons and conflict adjudication"),
-          tags$p(class="saved-note",
-            "Saved comparisons and their disagreements remain available even when the current rater selection is incomplete. The W04 decision count above is a separate manual-screening status."),
-          uiOutput("w04_consistency_history"),
-          uiOutput("w04_model_conflict_loader")
-          )
-        )
-      )
-    } else NULL
-
     # Show only one W04 manual-screening assignment section at a time.
     # All subset assignments remain intact in the registry and audit history.
     visible_group_indices <- which(!vapply(group_progress,function(g)
@@ -7866,8 +7876,7 @@ server <- function(input, output, session) {
       )
     )
     list(general=general_panel,
-      w04=tagList(w04_sections_display,uiOutput("w04_model_conflict_task_loader")),
-      comparison=w04_results_panel)
+      w04=tagList(w04_sections_display,uiOutput("w04_model_conflict_task_loader")))
 
   })
 
@@ -7880,7 +7889,7 @@ server <- function(input, output, session) {
   })
   output$w04_comparison_body <- renderUI({
     req(authenticated(),configure_review_requested(),session_can("manage_assignments"))
-    panel <- admin_assignment_panels()$comparison
+    panel <- w04_consistency_panel()
     if(is.null(panel))return(NULL)
     # Preserve the parent accordion and its user-controlled open state.
     panel$children[[2L]]
