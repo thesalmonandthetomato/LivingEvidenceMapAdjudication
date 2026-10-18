@@ -2452,6 +2452,21 @@ server <- function(input, output, session) {
         w02_completed <- max(0L, w02_total - w02_remaining)
       }
 
+      # Initial W04 buttons are gated by this user's active assignments,
+      # using the assignment registry already read for ordinary dashboard login.
+      # Unknown assignments never imply a task is available.
+      w04_user_has_assignment <- function(task_type) {
+        uid <- as.character(current_user()$user_id %||% "")
+        if(!nzchar(uid))return(FALSE)
+        assignments <- assignment_registry_rv() %||% list()
+        any(vapply(assignments,function(x) {
+          z <- normalise_assignment_row(x)
+          identical(z$workflow,"04") &&
+            identical(z$task_type,task_type) &&
+            identical(z$user_id,uid) &&
+            identical(z$status,"assigned")
+        },logical(1)))
+      }
       w04_total <- length(w04_cases_rv() %||% list())
       w04_remaining <- if (w04_total) length(w04_unresolved_indices()) else 0L
       w04_completed <- max(0L, w04_total - w04_remaining)
@@ -2630,7 +2645,7 @@ server <- function(input, output, session) {
               if(isTRUE(w04_queue_loaded_rv())) w04_total else "—",
               if(isTRUE(w04_queue_loaded_rv())) w04_completed else "—",
               if(isTRUE(w04_queue_loaded_rv())) w04_remaining else "—",
-              if(!isTRUE(w04_queue_loaded_rv())) "w04_open_manual_on_demand" else if(w04_remaining > 0L) "open_w04" else NULL,
+              if(!isTRUE(w04_queue_loaded_rv()) && w04_user_has_assignment("manual_screening")) "w04_open_manual_on_demand" else if(w04_remaining > 0L) "open_w04" else NULL,
               if(!isTRUE(w04_queue_loaded_rv())) "Open manual screening" else "Continue manual screening",
               w04_batch_id_rv(),
               w04_batch_status_rv()
@@ -2645,7 +2660,7 @@ server <- function(input, output, session) {
               if(isTRUE(w04_queue_loaded_rv())) w04_conflict_total else "—",
               if(isTRUE(w04_queue_loaded_rv())) w04_conflict_completed else "—",
               if(isTRUE(w04_queue_loaded_rv())) w04_conflict_remaining else "—",
-              if(!isTRUE(w04_queue_loaded_rv())) "w04_open_conflicts_on_demand" else if(w04_conflict_remaining > 0L) "open_w04_conflict" else NULL,
+              if(!isTRUE(w04_queue_loaded_rv()) && w04_user_has_assignment("conflict_resolution")) "w04_open_conflicts_on_demand" else if(w04_conflict_remaining > 0L) "open_w04_conflict" else NULL,
               "Resolve reviewer conflicts",
               w04_active_conflict_batch_id(),
               w04_active_conflict_batch_status(),
@@ -2670,7 +2685,7 @@ server <- function(input, output, session) {
               if(isTRUE(w04_queue_loaded_rv())) w04_resolution_total else "—",
               if(isTRUE(w04_queue_loaded_rv())) w04_resolution_completed else "—",
               if(isTRUE(w04_queue_loaded_rv())) w04_resolution_remaining else "—",
-              if(!isTRUE(w04_queue_loaded_rv())) "w04_open_uncertainties_on_demand" else if(w04_resolution_remaining > 0L) "open_w04_resolution" else NULL,
+              if(!isTRUE(w04_queue_loaded_rv()) && w04_user_has_assignment("model_uncertainty")) "w04_open_uncertainties_on_demand" else if(w04_resolution_remaining > 0L) "open_w04_resolution" else NULL,
               "Resolve model uncertainty",
               w04_resolution_batch_id_rv(),
               w04_resolution_batch_status_rv(),
