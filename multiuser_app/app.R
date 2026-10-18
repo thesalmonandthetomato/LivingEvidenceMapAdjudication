@@ -2578,7 +2578,7 @@ server <- function(input, output, session) {
               div(class="p-3",
                 uiOutput("configure_review"),
                 tags$div(class="mt-3",
-                  actionButton("open_administration_assignments","Assignments and administration",class="btn-outline-secondary btn-sm"),
+                  tags$span(class="saved-note","W01, W02 and W08 assignment administration"),
                   textOutput("administration_load_status"),
                   uiOutput("assignment_progress"))))),
         div(
@@ -4655,6 +4655,12 @@ server <- function(input, output, session) {
                 actionButton("w04_overview_refresh","Refresh overview",class="btn-outline-secondary btn-sm"),
                 textOutput("w04_overview_status"),
                 uiOutput("w04_overview_tables")),
+              tags$details(class="assignment-disclosure mt-2",
+                tags$summary(tags$strong("Reviewer assignments, consistency and disagreements")),
+                div(class="px-3 pb-3",
+                  actionButton("open_administration_assignments",
+                    "Load assignment controls",class="btn-outline-secondary btn-sm"),
+                  uiOutput("w04_admin_controls"))),
               tags$details(class="assignment-disclosure",
                 tags$summary(tags$strong("Prompt management")),
                 div(class="px-3 pb-3",
@@ -6672,7 +6678,7 @@ server <- function(input, output, session) {
       return("Open to load administrator controls; historical assignment details are loaded only when needed.")
     "Administration controls requested. Historical assignment data may take time to load."
   })
-  output$assignment_progress <- renderUI({
+  admin_assignment_panels <- reactive({
     req(authenticated())
     if (!session_can("manage_assignments")) return(NULL)
     req(input$open_administration_assignments > 0L)
@@ -7834,11 +7840,15 @@ server <- function(input, output, session) {
       identical(g$meta$task_type,"manual_screening") &&
       startsWith(as.character(g$meta$batch_id),"w04-human-") &&
       !identical(as.character(g$meta$batch_id),chosen_manual),logical(1)))
-    workflow_sections_display <- workflow_sections[visible_group_indices]
+    w04_indices <- visible_group_indices[vapply(group_progress[visible_group_indices],
+      function(g) identical(g$meta$workflow,"04"),logical(1))]
+    other_indices <- setdiff(visible_group_indices,w04_indices)
+    w04_sections_display <- workflow_sections[w04_indices]
+    other_sections_display <- workflow_sections[other_indices]
     if(!is.null(w04_results_panel))
-      workflow_sections_display <- c(workflow_sections_display,list(w04_results_panel))
+      w04_sections_display <- c(w04_sections_display,list(w04_results_panel))
 
-    card(
+    general_panel <- card(
       class = "assignment-summary",
       tags$details(
         class = "assignment-disclosure",
@@ -7863,9 +7873,8 @@ server <- function(input, output, session) {
             div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(record_table_link(total_outstanding_cases,"all","all","","outstanding_cases",label="All workflows · Outstanding"))),
             div(class = "assignment-kpi", tags$span("Conflicts"), tags$strong(record_table_link(length(w04_all_conflict_cases()),"04","conflict_resolution",w04_active_conflict_batch_id(),"cases",label="W04 · Reviewer conflict resolution · Cases")))
           ),
-          workflow_sections_display,
+          other_sections_display,
           tags$hr(class = "my-3"),
-          uiOutput("w04_model_conflict_task_loader"),
           tags$details(
             class = "assignment-workflow border rounded",
             `data-accordion-key` = "backend-maintenance",
@@ -7896,6 +7905,19 @@ server <- function(input, output, session) {
         )
       )
     )
+    list(general=general_panel,
+      w04=tagList(
+        w04_sections_display,
+        uiOutput("w04_model_conflict_task_loader")))
+
+  })
+
+  output$assignment_progress <- renderUI({
+    admin_assignment_panels()$general
+  })
+  output$w04_admin_controls <- renderUI({
+    req(authenticated(),configure_review_requested())
+    admin_assignment_panels()$w04
   })
 
   output$backend_reset_status <- renderText(backend_reset_status())
