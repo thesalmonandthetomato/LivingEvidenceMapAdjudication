@@ -3912,7 +3912,17 @@ server <- function(input, output, session) {
       return()
     }
     w04_model_batches_rv(result)
-    w04_model_return_status_rv(sprintf("%d completed model run(s) available.",length(result)))
+    # Publication metadata is synchronised in bulk when completed model runs
+    # are loaded; never poll the model registry from the read-only overview.
+    synced <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      w04_summary_backfill(meta$review_id,list(),list(),result,list(),list())
+    },error=function(e)e)
+    w04_model_return_status_rv(if(inherits(synced,"error"))
+      sprintf("%d completed model run(s) loaded, but summary sync failed: %s",
+        length(result),conditionMessage(synced))
+      else sprintf("%d completed model run(s) available; %d new summary row(s).",
+        length(result),synced))
   })
   output$w04_model_batch_selector <- renderUI({
     req(authenticated())
