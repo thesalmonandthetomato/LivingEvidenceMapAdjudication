@@ -4641,6 +4641,14 @@ server <- function(input, output, session) {
                   textOutput("w04_overview_status"),
                   uiOutput("w04_overview_tables"))),
               tags$details(class="assignment-disclosure mt-2",
+                `data-accordion-key`="w04-compare-human-model",
+                ontoggle="if(this.open && window.Shiny) Shiny.setInputValue('w04_consistency_opened', true, {priority:'event'});",
+                tags$summary(tags$strong("Comparisons · human and model")),
+                div(class="px-3 pb-3",
+                  tags$p(class="saved-note",
+                    "Select a human-screened subset once. Associated model runs and reviewer choices load automatically; the latest completed model run is selected by default."),
+                  uiOutput("w04_comparison_body"))),
+              tags$details(class="assignment-disclosure mt-2",
                 tags$summary(tags$strong("Reviewer assignments, consistency and disagreements")),
                 div(class="px-3 pb-3",
                   actionButton("open_administration_assignments",
@@ -6666,7 +6674,7 @@ server <- function(input, output, session) {
   admin_assignment_panels <- reactive({
     req(authenticated())
     if (!session_can("manage_assignments")) return(NULL)
-    req(input$open_administration_assignments > 0L)
+    req(isTRUE(input$open_administration_assignments > 0L) || isTRUE(input$w04_consistency_opened))
 
     all_assignments <- assignment_registry_rv()
     has_w01_batch <- nzchar(as.character(batch_id_rv())) && length(w01_all_cases_rv()) > 0L
@@ -7824,8 +7832,8 @@ server <- function(input, output, session) {
     other_indices <- setdiff(visible_group_indices,w04_indices)
     w04_sections_display <- workflow_sections[w04_indices]
     other_sections_display <- workflow_sections[other_indices]
-    if(!is.null(w04_results_panel))
-      w04_sections_display <- c(w04_sections_display,list(w04_results_panel))
+    # Consistency UI is hosted by a static W04 disclosure elsewhere.
+    # Never rebuild its enclosing <details> as outcomes or inputs change.
 
     general_panel <- card(
       class = "assignment-summary",
@@ -7885,9 +7893,8 @@ server <- function(input, output, session) {
       )
     )
     list(general=general_panel,
-      w04=tagList(
-        w04_sections_display,
-        uiOutput("w04_model_conflict_task_loader")))
+      w04=tagList(w04_sections_display,uiOutput("w04_model_conflict_task_loader")),
+      comparison=w04_results_panel)
 
   })
 
@@ -7897,6 +7904,13 @@ server <- function(input, output, session) {
   output$w04_admin_controls <- renderUI({
     req(authenticated(),configure_review_requested())
     admin_assignment_panels()$w04
+  })
+  output$w04_comparison_body <- renderUI({
+    req(authenticated(),configure_review_requested(),session_can("manage_assignments"))
+    panel <- admin_assignment_panels()$comparison
+    if(is.null(panel))return(NULL)
+    # Preserve the parent accordion and its user-controlled open state.
+    panel$children[[2L]]
   })
 
   output$backend_reset_status <- renderText(backend_reset_status())
