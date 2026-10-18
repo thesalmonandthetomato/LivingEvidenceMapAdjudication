@@ -175,5 +175,9 @@ w04_prompt_archive_save <- function(meta,version) {
   if(!identical(observed$review_id,meta$review_id)||length(found)!=1L||
      !identical(found[[1]]$sha256,version$sha256))
     stop("W04 manifest verification failed",call.=FALSE)
+  if(exists("w04_summary_record_safe",mode="function"))
+    w04_summary_record_safe("prompt",version$version_id,version$created_at_utc,
+      w04_overview_chr(version$notes,w04_overview_chr(version$original_filename,version$version_id)),
+      paste("Saved by",version$author),review_id=meta$review_id)
   invisible(version$version_id)
 }
