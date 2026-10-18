@@ -104,3 +104,10 @@ For each stage: record commit SHA, precise changes, validation links and pass/fa
 - Administrator overview refresh now supplies the active review ID, avoiding cross-review mixing. Commit `ef1c6407a7aebc56ac42a0de55ff39d610945999`.
 - [Targeted GitHub Actions validation 39125196873](https://github.com/thesalmonandthetomato/LivingEvidenceMapAdjudication/actions/runs/39125196873) **PASS**: parse `multiuser_app/app.R` and `multiuser_app/R/w04_work_overview_sheets.R`; assert both safeguards and row-level review filter are present. Temporary validation workflow removed in `e4d4663a7da76d486aaad8f1e2ea436000d1b374`.
 - This is source-level validation only, not a live historical import or live Sheets verification. The Shiny administrator must explicitly run historical import and confirm summary counts before declaring migration complete.
+
+## 18 Oct: Defer active W04 queue loading on standard dashboard
+- Administrator and reviewer login continues to the normal task dashboard. W04 screening, conflict, model uncertainty queue/decision reads are now enclosed in a deferred session loader, rather than executed during login.
+- The normal dashboard shows an explicit **Load W04 tasks** control until that loader completes. Once requested, the original W04 queues and task cards are restored; model uncertainty restoration is also postponed until this action.
+- This does **not** defer W01, W02 or W08 reads, nor replace the established W04 metadata overview and its independent refresh/backfill actions.
+- Code commit: `fc7d1a4bc50045c274926fd755912c3f85b23804`. [R parse and static contract test 39126924828](https://github.com/thesalmonandthetomato/LivingEvidenceMapAdjudication/actions/runs/39126924828) **PASS**. Temporary workflow removed in `1891135593a3b8239529814704b0cb54489e1252`.
+- **Live test still required:** re-login and confirm dashboard appears without the W04 queue delay; choose Load W04 tasks, check manual screening, model uncertainties, conflict assignments and W01/W02/W08 restoration. Source-level checks cannot confirm Google Sheets latency or live queue integrity.
