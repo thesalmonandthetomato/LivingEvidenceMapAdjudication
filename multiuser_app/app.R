@@ -3773,7 +3773,12 @@ server <- function(input, output, session) {
       runs <- w04_model_batch_registry_read(meta$review_id)
       analyses <- read_w04_consistency_analyses()
       sets <- read_w04_conflict_sets()
-      w04_summary_backfill(meta$review_id,subsets,prompts,runs,analyses,sets)
+      decisions <- active_sheet_w04_decisions()
+      conflict_decisions <- active_sheet_w04_conflict_decisions()
+      w04_summary_backfill(meta$review_id,subsets,prompts,runs,analyses,sets,
+        assignments=assignment_registry_rv(),manual_decisions=decisions,
+        conflict_decisions=conflict_decisions,
+        users=lapply(user_registry_rv(),normalise_user_row))
     },error=function(e)e)
     w04_overview_backfill_status_rv(if(inherits(result,"error"))
       paste("Historical import failed:",conditionMessage(result))
