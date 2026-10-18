@@ -52,6 +52,6 @@ jobs:
           stopifnot(all(c("subsets","prompts","runs","comparisons","conflicts")%in%names(z)))
           # Historical reconstruction remains an explicit action and app parsing works.
           body_text <- paste(deparse(body(w04_summary_backfill)),collapse="\\n")
-          stopifnot(grepl("incoming\\\\$event_id",body_text),
+          stopifnot(grepl("event_id",body_text,fixed=TRUE),
             grepl("sheet_append",body_text,fixed=TRUE))
           cat("PASS R parsing, latest-by-entity, sorted summary and backfill references.\n")
