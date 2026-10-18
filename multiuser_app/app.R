@@ -1010,6 +1010,7 @@ server <- function(input, output, session) {
   w01_export_requested_rv <- reactiveVal(FALSE)
   w01_export_status_rv <- reactiveVal("")
   app_view <- reactiveVal("tasks")
+  w04_queued_init_rv <- reactiveVal(NULL)
   record_table_context <- reactiveVal(NULL)
   record_table_page <- reactiveVal(1L)
   record_table_abstract_open <- reactiveVal(character())
@@ -2383,6 +2384,30 @@ server <- function(input, output, session) {
           tags$div(class = "mt-2 text-danger", textOutput("login_status"))
         )
       ))
+    }
+
+    if(identical(app_view(),"w04_workspace")) {
+      return(div(class="app-shell",
+        div(class="d-flex justify-content-between align-items-center mb-3",
+          tags$h2("W04 · Screening and validation"),
+          div(uiOutput("session_identity"),
+            actionButton("logout","Log out",class="btn-outline-secondary btn-sm"))),
+        card(class="assignment-summary",div(class="p-3",
+          tags$p(class="saved-note",
+            "Fast administrator view. Workflow queues are not loaded until you open the task dashboard."),
+          actionButton("w04_load_review_tasks","Load full review task dashboard",
+            class="btn-outline-primary mb-3"),
+          tags$hr(),
+          actionButton("w04_overview_refresh","Refresh W04 overview",class="btn-outline-secondary btn-sm"),
+          textOutput("w04_overview_status"),
+          tags$details(class="mt-2",
+            tags$summary("Historical import (administrator only)"),
+            tags$p(class="saved-note",
+              "Import archived W04 summary metadata once. This takes longer and is separate from the one-sheet overview refresh."),
+            actionButton("w04_overview_backfill","Import historical W04 metadata",
+              class="btn-outline-secondary btn-sm"),
+            textOutput("w04_overview_backfill_status")),
+          uiOutput("w04_overview_tables"))))
     }
 
     # Authentication is independent of the slower workflow registry reads.
@@ -9743,7 +9768,7 @@ server <- function(input, output, session) {
       failed_attempts(0L)
       login_status("")
       login_initialising(TRUE)
-      session$onFlushed(function() {
+      load_workflow_queues <- function() {
       shiny::isolate({
       loaded <- tryCatch({
         user_registry_rv(registry)
@@ -10161,7 +10186,15 @@ server <- function(input, output, session) {
         },delay=0.5)
       }
       })
-      }, once=TRUE)
+      }
+      if(isTRUE(user_can(login_user,"manage_assignments"))) {
+        # Fast administrator landing: avoid loading unrelated workflow queues.
+        w04_queued_init_rv(load_workflow_queues)
+        login_initialising(FALSE)
+        app_view("w04_workspace")
+      } else {
+        session$onFlushed(load_workflow_queues,once=TRUE)
+      }
     } else {
       n <- failed_attempts() + 1L
       failed_attempts(n)
@@ -10173,6 +10206,16 @@ server <- function(input, output, session) {
         login_status("Invalid email or access key.")
       }
     }
+  })
+
+  observeEvent(input$w04_load_review_tasks,{
+    req(authenticated())
+    fn <- isolate(w04_queued_init_rv())
+    if(!is.function(fn))return()
+    w04_queued_init_rv(NULL)
+    login_initialising(TRUE)
+    app_view("tasks")
+    session$onFlushed(fn,once=TRUE)
   })
 
   current_case <- reactive({ req(authenticated(), cases_rv()); cases_rv()[[idx()]] })
