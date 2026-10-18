@@ -37,7 +37,7 @@ w04_overview_build <- function(subsets, prompts, runs, analyses, conflict_sets,
       identical(w04_overview_chr(a$workflow),"04") &&
       identical(w04_overview_chr(a$task_type),"manual_screening") &&
       identical(w04_overview_chr(a$batch_id),batch) &&
-      identical(w04_overview_chr(a$status,"active"),"active"),assignments)
+      !identical(w04_overview_chr(a$status,"assigned"),"cancelled"),assignments)
     assigned_ids <- unique(vapply(assigned,function(a)w04_overview_chr(a$user_id),character(1)))
     assigned_ids <- assigned_ids[nzchar(assigned_ids)]
     completed <- Filter(function(d)
