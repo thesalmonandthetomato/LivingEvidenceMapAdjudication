@@ -98,3 +98,9 @@ For each stage: record commit SHA, precise changes, validation links and pass/fa
 5. Report any exact errors or slow step before proceeding to menu consolidation.
 
 **Outstanding:** Live import and one-read speed verification; publication-time run-event integration; event-bound updates for human screening and adjudication progress; simplification of full assignment/Configure menus. Do not mark these complete before validation.
+
+## 18 Oct: Review-scoped overview safeguards
+- Summary reader now reports a missing `w04_work_overview` tab explicitly instead of returning a misleading empty result. Commit `9104dba659ebdcaeee560d2bf12fff57d726a866`.
+- Administrator overview refresh now supplies the active review ID, avoiding cross-review mixing. Commit `ef1c6407a7aebc56ac42a0de55ff39d610945999`.
+- [Targeted GitHub Actions validation 39125196873](https://github.com/thesalmonandthetomato/LivingEvidenceMapAdjudication/actions/runs/39125196873) **PASS**: parse `multiuser_app/app.R` and `multiuser_app/R/w04_work_overview_sheets.R`; assert both safeguards and row-level review filter are present. Temporary validation workflow removed in `e4d4663a7da76d486aaad8f1e2ea436000d1b374`.
+- This is source-level validation only, not a live historical import or live Sheets verification. The Shiny administrator must explicitly run historical import and confirm summary counts before declaring migration complete.
