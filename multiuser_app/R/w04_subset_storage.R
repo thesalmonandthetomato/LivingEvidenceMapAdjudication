@@ -133,6 +133,7 @@ w04_subset_registry_append <- function(subset) {
   if(exists("w04_summary_record_safe",mode="function"))
     w04_summary_record_safe("subset",subset$subset_id,subset$created_at_utc,
       w04_overview_chr(subset$label,paste0("Subset ",substr(subset$subset_id,nchar(subset$subset_id)-5L,nchar(subset$subset_id)))),
-      paste0(subset$actual_size," records"),review_id=subset$review_id)
+      paste0(subset$actual_size," records"),review_id=subset$review_id,
+      metadata=list(records=as.character(subset$actual_size),parent_subset_id=as.character(subset$parent_subset_id %||% "")))
   invisible(subset$subset_id)
 }
