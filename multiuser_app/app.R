@@ -1136,6 +1136,7 @@ server <- function(input, output, session) {
   w04_conflict_decisions <- reactiveVal(list())
   w04_conflict_batch_status_rv <- reactiveVal("")
   w04_conflict_status <- reactiveVal("")
+  w04_admin_direct_conflict_set_rv <- reactiveVal("")
 
   w08_all_cases_rv <- reactiveVal(list())
   w08_cases_rv <- reactiveVal(NULL)
@@ -1556,6 +1557,10 @@ server <- function(input, output, session) {
   w04_active_conflict_cases <- reactive({
     cs <- w04_all_conflict_cases()
     if (!length(cs)) return(list())
+    # Direct access is restricted to an administrator explicitly opening this exact set.
+    if(session_can("manage_assignments") &&
+       identical(as.character(w04_admin_direct_conflict_set_rv() %||% ""),
+                 as.character(w04_active_conflict_batch_id()))) return(cs)
     cases_for_assignment_user(
       cs,
       assignment_registry_rv(),
@@ -3819,9 +3824,70 @@ server <- function(input, output, session) {
   output$w04_overview_prompts <- renderTable({req(w04_overview_rv());w04_overview_rv()$prompts},striped=TRUE,spacing="xs")
   output$w04_overview_runs <- renderTable({req(w04_overview_rv());w04_overview_rv()$runs},striped=TRUE,spacing="xs")
   output$w04_overview_comparisons <- renderTable({req(w04_overview_rv());w04_overview_rv()$comparisons},striped=TRUE,spacing="xs")
-  output$w04_overview_conflicts <- renderTable({req(w04_overview_rv());w04_overview_rv()$conflicts},striped=TRUE,spacing="xs")
+  output$w04_overview_conflicts <- renderUI({
+    req(authenticated(),session_can("manage_assignments"),w04_overview_rv())
+    overview <- w04_overview_rv()
+    rows <- overview$conflicts
+    ids <- overview$conflict_choices
+    if(!nrow(rows))return(tags$p(class="saved-note","No conflict sets saved."))
+    tags$table(class="table table-striped table-sm",
+      tags$thead(tags$tr(lapply(names(rows),tags$th))),
+      tags$tbody(lapply(seq_len(nrow(rows)),function(i) {
+        cells <- lapply(seq_len(ncol(rows)),function(j) {
+          value <- as.character(rows[i,j])
+          if(j==1L && !is.null(ids) && nrow(ids)>=i && nzchar(as.character(ids$id[[i]])))
+            tags$td(actionLink(paste0("w04_conflict_set_open_",i),value,
+              title="Open conflict set for adjudication"))
+          else tags$td(value)
+        })
+        tags$tr(cells)
+      }))
+    )
+  })
+  observe({
+    req(authenticated(),session_can("manage_assignments"))
+    overview <- w04_overview_rv()
+    req(!is.null(overview),!is.null(overview$conflict_choices))
+    ids <- as.character(overview$conflict_choices$id)
+    lapply(seq_along(ids),function(i) {
+      local({
+        index <- i
+        target <- ids[[i]]
+        observeEvent(input[[paste0("w04_conflict_set_open_",index)]],{
+          w04_open_saved_conflict_set(target)
+        },ignoreInit=TRUE)
+      })
+    })
+  })
   w04_overview_conflict_action_status_rv <- reactiveVal("")
   output$w04_overview_conflict_action_status <- renderText(w04_overview_conflict_action_status_rv())
+  w04_open_saved_conflict_set <- function(id) {
+    req(authenticated(),session_can("manage_assignments"))
+    w04_overview_conflict_action_status_rv("Opening conflict set…")
+    result <- tryCatch({
+      sets <- read_w04_conflict_sets()
+      matches <- Filter(function(z)
+        identical(as.character(z$conflict_set_id %||% ""),id),sets)
+      if(length(matches)!=1L)stop("Conflict set not uniquely present in the authoritative registry.")
+      selected <- matches[[1L]]
+      if(!identical(as.character(selected$comparison_type %||% ""),"human_model"))
+        stop("Direct opening of human-only sets is not yet supported; use the existing assignment-based review.")
+      loaded <- activate_w04_model_conflict(selected)
+      if(loaded<1L)stop("No conflict cases could be reconstructed.")
+      w04_conflict_sets_rv(sets)
+      w04_admin_direct_conflict_set_rv(id)
+      unresolved <- w04_conflict_unresolved_indices()
+      w04_conflict_idx(if(length(unresolved))unresolved[[1L]] else 1L)
+      app_view("w04_conflict")
+      loaded
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_overview_conflict_action_status_rv(paste("Could not open conflict set:",conditionMessage(result)))
+      showNotification(conditionMessage(result),type="error",duration=10)
+    } else {
+      w04_overview_conflict_action_status_rv(sprintf("Opened %d conflict cases for adjudication.",result))
+    }
+  }
   output$w04_overview_conflict_action <- renderUI({
     req(authenticated(),session_can("manage_assignments"))
     x <- w04_overview_rv()
@@ -13236,7 +13302,10 @@ server <- function(input, output, session) {
     if(length(unresolved)) w04_conflict_idx(unresolved[[1L]])
     app_view("w04_conflict")
   })
-  observeEvent(input$back_to_tasks_w04_conflict, app_view("tasks"))
+  observeEvent(input$back_to_tasks_w04_conflict, {
+    w04_admin_direct_conflict_set_rv("")
+    app_view("tasks")
+  })
   observeEvent(input$w04_conflict_retain, {
     if(save_w04_conflict_choice("retain")) advance_w04_conflict()
   })
