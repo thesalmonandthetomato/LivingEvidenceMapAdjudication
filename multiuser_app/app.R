@@ -7863,22 +7863,6 @@ server <- function(input, output, session) {
             div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(record_table_link(total_outstanding_cases,"all","all","","outstanding_cases",label="All workflows · Outstanding"))),
             div(class = "assignment-kpi", tags$span("Conflicts"), tags$strong(record_table_link(length(w04_all_conflict_cases()),"04","conflict_resolution",w04_active_conflict_batch_id(),"cases",label="W04 · Reviewer conflict resolution · Cases")))
           ),
-          tags$details(
-            class="assignment-workflow border rounded mb-3",
-            `data-accordion-key`="w04-overview",
-            tags$summary(tags$strong("W04 · Screening and validation overview")),
-            div(class="p-3",
-              tags$p(class="saved-note","Saved metadata from one Google Sheets summary tab. Refresh to see changes; historical backfill is a separate administrator operation."),
-              actionButton("w04_overview_refresh","Refresh overview",class="btn-outline-secondary btn-sm"),
-              tags$details(class="mt-2 mb-2",
-                tags$summary("Historical import (administrator only)"),
-                tags$p(class="saved-note","Populate missing historical summary records from existing registries and Zenodo. Use once; repeat imports skip identical events."),
-                actionButton("w04_overview_backfill","Import historical W04 metadata",class="btn-outline-secondary btn-sm"),
-                textOutput("w04_overview_backfill_status")),
-              textOutput("w04_overview_status"),
-              uiOutput("w04_overview_tables")
-            )
-          ),
           workflow_sections_display,
           tags$hr(class = "my-3"),
           uiOutput("w04_model_conflict_task_loader"),
