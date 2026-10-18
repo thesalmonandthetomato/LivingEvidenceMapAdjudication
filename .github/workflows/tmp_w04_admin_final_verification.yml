@@ -1,0 +1,60 @@
+name: Temporary W04 administration refactor verification
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/tmp_w04_admin_final_verification.yml']
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.4.3'
+          use-public-rspm: true
+      - name: Parse full app and test W04 interface invariants
+        shell: Rscript {0}
+        run: |
+          invisible(parse(file="multiuser_app/app.R"))
+          invisible(parse(file="multiuser_app/R/storage_sheets.R"))
+          invisible(parse(file="multiuser_app/R/w04_work_overview_sheets.R"))
+          s <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\n")
+          for(x in c("Searching","W01","W02","W04","W08","System"))
+            stopifnot(grepl(paste0('tabPanel("',x,'"'),s,fixed=TRUE))
+          for(x in c("Overview","Subsets","Prompts & models","Assignments","Comparisons"))
+            stopifnot(grepl(paste0('tabPanel("',x,'"'),s,fixed=TRUE))
+          stopifnot(grepl('w04_consistency_panel <- reactive',s,fixed=TRUE))
+          stopifnot(grepl('output$w04_consistency_model_selector <- renderUI',s,fixed=TRUE))
+          stopifnot(!grepl('actionButton("w04_consistency_subset_load"',s,fixed=TRUE))
+          stopifnot(!grepl('actionButton("w04_consistency_find_models"',s,fixed=TRUE))
+          stopifnot(!grepl('actionButton("w04_consistency_load_model"',s,fixed=TRUE))
+          stopifnot(grepl('w04_overview_status_rv("Overview includes the latest saved comparison.")',s,fixed=TRUE))
+          cat("PASS: complete application parses and interface contracts hold\n")
+      - name: Check missing comparison reconciliation contract
+        shell: Rscript {0}
+        run: |
+          e <- new.env(parent=globalenv())
+          sys.source("multiuser_app/R/w04_work_overview_sheets.R",envir=e)
+          e$w04_overview_chr <- function(x,default="") {
+            if(is.null(x) || !length(x) || is.na(x[[1]])) return(default)
+            as.character(x[[1]])
+          }
+          calls <- 0L
+          captured <- list()
+          e$w04_summary_read <- function(review_id,create_if_missing=FALSE) list(
+            list(record_type="comparison",entity_id="saved-1"),
+            list(record_type="model_run",entity_id="run-1"))
+          e$w04_summary_backfill <- function(review_id,subsets,prompts,runs,analyses,conflict_sets,...) {
+            calls <<- calls+1L
+            captured <<- analyses
+            length(analyses)
+          }
+          analyses <- list(list(analysis_id="saved-1"),list(analysis_id="missing-2"))
+          stopifnot(identical(e$w04_summary_reconcile_comparisons("review",analyses),1L))
+          stopifnot(calls==1L,identical(captured[[1L]]$analysis_id,"missing-2"))
+          stopifnot(identical(e$w04_summary_reconcile_comparisons("review",list(list(analysis_id="saved-1"))),0L))
+          stopifnot(calls==1L)
+          cat("PASS: reconciliation imports only absent comparison IDs\n")
