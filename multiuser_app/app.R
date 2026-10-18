@@ -4631,12 +4631,15 @@ server <- function(input, output, session) {
             ontoggle="if(this.open && window.Shiny) Shiny.setInputValue('w04_overview_opened', Date.now(), {priority:'event'});",
             tags$summary(tags$strong("W04 · Screening and validation")),
             div(class="px-3 pb-3",
-              tags$div(class="mb-3",
-                tags$h5("Overview"),
-                tags$p(class="saved-note","Saved W04 metadata, read once from the summary sheet when this section opens."),
-                actionButton("w04_overview_refresh","Refresh overview",class="btn-outline-secondary btn-sm"),
-                textOutput("w04_overview_status"),
-                uiOutput("w04_overview_tables")),
+              tags$details(class="assignment-disclosure mb-3",
+                `data-accordion-key`="w04-summary-overview",
+                ontoggle="if(this.open && window.Shiny) Shiny.setInputValue('w04_overview_opened', Date.now(), {priority:'event'});",
+                tags$summary(tags$strong("Overview")),
+                div(class="px-3 pb-3",
+                  tags$p(class="saved-note","Saved W04 metadata from the summary sheet."),
+                  actionButton("w04_overview_refresh","Refresh overview",class="btn-outline-secondary btn-sm"),
+                  textOutput("w04_overview_status"),
+                  uiOutput("w04_overview_tables"))),
               tags$details(class="assignment-disclosure mt-2",
                 tags$summary(tags$strong("Reviewer assignments, consistency and disagreements")),
                 div(class="px-3 pb-3",
@@ -7586,10 +7589,10 @@ server <- function(input, output, session) {
       tags$tr(tags$td(x$pattern),tags$td(x$n))
     })
 
-    w04_results_panel <- if (
-      session_can("manage_assignments") &&
-      (has_w04_batch || !isTRUE(w04_consistency_history_loaded()) || nrow(w04_kappa_registry_rv()) > 0L || nrow(w04_human_kappa_registry_rv()) > 0L)
-    ) {
+    # Comparison controls must remain accessible even when W04 queues are
+    # deferred, so an administrator can load any historical human subset
+    # and compare it with a completed model run on demand.
+    w04_results_panel <- if (session_can("manage_assignments")) {
       tags$details(
         class="assignment-workflow assignment-submenu wf-w04 mb-2",
         `data-accordion-key`="w04-consistency-checking",
