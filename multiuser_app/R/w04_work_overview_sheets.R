@@ -31,29 +31,96 @@ w04_summary_append <- function(review_id,type,id,details,event_at_utc="") {
   googlesheets4::sheet_append(ss,sheet=tab,data=row)
   invisible(TRUE)
 }
-# One sheet read; all joins occur in memory. No network calls from here.
+# One sheet read; all overview relationships are reconstructed in memory.
+w04_summary_latest <- function(events,type) {
+  x <- Filter(function(z)identical(w04_overview_chr(z$record_type),type),events)
+  if(!length(x))return(list())
+  times <- vapply(x,function(z)w04_overview_chr(z$event_at_utc),character(1))
+  x <- x[order(times,decreasing=TRUE)]
+  ids <- vapply(x,function(z)w04_overview_chr(z$entity_id),character(1))
+  x[!duplicated(ids)]
+}
+w04_summary_details <- function(event) {
+  tryCatch(jsonlite::fromJSON(w04_overview_chr(event$details_json,"{}"),
+     simplifyVector=FALSE),error=function(e)list())
+}
 w04_summary_tables <- function(events) {
-  types <- c(subsets="subset",prompts="prompt",runs="model_run",comparisons="comparison",
-    conflicts="conflict_set",screening="human_screening",adjudications="adjudication")
-  result <- lapply(types,function(type) {
-    xs <- Filter(function(x)identical(as.character(x$record_type),type),events)
-    if(!length(xs))return(data.frame(Date=character(),Item=character(),Details=character()))
-    # Latest event per entity is the current summary, historical events stay in Sheets.
-    dates <- vapply(xs,function(x)as.character(x$event_at_utc),character(1))
-    xs <- xs[order(dates,decreasing=TRUE)]
-    ids <- vapply(xs,function(x)as.character(x$entity_id),character(1))
-    xs <- xs[!duplicated(ids)]
-    data.frame(Date=vapply(xs,function(x)w04_overview_date(x$event_at_utc),character(1)),
-      Item=vapply(xs,function(x) {
-        v <- tryCatch(jsonlite::fromJSON(as.character(x$details_json)),error=function(e)list())
-        as.character(v$label %||% x$entity_id)
-      },character(1)),
-      Details=vapply(xs,function(x) {
-        v <- tryCatch(jsonlite::fromJSON(as.character(x$details_json)),error=function(e)list())
-        as.character(v$summary %||% "")
-      },character(1)),stringsAsFactors=FALSE)
+  subsets <- w04_summary_latest(events,"subset")
+  prompts <- w04_summary_latest(events,"prompt")
+  runs <- w04_summary_latest(events,"model_run")
+  comparisons <- w04_summary_latest(events,"comparison")
+  conflicts <- w04_summary_latest(events,"conflict_set")
+  screening <- w04_summary_latest(events,"human_screening")
+  adjudication <- w04_summary_latest(events,"adjudication")
+  get <- function(z,key,default="")w04_overview_chr(w04_summary_details(z)[[key]],default)
+  id <- function(z)w04_overview_chr(z$entity_id)
+  display <- function(z,default="")get(z,"label",default)
+  date <- function(z)w04_overview_date(z$event_at_utc)
+  short <- function(x,prefix) {
+    if(!nzchar(x))return("—")
+    paste0(prefix," ",substr(x,max(1L,nchar(x)-5L),nchar(x)))
+  }
+  subset_label <- function(sid) {
+    hits <- Filter(function(z)identical(id(z),sid),subsets)
+    if(length(hits))display(hits[[1L]],short(sid,"Subset")) else short(sid,"Subset")
+  }
+  prompt_label <- function(pid) {
+    hits <- Filter(function(z)identical(id(z),pid),prompts)
+    if(length(hits))display(hits[[1L]],short(pid,"Prompt")) else short(pid,"Prompt")
+  }
+  bind <- function(rows,columns) {
+    if(length(rows))return(do.call(rbind,rows))
+    as.data.frame(setNames(replicate(length(columns),character(),simplify=FALSE),
+      columns),stringsAsFactors=FALSE)
+  }
+  subset_rows <- lapply(subsets,function(z) {
+    sid <- id(z)
+    rs <- Filter(function(r)identical(get(r,"subset_id"),sid),runs)
+    screens <- Filter(function(r)identical(get(r,"subset_id"),sid),screening)
+    names <- vapply(screens,function(r)get(r,"reviewer"),character(1))
+    counts <- vapply(screens,function(r)get(r,"completed","0"),character(1))
+    data.frame(Subset=display(z,short(sid,"Subset")),Created=date(z),
+      N=get(z,"records","—"),
+      Reviewers=if(length(names))paste(names,collapse=", ") else "—",
+      Done=if(length(counts))paste(counts,collapse=" / ") else "—",
+      Models=length(rs),stringsAsFactors=FALSE)
   })
-  result
+  prompt_rows <- lapply(prompts,function(z) {
+    pid <- id(z)
+    n <- sum(vapply(runs,function(r)identical(get(r,"prompt_version_id"),pid),logical(1)))
+    data.frame(Prompt=display(z,short(pid,"Prompt")),Saved=date(z),
+      Author=get(z,"author","—"),Models=n,stringsAsFactors=FALSE)
+  })
+  run_rows <- lapply(runs,function(z) {
+    data.frame(Run=id(z),Published=date(z),
+      Subset=subset_label(get(z,"subset_id")),
+      Prompt=prompt_label(get(z,"prompt_version_id")),
+      N=get(z,"total","—"),Uncertain=get(z,"uncertain","—"),stringsAsFactors=FALSE)
+  })
+  comparison_rows <- lapply(comparisons,function(z) {
+    cid <- id(z)
+    sets <- Filter(function(x)identical(get(x,"analysis_id"),cid),conflicts)
+    resolved <- sum(vapply(sets,function(s) {
+      hits <- Filter(function(x)identical(get(x,"conflict_set_id"),id(s)),adjudication)
+      if(!length(hits))return(0)
+      suppressWarnings(as.numeric(get(hits[[1L]],"completed","0"))) %||% 0
+    },numeric(1)),na.rm=TRUE)
+    data.frame(Type=get(z,"comparison_type",display(z,"Comparison")),
+      Created=date(z),Source=get(z,"source_run","—"),
+      Raters=get(z,"raters","—"),
+      Agreement=get(z,"agreement","—"),Conflicts=get(z,"conflicts","0"),
+      Resolved=resolved,stringsAsFactors=FALSE)
+  })
+  conflict_rows <- lapply(conflicts,function(z) {
+    data.frame(Set=short(id(z),"Set"),Created=date(z),
+      Comparison=get(z,"analysis_id","—"),
+      Conflicts=get(z,"conflicts","—"),stringsAsFactors=FALSE)
+  })
+  list(subsets=bind(subset_rows,c("Subset","Created","N","Reviewers","Done","Models")),
+    prompts=bind(prompt_rows,c("Prompt","Saved","Author","Models")),
+    runs=bind(run_rows,c("Run","Published","Subset","Prompt","N","Uncertain")),
+    comparisons=bind(comparison_rows,c("Type","Created","Source","Raters","Agreement","Conflicts","Resolved")),
+    conflicts=bind(conflict_rows,c("Set","Created","Comparison","Conflicts")))
 }
 
 # Backfill is deliberately an explicit administrator operation, never part of login.
