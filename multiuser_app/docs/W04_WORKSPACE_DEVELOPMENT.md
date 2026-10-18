@@ -88,7 +88,7 @@ For each stage: record commit SHA, precise changes, validation links and pass/fa
 
 **Login:** Administrators receive an immediate `W04 · Screening and validation` landing page after authentication without eagerly loading all workflow queues. **Load full review task dashboard** performs the previous queue initialisation before reviewer work. The full task dashboard has a **W04 overview** return button. Non-administrator login paths remain unchanged. The old assignment administration interface still performs historical reads when opened; its later refactor remains pending.
 
-**Validation:** The single-sheet R join, latest-event sorting and file parsing are tested by the temporary GitHub Actions workflow `tmp_w04_summary_sheet_check.yml`; remove it after PASS. This is **not live Google Sheets validation**.
+**Validation:** [GitHub Actions run 39117622270](https://github.com/thesalmonandthetomato/LivingEvidenceMapAdjudication/actions/runs/39117622270) **PASS** for changed R file parsing, summary joins and admin deferred-loading guards; temporary workflow removed in commit `98414edb5155f283c9d9d56ffdf3cd552e0f451b`. This is **not live Google Sheets validation**.
 
 **Immediate live checkpoint:**
 1. Redeploy `main/multiuser_app/`, log in as administrator and confirm the W04 summary landing page appears promptly.
