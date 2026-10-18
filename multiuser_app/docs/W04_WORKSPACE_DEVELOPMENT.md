@@ -66,3 +66,9 @@ For each stage: record commit SHA, precise changes, validation links and pass/fa
 - Commit `22f91f1f644fb0ef811259ddedef4d1a63e17165` adds an immediately visible **Administration & assignments** entry button. Heavy assignment UI waits until that button is pressed; the existing accordion and W04 overview remain.
 - [Regression 39114310791](https://github.com/thesalmonandthetomato/LivingEvidenceMapAdjudication/actions/runs/39114310791) **PASS** for R syntax, deferred rendering guard and unchanged controls. Temporary workflow removed in `9970ef03213af935030f93c14e1a31d616574ee7`.
 - **Still unverified live:** entry button display timing, complete menu load after click, and W04 overview refresh. This does not establish that all historical Sheets reads are fast.
+
+## 18 Oct: Compact and date-ordered overview
+- User confirmed that the four overview tables load (4 subsets, 8 prompts, 8 runs, 3 comparisons), but found the tables too large and opaque.
+- Commits `747ae4002ed90f9c8c66aa5c25f4d90b6232e77b` and `0641c3e6e2c6848cb0994a9d993a72ae3d047752` shorten visible names/dates, remove raw ID columns, compress column names and cell typography, and sort **each table newest-first using original UTC timestamp strings**. Original identifiers are preserved in source registries.
+- [Automated regression 39114550448](https://github.com/thesalmonandthetomato/LivingEvidenceMapAdjudication/actions/runs/39114550448) PASS; temporary workflow removed (`80a9a39077d727e008c908885501c56af858815b`).
+- Live visual check of the compact layout still needed. A reviewer-progress correctness check against actual saved decision rows remains advisable before declaring Stage 2 fully signed off.
