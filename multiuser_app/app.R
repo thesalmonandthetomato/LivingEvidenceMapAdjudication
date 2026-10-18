@@ -2594,16 +2594,23 @@ server <- function(input, output, session) {
           uiOutput("session_identity")
         ),
         pipeline_summary_ui(),
-        uiOutput("configure_review"),
         if(session_can("manage_assignments"))
-          actionButton("w04_return_overview","W04 overview",class="btn-outline-primary mb-2"),
-        if(session_can("manage_assignments"))
-          tags$div(class="mb-3",
-            actionButton("open_administration_assignments",
-              "Administration & assignments",
-              class="btn-outline-secondary"),
-            textOutput("administration_load_status")),
-        uiOutput("assignment_progress"),
+          card(class="assignment-summary",
+            tags$details(class="assignment-disclosure",
+              tags$summary(tags$strong("Configure and administer review")),
+              div(class="p-3",
+                uiOutput("configure_review"),
+                tags$details(class="assignment-disclosure mt-2",
+                  ontoggle="if(this.open && window.Shiny) Shiny.setInputValue('w04_overview_opened', Date.now(), {priority:'event'});",
+                  tags$summary(tags$strong("W04 · Screening and validation overview")),
+                  div(class="px-3 pb-3",
+                    actionButton("w04_overview_refresh","Refresh overview",class="btn-outline-secondary btn-sm"),
+                    textOutput("w04_overview_status"),
+                    uiOutput("w04_overview_tables"))),
+                tags$div(class="mt-3",
+                  actionButton("open_administration_assignments","Assignments and administration",class="btn-outline-secondary btn-sm"),
+                  textOutput("administration_load_status"),
+                  uiOutput("assignment_progress"))))),
         div(
           class = "row g-3",
           div(
@@ -3782,6 +3789,19 @@ server <- function(input, output, session) {
   output$w04_overview_status <- renderText({
     paste(w04_overview_status_rv(),
       if(nzchar(w04_overview_refreshed_rv()))paste("· Last refreshed",w04_overview_refreshed_rv()) else "")
+  })
+  observeEvent(input$w04_overview_opened,{
+    req(authenticated(),session_can("manage_assignments"))
+    if(is.null(w04_overview_rv())) {
+      meta <- tryCatch(w04_prompt_review_metadata(),error=function(e)e)
+      if(inherits(meta,"error")) {
+        w04_overview_status_rv(paste("Overview unavailable:",conditionMessage(meta)))
+      } else {
+        loaded <- tryCatch(w04_summary_tables(w04_summary_read(review_id=meta$review_id,create_if_missing=FALSE)),error=function(e)e)
+        if(inherits(loaded,"error")) w04_overview_status_rv(paste("Overview unavailable:",conditionMessage(loaded)))
+        else {w04_overview_rv(loaded);w04_overview_status_rv("Loaded from W04 summary sheet.")}
+      }
+    }
   })
   observeEvent(input$w04_overview_refresh,{
     req(authenticated())
