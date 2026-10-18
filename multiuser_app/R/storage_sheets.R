@@ -1551,6 +1551,10 @@ append_w04_conflict_set <- function(analysis_row,created_by="") {
   if(sum(as.character(verify$conflict_set_id)==conflict_set_id)!=1L) {
     stop("W04 conflict-set write verification failed",call.=FALSE)
   }
+  if(exists("w04_summary_record_safe",mode="function"))
+    w04_summary_record_safe("conflict_set",conflict_set_id,now,
+      paste("Conflict set",analysis_id),
+      paste(length(conflict_case_ids),"disagreements;",comparison_type))
   as.list(row[1,,drop=FALSE])
 }
 
@@ -1608,6 +1612,11 @@ append_w04_consistency_analysis <- function(analysis,batch_id,queue_sha256,revie
   if(sum(as.character(verify$analysis_id)==analysis_id)!=1L) {
     stop("W04 consistency analysis write verification failed",call.=FALSE)
   }
+  if(exists("w04_summary_record_safe",mode="function"))
+    w04_summary_record_safe("comparison",analysis_id,now,
+      if(grepl("^w04-model-run-",batch_id))paste("Human–model",sub("^w04-model-run-","",batch_id)) else "Human–human",
+      paste(as.character(analysis$conflict_cases %||% 0L),"conflicts; reviewers",
+        paste(analysis$rater_ids %||% character(),collapse=", ")))
   as.list(row[1,,drop=FALSE])
 }
 
