@@ -1,4 +1,4 @@
-name: Temporary W04 consolidation regression
+name: Temporary W04 consolidation regression (recheck)
 on:
   push:
     branches: [main]
