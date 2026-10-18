@@ -1011,6 +1011,8 @@ server <- function(input, output, session) {
   w01_export_status_rv <- reactiveVal("")
   app_view <- reactiveVal("tasks")
   w04_queued_init_rv <- reactiveVal(NULL)
+  w04_queue_loaded_rv <- reactiveVal(FALSE)
+  w04_queue_load_status_rv <- reactiveVal("")
   record_table_context <- reactiveVal(NULL)
   record_table_page <- reactiveVal(1L)
   record_table_abstract_open <- reactiveVal(character())
@@ -2642,6 +2644,16 @@ server <- function(input, output, session) {
 
           ),
           if(!is.null(w02_optional_pause_rv())) uiOutput("w02_missing_abstract_editor"),
+          if(!isTRUE(w04_queue_loaded_rv())) {
+            div(class="col-12",
+              card(class="task-card workflow-card wf-w04",
+                div(class="p-3",
+                  tags$strong("Workflow 04 · Screening and validation"),
+                  tags$p(class="mt-2 mb-2","W04 task data are not loaded. Open them when you are ready to screen, assign or adjudicate."),
+                  actionButton("load_w04_on_demand","Load W04 tasks",class="btn-outline-primary"),
+                  textOutput("w04_queue_load_status")
+                )))
+          } else tagList(
           div(
             class = "col-12 col-lg-6",
             stage_card(
@@ -2702,6 +2714,7 @@ server <- function(input, output, session) {
                 "No records awaiting review"
               }
             )
+          ),
           ),
           div(
             class = "col-12 col-lg-6",
@@ -9882,6 +9895,10 @@ server <- function(input, output, session) {
           w02_resume_requested_rv(FALSE)
         }
 
+        # Defer W04 case queues, decision histories and conflict sets until requested.
+        # The closure retains the authenticated reviewer and assignment snapshot.
+        w04_queued_init_rv(function() {
+          shiny::isolate({
         # First identify whether W04 has an active manual-screening queue.
         # Avoid reading screening notes for sessions without that queue.
 
@@ -10031,6 +10048,9 @@ server <- function(input, output, session) {
           w04_conflict_idx(if(length(cr)) cr[[1L]] else max(1L,length(w04_blind_conflict_cases())))
         }
 
+          })
+        })
+
         w08_batch <- login_timed_read("W08 queue",load_w08_batch)
         if (!is.null(w08_batch)) {
           w08_all_decisions <- login_timed_read("W08 decisions",active_sheet_w08_decisions)
@@ -10178,15 +10198,7 @@ server <- function(input, output, session) {
           type="error",duration=12)
       } else {
         login_initialising(FALSE)
-        # A deferred read restores the latest run-specific W04 uncertainty queue
-        # after login has completed. It does not block authentication or overwrite
-        # a batch already opened by the user.
-        user_id <- as.character(normalise_user_row(login_user)$user_id)
-        later::later(function() {
-          shiny::withReactiveDomain(session, {
-            shiny::isolate(restore_w04_model_uncertainty_on_login(user_id))
-          })
-        },delay=0.5)
+
       }
       })
       }
@@ -10204,6 +10216,33 @@ server <- function(input, output, session) {
         login_status("Invalid email or access key.")
       }
     }
+  })
+
+  output$w04_queue_load_status <- renderText(w04_queue_load_status_rv())
+  observeEvent(input$load_w04_on_demand,{
+    req(authenticated())
+    if(isTRUE(w04_queue_loaded_rv()))return()
+    fn <- shiny::isolate(w04_queued_init_rv())
+    if(!is.function(fn)) {
+      w04_queue_load_status_rv("W04 task initialisation is not ready. Please retry after dashboard loading completes.")
+      return()
+    }
+    w04_queue_load_status_rv("Loading W04 queues and decisions…")
+    result <- tryCatch({fn(); TRUE},error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_queue_load_status_rv(paste("W04 tasks could not be loaded:",conditionMessage(result)))
+      return()
+    }
+    w04_queue_loaded_rv(TRUE)
+    w04_queued_init_rv(NULL)
+    w04_queue_load_status_rv("")
+    user_id <- as.character(normalise_user_row(current_user())$user_id)
+    later::later(function() {
+      shiny::withReactiveDomain(session,{
+        shiny::isolate(tryCatch(restore_w04_model_uncertainty_on_login(user_id),
+          error=function(e)message("W04 uncertainty restoration: ",conditionMessage(e))))
+      })
+    },delay=0.5)
   })
 
   observeEvent(input$w04_return_overview,{
