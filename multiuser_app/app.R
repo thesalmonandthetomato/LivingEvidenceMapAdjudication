@@ -7624,24 +7624,18 @@ server <- function(input, output, session) {
         ),
         div(
           class="pt-2",
-          tags$h6("Step 1. Select and load the human-screening subset"),
-          tags$p(class="text-secondary small","Choose Matt's 100-record W04 subset. This does not change screening assignments or decisions."),
-          actionButton("w04_consistency_subset_refresh","Refresh registered subsets",class="btn-outline-secondary btn-sm"),
+          tags$h6("Human-screened subset"),
+          tags$p(class="text-secondary small","Choose a subset once. Associated model runs are discovered automatically."),
           uiOutput("w04_consistency_subset_selector"),
-          actionButton("w04_consistency_subset_load","Load selected human subset",class="btn-outline-secondary btn-sm"),
           textOutput("w04_consistency_subset_status"),
           if(!is.null(snapshot)) tagList(
             tags$hr(),
-            tags$h6("Step 2. Find and select the completed model run"),
-            actionButton("w04_consistency_find_models","Find model runs for this subset",class="btn-outline-secondary btn-sm"),
-            if(length(w04_consistency_model_runs_rv())) tagList(
-              uiOutput("w04_consistency_model_selector"),
-              actionButton("w04_consistency_load_model","Load selected model run",class="btn-outline-primary btn-sm")
-            ),
+            tags$h6("Completed model run (latest selected automatically)"),
+            if(length(w04_consistency_model_runs_rv())) uiOutput("w04_consistency_model_selector"),
             textOutput("w04_consistency_model_status")
           ),
           if(!is.null(snapshot) && nzchar(as.character(snapshot$model_run_id %||% "")))
-            tags$h6("Step 3. Compare the human reviewer with Model, then save the result"),
+            tags$h6("Compare and save"),
           tags$p(class="text-secondary small",
             "The statistics below are calculated only from the selected W04 subset and its loaded model run. Historic review-wide kappa figures are not part of this comparison."),
           if (!has_w04_batch && is.null(snapshot)) {
