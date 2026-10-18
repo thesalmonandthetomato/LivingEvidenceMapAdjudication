@@ -2543,7 +2543,7 @@ server <- function(input, output, session) {
                 tags$span(class="task-badge workflow-complete-badge","Workflow completed")
               )
             },
-            if (!is.null(button_id) && remaining > 0L && isTRUE(can_open)) {
+            if (!is.null(button_id) && isTRUE(can_open) && (isTRUE(remaining > 0L) || button_id %in% c("w04_open_manual_on_demand","w04_open_conflicts_on_demand","w04_open_uncertainties_on_demand"))) {
               if (identical(button_id,"open_w04")) {
                 actionButton(button_id,button_label,class="btn-primary mt-auto",
                   onclick="this.textContent='Opening manual screening…'; this.setAttribute('aria-busy','true');")
@@ -2627,9 +2627,11 @@ server <- function(input, output, session) {
               "Manual screening",
               "Workflow 04",
               "Blind manual title and abstract screening for validation and ongoing human contribution.",
-              w04_total, w04_completed, w04_remaining,
-              if (w04_remaining > 0L) "open_w04" else NULL,
-              "Continue manual screening",
+              if(isTRUE(w04_queue_loaded_rv())) w04_total else "—",
+              if(isTRUE(w04_queue_loaded_rv())) w04_completed else "—",
+              if(isTRUE(w04_queue_loaded_rv())) w04_remaining else "—",
+              if(!isTRUE(w04_queue_loaded_rv())) "w04_open_manual_on_demand" else if(w04_remaining > 0L) "open_w04" else NULL,
+              if(!isTRUE(w04_queue_loaded_rv())) "Open manual screening" else "Continue manual screening",
               w04_batch_id_rv(),
               w04_batch_status_rv()
             )
@@ -2640,12 +2642,14 @@ server <- function(input, output, session) {
               "Reviewer conflict resolution",
               "Workflow 04",
               "Human–machine or human–human screening conflicts awaiting adjudication.",
-              w04_conflict_total, w04_conflict_completed, w04_conflict_remaining,
-              if (w04_conflict_remaining > 0L) "open_w04_conflict" else NULL,
+              if(isTRUE(w04_queue_loaded_rv())) w04_conflict_total else "—",
+              if(isTRUE(w04_queue_loaded_rv())) w04_conflict_completed else "—",
+              if(isTRUE(w04_queue_loaded_rv())) w04_conflict_remaining else "—",
+              if(!isTRUE(w04_queue_loaded_rv())) "w04_open_conflicts_on_demand" else if(w04_conflict_remaining > 0L) "open_w04_conflict" else NULL,
               "Resolve reviewer conflicts",
               w04_active_conflict_batch_id(),
               w04_active_conflict_batch_status(),
-              can_open = w04_conflict_user_remaining > 0L,
+              can_open = !isTRUE(w04_queue_loaded_rv()) || w04_conflict_user_remaining > 0L,
               idle_text = if (w04_conflict_total == 0L) {
                 "No records awaiting review"
               } else if (w04_conflict_user_remaining == 0L && session_can("manage_assignments")) {
@@ -2663,12 +2667,14 @@ server <- function(input, output, session) {
               "Model uncertainty resolution",
               "Workflow 04",
               "Records unresolved after model consensus passes requiring a final human include/exclude decision.",
-              w04_resolution_total, w04_resolution_completed, w04_resolution_remaining,
-              if (w04_resolution_remaining > 0L) "open_w04_resolution" else NULL,
+              if(isTRUE(w04_queue_loaded_rv())) w04_resolution_total else "—",
+              if(isTRUE(w04_queue_loaded_rv())) w04_resolution_completed else "—",
+              if(isTRUE(w04_queue_loaded_rv())) w04_resolution_remaining else "—",
+              if(!isTRUE(w04_queue_loaded_rv())) "w04_open_uncertainties_on_demand" else if(w04_resolution_remaining > 0L) "open_w04_resolution" else NULL,
               "Resolve model uncertainty",
               w04_resolution_batch_id_rv(),
               w04_resolution_batch_status_rv(),
-              can_open = w04_resolution_user_remaining > 0L,
+              can_open = !isTRUE(w04_queue_loaded_rv()) || w04_resolution_user_remaining > 0L,
               idle_text = if (!nzchar(w04_resolution_batch_id_rv())) {
                 "No records awaiting review"
               } else if (
