@@ -8769,10 +8769,26 @@ server <- function(input, output, session) {
       if(!any(vapply(current,function(x)identical(as.character(x$analysis_id %||% ""),
           as.character(saved$analysis_id %||% "")),logical(1))))
         w04_consistency_analyses_rv(c(current,list(saved)))
+      # A verified authoritative save does not guarantee the summary append.
+      # Refresh the existing one-sheet overview only when the summary write
+      # succeeded; explicitly disclose a failed append so it can be repaired.
+      if(isTRUE(saved$overview_synced)) {
+        overview <- tryCatch(w04_summary_tables(w04_summary_read(
+          review_id=w04_prompt_review_metadata()$review_id,
+          create_if_missing=FALSE)),error=function(e)e)
+        if(!inherits(overview,"error")) {
+          w04_overview_rv(overview)
+          w04_overview_status_rv("Overview includes the latest saved comparison.")
+        }
+      }
       w04_consistency_status(sprintf(
-        "Saved subset %s, model run %s: %d comparable records, %d pending or missing, Cohen's κ %s. This result is stored in this review's consistency registry.",
-        snapshot$subset_id,run,analysis$complete,analysis$missing,
-        if(is.na(analysis$kappa))"not calculable" else sprintf("%.3f",analysis$kappa)))
+        "Saved comparison %s: subset %s, model run %s, %d comparable records, %d pending or missing, Cohen's κ %s. %s",
+        as.character(saved$analysis_id),snapshot$subset_id,run,
+        analysis$complete,analysis$missing,
+        if(is.na(analysis$kappa))"not calculable" else sprintf("%.3f",analysis$kappa),
+        if(isTRUE(saved$overview_synced))
+          "Overview summary updated."
+        else "WARNING: authoritative comparison saved, but overview summary update failed. Do not save again; summary repair is required."))
       return()
     }
     rater_ids <- unique(as.character(input$w04_consistency_raters %||% character()))
