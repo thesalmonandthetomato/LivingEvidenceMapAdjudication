@@ -6932,8 +6932,11 @@ server <- function(input, output, session) {
   admin_assignment_panels <- reactive({
     req(authenticated())
     if (!session_can("manage_assignments")) return(NULL)
-    req(isTRUE(input$open_administration_assignments > 0L) ||
-      identical(as.character(input$w04_workspace_tab %||% ""),"Assignments"))
+    req(
+      as.character(input$configure_workflow_tab %||% "") %in% c("W01","W02","W08","System") ||
+      (identical(input$configure_workflow_tab,"W04") &&
+       identical(input$w04_workspace_tab,"Assignments"))
+    )
 
     all_assignments <- assignment_registry_rv()
     has_w01_batch <- nzchar(as.character(batch_id_rv())) && length(w01_all_cases_rv()) > 0L
@@ -7798,34 +7801,19 @@ server <- function(input, output, session) {
     # Consistency UI is hosted by a static W04 disclosure elsewhere.
     # Never rebuild its enclosing <details> as outcomes or inputs change.
 
-    general_panel <- card(
-      class = "assignment-summary",
+    by_workflow <- function(workflow) {
+      indices <- which(vapply(group_progress,function(g)
+        identical(as.character(g$meta$workflow),workflow),logical(1)))
+      if(!length(indices))
+        return(tags$p(class="saved-note","No assignment batches are currently registered for this workflow."))
+      tagList(workflow_sections[indices])
+    }
+    system_panel <- tagList(
+      div(class="assignment-kpis four",
+      div(class="assignment-kpi",tags$span("Assignments"),tags$strong(total_assigned)),
+      div(class="assignment-kpi",tags$span("Completed cases"),tags$strong(total_completed_cases)),
+      div(class="assignment-kpi",tags$span("Outstanding cases"),tags$strong(total_outstanding_cases))),
       tags$details(
-        class = "assignment-disclosure",
-        `data-accordion-key` = "administration-assignments",
-        tags$summary(
-          div(
-            class = "d-inline-flex flex-wrap align-items-center gap-2 p-3",
-            tags$strong("Administration & assignments"),
-            tags$span(class = "task-badge", paste0(length(group_progress), " workflow section", if (length(group_progress) == 1L) "" else "s")),
-            tags$span(
-              class = "text-secondary small",
-              sprintf("%d assignments · %d completed cases · %d outstanding cases", total_assigned, total_completed_cases, total_outstanding_cases)
-            )
-          )
-        ),
-        div(
-          class = "px-3 pb-3",
-          div(
-            class = "assignment-kpis four",
-            div(class = "assignment-kpi", tags$span("Assignments"), tags$strong(record_table_link(total_assigned,"all","all","","assignments",label="All workflows · Assignments"))),
-            div(class = "assignment-kpi", tags$span("Completed"), tags$strong(record_table_link(total_completed_cases,"all","all","","resolved_cases",label="All workflows · Completed"))),
-            div(class = "assignment-kpi", tags$span("Outstanding"), tags$strong(record_table_link(total_outstanding_cases,"all","all","","outstanding_cases",label="All workflows · Outstanding"))),
-            div(class = "assignment-kpi", tags$span("Conflicts"), tags$strong(record_table_link(length(w04_all_conflict_cases()),"04","conflict_resolution",w04_active_conflict_batch_id(),"cases",label="W04 · Reviewer conflict resolution · Cases")))
-          ),
-          other_sections_display,
-          tags$hr(class = "my-3"),
-          tags$details(
             class = "assignment-workflow border rounded",
             `data-accordion-key` = "backend-maintenance",
             tags$summary(
@@ -7852,19 +7840,37 @@ server <- function(input, output, session) {
               )
             )
           )
-        )
-      )
     )
-    list(general=general_panel,
+    list(w01=by_workflow("01"),w02=by_workflow("02"),
+      w08=by_workflow("08"),system=system_panel,
       w04=tagList(w04_sections_display,uiOutput("w04_model_conflict_task_loader")))
 
   })
 
-  output$assignment_progress <- renderUI({
-    admin_assignment_panels()$general
+  output$w01_admin_controls <- renderUI({
+    req(authenticated(),configure_review_requested(),
+      identical(input$configure_workflow_tab,"W01"))
+    admin_assignment_panels()$w01
+  })
+  output$w02_admin_controls <- renderUI({
+    req(authenticated(),configure_review_requested(),
+      identical(input$configure_workflow_tab,"W02"))
+    admin_assignment_panels()$w02
+  })
+  output$w08_admin_controls <- renderUI({
+    req(authenticated(),configure_review_requested(),
+      identical(input$configure_workflow_tab,"W08"))
+    admin_assignment_panels()$w08
+  })
+  output$system_admin_controls <- renderUI({
+    req(authenticated(),configure_review_requested(),
+      identical(input$configure_workflow_tab,"System"))
+    admin_assignment_panels()$system
   })
   output$w04_admin_controls <- renderUI({
-    req(authenticated(),configure_review_requested())
+    req(authenticated(),configure_review_requested(),
+      identical(input$configure_workflow_tab,"W04"),
+      identical(input$w04_workspace_tab,"Assignments"))
     admin_assignment_panels()$w04
   })
   output$w04_comparison_body <- renderUI({
