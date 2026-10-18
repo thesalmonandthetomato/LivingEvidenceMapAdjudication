@@ -251,6 +251,23 @@ w04_summary_backfill <- function(review_id,subsets,prompts,runs,analyses,conflic
   nrow(incoming)
 }
 
+# Repair only absent comparison summaries from authoritative saved analyses.
+# Invoked on explicit administrator comparison access, never on login or
+# an ordinary single-sheet overview refresh.
+w04_summary_reconcile_comparisons <- function(review_id,analyses) {
+  if(!length(analyses))return(0L)
+  existing <- w04_summary_read(review_id,create_if_missing=TRUE)
+  saved_ids <- unique(vapply(Filter(function(x)
+    identical(w04_overview_chr(x$record_type),"comparison"),existing),
+    function(x)w04_overview_chr(x$entity_id),character(1)))
+  missing <- Filter(function(x) {
+    id <- w04_overview_chr(x$analysis_id)
+    nzchar(id) && !id %in% saved_ids
+  },analyses)
+  if(!length(missing))return(0L)
+  w04_summary_backfill(review_id,list(),list(),list(),missing,list())
+}
+
 # Successful authoritative W04 saves can call this safely. A failed summary
 # append is logged, never concealed as an authoritative save failure.
 w04_summary_record_safe <- function(type,id,at,label,summary,review_id=NULL,metadata=list()) {
