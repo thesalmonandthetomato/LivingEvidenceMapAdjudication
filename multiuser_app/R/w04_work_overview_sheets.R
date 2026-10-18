@@ -55,3 +55,62 @@ w04_summary_tables <- function(events) {
   })
   result
 }
+
+# Backfill is deliberately an explicit administrator operation, never part of login.
+# Existing event IDs are preserved and repeated imports do not duplicate rows.
+w04_summary_backfill <- function(review_id,subsets,prompts,runs,analyses,conflict_sets) {
+  to_event <- function(type,id,at,label,summary) {
+    details <- list(label=label,summary=summary)
+    json <- as.character(jsonlite::toJSON(details,auto_unbox=TRUE))
+    event_id <- digest::digest(paste(review_id,type,id,at,json,sep="\n"),
+      algo="sha256",serialize=FALSE)
+    data.frame(event_id=event_id,review_id=review_id,record_type=type,
+      entity_id=id,event_at_utc=at,details_json=json,stringsAsFactors=FALSE)
+  }
+  rows <- list()
+  add <- function(type,id,at,label,summary) {
+    if(!nzchar(id))return()
+    rows[[length(rows)+1L]] <<- to_event(type,id,at,label,summary)
+  }
+  for(x in subsets) {
+    id <- w04_overview_chr(x$subset_id)
+    add("subset",id,w04_overview_chr(x$created_at_utc),
+      w04_overview_chr(x$label,paste0("Subset ",tail(strsplit(id,"-",fixed=TRUE)[[1L]],1L))),
+      paste0(w04_overview_chr(x$actual_size,"0")," records"))
+  }
+  for(x in prompts) {
+    id <- w04_overview_chr(x$version_id)
+    add("prompt",id,w04_overview_chr(x$created_at_utc),
+      w04_overview_chr(x$notes,w04_overview_chr(x$original_filename,id)),
+      paste("Saved by",w04_overview_chr(x$author,"unknown")))
+  }
+  for(x in runs) {
+    id <- w04_overview_chr(x$run_id)
+    add("model_run",id,w04_overview_chr(x$published_at_utc),
+      paste("Model run",id),
+      paste0("Subset ",w04_overview_chr(x$subset_id),"; prompt ",w04_overview_chr(x$prompt_version_id),
+        "; ",w04_overview_chr(x$total,"0")," records; ",w04_overview_chr(x$uncertain,"0")," uncertain"))
+  }
+  for(x in analyses) {
+    id <- w04_overview_chr(x$analysis_id)
+    bid <- w04_overview_chr(x$batch_id)
+    add("comparison",id,w04_overview_chr(x$created_at_utc),
+      if(startsWith(bid,"w04-model-run-"))paste("Human–model",sub("^w04-model-run-","",bid)) else "Human–human",
+      paste0(w04_overview_chr(x$conflict_n,"0")," conflicts; raters ",w04_overview_chr(x$rater_ids_json,"[]")))
+  }
+  for(x in conflict_sets) {
+    id <- w04_overview_chr(x$conflict_set_id)
+    add("conflict_set",id,w04_overview_chr(x$created_at_utc),
+      paste("Conflicts",w04_overview_chr(x$analysis_id)),
+      paste("Type",w04_overview_chr(x$comparison_type)))
+  }
+  if(!length(rows))return(0L)
+  incoming <- do.call(rbind,rows)
+  incoming <- incoming[!duplicated(incoming$event_id),,drop=FALSE]
+  existing <- w04_summary_read(review_id,create_if_missing=TRUE)
+  already <- vapply(existing,function(x)w04_overview_chr(x$event_id),character(1))
+  incoming <- incoming[!incoming$event_id %in% already,,drop=FALSE]
+  if(!nrow(incoming))return(0L)
+  googlesheets4::sheet_append(sheet_id_from_env(),sheet=w04_summary_tab(),data=incoming)
+  nrow(incoming)
+}
