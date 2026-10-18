@@ -1554,7 +1554,9 @@ append_w04_conflict_set <- function(analysis_row,created_by="") {
   if(exists("w04_summary_record_safe",mode="function"))
     w04_summary_record_safe("conflict_set",conflict_set_id,now,
       paste("Conflict set",analysis_id),
-      paste(length(conflict_case_ids),"disagreements;",comparison_type))
+      paste(length(conflict_case_ids),"disagreements;",comparison_type),
+      metadata=list(analysis_id=analysis_id,comparison_type=comparison_type,
+        conflicts=as.character(length(conflict_case_ids))))
   as.list(row[1,,drop=FALSE])
 }
 
