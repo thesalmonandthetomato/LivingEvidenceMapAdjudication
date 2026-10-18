@@ -72,3 +72,29 @@ For each stage: record commit SHA, precise changes, validation links and pass/fa
 - Commits `747ae4002ed90f9c8c66aa5c25f4d90b6232e77b` and `0641c3e6e2c6848cb0994a9d993a72ae3d047752` shorten visible names/dates, remove raw ID columns, compress column names and cell typography, and sort **each table newest-first using original UTC timestamp strings**. Original identifiers are preserved in source registries.
 - [Automated regression 39114550448](https://github.com/thesalmonandthetomato/LivingEvidenceMapAdjudication/actions/runs/39114550448) PASS; temporary workflow removed (`80a9a39077d727e008c908885501c56af858815b`).
 - Live visual check of the compact layout still needed. A reviewer-progress correctness check against actual saved decision rows remains advisable before declaring Stage 2 fully signed off.
+
+## 18 Oct: Single-sheet W04 overview and fast administrator entry (pending live verification)
+
+**Architecture:** `multiuser_app/R/w04_work_overview_sheets.R` maintains append-only event rows in the review-specific Google Sheets tab `w04_work_overview`: `event_id`, `review_id`, `record_type`, `entity_id`, `event_at_utc`, `details_json`. All four main overview tables and a compact conflict-set table are reconstructed in memory from one summary-tab read. No prompt files or screening decision logs are retrieved on ordinary overview refresh.
+
+**Write points:**
+- Successful, verified subset creation: summary event (`w04_subset_storage.R`).
+- Successful, verified prompt archive save: summary event (`w04_prompt_zenodo.R`).
+- Verified consistency analysis and conflict-set saves: summary events (`storage_sheets.R`).
+- Model runs: bulk synchronised when the existing **Load completed model runs** action reads the authoritative batch registry. **A publication-time pipeline hook is not yet installed**, so an untouched new run may not appear until that explicit sync or a historical import.
+- Historical screening and adjudication progress: included in an explicit administrator-triggered import; **ongoing decision-by-decision progress events are not yet wired**.
+
+**Backfill:** The **Historical import (administrator only)** action uses existing subset/model/comparison/conflict registries, restricted Zenodo prompt archive, assignments and decision logs. It bulk-appends metadata, skipping duplicate unchanged entity states. It is separate from fast overview refresh and not invoked automatically on login.
+
+**Login:** Administrators receive an immediate `W04 · Screening and validation` landing page after authentication without eagerly loading all workflow queues. **Load full review task dashboard** performs the previous queue initialisation before reviewer work. The full task dashboard has a **W04 overview** return button. Non-administrator login paths remain unchanged. The old assignment administration interface still performs historical reads when opened; its later refactor remains pending.
+
+**Validation:** The single-sheet R join, latest-event sorting and file parsing are tested by the temporary GitHub Actions workflow `tmp_w04_summary_sheet_check.yml`; remove it after PASS. This is **not live Google Sheets validation**.
+
+**Immediate live checkpoint:**
+1. Redeploy `main/multiuser_app/`, log in as administrator and confirm the W04 summary landing page appears promptly.
+2. Open **Historical import**, run it once and wait for confirmation. It is expected to take longer because it retrieves the existing authoritative history.
+3. Click **Refresh W04 overview**; confirm the four tables show subsets, prompts, model runs, comparisons and dates, without repeated Zenodo or decision-log reads.
+4. Click **Load full review task dashboard**; confirm W01/W02/W04/W08 queues still work and assignments/decisions are intact.
+5. Report any exact errors or slow step before proceeding to menu consolidation.
+
+**Outstanding:** Live import and one-read speed verification; publication-time run-event integration; event-bound updates for human screening and adjudication progress; simplification of full assignment/Configure menus. Do not mark these complete before validation.
