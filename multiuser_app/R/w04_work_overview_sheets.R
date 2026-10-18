@@ -240,12 +240,12 @@ w04_summary_backfill <- function(review_id,subsets,prompts,runs,analyses,conflic
 
 # Successful authoritative W04 saves can call this safely. A failed summary
 # append is logged, never concealed as an authoritative save failure.
-w04_summary_record_safe <- function(type,id,at,label,summary,review_id=NULL) {
+w04_summary_record_safe <- function(type,id,at,label,summary,review_id=NULL,metadata=list()) {
   tryCatch({
     if(is.null(review_id) || !nzchar(as.character(review_id)))
       review_id <- w04_prompt_review_metadata()$review_id
     w04_summary_append(as.character(review_id),type,as.character(id),
-      list(label=as.character(label),summary=as.character(summary)),
+      c(list(label=as.character(label),summary=as.character(summary)),metadata),
       as.character(at %||% ""))
     TRUE
   },error=function(e) {
