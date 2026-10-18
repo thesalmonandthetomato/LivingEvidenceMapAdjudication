@@ -6,7 +6,7 @@ w04_summary_read <- function(review_id="",create_if_missing=FALSE) {
   ss <- sheet_id_from_env()
   tab <- w04_summary_tab()
   if(!tab %in% sheet_names_cached(ss)) {
-    if(!create_if_missing)return(list())
+    if(!create_if_missing)stop("W04 overview summary tab is missing; run historical import first.",call.=FALSE)
     googlesheets4::sheet_write(as.data.frame(setNames(replicate(length(w04_summary_fields),character(),simplify=FALSE),w04_summary_fields)),ss=ss,sheet=tab)
     invalidate_sheet_names_cache(ss)
     return(list())
