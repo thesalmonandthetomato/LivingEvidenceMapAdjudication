@@ -233,7 +233,15 @@ w04_summary_backfill <- function(review_id,subsets,prompts,runs,analyses,conflic
   incoming <- incoming[!duplicated(incoming$event_id),,drop=FALSE]
   existing <- w04_summary_read(review_id,create_if_missing=TRUE)
   already <- vapply(existing,function(x)w04_overview_chr(x$event_id),character(1))
-  incoming <- incoming[!incoming$event_id %in% already,,drop=FALSE]
+  # A repeated historical import must not create duplicate progress snapshots
+  # merely because an unchanged snapshot was retrieved at a later time.
+  existing_states <- vapply(existing,function(x)paste(
+    w04_overview_chr(x$record_type),w04_overview_chr(x$entity_id),
+    w04_overview_chr(x$details_json),sep="|"),character(1))
+  incoming_states <- paste(incoming$record_type,incoming$entity_id,
+    incoming$details_json,sep="|")
+  incoming <- incoming[!incoming$event_id %in% already &
+    !incoming_states %in% existing_states,,drop=FALSE]
   if(!nrow(incoming))return(0L)
   googlesheets4::sheet_append(sheet_id_from_env(),sheet=w04_summary_tab(),data=incoming)
   nrow(incoming)
