@@ -7008,6 +7008,16 @@ server <- function(input, output, session) {
       nzchar(active_batch) && identical(z$batch_id, active_batch)
     }, grouped)
 
+    # Only compute historical progress for the administrator's selected
+    # workflow. W04 historical subsets can otherwise cause repeated Sheets
+    # reads even when the user is administering W01, W02 or W08.
+    active_scope <- switch(as.character(input$configure_workflow_tab %||% ""),
+      W01="01",W02="02",W04="04",W08="08",System="")
+    grouped <- Filter(function(a) {
+      if(!length(a))return(FALSE)
+      identical(normalise_assignment_row(a[[1L]])$workflow,active_scope)
+    },grouped)
+
     events_for_group <- function(a) {
       z <- normalise_assignment_row(a[[1L]])
       if (
@@ -7811,10 +7821,6 @@ server <- function(input, output, session) {
       tagList(workflow_sections[indices])
     }
     system_panel <- tagList(
-      div(class="assignment-kpis four",
-      div(class="assignment-kpi",tags$span("Assignments"),tags$strong(total_assigned)),
-      div(class="assignment-kpi",tags$span("Completed cases"),tags$strong(total_completed_cases)),
-      div(class="assignment-kpi",tags$span("Outstanding cases"),tags$strong(total_outstanding_cases))),
       tags$details(
             class = "assignment-workflow border rounded",
             `data-accordion-key` = "backend-maintenance",
