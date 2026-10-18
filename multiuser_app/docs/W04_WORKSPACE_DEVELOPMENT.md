@@ -1,6 +1,6 @@
 # W04 Screening and Validation workspace
 
-Status: Stage 1 COMPLETE (source-code inventory); Stage 2 NOT STARTED.
+Status: Stage 1 COMPLETE; Stage 2 IMPLEMENTED (automated test PASS; live Google Sheets check PENDING).
 Working branch: **main only**. Posit Connect deploys from `main/multiuser_app/`.
 Last reviewed: 2026-10-18. Source: current `main` code, not a live Google Sheets export.
 
@@ -35,7 +35,7 @@ One administrator-only W04 workspace with four dated, searchable tables: (1) sub
 
 ## Implementation checklist
 - [x] **Stage 1: Data inventory** (source-code review; real sheet contents not yet verified).
-- [ ] **Stage 2: Read-only overview**. Bulk joined/cached views for subsets, prompt versions, model runs, saved consistency analyses; dates visible; validate in live Shiny; user checkpoint.
+- [x] **Stage 2: Read-only overview implementation**. Event-loaded and session-cached tables for subsets, prompt versions, model runs, saved consistency analyses; dates visible. Automated tests passed. **Live Shiny check pending before moving W04 controls.**
 - [ ] **Stage 3: Consolidate W04 navigation**. Retain existing controls until new workspace is validated. Move W04-only controls out of configure/admin.
 - [ ] **Stage 4: Simplify comparisons and conflict assignment**. Idempotent reuse of existing sets; preserve assignments/decision history; user checkpoint.
 - [ ] **Stage 5: Event-bound refresh/caching**. Avoid polling and unnecessary Zenodo traffic. Assess materialised Sheets summary only if needed.
@@ -44,5 +44,19 @@ One administrator-only W04 workspace with four dated, searchable tables: (1) sub
 ## Progress reporting and handover
 For each stage: record commit SHA, precise changes, validation links and pass/fail, production checks still needed, and next action. Stop at planned live user check-ins after Stage 2 and Stage 4. Never claim an automated test verifies live Google Sheets contents without a live test.
 
+## Completed commits and tests
+- Stage 1 inventory: `73224f088050a6db7697b70b34b5fb40f6556d47`.
+- Stage 2 read-only join helper: `ca621b91ca0d6f2c312b7e499001f87c36c5c29e` (`R/w04_workspace_overview.R`).
+- Stage 2 isolated overview UI: `f3ad415a2a297f1764f6ba1ccf3a00f62259522f` (inside **Administration & assignments → W04 · Screening and validation overview**).
+- Assignment status correction: `339471d19861da83f5985af7f3fcca25ad2d9989`; real status is `assigned`, not `active`.
+- Automated regression: [GitHub Actions run 39108307539](https://github.com/thesalmonandthetomato/LivingEvidenceMapAdjudication/actions/runs/39108307539) **PASS** (R parser and pure registry joins, without Google Sheets/Zenodo access). Temporary workflow removed in `f0b3d89d99d37501a5d0e47742035ad165beaa01`.
+- Stage 2 did not write Google Sheets, run a model or change any existing W04 control.
+
+## Known limitations requiring live check
+- **Refresh overview** explicitly reads Sheets registries and the restricted Zenodo prompt manifest. Metadata is cached in the Shiny session until refreshed. A live login is needed to assess latency, permissions and names.
+- Progress is assembled from active decision events and assignment rows; verify subset-to-decision identities with real rows. Full live accuracy is not established by fixture tests.
+- Model-run date is labelled **Published** rather than misleading **Created**; no reliable saved launch timestamp identified.
+- The current read-only overview uses Shiny tables. Interactive search/filter and a dedicated unified navigation are pending Stage 3; existing controls remain available.
+
 ## Next action
-Stage 2: add **isolated, read-only** W04 overview with authoritative timestamp columns (Subset created, Prompt saved, Model published, Comparison created); join from existing registry snapshots, use cached data with explicit refresh, and do not displace any currently working controls.
+**User checkpoint after Stage 2:** redeploy `main/multiuser_app/`, open **Administration & assignments → W04 · Screening and validation overview**, click **Refresh overview**, and confirm subset counts, reviewers, dates and model-run associations. If errors appear, capture their exact text. Do not start Stage 3 until this passes.
