@@ -17,6 +17,16 @@ jobs:
         shell: Rscript {0}
         run: |
           invisible(parse("multiuser_app/app.R"))
+          for(path in c("multiuser_app/R/storage_sheets.R",
+             "multiuser_app/R/w04_subset_storage.R",
+             "multiuser_app/R/w04_prompt_zenodo.R",
+             "multiuser_app/R/w04_workspace_overview.R",
+             "multiuser_app/R/w04_work_overview_sheets.R"))
+            invisible(parse(path))
+          app <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\\n")
+          stopifnot(grepl("w04_queued_init_rv",app,fixed=TRUE),
+             grepl("session$onFlushed(load_workflow_queues",app,fixed=TRUE),
+             grepl("w04_summary_read(create_if_missing=FALSE)",app,fixed=TRUE))
           if(!requireNamespace("jsonlite",quietly=TRUE))install.packages("jsonlite",quiet=TRUE)
           if(!requireNamespace("digest",quietly=TRUE))install.packages("digest",quiet=TRUE)
           `%||%` <- function(a,b)if(is.null(a))b else a
