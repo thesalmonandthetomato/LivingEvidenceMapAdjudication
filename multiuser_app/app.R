@@ -2589,6 +2589,8 @@ server <- function(input, output, session) {
         if(session_can("manage_assignments"))
           card(class="assignment-summary",
             tags$details(class="assignment-disclosure",
+              `data-accordion-key`="configure-admin-root",
+              ontoggle="if(this.open && window.Shiny) Shiny.setInputValue('open_configure_review', Date.now(), {priority:'event'});",
               tags$summary(tags$strong("Configure and administer review")),
               div(class="p-3",
                 uiOutput("configure_review"),
@@ -4388,14 +4390,7 @@ server <- function(input, output, session) {
   output$configure_review <- renderUI({
     req(authenticated())
     if (!identical(as.character(current_user()$role %||% ""), "administrator")) return(NULL)
-    tagList(
-      if (!isTRUE(configure_review_requested()))
-        card(class="assignment-summary",
-          actionButton("open_configure_review", "Configure review",
-            class="btn-outline-secondary w-100 text-start",
-            title="Load review configuration controls on demand")),
-      uiOutput("configure_review_contents")
-    )
+    uiOutput("configure_review_contents")
   })
 
   # These frequently changing scoping values update their own output bindings.
