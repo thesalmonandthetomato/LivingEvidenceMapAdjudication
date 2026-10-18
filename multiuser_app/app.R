@@ -10190,14 +10190,9 @@ server <- function(input, output, session) {
       }
       })
       }
-      if(isTRUE(user_can(login_user,"manage_assignments"))) {
-        # Fast administrator landing: avoid loading unrelated workflow queues.
-        w04_queued_init_rv(load_workflow_queues)
-        login_initialising(FALSE)
-        app_view("w04_workspace")
-      } else {
-        session$onFlushed(load_workflow_queues,once=TRUE)
-      }
+      # All users enter the standard task dashboard, not the W04 overview.
+      # The W04 summary remains event-bound and is only read on explicit refresh.
+      session$onFlushed(load_workflow_queues,once=TRUE)
     } else {
       n <- failed_attempts() + 1L
       failed_attempts(n)
