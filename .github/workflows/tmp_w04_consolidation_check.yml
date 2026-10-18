@@ -23,4 +23,7 @@ jobs:
           stopifnot(grepl("Configure and administer review",src,fixed=TRUE))
           stopifnot(grepl("w04_overview_opened",src,fixed=TRUE))
           stopifnot(grepl("w04_summary_read(review_id=meta$review_id,create_if_missing=FALSE)",src,fixed=TRUE))
-          cat("PASS: consolidated dashboard UI parses and W04 summary read is explicit\n")
+          stopifnot(grepl("w04_open_manual_on_demand",src,fixed=TRUE))
+          stopifnot(grepl("w04_open_conflicts_on_demand",src,fixed=TRUE))
+          stopifnot(grepl("w04_open_uncertainties_on_demand",src,fixed=TRUE))
+          cat("PASS: consolidated dashboard and W04 direct-task controls\n")
