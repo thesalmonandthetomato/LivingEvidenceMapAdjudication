@@ -121,7 +121,12 @@ w04_summary_tables <- function(events) {
       Comparison=get(z,"analysis_id","—"),
       Conflicts=get(z,"conflicts","—"),stringsAsFactors=FALSE)
   })
-  list(subsets=bind(oldest_first(subset_rows),c("Subset","Created","N","Reviewers","Done","Models")),
+  comparison_choices <- lapply(comparisons,function(z) {
+    data.frame(id=id(z),label=paste(date(z),get(z,"raters",""),"· run",get(z,"source_run",""),"·",get(z,"conflicts","0"),"conflicts"),
+      conflicts=suppressWarnings(as.integer(get(z,"conflicts","0"))),stringsAsFactors=FALSE)
+  })
+  list(comparison_choices=bind(oldest_first(comparison_choices),c("id","label","conflicts")),
+    subsets=bind(oldest_first(subset_rows),c("Subset","Created","N","Reviewers","Done","Models")),
     prompts=bind(oldest_first(prompt_rows),c("Prompt","Saved","Author","Models")),
     runs=bind(oldest_first(run_rows),c("Run","Published","Subset","Prompt","N","Uncertain")),
     comparisons=bind(oldest_first(comparison_rows),c("Type","Created","Source","Raters","Agreement","Conflicts","Resolved")),
