@@ -37,7 +37,7 @@ w04_summary_latest <- function(events,type) {
   x <- Filter(function(z)identical(w04_overview_chr(z$record_type),type),events)
   if(!length(x))return(list())
   times <- vapply(x,function(z)w04_overview_chr(z$event_at_utc),character(1))
-  x <- x[order(times,decreasing=TRUE)]
+  x <- x[order(times,decreasing=FALSE,na.last=TRUE)]
   ids <- vapply(x,function(z)w04_overview_chr(z$entity_id),character(1))
   x[!duplicated(ids)]
 }
