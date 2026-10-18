@@ -1,7 +1,7 @@
 # W04 lightweight, append-only materialised overview. Original registries remain authoritative.
 w04_summary_tab <- function() "w04_work_overview"
 w04_summary_fields <- c("event_id","review_id","record_type","entity_id","event_at_utc","details_json")
-w04_summary_read <- function(review_id,create_if_missing=FALSE) {
+w04_summary_read <- function(review_id="",create_if_missing=FALSE) {
   gs4_auth_from_env()
   ss <- sheet_id_from_env()
   tab <- w04_summary_tab()
@@ -13,7 +13,8 @@ w04_summary_read <- function(review_id,create_if_missing=FALSE) {
   }
   rows <- as.data.frame(googlesheets4::read_sheet(ss,sheet=tab,col_types="c"))
   if(!all(w04_summary_fields %in% names(rows)))stop("W04 overview tab schema mismatch",call.=FALSE)
-  rows <- rows[!is.na(rows$review_id)&as.character(rows$review_id)==review_id,,drop=FALSE]
+  if(nzchar(as.character(review_id)))
+    rows <- rows[!is.na(rows$review_id)&as.character(rows$review_id)==review_id,,drop=FALSE]
   lapply(seq_len(nrow(rows)),function(i)as.list(rows[i,,drop=FALSE]))
 }
 w04_summary_append <- function(review_id,type,id,details,event_at_utc="") {
