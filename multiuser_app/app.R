@@ -2595,9 +2595,7 @@ server <- function(input, output, session) {
               div(class="p-3",
                 uiOutput("configure_review"),
                 tags$div(class="mt-3",
-                  actionButton("open_administration_assignments","W01, W02 and W08 assignments",class="btn-outline-secondary btn-sm"),
-                  textOutput("administration_load_status"),
-                  uiOutput("assignment_progress"))))),
+                  textOutput("administration_load_status"))))),
         div(
           class = "row g-3",
           div(
@@ -4508,12 +4506,8 @@ server <- function(input, output, session) {
       class="assignment-summary",
       div(
           class="px-3 pb-3",
-          tags$details(
-            class="assignment-disclosure",
-            `data-accordion-key`="configure-review-searching",
-            ontoggle="if (this.open && window.Shiny) Shiny.setInputValue('configure_searching_opened', true, {priority: 'event'});",
-            tags$summary(tags$strong("Searching")),
-            div(class="px-3 pb-3",
+          tabsetPanel(id="configure_workflow_tab",type="tabs",selected="W04",
+            tabPanel("Searching",div(class="px-3 pb-3",
           uiOutput("configure_scoping_panel"),
           tags$details(
             class="assignment-disclosure",
@@ -4584,38 +4578,22 @@ server <- function(input, output, session) {
             tags$summary(tags$strong("Scheduling")),
             div(class="px-3 pb-3 saved-note","Scheduled searching currently disabled")
           ),
-            )
-          ),
-          tags$details(
-            class="assignment-disclosure",
-            `data-accordion-key`="configure-review-deduplication",
-            tags$summary(tags$strong("Deduplication (W01)")),
-            div(class="px-3 pb-3",
+            )),
+            tabPanel("W01",div(class="px-3 pb-3",
               uiOutput("configure_w01_launch_state"),
               uiOutput("w01_launch_progress"),
               uiOutput("w01_launch_results"),
               uiOutput("w01_ris_controls"),
               textOutput("w01_ris_status")
-            )
-          ),
-          tags$details(
-            class="assignment-disclosure",
-            `data-accordion-key`="configure-review-enrichment",
-            tags$summary(tags$strong("Enrichment (W02)")),
-            div(class="px-3 pb-3",
+            ),uiOutput("w01_admin_controls")),
+            tabPanel("W02",div(class="px-3 pb-3",
               tags$p(class="saved-note","Launch automated bibliographic enrichment after W01. Human adjudication and optional missing-abstract completion are handled in the Enrichment task."),
               uiOutput("w02_launch_controls"),
               uiOutput("w02_launch_progress"),
               uiOutput("w02_launch_results"),
               uiOutput("w02_optional_pause_controls")
-            )
-          ),
-          tags$details(
-            class="assignment-disclosure",
-            `data-accordion-key`="configure-review-w04",
-            ontoggle="if(this.open && window.Shiny) Shiny.setInputValue('w04_overview_opened', Date.now(), {priority:'event'});",
-            tags$summary(tags$strong("W04 · Screening and validation")),
-            div(class="px-3 pb-3",
+            ),uiOutput("w02_admin_controls")),
+            tabPanel("W04",div(class="px-3 pb-3",
               tabsetPanel(id="w04_workspace_tab",type="tabs",selected="Overview",
                 tabPanel("Overview",
                   div(class="px-3 pb-3",
@@ -4757,7 +4735,9 @@ server <- function(input, output, session) {
                 tags$summary(tags$strong("Model execution")),
                 div(class="px-3 pb-3 saved-note","Experimental execution and approved production screening remain unavailable until Milestones 7–8.")
               )
-            )
+            )),
+            tabPanel("W08",uiOutput("w08_admin_controls")),
+            tabPanel("System",uiOutput("system_admin_controls"))
           )
         )
     )
