@@ -125,51 +125,107 @@ w04_summary_tables <- function(events) {
 
 # Backfill is deliberately an explicit administrator operation, never part of login.
 # Existing event IDs are preserved and repeated imports do not duplicate rows.
-w04_summary_backfill <- function(review_id,subsets,prompts,runs,analyses,conflict_sets) {
-  to_event <- function(type,id,at,label,summary) {
-    details <- list(label=label,summary=summary)
-    json <- as.character(jsonlite::toJSON(details,auto_unbox=TRUE))
+w04_summary_backfill <- function(review_id,subsets,prompts,runs,analyses,conflict_sets,
+                                 assignments=list(),manual_decisions=list(),
+                                 conflict_decisions=list(),users=list()) {
+  to_event <- function(type,id,at,details) {
+    json <- as.character(jsonlite::toJSON(details,auto_unbox=TRUE,null="null",na="null"))
     event_id <- digest::digest(paste(review_id,type,id,at,json,sep="\n"),
       algo="sha256",serialize=FALSE)
     data.frame(event_id=event_id,review_id=review_id,record_type=type,
       entity_id=id,event_at_utc=at,details_json=json,stringsAsFactors=FALSE)
   }
   rows <- list()
-  add <- function(type,id,at,label,summary) {
-    if(!nzchar(id))return()
-    rows[[length(rows)+1L]] <<- to_event(type,id,at,label,summary)
+  add <- function(type,id,at,details) {
+    if(!nzchar(id))return(invisible(NULL))
+    rows[[length(rows)+1L]] <<- to_event(type,id,at,details)
+    invisible(NULL)
   }
   for(x in subsets) {
     id <- w04_overview_chr(x$subset_id)
+    label <- w04_overview_chr(x$label,paste0("Subset ",substr(id,max(1L,nchar(id)-5L),nchar(id))))
     add("subset",id,w04_overview_chr(x$created_at_utc),
-      w04_overview_chr(x$label,paste0("Subset ",tail(strsplit(id,"-",fixed=TRUE)[[1L]],1L))),
-      paste0(w04_overview_chr(x$actual_size,"0")," records"))
+      list(label=label,records=w04_overview_chr(x$actual_size,"0"),
+        parent_subset_id=w04_overview_chr(x$parent_subset_id)))
   }
   for(x in prompts) {
     id <- w04_overview_chr(x$version_id)
     add("prompt",id,w04_overview_chr(x$created_at_utc),
-      w04_overview_chr(x$notes,w04_overview_chr(x$original_filename,id)),
-      paste("Saved by",w04_overview_chr(x$author,"unknown")))
+      list(label=w04_overview_chr(x$notes,w04_overview_chr(x$original_filename,id)),
+        author=w04_overview_chr(x$author),status=w04_overview_chr(x$status)))
   }
   for(x in runs) {
     id <- w04_overview_chr(x$run_id)
     add("model_run",id,w04_overview_chr(x$published_at_utc),
-      paste("Model run",id),
-      paste0("Subset ",w04_overview_chr(x$subset_id),"; prompt ",w04_overview_chr(x$prompt_version_id),
-        "; ",w04_overview_chr(x$total,"0")," records; ",w04_overview_chr(x$uncertain,"0")," uncertain"))
+      list(label=paste("Model run",id),subset_id=w04_overview_chr(x$subset_id),
+        prompt_version_id=w04_overview_chr(x$prompt_version_id),
+        total=w04_overview_chr(x$total,"0"),uncertain=w04_overview_chr(x$uncertain,"0"),
+        retain=w04_overview_chr(x$retain,"0"),exclude=w04_overview_chr(x$exclude,"0")))
   }
   for(x in analyses) {
     id <- w04_overview_chr(x$analysis_id)
     bid <- w04_overview_chr(x$batch_id)
+    model <- startsWith(bid,"w04-model-run-")
+    raters <- tryCatch(as.character(jsonlite::fromJSON(w04_overview_chr(x$rater_ids_json,"[]"))),
+      error=function(e)character())
+    label <- if(model)"Human–model" else "Human–human"
     add("comparison",id,w04_overview_chr(x$created_at_utc),
-      if(startsWith(bid,"w04-model-run-"))paste("Human–model",sub("^w04-model-run-","",bid)) else "Human–human",
-      paste0(w04_overview_chr(x$conflict_n,"0")," conflicts; raters ",w04_overview_chr(x$rater_ids_json,"[]")))
+      list(label=label,comparison_type=label,
+        source_run=if(model)sub("^w04-model-run-","",bid) else bid,
+        raters=paste(raters,collapse=" vs "),
+        conflicts=w04_overview_chr(x$conflict_n,"0"),
+        agreement=w04_overview_chr(x$raw_agreement,"—"),
+        kappa=w04_overview_chr(x$kappa,"—")))
   }
   for(x in conflict_sets) {
     id <- w04_overview_chr(x$conflict_set_id)
+    ids <- tryCatch(jsonlite::fromJSON(w04_overview_chr(x$conflict_case_ids_json,"[]")),
+      error=function(e)character())
     add("conflict_set",id,w04_overview_chr(x$created_at_utc),
-      paste("Conflicts",w04_overview_chr(x$analysis_id)),
-      paste("Type",w04_overview_chr(x$comparison_type)))
+      list(label=paste("Conflict set",substr(id,max(1L,nchar(id)-5L),nchar(id))),
+        analysis_id=w04_overview_chr(x$analysis_id),
+        comparison_type=w04_overview_chr(x$comparison_type),
+        conflicts=as.character(length(ids))))
+  }
+  if(length(assignments) && length(subsets)) {
+    for(s in subsets) {
+      sid <- w04_overview_chr(s$subset_id)
+      batch_id <- paste0("w04-human-",sid)
+      assigned <- Filter(function(a)
+        identical(w04_overview_chr(a$workflow),"04") &&
+        identical(w04_overview_chr(a$task_type),"manual_screening") &&
+        identical(w04_overview_chr(a$batch_id),batch_id) &&
+        !identical(w04_overview_chr(a$status,"assigned"),"cancelled"),assignments)
+      uids <- unique(vapply(assigned,function(a)w04_overview_chr(a$user_id),character(1)))
+      uids <- uids[nzchar(uids)]
+      for(uid in uids) {
+        user <- Filter(function(u)identical(w04_overview_chr(u$user_id),uid),users)
+        name <- if(length(user))w04_overview_chr(user[[1L]]$display_name,uid) else uid
+        completed <- unique(vapply(Filter(function(d)
+          identical(w04_overview_chr(d$reviewer),uid) &&
+          startsWith(w04_overview_chr(d$review_case_id),paste0(sid,"|")) &&
+          w04_overview_chr(d$decision) %in% c("retain","exclude","include"),
+          manual_decisions),function(d)w04_overview_chr(d$review_case_id),character(1)))
+        assigned_n <- sum(vapply(assigned,function(a)
+          identical(w04_overview_chr(a$user_id),uid),logical(1)))
+        add("human_screening",paste(sid,uid,sep="|"),
+          format(Sys.time(),"%Y-%m-%dT%H:%M:%SZ",tz="UTC"),
+          list(label=name,subset_id=sid,reviewer=name,
+            completed=as.character(length(completed)),assigned=as.character(assigned_n)))
+      }
+    }
+  }
+  if(length(conflict_sets) && length(conflict_decisions)) {
+    for(s in conflict_sets) {
+      sha <- w04_overview_chr(s$conflict_queue_sha256)
+      cases <- unique(vapply(Filter(function(d)
+        identical(w04_overview_chr(d$queue_sha256),sha),conflict_decisions),
+        function(d)w04_overview_chr(d$review_case_id),character(1)))
+      add("adjudication",w04_overview_chr(s$conflict_set_id),
+        format(Sys.time(),"%Y-%m-%dT%H:%M:%SZ",tz="UTC"),
+        list(label="Adjudication progress",conflict_set_id=w04_overview_chr(s$conflict_set_id),
+          completed=as.character(sum(nzchar(cases)))))
+    }
   }
   if(!length(rows))return(0L)
   incoming <- do.call(rbind,rows)
