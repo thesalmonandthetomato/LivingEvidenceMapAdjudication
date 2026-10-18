@@ -1614,8 +1614,8 @@ append_w04_consistency_analysis <- function(analysis,batch_id,queue_sha256,revie
   if(sum(as.character(verify$analysis_id)==analysis_id)!=1L) {
     stop("W04 consistency analysis write verification failed",call.=FALSE)
   }
-  if(exists("w04_summary_record_safe",mode="function"))
-    w04_summary_record_safe("comparison",analysis_id,now,
+  overview_synced <- if(exists("w04_summary_record_safe",mode="function"))
+    isTRUE(w04_summary_record_safe("comparison",analysis_id,now,
       if(grepl("^w04-model-run-",batch_id))paste("Human–model",sub("^w04-model-run-","",batch_id)) else "Human–human",
       paste(as.character(analysis$conflict_cases %||% 0L),"conflicts; reviewers",
         paste(analysis$rater_ids %||% character(),collapse=", ")),
@@ -1624,8 +1624,11 @@ append_w04_consistency_analysis <- function(analysis,batch_id,queue_sha256,revie
         raters=paste(analysis$rater_ids %||% character(),collapse=" vs "),
         conflicts=as.character(analysis$conflict_cases %||% 0L),
         agreement=as.character(analysis$raw_agreement %||% NA_real_),
-        kappa=as.character(analysis$kappa %||% NA_real_)))
-  as.list(row[1,,drop=FALSE])
+        kappa=as.character(analysis$kappa %||% NA_real_)))) else FALSE
+
+  out <- as.list(row[1,,drop=FALSE])
+  out$overview_synced <- overview_synced
+  out
 }
 
 delete_w04_consistency_analysis_row <- function(analysis_id) {
