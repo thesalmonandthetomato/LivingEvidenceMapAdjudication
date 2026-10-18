@@ -3817,7 +3817,7 @@ server <- function(input, output, session) {
       tags$h5("Saved comparisons"),tableOutput("w04_overview_comparisons"),
       uiOutput("w04_overview_conflict_action"),
       textOutput("w04_overview_conflict_action_status"),
-      tags$h5("Conflict sets"),tableOutput("w04_overview_conflicts")
+      tags$h5("Conflict sets"),uiOutput("w04_overview_conflicts")
     )
   })
   output$w04_overview_subsets <- renderTable({req(w04_overview_rv());w04_overview_rv()$subsets},striped=TRUE,spacing="xs")
@@ -3844,12 +3844,15 @@ server <- function(input, output, session) {
       }))
     )
   })
-  observe({
-    req(authenticated(),session_can("manage_assignments"))
+  w04_conflict_row_observers <- list()
+  observeEvent(w04_overview_rv(),{
+    lapply(w04_conflict_row_observers,function(x)x$destroy())
+    w04_conflict_row_observers <<- list()
+    if(!isTRUE(authenticated()) || !session_can("manage_assignments"))return()
     overview <- w04_overview_rv()
-    req(!is.null(overview),!is.null(overview$conflict_choices))
+    if(is.null(overview) || is.null(overview$conflict_choices))return()
     ids <- as.character(overview$conflict_choices$id)
-    lapply(seq_along(ids),function(i) {
+    w04_conflict_row_observers <<- lapply(seq_along(ids),function(i) {
       local({
         index <- i
         target <- ids[[i]]
@@ -12335,6 +12338,20 @@ server <- function(input, output, session) {
       current
     )
     w04_conflict_decisions(c(remaining,list(saved)))
+    set <- w04_active_consistency_conflict_set()
+    if(!is.null(set)) {
+      target_ids <- tryCatch(as.character(jsonlite::fromJSON(
+        as.character(set$conflict_case_ids_json %||% "[]"))),error=function(e)character())
+      complete <- sum(vapply(c(remaining,list(saved)),function(d)
+        as.character(d$review_case_id %||% "") %in% target_ids,logical(1)))
+      w04_summary_record_safe("adjudication",
+        as.character(set$conflict_set_id),
+        format(Sys.time(),tz="UTC",format="%Y-%m-%dT%H:%M:%SZ"),
+        "Adjudication progress",
+        paste(complete,"of",length(target_ids),"resolved"),
+        metadata=list(conflict_set_id=as.character(set$conflict_set_id),
+          completed=as.character(complete)))
+    }
     w04_conflict_status(sprintf("Saved %s at %s",choice,format(Sys.time(),"%H:%M:%S")))
     TRUE
   }
