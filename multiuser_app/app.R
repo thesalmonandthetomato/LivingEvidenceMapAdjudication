@@ -2594,6 +2594,8 @@ server <- function(input, output, session) {
         pipeline_summary_ui(),
         uiOutput("configure_review"),
         if(session_can("manage_assignments"))
+          actionButton("w04_return_overview","W04 overview",class="btn-outline-primary mb-2"),
+        if(session_can("manage_assignments"))
           tags$div(class="mb-3",
             actionButton("open_administration_assignments",
               "Administration & assignments",
@@ -10209,6 +10211,10 @@ server <- function(input, output, session) {
     }
   })
 
+  observeEvent(input$w04_return_overview,{
+    req(authenticated())
+    if(session_can("manage_assignments"))app_view("w04_workspace")
+  })
   observeEvent(input$w04_load_review_tasks,{
     req(authenticated())
     fn <- isolate(w04_queued_init_rv())
