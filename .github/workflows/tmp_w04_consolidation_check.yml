@@ -1,0 +1,26 @@
+name: Temporary consolidated W04 interface validation
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/tmp_w04_consolidation_check.yml']
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.4.3'
+          use-public-rspm: true
+      - name: Parse and validate dashboard overview
+        shell: Rscript {0}
+        run: |
+          invisible(parse(file="multiuser_app/app.R"))
+          src <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\n")
+          stopifnot(grepl("Configure and administer review",src,fixed=TRUE))
+          stopifnot(grepl("w04_overview_opened",src,fixed=TRUE))
+          stopifnot(grepl("w04_summary_read(review_id=meta$review_id,create_if_missing=FALSE)",src,fixed=TRUE))
+          cat("PASS: consolidated dashboard UI parses and W04 summary read is explicit\n")
