@@ -8,7 +8,7 @@ w04_overview_date <- function(x) {
   if(!nzchar(z)) return("Not recorded")
   stamp <- suppressWarnings(as.POSIXct(z,format="%Y-%m-%dT%H:%M:%OS",tz="UTC"))
   if(is.na(stamp)) return(z)
-  format(stamp,format="%d %b %Y, %H:%M %Z",tz="Europe/London")
+  format(stamp,format="%d %b %y %H:%M",tz="Europe/London")
 }
 w04_overview_build <- function(subsets, prompts, runs, analyses, conflict_sets,
                                assignments, manual_decisions, conflict_decisions, users) {
@@ -23,12 +23,12 @@ w04_overview_build <- function(subsets, prompts, runs, analyses, conflict_sets,
   subset_name <- function(sid) {
     z <- subset_by_id[[sid]]
     if(is.null(z))return(if(nzchar(sid))paste0("Unknown subset: ",sid) else "Not recorded")
-    w04_overview_chr(z$label,substr(sid,1L,28L))
+    w04_overview_chr(z$label,paste0("Subset ",substr(sid,nchar(sid)-5L,nchar(sid))))
   }
   prompt_name <- function(pid) {
     z <- prompt_by_id[[pid]]
     if(is.null(z))return(if(nzchar(pid))paste0("Archived prompt unavailable: ",pid) else "Not recorded")
-    w04_overview_chr(z$notes,w04_overview_chr(z$original_filename,pid))
+    w04_overview_chr(z$notes,w04_overview_chr(z$original_filename,paste0("Prompt ",substr(pid,nchar(pid)-5L,nchar(pid)))))
   }
   subset_rows <- lapply(subsets,function(s) {
     sid <- w04_overview_chr(s$subset_id)
@@ -46,23 +46,23 @@ w04_overview_build <- function(subsets, prompts, runs, analyses, conflict_sets,
     done <- vapply(assigned_ids,function(uid)sum(vapply(completed,function(d)
       identical(w04_overview_chr(d$reviewer),uid),logical(1))),integer(1))
     data.frame(Subset=subset_name(sid),Created=w04_overview_date(s$created_at_utc),
-      Records=w04_overview_chr(s$actual_size,"0"),
+      N=w04_overview_chr(s$actual_size,"0"),
       Reviewers=if(length(assigned_ids))paste(vapply(assigned_ids,find_user,character(1)),collapse=", ") else "Unassigned",
-      Screened=if(length(done))paste(paste(vapply(assigned_ids,find_user,character(1)),done,sep=": "),collapse="; ") else "Not assigned",
-      Model_runs=run_count(sid),ID=sid,stringsAsFactors=FALSE)
+      Done=if(length(done))paste(done,collapse=" / ") else "—",
+      Models=run_count(sid),stringsAsFactors=FALSE)
   })
   prompt_rows <- lapply(prompts,function(p) {
     pid <- w04_overview_chr(p$version_id)
     data.frame(Prompt=prompt_name(pid),Saved=w04_overview_date(p$created_at_utc),
-      Author=find_user(w04_overview_chr(p$author)),Model_runs=sum(vapply(runs,function(r)
+      Author=find_user(w04_overview_chr(p$author)),Models=sum(vapply(runs,function(r)
         identical(w04_overview_chr(r$prompt_version_id),pid),logical(1))),
-      ID=pid,stringsAsFactors=FALSE)
+      stringsAsFactors=FALSE)
   })
   run_rows <- lapply(runs,function(r) {
     data.frame(Run=w04_overview_chr(r$run_id),Published=w04_overview_date(r$published_at_utc),
       Subset=subset_name(w04_overview_chr(r$subset_id)),
       Prompt=prompt_name(w04_overview_chr(r$prompt_version_id)),
-      Screened=w04_overview_chr(r$total,"0"),Uncertain=w04_overview_chr(r$uncertain,"0"),
+      N=w04_overview_chr(r$total,"0"),Uncertain=w04_overview_chr(r$uncertain,"0"),
       stringsAsFactors=FALSE)
   })
   comparison_rows <- lapply(analyses,function(a) {
@@ -82,16 +82,24 @@ w04_overview_build <- function(subsets, prompts, runs, analyses, conflict_sets,
       Source=rid,Raters=if(length(raters))paste(vapply(raters,function(u)
         if(identical(u,"model"))"Model" else find_user(u),character(1)),collapse=" vs ") else "Not recorded",
       Agreement=w04_overview_chr(a$raw_agreement,"Not recorded"),
-      Conflicts=w04_overview_chr(a$conflict_n,"0"),Adjudicated=length(resolved[nzchar(resolved)]),
-      ID=w04_overview_chr(a$analysis_id),stringsAsFactors=FALSE)
+      Conflicts=w04_overview_chr(a$conflict_n,"0"),Resolved=length(resolved[nzchar(resolved)]),
+      stringsAsFactors=FALSE)
   })
   bind <- function(rows,fields) {
     if(length(rows))do.call(rbind,rows) else
       as.data.frame(setNames(replicate(length(fields),character(),simplify=FALSE),fields),
         stringsAsFactors=FALSE)
   }
-  list(subsets=bind(subset_rows,c("Subset","Created","Records","Reviewers","Screened","Model_runs","ID")),
-       prompts=bind(prompt_rows,c("Prompt","Saved","Author","Model_runs","ID")),
-       runs=bind(run_rows,c("Run","Published","Subset","Prompt","Screened","Uncertain")),
-       comparisons=bind(comparison_rows,c("Type","Created","Source","Raters","Agreement","Conflicts","Adjudicated","ID")))
+  newest <- function(rows,dates,fields) {
+    if(length(rows)) rows <- rows[order(dates,decreasing=TRUE,na.last=TRUE)]
+    bind(rows,fields)
+  }
+  list(subsets=newest(subset_rows,vapply(subsets,function(x)w04_overview_chr(x$created_at_utc),character(1)),
+       c("Subset","Created","N","Reviewers","Done","Models")),
+       prompts=newest(prompt_rows,vapply(prompts,function(x)w04_overview_chr(x$created_at_utc),character(1)),
+       c("Prompt","Saved","Author","Models")),
+       runs=newest(run_rows,vapply(runs,function(x)w04_overview_chr(x$published_at_utc),character(1)),
+       c("Run","Published","Subset","Prompt","N","Uncertain")),
+       comparisons=newest(comparison_rows,vapply(analyses,function(x)w04_overview_chr(x$created_at_utc),character(1)),
+       c("Type","Created","Source","Raters","Agreement","Conflicts","Resolved")))
 }
