@@ -1013,6 +1013,7 @@ server <- function(input, output, session) {
   w04_queued_init_rv <- reactiveVal(NULL)
   w04_queue_loaded_rv <- reactiveVal(FALSE)
   w04_queue_load_status_rv <- reactiveVal("")
+  w04_load_requested_rv <- reactiveVal(0L)
   record_table_context <- reactiveVal(NULL)
   record_table_page <- reactiveVal(1L)
   record_table_abstract_open <- reactiveVal(character())
@@ -2657,7 +2658,10 @@ server <- function(input, output, session) {
                 div(class="p-3",
                   tags$strong("Workflow 04 · Screening and validation"),
                   tags$p(class="mt-2 mb-2","W04 task data are not loaded. Open them when you are ready to screen, assign or adjudicate."),
-                  actionButton("load_w04_on_demand","Load W04 tasks",class="btn-outline-primary"),
+                  div(class="d-flex flex-wrap gap-2",
+                    actionButton("w04_open_manual_on_demand","Open manual screening",class="btn-outline-primary btn-sm"),
+                    actionButton("w04_open_conflicts_on_demand","Open conflict resolution",class="btn-outline-primary btn-sm"),
+                    actionButton("w04_open_uncertainties_on_demand","Open model uncertainties",class="btn-outline-primary btn-sm")),
                   textOutput("w04_queue_load_status")
                 )))
           } else tagList(
@@ -10239,7 +10243,26 @@ server <- function(input, output, session) {
   })
 
   output$w04_queue_load_status <- renderText(w04_queue_load_status_rv())
-  observeEvent(input$load_w04_on_demand,{
+  w04_requested_task_rv <- reactiveVal("")
+  observeEvent(input$w04_open_manual_on_demand,{
+    w04_requested_task_rv("manual")
+    shiny::isolate({
+      if(isTRUE(w04_queue_loaded_rv())) app_view("w04")
+      else shiny::isolate(w04_load_requested_rv(w04_load_requested_rv()+1L))
+    })
+  })
+  observeEvent(input$w04_open_conflicts_on_demand,{
+    w04_requested_task_rv("conflict")
+    if(isTRUE(w04_queue_loaded_rv())) app_view("w04_conflict")
+    else w04_load_requested_rv(w04_load_requested_rv()+1L)
+  })
+  observeEvent(input$w04_open_uncertainties_on_demand,{
+    w04_requested_task_rv("resolution")
+    if(isTRUE(w04_queue_loaded_rv())) app_view("w04_resolution")
+    else w04_load_requested_rv(w04_load_requested_rv()+1L)
+  })
+  observeEvent(w04_load_requested_rv(),{
+    req(w04_load_requested_rv()>0L)
     req(authenticated())
     if(isTRUE(w04_queue_loaded_rv()))return()
     fn <- shiny::isolate(w04_queued_init_rv())
@@ -10256,6 +10279,8 @@ server <- function(input, output, session) {
     w04_queue_loaded_rv(TRUE)
     w04_queued_init_rv(NULL)
     w04_queue_load_status_rv("")
+    destination <- switch(w04_requested_task_rv(),manual="w04",conflict="w04_conflict",resolution="w04_resolution",NULL)
+    if(!is.null(destination)) app_view(destination)
     user_id <- as.character(normalise_user_row(current_user())$user_id)
     later::later(function() {
       shiny::withReactiveDomain(session,{
