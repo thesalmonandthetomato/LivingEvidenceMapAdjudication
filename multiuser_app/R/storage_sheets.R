@@ -1618,7 +1618,13 @@ append_w04_consistency_analysis <- function(analysis,batch_id,queue_sha256,revie
     w04_summary_record_safe("comparison",analysis_id,now,
       if(grepl("^w04-model-run-",batch_id))paste("Human–model",sub("^w04-model-run-","",batch_id)) else "Human–human",
       paste(as.character(analysis$conflict_cases %||% 0L),"conflicts; reviewers",
-        paste(analysis$rater_ids %||% character(),collapse=", ")))
+        paste(analysis$rater_ids %||% character(),collapse=", ")),
+      metadata=list(comparison_type=if(grepl("^w04-model-run-",batch_id))"Human–model" else "Human–human",
+        source_run=if(grepl("^w04-model-run-",batch_id))sub("^w04-model-run-","",batch_id) else batch_id,
+        raters=paste(analysis$rater_ids %||% character(),collapse=" vs "),
+        conflicts=as.character(analysis$conflict_cases %||% 0L),
+        agreement=as.character(analysis$raw_agreement %||% NA_real_),
+        kappa=as.character(analysis$kappa %||% NA_real_)))
   as.list(row[1,,drop=FALSE])
 }
 
