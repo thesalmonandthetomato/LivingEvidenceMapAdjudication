@@ -20,6 +20,7 @@ source("R/w04_prompt_zenodo.R", local = TRUE)
 source("R/w04_shiny_model_launch.R", local = TRUE)
 source("R/w04_model_batches.R", local = TRUE)
 source("R/w04_workspace_overview.R", local = TRUE)
+source("R/w04_work_overview_sheets.R", local = TRUE)
 source("R/w04_model_conflicts.R", local = TRUE)
 source("R/w04_prompt_refinement.R", local = TRUE)
 source("R/w04_highlight_sheets.R", local = TRUE)
@@ -3745,52 +3746,37 @@ server <- function(input, output, session) {
   observeEvent(input$w04_overview_refresh,{
     req(authenticated())
     if(!session_can("manage_assignments"))return()
-    w04_overview_status_rv("Reading saved W04 registries…")
+    w04_overview_status_rv("Reading W04 summary sheet…")
     loaded <- tryCatch({
-      meta <- w04_prompt_review_metadata()
-      list(subsets=w04_subset_registry_read(meta$review_id),
-           prompts=w04_prompt_archive_versions(meta),
-           runs=w04_model_batch_registry_read(meta$review_id),
-           analyses=read_w04_consistency_analyses(),
-           conflict_sets=read_w04_conflict_sets(),
-           human=active_sheet_w04_decisions(),
-           conflicts=active_sheet_w04_conflict_decisions())
+      review_id <- w04_prompt_review_metadata()$review_id
+      w04_summary_tables(w04_summary_read(review_id,create_if_missing=FALSE))
     },error=function(e)e)
     if(inherits(loaded,"error")) {
       w04_overview_status_rv(paste("Overview refresh failed:",conditionMessage(loaded)))
       return()
     }
-    out <- tryCatch(w04_overview_build(
-      loaded$subsets,loaded$prompts,loaded$runs,loaded$analyses,
-      loaded$conflict_sets,assignment_registry_rv(),loaded$human,
-      loaded$conflicts,lapply(user_registry_rv(),normalise_user_row)),
-      error=function(e)e)
-    if(inherits(out,"error")) {
-      w04_overview_status_rv(paste("Overview relationship check failed:",conditionMessage(out)))
-      return()
-    }
-    w04_overview_rv(out)
+    w04_overview_rv(loaded)
     w04_overview_refreshed_rv(format(Sys.time(),"%d %b %Y %H:%M %Z",tz="Europe/London"))
-    w04_overview_status_rv(sprintf("Loaded %d subsets, %d prompts, %d model runs and %d saved comparisons.",
-      nrow(out$subsets),nrow(out$prompts),nrow(out$runs),nrow(out$comparisons)))
+    w04_overview_status_rv(sprintf("Loaded %d subsets, %d prompts, %d model runs and %d saved comparisons from one summary tab.",
+      nrow(loaded$subsets),nrow(loaded$prompts),nrow(loaded$runs),nrow(loaded$comparisons)))
   })
   output$w04_overview_tables <- renderUI({
     x <- w04_overview_rv()
-    if(is.null(x))return(tags$p(class="saved-note","No overview loaded yet. Refresh to read the saved registries."))
+    if(is.null(x))return(tags$p(class="saved-note","No summary loaded yet. Refresh to read the W04 summary sheet."))
     tags$div(class="w04-compact-overview",
-      tags$style(HTML(".w04-compact-overview {font-size:0.82rem;line-height:1.25} .w04-compact-overview h5{font-size:0.96rem;margin:0.85rem 0 0.3rem} .w04-compact-overview .table{font-size:0.82rem;width:100%;margin-bottom:0.5rem} .w04-compact-overview .table th,.w04-compact-overview .table td{padding:0.25rem 0.35rem;vertical-align:top;overflow-wrap:anywhere} .w04-compact-overview .table-responsive{overflow-x:auto}")),
-      tags$h5("Human-screened subsets"),tags$p(class="saved-note","Created date and completed decisions per assigned reviewer."),
-      tableOutput("w04_overview_subsets"),
+      tags$style(HTML(".w04-compact-overview {font-size:0.8rem;line-height:1.2} .w04-compact-overview h5{font-size:0.93rem;margin:0.65rem 0 0.25rem} .w04-compact-overview table{font-size:0.8rem} .w04-compact-overview th,.w04-compact-overview td{padding:0.2rem 0.35rem}")),
+      tags$h5("Human-screened subsets"),tableOutput("w04_overview_subsets"),
       tags$h5("Prompt versions"),tableOutput("w04_overview_prompts"),
-      tags$h5("Model runs"),tags$p(class="saved-note","Published is the confirmed model result publication date, not necessarily the launch date."),
-      tableOutput("w04_overview_runs"),
-      tags$h5("Saved comparisons and conflicts"),tableOutput("w04_overview_comparisons")
+      tags$h5("Model runs"),tableOutput("w04_overview_runs"),
+      tags$h5("Saved comparisons"),tableOutput("w04_overview_comparisons"),
+      tags$h5("Conflict sets"),tableOutput("w04_overview_conflicts")
     )
   })
-  output$w04_overview_subsets <- renderTable({req(w04_overview_rv());w04_overview_rv()$subsets},striped=TRUE,hover=TRUE,spacing="xs")
-  output$w04_overview_prompts <- renderTable({req(w04_overview_rv());w04_overview_rv()$prompts},striped=TRUE,hover=TRUE,spacing="xs")
-  output$w04_overview_runs <- renderTable({req(w04_overview_rv());w04_overview_rv()$runs},striped=TRUE,hover=TRUE,spacing="xs")
-  output$w04_overview_comparisons <- renderTable({req(w04_overview_rv());w04_overview_rv()$comparisons},striped=TRUE,hover=TRUE,spacing="xs")
+  output$w04_overview_subsets <- renderTable({req(w04_overview_rv());w04_overview_rv()$subsets},striped=TRUE,spacing="xs")
+  output$w04_overview_prompts <- renderTable({req(w04_overview_rv());w04_overview_rv()$prompts},striped=TRUE,spacing="xs")
+  output$w04_overview_runs <- renderTable({req(w04_overview_rv());w04_overview_rv()$runs},striped=TRUE,spacing="xs")
+  output$w04_overview_comparisons <- renderTable({req(w04_overview_rv());w04_overview_rv()$comparisons},striped=TRUE,spacing="xs")
+  output$w04_overview_conflicts <- renderTable({req(w04_overview_rv());w04_overview_rv()$conflicts},striped=TRUE,spacing="xs")
 
   output$w04_prompt_archive_status <- renderText(w04_prompt_status_rv())
   output$w04_prompt_zenodo_link <- renderUI({
@@ -7808,7 +7794,7 @@ server <- function(input, output, session) {
             `data-accordion-key`="w04-overview",
             tags$summary(tags$strong("W04 · Screening and validation overview")),
             div(class="p-3",
-              tags$p(class="saved-note","Read-only overview of historical subsets, prompts, model runs and saved comparisons. Dates come from saved metadata. Refresh explicitly to include changes by other reviewers."),
+              tags$p(class="saved-note","Saved metadata from one Google Sheets summary tab. Refresh to see changes; historical backfill is a separate administrator operation."),
               actionButton("w04_overview_refresh","Refresh overview",class="btn-outline-secondary btn-sm"),
               textOutput("w04_overview_status"),
               uiOutput("w04_overview_tables")
