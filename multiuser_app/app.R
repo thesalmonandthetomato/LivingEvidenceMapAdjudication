@@ -4744,7 +4744,8 @@ server <- function(input, output, session) {
     )
   }) |> shiny::bindEvent(authenticated(), configure_review_requested(), ignoreNULL=FALSE)
 
-  observeEvent(input$configure_searching_opened, {
+  observeEvent(input$configure_workflow_tab, {
+    req(identical(input$configure_workflow_tab,"Searching"))
     req(authenticated(),configure_review_requested())
     if (!session_can("run_search_scoping")) return()
     if (!is.null(search_source_groups_rv())) return()
