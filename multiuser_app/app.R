@@ -2567,6 +2567,12 @@ server <- function(input, output, session) {
         ),
         pipeline_summary_ui(),
         uiOutput("configure_review"),
+        if(session_can("manage_assignments"))
+          tags$div(class="mb-3",
+            actionButton("open_administration_assignments",
+              "Administration & assignments",
+              class="btn-outline-secondary"),
+            textOutput("administration_load_status")),
         uiOutput("assignment_progress"),
         div(
           class = "row g-3",
@@ -6604,9 +6610,15 @@ server <- function(input, output, session) {
   # Prior W04 subset metrics are stable across unrelated assignment updates.
   # Do not perform Google Sheets reads inside every summary re-render.
   w04_summary_history_cache <- new.env(parent=emptyenv())
+  output$administration_load_status <- renderText({
+    if(!isTRUE(input$open_administration_assignments > 0L))
+      return("Open to load administrator controls; historical assignment details are loaded only when needed.")
+    "Administration controls requested. Historical assignment data may take time to load."
+  })
   output$assignment_progress <- renderUI({
     req(authenticated())
     if (!session_can("manage_assignments")) return(NULL)
+    req(input$open_administration_assignments > 0L)
 
     all_assignments <- assignment_registry_rv()
     has_w01_batch <- nzchar(as.character(batch_id_rv())) && length(w01_all_cases_rv()) > 0L
