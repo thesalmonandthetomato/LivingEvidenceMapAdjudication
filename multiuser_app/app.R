@@ -4838,10 +4838,10 @@ server <- function(input, output, session) {
                   uiOutput("w04_prompt_zenodo_link")
                 )),
                   tags$details(class="assignment-disclosure",
-                    tags$summary(tags$strong("Model screening and completed runs")),
+                    tags$summary(tags$strong("Model execution and completed runs")),
                     div(class="px-3 pb-3",
                   tags$p(class="saved-note",
-                    "Run the shared W04 model screener against a registered subset after human screening. The selected immutable Zenodo prompt and agreed manual abstract corrections are used. This validation does not publish a full W04 review or launch W05."),
+                    "Validation screening uses a registered human-screened subset. Full-corpus screening must instead select eligible canonical records without existing inclusion codes; that production launch is not enabled yet. Model runs use archived prompts and do not automatically hand off to W05."),
                   actionButton("w04_model_refresh","Load subsets and prompts",
                     class="btn-outline-secondary btn-sm",
                     onclick="window.lemBusyStart('w04_model_refresh','Loading review-bound model input options…')"),
@@ -4855,12 +4855,7 @@ server <- function(input, output, session) {
                   tags$div(id="w04_model_launch_busy",class="saved-note",
                     style="display:none;","Archiving selected subset and launching model screening…"),
                   textOutput("w04_model_status"),
-                  tags$hr(),
-                  tags$h5("Production screening: remaining eligible records"),
-                  tags$p(class="saved-note","Read-only preflight. Select the two original 100-record validation subsets and the archived prompt above. No model run is dispatched."),
-                  uiOutput("w04_production_subset_selector"),
-                  actionButton("w04_production_preflight","Verify remaining corpus",class="btn-outline-primary btn-sm"),
-                  uiOutput("w04_production_preflight_status"),
+
                   tags$hr(),
                   tags$h5("Review completed model screening runs"),
                   tags$p(class="saved-note","Select a completed run to review model results and compare human screening. Manage uncertainty assignments below; assigned reviewers access their cases from the W04 review area."),
@@ -4874,7 +4869,7 @@ server <- function(input, output, session) {
                     tags$summary(tags$strong("Improve screening prompt from adjudicated model uncertainties")),
                     div(class="px-3 pb-3",
                       tags$p(class="saved-note",
-                        "After resolving every uncertain case in a completed model run, select any archived screening prompt or revised draft to improve. The 23 uncertain cases and human decisions remain tied to the selected model run. No screening is launched and no archived prompt is overwritten."),
+                        "Use the selected completed run and adjudicated model uncertainties to propose a revised archived prompt. No screening is launched and no archived prompt is overwritten."),
                       actionButton("w04_refinement_load_prompts","Load archived prompts",class="btn-outline-secondary btn-sm"),
                       uiOutput("w04_refinement_prompt_selector"),
                       textAreaInput("w04_refinement_note","Optional note for the suggested changes",
@@ -4917,10 +4912,7 @@ server <- function(input, output, session) {
                     "Select a human-screened subset once. Associated model runs and reviewer choices load automatically; the latest completed model run is selected by default."),
                   uiOutput("w04_comparison_body")))
               ),
-              tags$details(class="assignment-disclosure",
-                tags$summary(tags$strong("Model execution")),
-                div(class="px-3 pb-3 saved-note","Experimental execution and approved production screening remain unavailable until Milestones 7–8.")
-              )
+
             )),
             tabPanel("W08",uiOutput("w08_admin_controls")),
             tabPanel("System",uiOutput("system_admin_controls"))
