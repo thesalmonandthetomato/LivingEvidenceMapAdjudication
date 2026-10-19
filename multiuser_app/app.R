@@ -1072,6 +1072,8 @@ server <- function(input, output, session) {
   w04_model_versions_rv <- reactiveVal(list())
   w04_model_status_rv <- reactiveVal("")
   w04_model_launch_busy_rv <- reactiveVal(FALSE)
+  w04_model_selection_status_rv <- reactiveVal("Select a screening scope and verify it before launch.")
+  w04_model_selection_result_rv <- reactiveVal(NULL)
   w04_model_batches_rv <- reactiveVal(list())
   w04_model_results_rv <- reactiveVal(NULL)
   w04_model_selected_batch_rv <- reactiveVal(NULL)
@@ -4411,6 +4413,46 @@ server <- function(input, output, session) {
     w04_resolution_idx(1L)
     w04_reviewer_model_status_rv(sprintf("Loaded model run %s: %d uncertainties.",q$source_run_id,length(q$cases)))
   })
+  output$w04_model_selection_status <- renderText(w04_model_selection_status_rv())
+  output$w04_model_selection_summary <- renderUI({
+    x <- w04_model_selection_result_rv()
+    if(is.null(x))return(NULL)
+    tags$p(class="saved-note",sprintf(
+      "Verified eligible: %d · selected: %d · SHA-256: %s",
+      x$eligible,x$selected_count,x$membership_sha256))
+  })
+  observeEvent(list(input$w04_model_scope,input$w04_model_subset_selected),{
+    w04_model_selection_result_rv(NULL)
+    w04_model_selection_status_rv("Selection changed; verify again.")
+  },ignoreInit=TRUE)
+  observeEvent(input$w04_model_selection_verify,{
+    req(authenticated(),session_can("control_workflows"))
+    w04_model_selection_result_rv(NULL)
+    result <- tryCatch({
+      mode <- as.character(input$w04_model_scope %||% "uncoded")
+      corpus <- w04_subset_corpus_rv()
+      if(is.null(corpus))stop("Verify eligible corpus in Subsets & tasks first",call.=FALSE)
+      subset <- NULL
+      if(identical(mode,"subset")){
+        sid <- as.character(input$w04_model_subset_selected %||% "")
+        hits <- Filter(function(x)identical(as.character(x$subset_id),sid),
+          w04_model_subsets_rv())
+        if(length(hits)!=1L)stop("Choose one verified subset",call.=FALSE)
+        subset <- hits[[1L]]
+      }
+      if(identical(mode,"uncoded"))
+        stop(paste("Record-level exclusions are not enabled yet:",
+          "human events are keyed to reviewed queue cases and existing model results",
+          "must be reconciled against canonical record IDs first."),call.=FALSE)
+      w04_model_selection_preflight(corpus,mode=mode,subset=subset)
+    },error=function(e)e)
+    if(inherits(result,"error")){
+      w04_model_selection_status_rv(paste("Selection not verified:",conditionMessage(result)))
+      return()
+    }
+    w04_model_selection_result_rv(result)
+    w04_model_selection_status_rv("Read-only membership verification completed. Production dispatch is not enabled.")
+  })
   output$w04_model_status <- renderText(w04_model_status_rv())
   output$w04_model_subset_selector <- renderUI({
     xs <- w04_model_subsets_rv()
@@ -4452,6 +4494,10 @@ server <- function(input, output, session) {
     if(!session_can("control_workflows") ||
        !identical(as.character(current_user()$role),"administrator")) {
       w04_model_status_rv("Only an administrator may launch W04 model screening.")
+      return()
+    }
+    if(!identical(as.character(input$w04_model_scope %||% ""), "subset")){
+      w04_model_status_rv("Only the existing validated subset screening path can launch. Full-corpus execution is not yet enabled.")
       return()
     }
     if(isTRUE(w04_model_launch_busy_rv())) return()
@@ -4790,8 +4836,17 @@ server <- function(input, output, session) {
                     onclick="window.lemBusyStart('w04_model_refresh','Loading review-bound model input options…')"),
                   tags$div(id="w04_model_refresh_busy",class="saved-note",
                     style="display:none;","Loading registered subsets and archived prompts…"),
-                  uiOutput("w04_model_subset_selector"),
+                  radioButtons("w04_model_scope","Records to screen",
+                    choices=c("Eligible records without existing codes"="uncoded",
+                              "Registered validation subset"="subset",
+                              "All eligible records"="all"),selected="uncoded"),
+                  conditionalPanel(condition="input.w04_model_scope == 'subset'",
+                    uiOutput("w04_model_subset_selector")),
                   uiOutput("w04_model_prompt_selector"),
+                  actionButton("w04_model_selection_verify","Verify record selection",
+                    class="btn-outline-secondary btn-sm"),
+                  textOutput("w04_model_selection_status"),
+                  uiOutput("w04_model_selection_summary"),
                   actionButton("w04_model_launch","Run model on selected subset",
                     class="btn-primary btn-sm",
                     onclick="window.lemBusyStart('w04_model_launch','Validating and archiving W04 inputs, then dispatching GitHub…')"),
