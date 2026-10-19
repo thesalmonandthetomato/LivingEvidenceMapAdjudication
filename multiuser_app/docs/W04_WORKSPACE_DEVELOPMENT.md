@@ -138,3 +138,31 @@ For each stage: record commit SHA, precise changes, validation links and pass/fa
 - Overview retains single-tab, session-cached reading and oldest-first display. Archived data/assignments/decisions have not been reset or rewritten by this UI migration.
 - GitHub Actions R parsing/structural checks passed: [39144022154](https://github.com/thesalmonandthetomato/LivingEvidenceMapAdjudication/actions/runs/39144022154), [39144223570](https://github.com/thesalmonandthetomato/LivingEvidenceMapAdjudication/actions/runs/39144223570), [39144809689](https://github.com/thesalmonandthetomato/LivingEvidenceMapAdjudication/actions/runs/39144809689), [39145320957](https://github.com/thesalmonandthetomato/LivingEvidenceMapAdjudication/actions/runs/39145320957), [39145700390](https://github.com/thesalmonandthetomato/LivingEvidenceMapAdjudication/actions/runs/39145700390). Four temporary workflows deleted once validation passed.
 - **Still unverified in live Posit Connect:** tab persistence after selecting/changing subsets, completed model auto-selection, reviewer choice retention, full model-vs-human comparison, saving analysis and immediate overview visibility, existing missing comparison reconciliation, W01/W02/W08 workflow tabs, and latency. The validation runs are source/parse checks, not an end-to-end Shiny session; do not claim live PASS.
+
+
+## W04 seven-journey redesign audit (19 October 2026)
+
+Requested administrator journeys, which supersede the previous five-tab information architecture:
+
+| Journey | Existing controls and data | Required consolidation |
+|---|---|---|
+| 1. Subsets, tasks, progress | `w04_subset_load_corpus`, `w04_subset_registry_refresh`, `w04_subset_create`, `w04_subset_prepare_queue`, `w04_admin_controls`, lightweight `w04_overview_tables` | One Subsets & tasks view with creation/assignment/progress. Defer costly W02/W03 restore until explicit verification. |
+| 2. Compare coding | `w04_comparison_body`, saved analyses in `w04_consistency_analyses`, `w04_consistency_raters`, `w04_save_consistency_analysis` | One subset selector, persistent rater/model selection and kappa. Keep authoritative saves and on-demand history reconciliation. |
+| 3. Run model | `w04_model_refresh`, `w04_model_subset_selector`, `w04_model_prompt_selector`, `w04_model_launch`; `w04_shiny_model_bundle_build` and `w04_shiny_model_dispatch` | Single execution surface. Choose selected subset, eligible uncoded records, or full eligible corpus. Validation-mode human-decision gate must remain. Production-mode record-level inclusion-code filtering is **not implemented**; never infer 'coded' from the number or order of subsets. |
+| 4. Model results | `w04_model_batches_refresh`, `w04_model_batch_selector`, `w04_model_batch_open`, `w04_model_batch_summary`; summary sheet `w04_work_overview` | Separate results view showing include/exclude/uncertain counts and per-run provenance, with no model execution controls. |
+| 5. Uncertain cases | Model resolution task card and `w04_resolution_*` state, model batch review and prompt refinement (`w04_refinement_*`) | Link selected model run directly to its uncertainty queue. Preserve assigned reviewer access and existing Google Sheets decision writer. |
+| 6. Conflicts | `w04_overview_conflicts` and row click handlers; `activate_w04_model_conflict`, `w04_conflict_*`, conflict task card | One conflict-set history with direct administrator opening, assignment-based reviewer access and existing decision writer. |
+| 7. Finalise screening | Existing W04 validation finalisation controls in `w04_admin_controls`; downstream W05 pathway lives in pipeline repo | Dedicated corpus coverage/reconciliation gate required; no automatic dispatch until each canonical record has one authoritative outcome and all required adjudications are complete. |
+
+Structural issues confirmed from `multiuser_app/app.R`:
+- `Prompts & models` currently includes prompt version management, subset model launch, model run inspection, refinement and highlight terms in nested accordions.
+- `Assignments` is a separate tab despite being part of the user's first journey.
+- The old `Overview` loads saved summaries, but it is not a seventh user journey on its own.
+- Previously added hard-coded two-validation-subset preflight and extra inactive Model execution accordion were removed in commits `292154b`, `6ab1a9c`.
+- `admin_assignment_panels()` is expensive and must be loaded only on demand. Keep task cards W01, W02, W04 and W08 unchanged.
+- Current tab-sensitive observers compare literal `w04_workspace_tab` values: Overview (~3780), Assignments (~7056/7997), Comparisons (~8417/8586). Update those together with navigation, never only the visible tab labels.
+- Confirm startup/connection reliability before deploying a broad navigation refactor. Avoid any new Reads of Zenodo archives at login.
+
+Implementation order: (A) inventory and record-level code semantics; (B) stable seven-section navigation with rehomed existing outputs and event gates; (C) one execution selector + production preflight based on actual decision registry; (D) full-corpus model run, checkpointing and independent validation; (E) corpus finalisation. Do not treat the seven-tab visual layout as proof that unfinished production and finalisation functionality exists.
+
+This audit does not modify existing Google Sheets data, subsets, assignments, prompt archives or model results.
