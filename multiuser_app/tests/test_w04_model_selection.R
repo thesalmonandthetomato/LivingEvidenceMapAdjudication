@@ -52,3 +52,8 @@ model_coded <- w04_model_resolve_model_coded(list(list(records=list(
  list(record_id=ids[[4]],decision="retain"),
  list(record_id=ids[[5]],decision="uncertain")))),ids)
 stopifnot(identical(model_coded,ids[[4]]))
+
+# Model tables may be returned from Sheets as row-wise data frames.
+df <- data.frame(record_id=ids[c(6,7)],decision=c("exclude","uncertain"),
+                 stringsAsFactors=FALSE)
+stopifnot(identical(w04_model_resolve_model_coded(list(list(records=df)),ids),ids[[6]]))
