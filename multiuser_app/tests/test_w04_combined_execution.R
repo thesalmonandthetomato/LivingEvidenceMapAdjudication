@@ -31,3 +31,13 @@ stopifnot(failed(w04_combined_execution_plan(tampered,prompt,5L)),
  batch_key=plan$batches[[1]]$batch_key,status="succeeded",
  membership_sha256="incorrect")))))
 cat("W04 immutable combined execution plan tests passed\\n")
+
+# Combined batches retain their own provenance: never masquerade as subsets.
+meta <- list(review_id="r-test",sheet_id=paste(rep("S",30),collapse=""))
+bundle <- w04_combined_batch_bundle(meta,plan,1L)
+stopifnot(identical(bundle$schema,"lem-w04-combined-batch-input-v1"),
+  identical(bundle$batch_membership_sha256,plan$batches[[1L]]$membership_sha256),
+  identical(unlist(bundle$record_ids,use.names=FALSE),plan$batches[[1L]]$record_ids),
+  !isTRUE(bundle$dispatch_enabled),is.null(bundle$subset_id))
+stopifnot(failed(w04_combined_batch_bundle(meta,plan,0L)),
+  failed(w04_combined_batch_bundle(modifyList(meta,list(review_id="wrong")),plan,1L)))
