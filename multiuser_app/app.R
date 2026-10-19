@@ -3790,7 +3790,7 @@ server <- function(input, output, session) {
       }
     }
   })
-  observeEvent(input$w04_overview_refresh,{
+  observeEvent(list(input$w04_overview_refresh,input$w04_model_results_refresh),{
     req(authenticated())
     if(!session_can("manage_assignments"))return()
     w04_overview_status_rv("Reading W04 summary sheet…")
@@ -3815,9 +3815,7 @@ server <- function(input, output, session) {
       tags$h5("Prompt versions"),tableOutput("w04_overview_prompts"),
       tags$h5("Model runs"),tableOutput("w04_overview_runs"),
       tags$h5("Saved comparisons"),tableOutput("w04_overview_comparisons"),
-      uiOutput("w04_overview_conflict_action"),
-      textOutput("w04_overview_conflict_action_status"),
-      tags$h5("Conflict sets"),uiOutput("w04_overview_conflicts")
+      tags$p(class="saved-note","Open saved disagreements in the Conflicts tab.")
     )
   })
   output$w04_overview_subsets <- renderTable({req(w04_overview_rv());w04_overview_rv()$subsets},striped=TRUE,spacing="xs")
@@ -4800,14 +4798,6 @@ server <- function(input, output, session) {
                     style="display:none;","Archiving selected subset and launching model screening…"),
                   textOutput("w04_model_status"),
 
-                  tags$hr(),
-                  tags$h5("Review completed model screening runs"),
-                  tags$p(class="saved-note","Select a completed run to review model results and compare human screening. Manage uncertainty assignments below; assigned reviewers access their cases from the W04 review area."),
-                  actionButton("w04_model_batches_refresh","Load completed model batches",class="btn-outline-secondary btn-sm"),
-                  uiOutput("w04_model_batch_selector"),
-                  actionButton("w04_model_batch_open","Open selected model batch",class="btn-outline-primary btn-sm"),
-                  textOutput("w04_model_return_status"),
-                  uiOutput("w04_model_batch_summary"),
                   tags$details(class="assignment-disclosure",
                     `data-accordion-key`="configure-review-w04-prompt-refinement",
                     tags$summary(tags$strong("Improve screening prompt from adjudicated model uncertainties")),
@@ -4849,15 +4839,27 @@ server <- function(input, output, session) {
                 tabPanel("Model results",
                   div(class="px-3 pb-3",
                   tags$p(class="saved-note","Saved W04 metadata from the summary sheet."),
-                  actionButton("w04_overview_refresh","Refresh overview",class="btn-outline-secondary btn-sm"),
+                  actionButton("w04_model_results_refresh","Refresh overview",class="btn-outline-secondary btn-sm"),
                   textOutput("w04_overview_status"),
-                  uiOutput("w04_overview_tables"))),
+                  uiOutput("w04_overview_tables"),
+                  tags$hr(),
+                  tags$h5("Inspect completed model runs"),
+                  tags$p(class="saved-note","Inspect completed runs here; launching models remains in Run model."),
+                  actionButton("w04_model_batches_refresh","Load completed model batches",class="btn-outline-secondary btn-sm"),
+                  uiOutput("w04_model_batch_selector"),
+                  actionButton("w04_model_batch_open","Open selected model batch",class="btn-outline-primary btn-sm"),
+                  textOutput("w04_model_return_status"),
+                  uiOutput("w04_model_batch_summary"))),
                 tabPanel("Uncertain cases",
                   div(class="px-3 pb-3",
                     tags$p(class="saved-note","Open assigned model uncertainty cases from the permanent W04 task card. Administrators can manage reviewer assignments in Subsets & tasks. Select and open a completed model batch in Model results to inspect its classifications."))),
                 tabPanel("Conflicts",
                   div(class="px-3 pb-3",
-                    tags$p(class="saved-note","Examine saved human–human and human–model conflict sets from the W04 task card. The saved conflict history and direct-open controls remain accessible in Model results. Decisions are saved using the existing conflict adjudication workflow."))),
+                    tags$p(class="saved-note","Open saved human–human or human–model conflict sets directly for adjudication."),
+                    actionButton("w04_overview_refresh","Refresh conflict history",class="btn-outline-secondary btn-sm"),
+                    uiOutput("w04_overview_conflict_action"),
+                    textOutput("w04_overview_conflict_action_status"),
+                    uiOutput("w04_overview_conflicts"))),
                 tabPanel("Finalise",
                   div(class="px-3 pb-3",
                     tags$p(class="saved-note","Corpus-wide reconciliation and finalisation are not yet implemented. Existing W04 records and decisions remain unchanged. No downstream workflow can be launched from this tab.")))
