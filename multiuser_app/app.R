@@ -4439,10 +4439,28 @@ server <- function(input, output, session) {
         matches[[1L]]
       })
       include_remaining <- isTRUE(input$w04_include_remaining)
-      # A provisional preview can validate subset membership, but must not
-      # invent or assume the as-yet-unresolved record-level coding set.
+      coded <- character()
+      if(include_remaining) {
+        meta <- w04_prompt_review_metadata()
+        if(!identical(as.character(meta$review_id),as.character(corpus$review_id)))
+          stop("Active review changed since canonical verification",call.=FALSE)
+        # Each saved decision is interpreted only through its original queue.
+        # Missing queues and ambiguous identities stop the preflight.
+        registered <- w04_subset_registry_read(meta$review_id)
+        queues <- lapply(registered,function(z) {
+          q <- w04_subset_queue_read(as.character(z$subset_id),meta$review_id)
+          q
+        })
+        coded_human <- w04_model_resolve_human_coded(
+          active_sheet_w04_decisions(),queues,corpus$record_ids)
+        batches <- w04_model_batch_registry_read(meta$review_id)
+        model_records <- lapply(batches,function(b)
+          list(records=w04_model_batch_results_read(b)))
+        coded_model <- w04_model_resolve_model_coded(model_records,corpus$record_ids)
+        coded <- union(coded_human,coded_model)
+      }
       w04_model_selection_combine(corpus,include_remaining=include_remaining,
-        subsets=selected,coded_ids=if(include_remaining)NULL else character())
+        subsets=selected,coded_ids=coded)
     },error=function(e)e)
     if(inherits(result,"error")){
       w04_model_selection_status_rv(paste("Selection not verified:",conditionMessage(result)))
