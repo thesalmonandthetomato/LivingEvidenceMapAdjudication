@@ -35,3 +35,20 @@ stopifnot(setequal(combined$record_ids,
 stopifnot(failed(w04_model_selection_combine(corpus,TRUE,list(s1),coded_ids=NULL)))
 subset_only <- w04_model_selection_combine(corpus,FALSE,list(s1))
 stopifnot(setequal(subset_only$record_ids,s1$record_ids))
+
+# Resolve human codes only through verified queue/case identity.
+q1 <- list(queue_sha256="queue-a",cases=list(
+ list(record_id=ids[[2]],review_case_id="a|2"),
+ list(record_id=ids[[3]],review_case_id="a|3")))
+human_coded <- w04_model_resolve_human_coded(list(
+ list(queue_sha256="queue-a",review_case_id="a|2",decision="retain"),
+ list(queue_sha256="queue-a",review_case_id="a|3",decision="exclude")),
+ list(q1),ids)
+stopifnot(setequal(human_coded,ids[c(2,3)]))
+stopifnot(failed(w04_model_resolve_human_coded(list(
+ list(queue_sha256="wrong",review_case_id="a|2",decision="retain")),
+ list(q1),ids)))
+model_coded <- w04_model_resolve_model_coded(list(list(records=list(
+ list(record_id=ids[[4]],decision="retain"),
+ list(record_id=ids[[5]],decision="uncertain")))),ids)
+stopifnot(identical(model_coded,ids[[4]]))
