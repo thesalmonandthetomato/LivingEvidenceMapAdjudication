@@ -3777,7 +3777,7 @@ server <- function(input, output, session) {
   })
   observeEvent(list(input$configure_workflow_tab,input$w04_workspace_tab),{
     req(identical(input$configure_workflow_tab,"W04"),
-        identical(input$w04_workspace_tab,"Overview"))
+        identical(input$w04_workspace_tab,"Model results"))
     req(authenticated(),session_can("manage_assignments"))
     if(is.null(w04_overview_rv())) {
       meta <- tryCatch(w04_prompt_review_metadata(),error=function(e)e)
@@ -4714,14 +4714,14 @@ server <- function(input, output, session) {
               uiOutput("w02_optional_pause_controls")
             ),uiOutput("w02_admin_controls")),
             tabPanel("W04",div(class="px-3 pb-3",
-              tabsetPanel(id="w04_workspace_tab",type="tabs",selected="Overview",
-                tabPanel("Overview",
+              tabsetPanel(id="w04_workspace_tab",type="tabs",selected="Subsets & tasks",
+                tabPanel("Model results",
                   div(class="px-3 pb-3",
                   tags$p(class="saved-note","Saved W04 metadata from the summary sheet."),
                   actionButton("w04_overview_refresh","Refresh overview",class="btn-outline-secondary btn-sm"),
                   textOutput("w04_overview_status"),
                   uiOutput("w04_overview_tables"))),
-                tabPanel("Subsets",
+                tabPanel("Subsets & tasks",
                   div(class="px-3 pb-3",
                   tags$p(class="saved-note","Verify the eligible corpus only when creating a new subset. Existing registered subsets can be loaded, prepared and assigned without repeating verification."),
                   tags$h5("New subsets · Verify eligible corpus"),
@@ -4750,9 +4750,12 @@ server <- function(input, output, session) {
                   uiOutput("w04_subset_prepare_control"),
                   tags$div(id="w04_subset_prepare_queue_busy",role="status",`aria-live`="polite",
                     style="display:none;",class="saved-note","Preparing and verifying subset screening queue…"),
-                  textOutput("w04_subset_registry_status")
+                  textOutput("w04_subset_registry_status"),
+                  tags$hr(),
+                  tags$h5("Assignments and screening progress"),
+                  uiOutput("w04_admin_controls")
                 )),
-                tabPanel("Prompts & models",
+                tabPanel("Run model",
                   tags$details(class="assignment-disclosure",
                     tags$summary(tags$strong("Prompt management")),
                     div(class="px-3 pb-3",
@@ -4842,15 +4845,22 @@ server <- function(input, output, session) {
                   tags$div(id="w04_highlight_save_busy",role="status",style="display:none;","Saving highlighted terms…"),
                   textOutput("w04_highlight_status")
                 ))),
-                tabPanel("Assignments",
-                  div(class="px-3 pb-3",uiOutput("w04_admin_controls"))),
-                tabPanel("Comparisons",
+                tabPanel("Uncertain cases",
+                  div(class="px-3 pb-3",
+                    tags$p(class="saved-note","Open assigned model uncertainty cases from the permanent W04 task card. Administrators can manage reviewer assignments in Subsets & tasks. Select and open a completed model batch in Model results to inspect its classifications."))),
+                tabPanel("Compare coding",
                   tags$p(class="saved-note",
                     "Select one human-screened subset. Its saved decisions and associated model runs load automatically."),
                   div(class="px-3 pb-3",
                   tags$p(class="saved-note",
                     "Select a human-screened subset once. Associated model runs and reviewer choices load automatically; the latest completed model run is selected by default."),
-                  uiOutput("w04_comparison_body")))
+                  uiOutput("w04_comparison_body"))),
+                tabPanel("Conflicts",
+                  div(class="px-3 pb-3",
+                    tags$p(class="saved-note","Examine saved human–human and human–model conflict sets from the W04 task card. The saved conflict history and direct-open controls remain accessible in Model results. Decisions are saved using the existing conflict adjudication workflow."))),
+                tabPanel("Finalise",
+                  div(class="px-3 pb-3",
+                    tags$p(class="saved-note","Corpus-wide reconciliation and finalisation are not yet implemented. Existing W04 records and decisions remain unchanged. No downstream workflow can be launched from this tab.")))
               )
             )),
             tabPanel("W08",uiOutput("w08_admin_controls")),
@@ -7053,7 +7063,7 @@ server <- function(input, output, session) {
     req(
       as.character(input$configure_workflow_tab %||% "") %in% c("W01","W02","W08","System") ||
       (identical(input$configure_workflow_tab,"W04") &&
-       identical(input$w04_workspace_tab,"Assignments"))
+       identical(input$w04_workspace_tab,"Subsets & tasks"))
     )
 
     all_assignments <- assignment_registry_rv()
@@ -7994,7 +8004,7 @@ server <- function(input, output, session) {
   output$w04_admin_controls <- renderUI({
     req(authenticated(),configure_review_requested(),
       identical(input$configure_workflow_tab,"W04"),
-      identical(input$w04_workspace_tab,"Assignments"))
+      identical(input$w04_workspace_tab,"Subsets & tasks"))
     admin_assignment_panels()$w04
   })
   output$w04_comparison_body <- renderUI({
@@ -8414,7 +8424,7 @@ server <- function(input, output, session) {
   }
   observeEvent(list(input$configure_workflow_tab,input$w04_workspace_tab),{
     req(identical(input$configure_workflow_tab,"W04"),
-        identical(input$w04_workspace_tab,"Comparisons"))
+        identical(input$w04_workspace_tab,"Compare coding"))
     req(authenticated())
     if(!session_can("manage_assignments")) return()
     if(length(w04_consistency_registry_rv())) return()
@@ -8583,7 +8593,7 @@ server <- function(input, output, session) {
 
   observeEvent(list(input$configure_workflow_tab,input$w04_workspace_tab), {
     req(identical(input$configure_workflow_tab,"W04"),
-        identical(input$w04_workspace_tab,"Comparisons"))
+        identical(input$w04_workspace_tab,"Compare coding"))
     req(authenticated())
     if (!session_can("manage_assignments")) return()
     if (isTRUE(w04_consistency_history_loaded())) return()
