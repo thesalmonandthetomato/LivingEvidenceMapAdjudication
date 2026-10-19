@@ -1,0 +1,25 @@
+name: Temporary W04 live coverage preflight validation
+on:
+  push:
+    paths:
+      - '.github/workflows/w04-coverage-preflight-temporary.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - name: Install dependencies
+        run: Rscript -e 'install.packages("digest", repos="https://cloud.r-project.org")'
+      - name: Parse Shiny R files
+        run: |
+          Rscript -e 'for(f in c("multiuser_app/app.R",list.files("multiuser_app/R",pattern="[.]R$",full.names=TRUE)))parse(file=f)'
+      - name: Test W04 record selection and canonical reconciliation
+        working-directory: multiuser_app
+        run: Rscript tests/test_w04_model_selection.R
