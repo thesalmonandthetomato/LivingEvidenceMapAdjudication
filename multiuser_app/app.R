@@ -4852,7 +4852,9 @@ server <- function(input, output, session) {
                   uiOutput("w04_model_batch_summary"))),
                 tabPanel("Uncertain cases",
                   div(class="px-3 pb-3",
-                    tags$p(class="saved-note","Open assigned model uncertainty cases from the permanent W04 task card. Administrators can manage reviewer assignments in Subsets & tasks. Select and open a completed model batch in Model results to inspect its classifications."))),
+                    tags$p(class="saved-note","Review the currently assigned model uncertainty batch. To load another saved model run, use the existing W04 task card; assignments are managed in Subsets & tasks."),
+                    uiOutput("w04_uncertain_active_batch"),
+                    actionButton("w04_uncertain_open","Examine assigned uncertain cases",class="btn-outline-primary btn-sm"))),
                 tabPanel("Conflicts",
                   div(class="px-3 pb-3",
                     tags$p(class="saved-note","Open saved human–human or human–model conflict sets directly for adjudication."),
@@ -13295,7 +13297,16 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$back_to_tasks_w04, app_view("tasks"))
-  observeEvent(input$open_w04_resolution, {
+  output$w04_uncertain_active_batch <- renderUI({
+    req(authenticated())
+    cases <- w04_resolution_cases_rv() %||% list()
+    if(!length(cases)) return(tags$p(class="saved-note",
+      "No assigned uncertainty cases loaded. Load an assigned model batch from the W04 task card first."))
+    tags$p(class="saved-note",sprintf("Active batch: %s · %d assigned cases · %d unresolved",
+      as.character(w04_resolution_batch_id_rv()),length(cases),
+      length(w04_resolution_unresolved_indices())))
+  })
+  observeEvent(list(input$open_w04_resolution,input$w04_uncertain_open), {
     started <- proc.time()[["elapsed"]]
     on.exit(message(sprintf("[W04 timing] open_model_uncertainties=%.3fs",
       proc.time()[["elapsed"]]-started)),add=TRUE)
