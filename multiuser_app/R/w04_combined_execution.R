@@ -67,3 +67,43 @@ w04_combined_resume_plan <- function(plan, saved=list()) {
        needs_review=names(statuses)[statuses %in% c("failed","queued","running")],
        all_complete=all(statuses=="succeeded"))
 }
+
+# Archive an immutable proposed run manifest in the review's restricted Zenodo
+# draft. This does not dispatch work or change any decisions.
+w04_combined_manifest_archive <- function(meta,plan) {
+  if(!identical(as.character(meta$review_id),as.character(plan$review_id)) ||
+     !identical(as.character(plan$schema),"lem-w04-combined-plan-v1") ||
+     !identical(plan$dispatch_enabled,FALSE))
+    stop("Manifest has an invalid review, schema or dispatch flag",call.=FALSE)
+  draft <- w04_prompt_fetch_draft(meta)
+  if(is.null(draft))stop("Restricted W04 draft not available",call.=FALSE)
+  bucket <- as.character(draft$links$bucket %||% "")
+  if(!startsWith(bucket,"https://zenodo.org/api/files/"))
+    stop("Unexpected Zenodo archive bucket",call.=FALSE)
+  path <- tempfile(fileext=".json")
+  on.exit(unlink(path),add=TRUE)
+  writeLines(jsonlite::toJSON(plan,auto_unbox=TRUE,pretty=TRUE,
+    null="null",digits=NA),path,useBytes=TRUE)
+  sha <- digest::digest(file=path,algo="sha256",serialize=FALSE)
+  filename <- paste0("w04-combined-plan-",sha,".json")
+  existing <- Filter(function(x)identical(as.character(x$filename %||% ""),filename),
+    draft$files %||% list())
+  if(length(existing)>1L)stop("Duplicate manifest filenames in archive",call.=FALSE)
+  if(!length(existing))
+    w04_prompt_zenodo_request(paste0(bucket,"/",filename),
+      method="PUT",file=path,expected=c(200L,201L))
+  fresh <- w04_prompt_fetch_draft(meta)
+  match <- Filter(function(x)identical(as.character(x$filename %||% ""),filename),
+    fresh$files %||% list())
+  if(length(match)!=1L)stop("Archived manifest missing after upload",call.=FALSE)
+  url <- as.character(match[[1L]]$links$download %||% "")
+  if(!startsWith(url,"https://zenodo.org/"))stop("Invalid archived manifest URL",call.=FALSE)
+  resp <- httr2::req_perform(httr2::req_headers(httr2::request(url),
+    Authorization=paste("Bearer",Sys.getenv("ZENODO_ACCESS_TOKEN",unset=""))))
+  if(httr2::resp_status(resp)!=200L ||
+     !identical(digest::digest(httr2::resp_body_raw(resp),
+       algo="sha256",serialize=FALSE),sha))
+    stop("Archived manifest checksum verification failed",call.=FALSE)
+  list(deposit_id=as.character(fresh$id),filename=filename,sha256=sha,
+       run_key=plan$run_key,batch_count=plan$batch_count)
+}
