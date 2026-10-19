@@ -13305,7 +13305,7 @@ server <- function(input, output, session) {
     req(authenticated())
     cases <- w04_resolution_cases_rv() %||% list()
     if(!length(cases)) return(tags$p(class="saved-note",
-      "No assigned uncertainty cases loaded. Load an assigned model batch from the W04 task card first."))
+      "No assigned uncertainty cases are loaded. Select a run above and choose Load selected batch, or ask an administrator for an assignment."))
     tags$p(class="saved-note",sprintf("Active batch: %s · %d assigned cases · %d unresolved",
       as.character(w04_resolution_batch_id_rv()),length(cases),
       length(w04_resolution_unresolved_indices())))
