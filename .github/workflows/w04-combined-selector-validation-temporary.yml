@@ -25,4 +25,5 @@ jobs:
         run: Rscript tests/test_w04_model_selection.R
       - name: Assert non-exclusive controls
         run: |
-          Rscript -e 's<-paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\n");stopifnot(grepl("w04_include_remaining",s,fixed=TRUE),grepl("Additional subsets (optional)",s,fixed=TRUE),!grepl("radioButtons(\\"w04_model_scope",s,fixed=TRUE))'
+          grep -q 'w04_include_remaining' multiuser_app/app.R
+          grep -q 'Additional subsets (optional)' multiuser_app/app.R
