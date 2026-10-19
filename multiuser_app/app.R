@@ -25,7 +25,6 @@ source("R/w04_model_conflicts.R", local = TRUE)
 source("R/w04_prompt_refinement.R", local = TRUE)
 source("R/w04_highlight_sheets.R", local = TRUE)
 source("R/w04_subset_registry.R", local = TRUE)
-source("R/w04_production_preflight.R", local = TRUE)
 source("R/w04_subset_storage.R", local = TRUE)
 source("R/w04_subset_eligible.R", local = TRUE)
 source("R/w04_subset_review_source.R", local = TRUE)
@@ -1072,8 +1071,6 @@ server <- function(input, output, session) {
   w04_model_versions_rv <- reactiveVal(list())
   w04_model_status_rv <- reactiveVal("")
   w04_model_launch_busy_rv <- reactiveVal(FALSE)
-  w04_production_preflight_rv <- reactiveVal(NULL)
-  w04_production_status_rv <- reactiveVal("No production preflight has been run.")
   w04_model_batches_rv <- reactiveVal(list())
   w04_model_results_rv <- reactiveVal(NULL)
   w04_model_selected_batch_rv <- reactiveVal(NULL)
@@ -4449,63 +4446,6 @@ server <- function(input, output, session) {
     w04_model_versions_rv(result$versions)
     w04_model_status_rv(sprintf("%d registered subsets and %d prompt versions available.",
       length(result$subsets),length(result$versions)))
-  })
-  output$w04_production_subset_selector <- renderUI({
-    xs <- w04_model_subsets_rv()
-    if(!length(xs))return(tags$p(class="saved-note","Load registered subsets first."))
-    verified <- Filter(function(z)
-      identical(as.integer(z$actual_size %||% 0L),100L),xs)
-    if(!length(verified))return(tags$p(class="saved-note","No 100-record subsets are registered."))
-    ids <- vapply(verified,function(z)as.character(z$subset_id),character(1))
-    labels <- vapply(verified,w04_subset_display,character(1))
-    selectInput("w04_production_excluded_subsets","Two original validation subsets",
-      choices=stats::setNames(ids,labels),selected=character(),multiple=TRUE)
-  })
-  output$w04_production_preflight_status <- renderUI({
-    x <- w04_production_preflight_rv()
-    if(is.null(x))return(tags$p(class="saved-note",w04_production_status_rv()))
-    tags$div(class="saved-note",
-      tags$p(sprintf("Eligible: %d · Excluded: %d · Remaining: %d",
-        x$eligible,x$excluded,x$remaining)),
-      tags$p(paste("Membership SHA-256:",x$membership_sha256)),
-      tags$p(paste("Manifest SHA-256:",x$manifest$manifest_sha256)),
-      tags$p("Read-only preflight passed. Production model dispatch is not enabled."))
-  })
-  observeEvent(list(input$w04_production_excluded_subsets,input$w04_model_prompt_selected),{
-    w04_production_preflight_rv(NULL)
-    w04_production_status_rv("Selections changed. Run preflight again.")
-  },ignoreInit=TRUE)
-  observeEvent(input$w04_production_preflight,{
-    req(authenticated(),session_can("control_workflows"))
-    w04_production_preflight_rv(NULL)
-    result <- tryCatch({
-      # Reuse a previously verified corpus where possible; never trust the UI
-      # to select a different review's records.
-      corpus <- w04_subset_corpus_rv()
-      if(is.null(corpus)) {
-        pointers <- w04_subset_review_source_pointers()
-        corpus <- c(w04_subset_load_eligible(pointers$lean,pointers$w03),
-          list(review_id=pointers$review_id))
-        w04_subset_corpus_rv(corpus)
-      }
-      registry <- w04_subset_registry_read(corpus$review_id)
-      w04_model_subsets_rv(registry)
-      versions <- w04_model_versions_rv()
-      prompt_id <- as.character(input$w04_model_prompt_selected %||% "")
-      chosen_prompt <- Filter(function(z)
-        identical(as.character(z$version_id %||% ""),prompt_id),versions)
-      if(length(chosen_prompt)!=1L)
-        stop("Load and select an archived prompt before preflight",call.=FALSE)
-      w04_production_preflight(corpus,registry,
-        as.character(input$w04_production_excluded_subsets %||% character()),
-        chosen_prompt[[1L]])
-    },error=function(e)e)
-    if(inherits(result,"error")) {
-      w04_production_status_rv(paste("Preflight failed:",conditionMessage(result)))
-      return()
-    }
-    w04_production_preflight_rv(result)
-    w04_production_status_rv("Read-only production preflight passed.")
   })
   observeEvent(input$w04_model_launch,{
     on.exit(session$sendCustomMessage("lem_busy_finished",list(id="w04_model_launch")),add=TRUE)
