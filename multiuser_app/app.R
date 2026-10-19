@@ -4470,6 +4470,28 @@ server <- function(input, output, session) {
     w04_model_selection_result_rv(result)
     w04_model_selection_status_rv("Read-only selection verified. Production dispatch remains disabled.")
   })
+  observeEvent(input$w04_combined_manifest_prepare,{
+    req(authenticated(),session_can("control_workflows"))
+    result <- tryCatch({
+      selected <- w04_model_selection_result_rv()
+      if(is.null(selected))stop("Verify record selection first",call.=FALSE)
+      prompt_id <- as.character(input$w04_model_prompt_selected %||% "")
+      matches <- Filter(function(x)
+        identical(as.character(x$version_id),prompt_id),w04_model_versions_rv())
+      if(length(matches)!=1L)stop("Select one archived immutable prompt",call.=FALSE)
+      meta <- w04_prompt_review_metadata()
+      if(!identical(as.character(meta$review_id),as.character(selected$review_id)))
+        stop("Active review changed since record selection",call.=FALSE)
+      plan <- w04_combined_execution_plan(selected,matches[[1L]],
+        batch_size=as.integer(input$w04_combined_batch_size %||% 250L))
+      info <- w04_combined_manifest_archive(meta,plan)
+      sprintf("Archived proposed run %s: %d records in %d batches. Manifest %s (SHA-256 %s). No model execution dispatched.",
+        substr(info$run_key,1L,16L),plan$record_count,plan$batch_count,
+        info$filename,info$sha256)
+    },error=function(e)e)
+    w04_model_status_rv(if(inherits(result,"error"))
+      paste("Cannot prepare combined manifest:",conditionMessage(result)) else result)
+  })
   output$w04_model_status <- renderText(w04_model_status_rv())
   output$w04_model_subset_selector <- renderUI({
     xs <- w04_model_subsets_rv()
@@ -4861,6 +4883,10 @@ server <- function(input, output, session) {
                     class="btn-outline-secondary btn-sm"),
                   textOutput("w04_model_selection_status"),
                   uiOutput("w04_model_selection_summary"),
+                  numericInput("w04_combined_batch_size","Combined execution batch size",
+                    value=250,min=1,max=1000,step=1),
+                  actionButton("w04_combined_manifest_prepare","Archive combined execution plan (no model run)",
+                    class="btn-outline-secondary btn-sm"),
                   actionButton("w04_model_launch","Run model on selected subset",
                     class="btn-primary btn-sm",
                     onclick="window.lemBusyStart('w04_model_launch','Validating and archiving W04 inputs, then dispatching GitHub…')"),
