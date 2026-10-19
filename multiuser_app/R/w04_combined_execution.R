@@ -107,3 +107,36 @@ w04_combined_manifest_archive <- function(meta,plan) {
   list(deposit_id=as.character(fresh$id),filename=filename,sha256=sha,
        run_key=plan$run_key,batch_count=plan$batch_count)
 }
+
+# Explicit combined-run batch contract. Not a registered-subset bundle.
+# The downstream adapter must verify these fields against the archived plan.
+w04_combined_batch_bundle <- function(meta,plan,batch_index) {
+  if(!identical(as.character(meta$review_id),as.character(plan$review_id)) ||
+     !identical(as.character(plan$schema),"lem-w04-combined-plan-v1") ||
+     !identical(plan$dispatch_enabled,FALSE))
+    stop("Invalid combined plan review or execution state",call.=FALSE)
+  n <- as.integer(batch_index)
+  if(length(n)!=1L || is.na(n) || n<1L || n>length(plan$batches) ||
+     n!=batch_index)
+    stop("Invalid combined batch index",call.=FALSE)
+  batch <- plan$batches[[n]]
+  ids <- as.character(batch$record_ids)
+  sha <- digest::digest(paste(ids,collapse="\\n"),algo="sha256",serialize=FALSE)
+  if(!identical(sha,as.character(batch$membership_sha256)) ||
+     length(ids)!=as.integer(batch$record_count) || anyDuplicated(ids))
+    stop("Combined batch membership failed verification",call.=FALSE)
+  if(!grepl("^[A-Za-z0-9_-]{20,160}$",as.character(meta$sheet_id %||% "")))
+    stop("Review-specific Google Sheet identifier is missing",call.=FALSE)
+  list(schema="lem-w04-combined-batch-input-v1",
+    review_id=as.character(plan$review_id),
+    review_sheet_id=as.character(meta$sheet_id),
+    run_key=as.character(plan$run_key),
+    source_checkpoint_sha256=as.character(plan$source_checkpoint_sha256),
+    selection_sha256=as.character(plan$selection_sha256),
+    batch_index=n,batch_count=as.integer(plan$batch_count),
+    batch_key=as.character(batch$batch_key),
+    batch_membership_sha256=sha,record_ids=as.list(ids),
+    prompt_version_id=as.character(plan$prompt_version_id),
+    prompt_sha256=as.character(plan$prompt_sha256),
+    prepared_by="shiny",dispatch_enabled=FALSE)
+}
