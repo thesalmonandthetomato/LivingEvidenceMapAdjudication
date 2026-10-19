@@ -4911,8 +4911,7 @@ server <- function(input, output, session) {
                   tags$p(class="saved-note",
                     "Select a human-screened subset once. Associated model runs and reviewer choices load automatically; the latest completed model run is selected by default."),
                   uiOutput("w04_comparison_body")))
-              ),
-
+              )
             )),
             tabPanel("W08",uiOutput("w08_admin_controls")),
             tabPanel("System",uiOutput("system_admin_controls"))
