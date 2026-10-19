@@ -4714,7 +4714,7 @@ server <- function(input, output, session) {
               uiOutput("w02_optional_pause_controls")
             ),uiOutput("w02_admin_controls")),
             tabPanel("W04",div(class="px-3 pb-3",
-              tabsetPanel(id="w04_workspace_tab",type="tabs",selected="Subsets & tasks",
+              tabsetPanel(id="w04_workspace_tab",type="tabs",selected="Model results",
                 tabPanel("Subsets & tasks",
                   div(class="px-3 pb-3",
                   tags$p(class="saved-note","Verify the eligible corpus only when creating a new subset. Existing registered subsets can be loaded, prepared and assigned without repeating verification."),
