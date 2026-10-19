@@ -4421,7 +4421,7 @@ server <- function(input, output, session) {
       "Verified eligible: %d · selected: %d · SHA-256: %s",
       x$eligible,x$selected_count,x$membership_sha256))
   })
-  observeEvent(list(input$w04_model_scope,input$w04_model_subset_selected),{
+  observeEvent(list(input$w04_include_remaining,input$w04_model_subset_selected),{
     w04_model_selection_result_rv(NULL)
     w04_model_selection_status_rv("Selection changed; verify again.")
   },ignoreInit=TRUE)
@@ -4429,38 +4429,36 @@ server <- function(input, output, session) {
     req(authenticated(),session_can("control_workflows"))
     w04_model_selection_result_rv(NULL)
     result <- tryCatch({
-      mode <- as.character(input$w04_model_scope %||% "uncoded")
       corpus <- w04_subset_corpus_rv()
       if(is.null(corpus))stop("Verify eligible corpus in Subsets & tasks first",call.=FALSE)
-      subset <- NULL
-      if(identical(mode,"subset")){
-        sid <- as.character(input$w04_model_subset_selected %||% "")
-        hits <- Filter(function(x)identical(as.character(x$subset_id),sid),
-          w04_model_subsets_rv())
-        if(length(hits)!=1L)stop("Choose one verified subset",call.=FALSE)
-        subset <- hits[[1L]]
-      }
-      if(identical(mode,"uncoded"))
-        stop(paste("Record-level exclusions are not enabled yet:",
-          "human events are keyed to reviewed queue cases and existing model results",
-          "must be reconciled against canonical record IDs first."),call.=FALSE)
-      w04_model_selection_preflight(corpus,mode=mode,subset=subset)
+      selected_ids <- as.character(input$w04_model_subset_selected %||% character())
+      registry <- w04_model_subsets_rv()
+      selected <- lapply(selected_ids,function(id) {
+        matches <- Filter(function(z)identical(as.character(z$subset_id),id),registry)
+        if(length(matches)!=1L)stop("Selected subset not found uniquely in registry",call.=FALSE)
+        matches[[1L]]
+      })
+      include_remaining <- isTRUE(input$w04_include_remaining)
+      # A provisional preview can validate subset membership, but must not
+      # invent or assume the as-yet-unresolved record-level coding set.
+      w04_model_selection_combine(corpus,include_remaining=include_remaining,
+        subsets=selected,coded_ids=if(include_remaining)NULL else character())
     },error=function(e)e)
     if(inherits(result,"error")){
       w04_model_selection_status_rv(paste("Selection not verified:",conditionMessage(result)))
       return()
     }
     w04_model_selection_result_rv(result)
-    w04_model_selection_status_rv("Read-only membership verification completed. Production dispatch is not enabled.")
+    w04_model_selection_status_rv("Read-only selection verified. Production dispatch remains disabled.")
   })
   output$w04_model_status <- renderText(w04_model_status_rv())
   output$w04_model_subset_selector <- renderUI({
     xs <- w04_model_subsets_rv()
-    if(!length(xs)) return(tags$span(class="saved-note","No registered subsets loaded."))
-    ids <- vapply(xs,function(x)as.character(x$subset_id),character(1))
+    if(!length(xs))return(tags$span(class="saved-note","Load registered subsets and prompts first."))
+    ids <- vapply(xs,function(z)as.character(z$subset_id),character(1))
     labels <- vapply(xs,w04_subset_display,character(1))
-    selectInput("w04_model_subset_selected","Registered human-screened subset",
-      choices=stats::setNames(ids,labels))
+    selectInput("w04_model_subset_selected","Additional subsets (optional)",
+      choices=stats::setNames(ids,labels),selected=character(),multiple=TRUE)
   })
   output$w04_model_prompt_selector <- renderUI({
     versions <- w04_prompts_by_save_date(w04_model_versions_rv())
@@ -4496,8 +4494,9 @@ server <- function(input, output, session) {
       w04_model_status_rv("Only an administrator may launch W04 model screening.")
       return()
     }
-    if(!identical(as.character(input$w04_model_scope %||% ""), "subset")){
-      w04_model_status_rv("Only the existing validated subset screening path can launch. Full-corpus execution is not yet enabled.")
+    if(isTRUE(input$w04_include_remaining) ||
+       length(input$w04_model_subset_selected %||% character())!=1L){
+      w04_model_status_rv("Combined and remaining-record runs are not enabled yet. The existing validated launcher currently supports one registered subset.")
       return()
     }
     if(isTRUE(w04_model_launch_busy_rv())) return()
@@ -4505,7 +4504,7 @@ server <- function(input, output, session) {
     on.exit(w04_model_launch_busy_rv(FALSE),add=TRUE)
     result <- tryCatch({
       meta <- w04_prompt_review_metadata()
-      subset_id <- as.character(input$w04_model_subset_selected %||% "")
+      subset_id <- as.character((input$w04_model_subset_selected %||% "")[[1L]])
       version_id <- as.character(input$w04_model_prompt_selected %||% "")
       subsets <- w04_model_subsets_rv()
       versions <- w04_model_versions_rv()
@@ -4836,12 +4835,8 @@ server <- function(input, output, session) {
                     onclick="window.lemBusyStart('w04_model_refresh','Loading review-bound model input options…')"),
                   tags$div(id="w04_model_refresh_busy",class="saved-note",
                     style="display:none;","Loading registered subsets and archived prompts…"),
-                  radioButtons("w04_model_scope","Records to screen",
-                    choices=c("Eligible records without existing codes"="uncoded",
-                              "Registered validation subset"="subset",
-                              "All eligible records"="all"),selected="uncoded"),
-                  conditionalPanel(condition="input.w04_model_scope == 'subset'",
-                    uiOutput("w04_model_subset_selector")),
+                  checkboxInput("w04_include_remaining","Include all remaining records without existing inclusion codes",value=TRUE),
+                  uiOutput("w04_model_subset_selector"),
                   uiOutput("w04_model_prompt_selector"),
                   actionButton("w04_model_selection_verify","Verify record selection",
                     class="btn-outline-secondary btn-sm"),
