@@ -141,6 +141,9 @@ w04_model_resolve_model_coded <- function(runs,eligible_ids) {
   coded <- character()
   for(run in runs) {
     records <- run$records %||% list()
+    if(is.data.frame(records))
+      records <- lapply(seq_len(nrow(records)),function(i)as.list(records[i,,drop=FALSE]))
+    if(!is.list(records))stop("Model results have unsupported record layout",call.=FALSE)
     for(r in records) {
       id <- as.character(r$record_id %||% "")
       d <- as.character(r$decision %||% (r$screening %||% list())$decision %||% "")
