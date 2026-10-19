@@ -103,3 +103,52 @@ w04_model_selection_combine <- function(corpus, include_remaining=TRUE,
        membership_sha256=digest::digest(paste(sort(selected),collapse="\\n"),
                                         algo="sha256",serialize=FALSE))
 }
+
+# Resolve saved human decisions using the immutable reviewed queues, not
+# subset membership or numeric manifestation positions.
+w04_model_resolve_human_coded <- function(events,queues,eligible_ids) {
+  ids <- w04_subset_record_ids(eligible_ids)
+  by_case <- list()
+  for(q in queues) {
+    if(is.null(q))next
+    sha <- as.character(q$queue_sha256 %||% "")
+    cases <- q$cases %||% list()
+    if(!nzchar(sha))stop("W04 queue lacks a checksum",call.=FALSE)
+    for(case in cases) {
+      key <- paste(sha,as.character(case$review_case_id %||% ""),sep="|")
+      id <- as.character(case$record_id %||% "")
+      if(!nzchar(id)||!id %in% ids||!nzchar(as.character(case$review_case_id %||% "")))
+        stop("Queue case cannot be resolved to an eligible canonical ID",call.=FALSE)
+      if(!is.null(by_case[[key]]) && !identical(by_case[[key]],id))
+        stop("Conflicting canonical case mappings",call.=FALSE)
+      by_case[[key]] <- id
+    }
+  }
+  coded <- character()
+  for(e in events) {
+    d <- as.character(e$decision %||% "")
+    if(!d %in% c("retain","exclude"))next
+    key <- paste(as.character(e$queue_sha256 %||% ""),
+                 as.character(e$review_case_id %||% ""),sep="|")
+    id <- by_case[[key]]
+    if(is.null(id))stop("Saved human inclusion code has no verified queue/case mapping",call.=FALSE)
+    coded <- c(coded,id)
+  }
+  unique(coded)
+}
+w04_model_resolve_model_coded <- function(runs,eligible_ids) {
+  ids <- w04_subset_record_ids(eligible_ids)
+  coded <- character()
+  for(run in runs) {
+    records <- run$records %||% list()
+    for(r in records) {
+      id <- as.character(r$record_id %||% "")
+      d <- as.character(r$decision %||% (r$screening %||% list())$decision %||% "")
+      if(!d %in% c("retain","exclude"))next
+      if(!nzchar(id)||!id %in% ids)
+        stop("Saved model outcome lacks an eligible canonical record ID",call.=FALSE)
+      coded <- c(coded,id)
+    }
+  }
+  unique(coded)
+}
