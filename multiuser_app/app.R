@@ -4471,6 +4471,10 @@ server <- function(input, output, session) {
       tags$p(paste("Manifest SHA-256:",x$manifest$manifest_sha256)),
       tags$p("Read-only preflight passed. Production model dispatch is not enabled."))
   })
+  observeEvent(list(input$w04_production_excluded_subsets,input$w04_model_prompt_selected),{
+    w04_production_preflight_rv(NULL)
+    w04_production_status_rv("Selections changed. Run preflight again.")
+  },ignoreInit=TRUE)
   observeEvent(input$w04_production_preflight,{
     req(authenticated(),session_can("control_workflows"))
     w04_production_preflight_rv(NULL)
