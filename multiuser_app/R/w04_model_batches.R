@@ -116,3 +116,26 @@ w04_model_coded_ids <- function(batches,eligible_ids,read_results=w04_model_batc
   }
   sort(names(coded))
 }
+
+
+# Only completed, unambiguous human outcomes contribute to authoritative
+# coverage. A human conflict or an uncertain response remains unresolved.
+w04_human_coded_ids <- function(outcomes,eligible_ids) {
+  eligible <- w04_subset_record_ids(eligible_ids)
+  values <- list()
+  for(x in outcomes) {
+    id <- as.character(x$record_id %||% "")
+    status <- as.character(x$status %||% "")
+    decision <- as.character(x$final_decision %||% "")
+    if(!nzchar(id) || !id %in% eligible)
+      stop("Human outcome references an invalid canonical ID",call.=FALSE)
+    if(!status %in% c("agreement","single_human")) next
+    if(!decision %in% c("retain","exclude"))
+      stop("Completed human outcome lacks a substantive decision",call.=FALSE)
+    old <- values[[id]]
+    if(!is.null(old) && !identical(old,decision))
+      stop("Conflicting human outcomes for canonical ID ",id,call.=FALSE)
+    values[[id]] <- decision
+  }
+  sort(names(values))
+}
