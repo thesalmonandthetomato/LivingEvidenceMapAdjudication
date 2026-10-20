@@ -332,3 +332,36 @@ w04_reconciled_export_rows <- function(reconciliation,batches,
          source_run_ids=as.list(contributing))
   })
 }
+
+# Reconstructed selections encode (review, canonical SHA, exact member-ID SHA)
+# in their synthetic identifier; registered subsets carry an archived source
+# checksum and immutable membership. Reject unverifiable legacy batch inputs.
+w04_model_verify_batch_checkpoints <- function(batches,review_id,canonical_sha,
+    registered_subsets=list(),read_results=w04_model_batch_results_read) {
+  sha <- tolower(as.character(canonical_sha))
+  if(length(sha)!=1L || !grepl("^[0-9a-f]{64}$",sha) ||
+     !nzchar(as.character(review_id)))
+    stop("Valid review and canonical checkpoint are required",call.=FALSE)
+  for(b in batches) {
+    ids <- w04_subset_record_ids(as.character(read_results(b)$record_id))
+    member <- digest::digest(paste(sort(ids),collapse="\n"),
+                             algo="sha256",serialize=FALSE)
+    subset_id <- as.character(b$subset_id %||% "")
+    candidates <- Filter(function(s)identical(as.character(s$subset_id),subset_id),
+                          registered_subsets)
+    if(length(candidates)==1L) {
+      s <- candidates[[1L]]
+      if(!identical(as.character(s$review_id),as.character(review_id)) ||
+         !identical(tolower(as.character(s$source_checkpoint_sha256)),sha) ||
+         !setequal(as.character(s$record_ids),ids) ||
+         !identical(as.character(s$membership_sha256),member))
+        stop("Registered W04 batch/checkpoint provenance mismatch: ",b$run_id,call.=FALSE)
+    } else if(length(candidates)==0L) {
+      key <- digest::digest(paste(review_id,sha,member,sep=":"),
+                            algo="sha256",serialize=FALSE)
+      if(!identical(subset_id,paste0("w04-subset-",substr(key,1L,20L))))
+        stop("Reconstructed W04 batch/checkpoint provenance mismatch: ",b$run_id,call.=FALSE)
+    } else stop("Duplicate registered W04 subset identity",call.=FALSE)
+  }
+  invisible(TRUE)
+}
