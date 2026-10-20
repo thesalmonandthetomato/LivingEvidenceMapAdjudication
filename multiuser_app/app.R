@@ -4427,6 +4427,26 @@ server <- function(input, output, session) {
     selectInput("w04_reconstructed_subsets","Additional registered subsets",
       choices=stats::setNames(ids,labels),multiple=TRUE)
   })
+  # Use existing saved human-subset decisions and assignment-aware consensus.
+  # A missing queue or an unreadable review fails closed, never inventing coverage.
+  w04_registered_human_coded_ids <- function(meta,corpus,subsets) {
+    relevant <- Filter(function(s)
+      identical(tolower(as.character(s$source_checkpoint_sha256)),
+                tolower(as.character(corpus$checkpoint_sha256))),subsets)
+    if(!length(relevant)) return(character())
+    events <- active_sheet_w04_decisions()
+    outcomes <- list()
+    for(s in relevant) {
+      queue <- w04_subset_queue_read(as.character(s$subset_id),meta$review_id)
+      if(is.null(queue)) next
+      decisions <- w04_filter_batch_decisions(events,queue$queue_sha256)
+      found <- w04_blind_case_outcomes(queue$cases,assignment_registry_rv(),
+        decisions,batch_id=paste0("w04-human-",s$subset_id),
+        task_type="manual_screening")
+      outcomes <- c(outcomes,found)
+    }
+    w04_human_coded_ids(outcomes,corpus$record_ids)
+  }
   observeEvent(input$w04_reconstructed_verify,{
     req(authenticated())
     if(!session_can("control_workflows") ||
@@ -4447,7 +4467,8 @@ server <- function(input, output, session) {
                    tolower(as.character(corpus$checkpoint_sha256))),logical(1))))
         stop("A selected subset refers to a different canonical checkpoint",call.=FALSE)
       runs <- w04_model_batch_registry_read(meta$review_id)
-      coded <- w04_model_coded_ids(runs,corpus$record_ids)
+      coded <- union(w04_model_coded_ids(runs,corpus$record_ids),
+        w04_registered_human_coded_ids(meta,corpus,w04_model_subsets_rv()))
       w04_subset_reconstruct_selection(corpus$record_ids,coded,subsets,
         isTRUE(input$w04_reconstructed_include_remaining))
     },error=function(e)e)
@@ -4520,7 +4541,8 @@ server <- function(input, output, session) {
                      tolower(as.character(corpus$checkpoint_sha256))),logical(1))))
           stop("Registered subset uses a different canonical checkpoint",call.=FALSE)
         batches <- w04_model_batch_registry_read(meta$review_id)
-        coded <- w04_model_coded_ids(batches,corpus$record_ids)
+        coded <- union(w04_model_coded_ids(batches,corpus$record_ids),
+          w04_registered_human_coded_ids(meta,corpus,subsets))
         selection <- w04_subset_reconstruct_selection(corpus$record_ids,coded,chosen,
           isTRUE(input$w04_reconstructed_include_remaining))
         bundle <- w04_shiny_model_selection_bundle_build(meta,selection,prompt[[1L]],source)
