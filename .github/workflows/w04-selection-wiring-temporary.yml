@@ -1,4 +1,4 @@
-name: Temporary W04 Finalise read-only integration validation
+name: Temporary W04 conflict-blocking finalisation regression
 on:
   push:
     paths:
