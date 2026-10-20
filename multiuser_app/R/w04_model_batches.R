@@ -92,3 +92,27 @@ w04_model_consistency_outcomes <- function(outcomes, results, resolution_events=
     x
   })
 }
+
+# Resolve already-screened canonical IDs from verified existing model returns.
+# Uncertain outcomes are intentionally excluded: they require adjudication.
+# Overlapping substantive model decisions must agree before marking as coded.
+w04_model_coded_ids <- function(batches,eligible_ids,read_results=w04_model_batch_results_read) {
+  eligible <- w04_subset_record_ids(eligible_ids)
+  coded <- list()
+  for(batch in batches) {
+    results <- read_results(batch)
+    ids <- as.character(results$record_id)
+    votes <- as.character(results$decision)
+    if(anyDuplicated(ids)||anyNA(ids)||any(!ids %in% eligible) ||
+       any(!votes %in% c("retain","exclude","uncertain")))
+      stop("Existing model run contains invalid canonical IDs or decisions",call.=FALSE)
+    for(i in seq_along(ids)) {
+      if(identical(votes[[i]],"uncertain")) next
+      old <- coded[[ids[[i]]]]
+      if(!is.null(old) && !identical(old,votes[[i]]))
+        stop("Conflicting existing model decisions for canonical ID ",ids[[i]],call.=FALSE)
+      coded[[ids[[i]]]] <- votes[[i]]
+    }
+  }
+  sort(names(coded))
+}
