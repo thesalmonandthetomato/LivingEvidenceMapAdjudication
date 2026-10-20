@@ -4451,7 +4451,38 @@ server <- function(input, output, session) {
   # Finalise is read-only until a fully reconciled standard W04 publication
   # route has been verified. Never infer missing coverage from subset membership.
   w04_finalise_check_status <- reactiveVal("Run the coverage check to inspect saved W04 screening.")
+  w04_finalise_export_rv <- reactiveVal(NULL)
+  output$w04_finalise_export_control <- renderUI({
+    if(!isTRUE(session_can("control_workflows")) ||
+       !identical(as.character(current_user()$role %||% ""),"administrator") ||
+       is.null(w04_finalise_export_rv()))return(NULL)
+    downloadButton("w04_finalise_export","Download verified W04 reconciliation JSONL",
+                   class="btn-outline-secondary btn-sm")
+  })
+  output$w04_finalise_export <- downloadHandler(
+    filename=function() "workflow04_reconciled_verified.jsonl",
+    content=function(file) {
+      req(authenticated())
+      if(!session_can("control_workflows") ||
+         !identical(as.character(current_user()$role),"administrator"))
+        stop("Administrator authentication required",call.=FALSE)
+      snapshot <- w04_finalise_export_rv()
+      if(is.null(snapshot))stop("Repeat the finalisation verification",call.=FALSE)
+      # Verify current review and canonical checkpoint before downloading.
+      meta <- w04_prompt_review_metadata()
+      source <- w04_subset_review_source_pointers()
+      if(!identical(as.character(meta$review_id),snapshot$review_id) ||
+         !identical(tolower(as.character(source$lean$lean_canonical_sha256)),
+                    snapshot$checkpoint_sha256))
+        stop("Verified W04 checkpoint changed; repeat coverage check",call.=FALSE)
+      rows <- snapshot$rows
+      writeLines(vapply(rows,function(z)jsonlite::toJSON(z,auto_unbox=TRUE,
+                       null="null",na="null",digits=NA),character(1)),
+                 file,useBytes=TRUE)
+    })
+  
   observeEvent(input$w04_finalise_check,{
+    w04_finalise_export_rv(NULL)
     req(authenticated())
     if(!session_can("control_workflows") ||
        !identical(as.character(current_user()$role),"administrator"))return()
@@ -4481,17 +4512,27 @@ server <- function(input, output, session) {
         }
       }
       batches <- w04_model_batch_registry_read(meta$review_id)
+      w04_model_verify_batch_checkpoints(batches,meta$review_id,
+        corpus$checkpoint_sha256,subsets)
       resolved <- w04_model_verified_resolution_events(batches)
-      w04_screening_coverage_reconcile(corpus$record_ids,batches,human,resolved)
+      coverage <- w04_screening_coverage_reconcile(corpus$record_ids,batches,human,resolved)
+      export <- if(isTRUE(coverage$ready))
+        w04_reconciled_export_rows(coverage,batches,human) else NULL
+      list(coverage=coverage,export=export,review_id=meta$review_id,
+           checkpoint_sha256=tolower(as.character(corpus$checkpoint_sha256)))
     },error=function(e)e)
     if(inherits(result,"error")) {
       w04_finalise_check_status(paste("Coverage check failed:",conditionMessage(result)))
     } else {
+      coverage <- result$coverage
+      if(isTRUE(coverage$ready))
+        w04_finalise_export_rv(list(rows=result$export,
+          review_id=result$review_id,checkpoint_sha256=result$checkpoint_sha256))
       w04_finalise_check_status(sprintf(
-        "Read-only coverage: %d eligible, %d resolved; %d missing, %d uncertain, %d conflicts. %s",
-        result$eligible,result$resolved,length(result$missing),
-        length(result$uncertain),length(result$conflicts),
-        if(result$ready)"All decisions reconciled; standard W04 publication is not yet connected."
+        "Verified: %d eligible, %d resolved; %d missing, %d uncertain, %d conflicts. %s",
+        coverage$eligible,coverage$resolved,length(coverage$missing),
+        length(coverage$uncertain),length(coverage$conflicts),
+        if(coverage$ready)"Reconciled export available. No publication or W05 launch."
         else "Finalisation blocked until coverage and conflicts are resolved."))
     }
   })
@@ -5013,7 +5054,8 @@ server <- function(input, output, session) {
                   div(class="px-3 pb-3",
                     tags$p(class="saved-note","Check saved W04 human and model decisions against the verified eligible corpus. Read-only: no publication or W05 launch."),
                     actionButton("w04_finalise_check","Check screening coverage",class="btn-outline-primary btn-sm"),
-                    textOutput("w04_finalise_check_status")))
+                    textOutput("w04_finalise_check_status"),
+                    uiOutput("w04_finalise_export_control")))
               )
             )),
             tabPanel("W08",uiOutput("w08_admin_controls")),
