@@ -226,3 +226,42 @@ w04_screening_coverage_reconcile <- function(eligible_ids,batches=list(),
                                         "human_authoritative_model_conflict")],
        records=rows)
 }
+
+# Extract only queue-verified substantive resolutions from existing W04 Sheets.
+# No mutation; unresolved cases remain explicit in the reconciliation.
+w04_model_verified_resolution_events <- function(batches,
+    read_queue=read_sheet_w04_resolution_queue,
+    read_decisions=active_sheet_w04_resolution_decisions) {
+  relevant <- Filter(function(b)as.integer(b$uncertain %||% 0L)>0L,batches)
+  if(!length(relevant))return(list())
+  events <- read_decisions()
+  result <- list()
+  for(batch in relevant) {
+    run <- as.character(batch$run_id)
+    queue <- read_queue(as.character(batch$resolution_tab))
+    if(is.null(queue) ||
+       !identical(as.character(queue$source_run_id),run) ||
+       !identical(as.character(queue$queue_sha256),
+                  as.character(batch$resolution_queue_sha256)))
+      stop("Model uncertainty queue provenance mismatch for run ",run,call.=FALSE)
+    cases <- queue$cases %||% list()
+    ids <- vapply(cases,function(z)as.character(z$record_id %||% ""),character(1))
+    caseids <- vapply(cases,function(z)as.character(z$review_case_id %||% ""),character(1))
+    if(any(!nzchar(ids)) || anyDuplicated(ids) ||
+       any(!nzchar(caseids)) || anyDuplicated(caseids) ||
+       length(ids)!=as.integer(batch$uncertain))
+      stop("Uncertainty queue membership mismatch",call.=FALSE)
+    ds <- w04_filter_batch_decisions(events,queue$queue_sha256)
+    for(d in ds) {
+      caseid <- as.character(d$review_case_id %||% "")
+      pos <- match(caseid,caseids)
+      if(is.na(pos) || !identical(as.character(d$record_id %||% ""),ids[[pos]]))
+        stop("Saved uncertainty decision has unmatched case identity",call.=FALSE)
+      choice <- as.character(d$decision %||% "")
+      if(!choice %in% c("retain","exclude"))next
+      result[[length(result)+1L]] <- list(
+        record_id=ids[[pos]],source_run_id=run,decision=choice)
+    }
+  }
+  result
+}
