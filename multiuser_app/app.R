@@ -4480,7 +4480,6 @@ server <- function(input, output, session) {
                        null="null",na="null",digits=NA),character(1)),
                  file,useBytes=TRUE)
     })
-  )
   observeEvent(input$w04_finalise_check,{
     w04_finalise_export_rv(NULL)
     req(authenticated())
