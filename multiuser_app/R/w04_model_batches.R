@@ -139,3 +139,85 @@ w04_human_coded_ids <- function(outcomes,eligible_ids) {
   }
   sort(names(values))
 }
+
+
+# Read-only reconciliation by canonical ID. Keep every contributing model run;
+# human decisions have precedence, but model disagreements remain visible.
+# resolution_events: explicitly verified (record_id, decision, source_run_id)
+# entries. Caller must validate queue SHA and review identity before supplying.
+w04_screening_coverage_reconcile <- function(eligible_ids,batches=list(),
+    human_outcomes=list(),resolution_events=list(),
+    read_results=w04_model_batch_results_read) {
+  eligible <- w04_subset_record_ids(eligible_ids)
+  human <- list()
+  for(x in human_outcomes) {
+    id <- as.character(x$record_id %||% "")
+    if(length(id)!=1L || !id %in% eligible)
+      stop("Human screening references an unknown canonical record",call.=FALSE)
+    if(!as.character(x$status %||% "") %in% c("agreement","single_human")) next
+    d <- as.character(x$final_decision %||% "")
+    if(!d %in% c("retain","exclude"))
+      stop("Completed human record lacks a final decision",call.=FALSE)
+    human[[id]] <- unique(c(human[[id]],d))
+  }
+  models <- list()
+  uncertain <- list()
+  for(batch in batches) {
+    run <- as.character(batch$run_id %||% "")
+    if(!grepl("^[0-9]+$",run))stop("Invalid model run identity",call.=FALSE)
+    rows <- read_results(batch)
+    ids <- as.character(rows$record_id)
+    decisions <- as.character(rows$decision)
+    if(anyDuplicated(ids) || anyNA(ids) || any(!ids %in% eligible) ||
+       anyNA(decisions) || any(!decisions %in% c("retain","exclude","uncertain")))
+      stop("Invalid model result coverage or classification",call.=FALSE)
+    for(i in seq_along(ids)) {
+      id <- ids[[i]]
+      if(identical(decisions[[i]],"uncertain")) {
+        uncertain[[id]] <- unique(c(uncertain[[id]],run))
+      } else {
+        models[[id]] <- c(models[[id]],setNames(decisions[[i]],run))
+      }
+    }
+  }
+  resolved <- list()
+  for(x in resolution_events) {
+    id <- as.character(x$record_id %||% "")
+    run <- as.character(x$source_run_id %||% "")
+    d <- as.character(x$decision %||% "")
+    if(!id %in% eligible || !grepl("^[0-9]+$",run) ||
+       !run %in% (uncertain[[id]] %||% character()) ||
+       !d %in% c("retain","exclude"))
+      stop("Model uncertainty resolution has invalid provenance",call.=FALSE)
+    resolved[[id]] <- c(resolved[[id]],setNames(d,paste0("resolution:",run)))
+  }
+  rows <- lapply(eligible,function(id) {
+    h <- unique(human[[id]] %||% character())
+    m <- models[[id]] %||% character()
+    r <- resolved[[id]] %||% character()
+    model_votes <- c(m,r)
+    disagree <- length(unique(unname(model_votes)))>1L
+    human_conflict <- length(h)>1L
+    decision <- if(length(h)==1L)h[[1L]] else
+      if(!human_conflict && length(model_votes) &&
+         !disagree)unname(model_votes[[1L]]) else ""
+    status <- if(human_conflict)"human_conflict" else
+      if(length(h)==1L && disagree)"human_authoritative_model_conflict" else
+      if(disagree)"model_conflict" else
+      if(nzchar(decision))"resolved" else
+      if(length(uncertain[[id]] %||% character()))"uncertain" else "missing"
+    list(record_id=id,decision=decision,status=status,
+         human_decisions=h,model_votes=m,adjudicated_model_votes=r,
+         uncertain_run_ids=uncertain[[id]] %||% character())
+  })
+  names(rows) <- eligible
+  blocking <- vapply(rows,function(x)
+    !nzchar(x$decision) || identical(x$status,"human_authoritative_model_conflict"),logical(1))
+  status <- vapply(rows,function(x)x$status,character(1))
+  list(ready=!any(blocking),eligible=length(eligible),
+       resolved=sum(!blocking),missing=eligible[status=="missing"],
+       uncertain=eligible[status=="uncertain"],
+       conflicts=eligible[status %in% c("human_conflict","model_conflict",
+                                        "human_authoritative_model_conflict")],
+       records=rows)
+}
