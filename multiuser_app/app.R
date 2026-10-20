@@ -4419,6 +4419,44 @@ server <- function(input, output, session) {
     selectInput("w04_model_subset_selected","Registered human-screened subset",
       choices=stats::setNames(ids,labels))
   })
+  output$w04_reconstructed_subset_selector <- renderUI({
+    xs <- w04_model_subsets_rv()
+    if(!length(xs)) return(tags$span(class="saved-note","No registered subsets loaded."))
+    ids <- vapply(xs,function(x)as.character(x$subset_id),character(1))
+    labels <- vapply(xs,w04_subset_display,character(1))
+    selectInput("w04_reconstructed_subsets","Additional registered subsets",
+      choices=stats::setNames(ids,labels),multiple=TRUE)
+  })
+  observeEvent(input$w04_reconstructed_verify,{
+    req(authenticated())
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role),"administrator")) return()
+    result <- tryCatch({
+      corpus <- w04_subset_corpus_rv()
+      if(is.null(corpus)) stop("First verify the eligible corpus in Subsets & tasks",call.=FALSE)
+      meta <- w04_prompt_review_metadata()
+      if(!identical(as.character(corpus$review_id),as.character(meta$review_id)))
+        stop("Loaded corpus belongs to a different review",call.=FALSE)
+      subset_ids <- as.character(input$w04_reconstructed_subsets %||% character())
+      subsets <- Filter(function(x) as.character(x$subset_id) %in% subset_ids,
+        w04_model_subsets_rv())
+      if(length(subsets)!=length(unique(subset_ids)))
+        stop("Selected subset is unavailable",call.=FALSE)
+      if(any(vapply(subsets,function(x)
+        !identical(tolower(as.character(x$source_checkpoint_sha256)),
+                   tolower(as.character(corpus$checkpoint_sha256))),logical(1))))
+        stop("A selected subset refers to a different canonical checkpoint",call.=FALSE)
+      runs <- w04_model_batch_registry_read(meta$review_id)
+      coded <- w04_model_coded_ids(runs,corpus$record_ids)
+      w04_subset_reconstruct_selection(corpus$record_ids,coded,subsets,
+        isTRUE(input$w04_reconstructed_include_remaining))
+    },error=function(e)e)
+    w04_model_status_rv(if(inherits(result,"error"))
+      paste("Reconstructed screening verification failed:",conditionMessage(result))
+      else sprintf("Verified %d unique canonical records (%d remaining; %d from subsets; %d overlaps removed). SHA-256: %s. Model launch is not yet enabled for reconstructed selections.",
+        result$record_count,result$remaining_count,result$selected_subset_count,
+        result$duplicate_count,result$membership_sha256))
+  })
   output$w04_model_prompt_selector <- renderUI({
     versions <- w04_prompts_by_save_date(w04_model_versions_rv())
     if(!length(versions)) return(tags$span(class="saved-note","No archived W04 prompts loaded."))
@@ -4791,6 +4829,15 @@ server <- function(input, output, session) {
                     style="display:none;","Loading registered subsets and archived prompts…"),
                   uiOutput("w04_model_subset_selector"),
                   uiOutput("w04_model_prompt_selector"),
+                  tags$div(class="mt-3",
+                    tags$strong("Reconstruct model screening selection"),
+                    tags$p(class="saved-note","Verification only. Existing registered-subset model launches remain unchanged."),
+                    checkboxInput("w04_reconstructed_include_remaining",
+                      "Include eligible records without completed model classifications",value=TRUE),
+                    uiOutput("w04_reconstructed_subset_selector"),
+                    actionButton("w04_reconstructed_verify","Verify reconstructed selection",
+                      class="btn-outline-secondary btn-sm")),
+
                   actionButton("w04_model_launch","Run model on selected subset",
                     class="btn-primary btn-sm",
                     onclick="window.lemBusyStart('w04_model_launch','Validating and archiving W04 inputs, then dispatching GitHub…')"),
