@@ -26,3 +26,4 @@ jobs:
           Rscript tests/test_w04_model_coverage_reconstruction.R
           Rscript tests/test_w04_reconstructed_launcher.R
           Rscript tests/test_w04_corpus_reconciliation.R
+          Rscript tests/test_w04_saved_resolution_provenance.R
