@@ -1789,6 +1789,10 @@ server <- function(input, output, session) {
       published <- review_published_metrics_rv()
       if(!is.null(published)) {
         p <- utils::modifyList(p,published)
+        if(!is.finite(total) && nzchar(as.character(published$search_results_ingested %||% ""))) {
+          p$search_results_total <- published$search_results_ingested
+          p$search_total_is_ingested <- TRUE
+        }
         p$update_id <- if(nzchar(as.character(published$run_id %||% "")))
           as.character(published$run_id) else p$update_id
       }
@@ -1877,7 +1881,7 @@ server <- function(input, output, session) {
         kpi(
           "Database searching",
           fmt_pipeline_n(p$search_results_total),
-          "records",
+          if(isTRUE(p$search_total_is_ingested)) "source records ingested (W01)" else "records",
           stage_position=1L,
           inline_note=if(stage_complete(1L)) fmt_pipeline_delta(p$search_results_update) else NULL
         ),
