@@ -268,3 +268,67 @@ w04_model_verified_resolution_events <- function(batches,
   }
   result
 }
+
+# Materialise the offline adapter's immutable decision input from the verified
+# reconciliation and original Google Sheets result_json. Does not write remotely.
+w04_reconciled_export_rows <- function(reconciliation,batches,
+   human_outcomes=list(),read_results=w04_model_batch_results_read) {
+  if(!isTRUE(reconciliation$ready) ||
+     length(reconciliation$records)!=as.integer(reconciliation$eligible))
+    stop("W04 reconciled export requires complete, conflict-free coverage",call.=FALSE)
+  raw <- list()
+  for(batch in batches) {
+    run <- as.character(batch$run_id %||% "")
+    results <- read_results(batch)
+    if(!all(c("record_id","decision","result_json") %in% names(results)))
+      stop("Model batch lacks original full screening JSON",call.=FALSE)
+    for(i in seq_len(nrow(results))) {
+      id <- as.character(results$record_id[[i]])
+      payload <- as.character(results$result_json[[i]])
+      z <- jsonlite::fromJSON(payload,simplifyVector=FALSE)
+      if(!identical(as.character(z$record_id %||% ""),id) ||
+         !identical(as.character(z$screening$decision %||% ""),
+                    as.character(results$decision[[i]])))
+        stop("Original screening JSON fails row-identity verification",call.=FALSE)
+      raw[[id]] <- c(raw[[id]],list(list(run=run,decision=as.character(results$decision[[i]]),
+                                         json=payload)))
+    }
+  }
+  human <- list()
+  for(x in human_outcomes) {
+    if(!as.character(x$status %||% "") %in% c("agreement","single_human")) next
+    id <- as.character(x$record_id %||% "")
+    d <- as.character(x$final_decision %||% "")
+    if(!d %in% c("retain","exclude"))stop("Invalid completed human decision",call.=FALSE)
+    human[[id]] <- unique(c(human[[id]],d))
+  }
+  lapply(reconciliation$records,function(rec) {
+    id <- as.character(rec$record_id)
+    d <- as.character(rec$decision)
+    if(!identical(as.character(rec$status),"resolved") ||
+       !d %in% c("retain","exclude"))
+      stop("Unresolved canonical decision cannot be exported",call.=FALSE)
+    candidates <- raw[[id]] %||% list()
+    # Prefer an original matching model decision. Otherwise preserve a
+    # verified uncertain model row and its human-resolved disposition.
+    exact <- Filter(function(z)identical(z$decision,d),candidates)
+    uncertain <- Filter(function(z)identical(z$decision,"uncertain"),candidates)
+    chosen <- if(length(exact))exact[[1L]] else
+              if(length(uncertain))uncertain[[1L]] else NULL
+    hs <- human[[id]] %||% character()
+    adjudicated <- rec$adjudicated_model_votes %||% character()
+    explicit_human <- if(length(hs)==1L)hs[[1L]] else
+      if(length(adjudicated) && all(unname(adjudicated)==d))d else ""
+    if(is.null(chosen) && !nzchar(explicit_human))
+      stop("Missing original model JSON or verified human authority: ",id,call.=FALSE)
+    if(!is.null(chosen) && !identical(chosen$decision,d) &&
+       !nzchar(explicit_human))
+      stop("Model decision override is not human-authorised: ",id,call.=FALSE)
+    contributing <- unique(c(vapply(candidates,function(z)z$run,character(1)),
+      as.character(rec$uncertain_run_ids %||% character())))
+    list(record_id=id,status="resolved",decision=d,
+         model_result_json=if(is.null(chosen))"" else chosen$json,
+         human_decision=explicit_human,
+         source_run_ids=as.list(contributing))
+  })
+}
