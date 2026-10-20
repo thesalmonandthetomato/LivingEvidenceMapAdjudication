@@ -1156,7 +1156,11 @@ read_review_published_w01_w02 <- function(review_id,sheet_id) {
   count <- suppressWarnings(as.integer(w01$canonical_records %||% NA))
   if(length(count)!=1L||is.na(count)||count<0L)
     stop("W01 review receipt lacks canonical count",call.=FALSE)
+  source_n <- suppressWarnings(as.integer(w01$source_manifestations %||% NA))
+  if(length(source_n)!=1L || is.na(source_n) || source_n<count)
+    stop("W01 review receipt lacks valid source manifestation count",call.=FALSE)
   result <- list(stage="W01",run_id=as.character(w01$github_run_id),
+                 search_results_ingested=as.character(source_n),
                  deduplicated_records=as.character(count),
                  canonical_records=as.character(count),
                  completed_through=2L,active_workflow=3L,
