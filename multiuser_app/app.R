@@ -4480,6 +4480,25 @@ server <- function(input, output, session) {
                        null="null",na="null",digits=NA),character(1)),
                  file,useBytes=TRUE)
     })
+  observeEvent(input$w04_finalise_archive,{
+    req(authenticated())
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role),"administrator"))return()
+    result <- tryCatch({
+      snapshot <- w04_finalise_export_rv()
+      if(is.null(snapshot))stop("Run the verified coverage check first",call.=FALSE)
+      meta <- w04_prompt_review_metadata()
+      source <- w04_subset_review_source_pointers()
+      bundle <- w04_finalise_bundle_build(meta,source,snapshot)
+      w04_shiny_model_bundle_archive(meta,bundle)
+    },error=function(e)e)
+    if(inherits(result,"error"))
+      w04_finalise_check_status(paste("Archiving was not confirmed:",conditionMessage(result)))
+    else w04_finalise_check_status(paste(
+      "Immutable reconciliation archived and verified:",result$filename,
+      "SHA-256",result$sha256,
+      "No finalisation publication or W05 launch was triggered."))
+  })
   observeEvent(input$w04_finalise_check,{
     w04_finalise_export_rv(NULL)
     req(authenticated())
@@ -5054,7 +5073,9 @@ server <- function(input, output, session) {
                     tags$p(class="saved-note","Check saved W04 human and model decisions against the verified eligible corpus. Read-only: no publication or W05 launch."),
                     actionButton("w04_finalise_check","Check screening coverage",class="btn-outline-primary btn-sm"),
                     textOutput("w04_finalise_check_status"),
-                    uiOutput("w04_finalise_export_control")))
+                    uiOutput("w04_finalise_export_control"),
+                    actionButton("w04_finalise_archive","Archive verified W04 input",
+                                 class="btn-outline-secondary btn-sm")))
               )
             )),
             tabPanel("W08",uiOutput("w08_admin_controls")),
