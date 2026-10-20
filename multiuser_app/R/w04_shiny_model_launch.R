@@ -200,3 +200,31 @@ w04_shiny_model_dispatch <- function(meta,source,subset,bundle_info) {
       httr2::resp_status(resp)),call.=FALSE)
   invisible(TRUE)
 }
+
+# Use the established restricted Zenodo archive transport for read-only W04
+# finalisation input. This does not dispatch publication or mutate source data.
+w04_finalise_bundle_build <- function(meta,source,snapshot) {
+  if(!identical(as.character(snapshot$review_id),as.character(meta$review_id)) ||
+     !identical(as.character(source$review_id),as.character(meta$review_id)) ||
+     !identical(tolower(as.character(source$lean$lean_canonical_sha256)),
+                tolower(as.character(snapshot$checkpoint_sha256))))
+    stop("W04 finalisation archive checkpoint mismatch",call.=FALSE)
+  rows <- snapshot$rows %||% list()
+  if(!length(rows))stop("Empty finalisation reconciliation",call.=FALSE)
+  ids <- vapply(rows,function(x)as.character(x$record_id %||% ""),character(1))
+  if(anyNA(ids)||any(!nzchar(ids))||anyDuplicated(ids) ||
+     any(vapply(rows,function(x)
+       !identical(as.character(x$status %||% ""),"resolved") ||
+       !as.character(x$decision %||% "") %in% c("retain","exclude"),logical(1))))
+    stop("W04 finalisation archive requires complete substantive decisions",call.=FALSE)
+  payload <- vapply(rows,function(x)jsonlite::toJSON(x,auto_unbox=TRUE,
+     null="null",na="null",digits=NA),character(1))
+  sha <- digest::digest(paste(payload,collapse="\n"),algo="sha256",serialize=FALSE)
+  list(schema="lem-w04-reconciled-finalise-input-v1",
+       review_id=as.character(meta$review_id),
+       source_checkpoint_sha256=tolower(as.character(snapshot$checkpoint_sha256)),
+       source_lean_pointer=as.character(source$lean_path),
+       source_w03_pointer=as.character(source$w03_path),
+       record_count=length(rows),records_sha256=sha,
+       records=rows)
+}
