@@ -28,4 +28,9 @@ stopifnot(inherits(bad,"error"))
 z <- w04_screening_coverage_reconcile(c("r1"),list(list(run_id="101")),
  read_results=function(b)data.frame(record_id="r1",decision="retain"))
 stopifnot(z$ready,z$resolved==1L)
+pending <- w04_screening_coverage_reconcile(c("r1"),list(list(run_id="101")),
+ list(list(record_id="r1",status="conflict",final_decision="")),
+ read_results=function(b)data.frame(record_id="r1",decision="retain"))
+stopifnot(!pending$ready,"r1" %in% pending$conflicts,
+          identical(pending$records$r1$status,"human_conflict"))
 cat("PASS W04 canonical decision reconciliation and provenance guards\n")
