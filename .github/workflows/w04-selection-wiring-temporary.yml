@@ -1,4 +1,4 @@
-name: Temporary W04 reconciliation and launch regression validation
+name: Temporary W04 Finalise read-only integration validation
 on:
   push:
     paths:
