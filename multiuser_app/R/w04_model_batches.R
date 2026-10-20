@@ -196,6 +196,8 @@ w04_screening_coverage_reconcile <- function(eligible_ids,batches=list(),
     m <- models[[id]] %||% character()
     r <- resolved[[id]] %||% character()
     model_votes <- c(m,r)
+    unresolved_runs <- setdiff(uncertain[[id]] %||% character(),
+      sub("^resolution:","",names(r) %||% character()))
     disagree <- length(unique(unname(model_votes)))>1L
     human_model_disagree <- length(h)==1L && length(model_votes)>0L &&
       any(unname(model_votes)!=h[[1L]])
@@ -206,15 +208,16 @@ w04_screening_coverage_reconcile <- function(eligible_ids,batches=list(),
     status <- if(human_conflict)"human_conflict" else
       if(length(h)==1L && (disagree || human_model_disagree))"human_authoritative_model_conflict" else
       if(disagree)"model_conflict" else
-      if(nzchar(decision))"resolved" else
-      if(length(uncertain[[id]] %||% character()))"uncertain" else "missing"
+      if(length(unresolved_runs))"uncertain" else
+      if(nzchar(decision))"resolved" else "missing"
     list(record_id=id,decision=decision,status=status,
          human_decisions=h,model_votes=m,adjudicated_model_votes=r,
-         uncertain_run_ids=uncertain[[id]] %||% character())
+         uncertain_run_ids=uncertain[[id]] %||% character(),
+         unresolved_run_ids=unresolved_runs)
   })
   names(rows) <- eligible
   blocking <- vapply(rows,function(x)
-    !nzchar(x$decision) || identical(x$status,"human_authoritative_model_conflict"),logical(1))
+    !nzchar(x$decision) || x$status %in% c("human_authoritative_model_conflict","uncertain"),logical(1))
   status <- vapply(rows,function(x)x$status,character(1))
   list(ready=!any(blocking),eligible=length(eligible),
        resolved=sum(!blocking),missing=eligible[status=="missing"],
