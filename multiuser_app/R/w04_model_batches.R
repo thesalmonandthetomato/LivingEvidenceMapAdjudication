@@ -220,7 +220,7 @@ w04_screening_coverage_reconcile <- function(eligible_ids,batches=list(),
   })
   names(rows) <- eligible
   blocking <- vapply(rows,function(x)
-    !nzchar(x$decision) || x$status %in% c("human_authoritative_model_conflict","uncertain"),logical(1))
+    !nzchar(x$decision) || x$status %in% c("human_conflict","model_conflict","human_authoritative_model_conflict","uncertain"),logical(1))
   status <- vapply(rows,function(x)x$status,character(1))
   list(ready=!any(blocking),eligible=length(eligible),
        resolved=sum(!blocking),missing=eligible[status=="missing"],
