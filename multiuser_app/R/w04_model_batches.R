@@ -150,10 +150,13 @@ w04_screening_coverage_reconcile <- function(eligible_ids,batches=list(),
     read_results=w04_model_batch_results_read) {
   eligible <- w04_subset_record_ids(eligible_ids)
   human <- list()
+  unresolved_human <- character()
   for(x in human_outcomes) {
     id <- as.character(x$record_id %||% "")
     if(length(id)!=1L || !id %in% eligible)
       stop("Human screening references an unknown canonical record",call.=FALSE)
+    if(as.character(x$status %||% "") %in% c("conflict","pending"))
+      unresolved_human <- union(unresolved_human,id)
     if(!as.character(x$status %||% "") %in% c("agreement","single_human")) next
     d <- as.character(x$final_decision %||% "")
     if(!d %in% c("retain","exclude"))
@@ -201,7 +204,7 @@ w04_screening_coverage_reconcile <- function(eligible_ids,batches=list(),
     disagree <- length(unique(unname(model_votes)))>1L
     human_model_disagree <- length(h)==1L && length(model_votes)>0L &&
       any(unname(model_votes)!=h[[1L]])
-    human_conflict <- length(h)>1L
+    human_conflict <- length(h)>1L || id %in% unresolved_human
     decision <- if(length(h)==1L)h[[1L]] else
       if(!human_conflict && length(model_votes) &&
          !disagree)unname(model_votes[[1L]]) else ""
