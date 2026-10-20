@@ -4544,7 +4544,7 @@ server <- function(input, output, session) {
       w04_model_status_rv(paste("W04 model launch was not confirmed:",conditionMessage(result)))
       return()
     }
-    w04_model_status_rv(paste("Dispatched W04 subset screening to GitHub. Archived input:",
+    w04_model_status_rv(paste("Dispatched W04 model screening to GitHub. Archived input:",
       result$filename,"· SHA-256",result$sha256,
       "· No full-review finalisation or automatic W05 hand-off."))
   })
@@ -4843,7 +4843,7 @@ server <- function(input, output, session) {
                     tags$summary(tags$strong("Model execution and completed runs")),
                     div(class="px-3 pb-3",
                   tags$p(class="saved-note",
-                    "Validation screening uses a registered human-screened subset. Full-corpus screening must instead select eligible canonical records without existing inclusion codes; that production launch is not enabled yet. Model runs use archived prompts and do not automatically hand off to W05."),
+                    "Run the existing W04 model on a reconstructed canonical selection or a registered human-screened validation subset. This does not finalise W04 or trigger W05."),
                   actionButton("w04_model_refresh","Load subsets and prompts",
                     class="btn-outline-secondary btn-sm",
                     onclick="window.lemBusyStart('w04_model_refresh','Loading review-bound model input options…')"),
@@ -4857,7 +4857,7 @@ server <- function(input, output, session) {
                   uiOutput("w04_model_prompt_selector"),
                   tags$div(class="mt-3",
                     tags$strong("Reconstruct model screening selection"),
-                    tags$p(class="saved-note","Verification only. Existing registered-subset model launches remain unchanged."),
+                    tags$p(class="saved-note","Combine remaining records and registered subsets by canonical ID. The selection is checked again at launch."),
                     checkboxInput("w04_reconstructed_include_remaining",
                       "Include eligible records without completed model classifications",value=TRUE),
                     uiOutput("w04_reconstructed_subset_selector"),
