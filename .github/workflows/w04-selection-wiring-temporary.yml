@@ -1,4 +1,4 @@
-name: Temporary W04 Shiny reconstructed launch and coverage validation
+name: Temporary W04 reconciliation and launch regression validation
 on:
   push:
     paths:
