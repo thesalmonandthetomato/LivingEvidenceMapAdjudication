@@ -1,0 +1,24 @@
+name: Temporary W04 reconstructed selection test
+on:
+  push:
+    paths:
+      - '.github/workflows/w04-reconstructed-selection-temporary.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - name: Install digest
+        run: Rscript -e 'install.packages("digest",repos="https://cloud.r-project.org")'
+      - name: Parse existing subset registry and app
+        run: Rscript -e 'parse(file="multiuser_app/R/w04_subset_registry.R");parse(file="multiuser_app/app.R")'
+      - name: Verify reconstructed selection
+        working-directory: multiuser_app
+        run: Rscript tests/test_w04_reconstructed_selection.R
