@@ -4410,6 +4410,7 @@ server <- function(input, output, session) {
     w04_resolution_idx(1L)
     w04_reviewer_model_status_rv(sprintf("Loaded model run %s: %d uncertainties.",q$source_run_id,length(q$cases)))
   })
+  output$w04_finalise_check_status <- renderText(w04_finalise_check_status())
   output$w04_model_status <- renderText(w04_model_status_rv())
   output$w04_model_subset_selector <- renderUI({
     xs <- w04_model_subsets_rv()
@@ -4447,6 +4448,53 @@ server <- function(input, output, session) {
     }
     w04_human_coded_ids(outcomes,corpus$record_ids)
   }
+  # Finalise is read-only until a fully reconciled standard W04 publication
+  # route has been verified. Never infer missing coverage from subset membership.
+  w04_finalise_check_status <- reactiveVal("Run the coverage check to inspect saved W04 screening.")
+  observeEvent(input$w04_finalise_check,{
+    req(authenticated())
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role),"administrator"))return()
+    result <- tryCatch({
+      corpus <- w04_subset_corpus_rv()
+      if(is.null(corpus))stop("Verify the eligible canonical corpus in Subsets & tasks",call.=FALSE)
+      meta <- w04_prompt_review_metadata()
+      if(!identical(as.character(meta$review_id),as.character(corpus$review_id)))
+        stop("W04 review identity mismatch",call.=FALSE)
+      source <- w04_subset_review_source_pointers()
+      if(!identical(tolower(as.character(corpus$checkpoint_sha256)),
+                    tolower(as.character(source$lean$lean_canonical_sha256))))
+        stop("Canonical checkpoint identity mismatch",call.=FALSE)
+      subsets <- w04_subset_registry_read(meta$review_id)
+      human <- list()
+      relevant <- Filter(function(s)
+        identical(tolower(as.character(s$source_checkpoint_sha256)),
+                  tolower(as.character(corpus$checkpoint_sha256))),subsets)
+      if(length(relevant)) {
+        events <- active_sheet_w04_decisions()
+        for(s in relevant) {
+          q <- w04_subset_queue_read(as.character(s$subset_id),meta$review_id)
+          if(is.null(q))next
+          ds <- w04_filter_batch_decisions(events,q$queue_sha256)
+          human <- c(human,w04_blind_case_outcomes(q$cases,assignment_registry_rv(),
+             ds,paste0("w04-human-",s$subset_id),"manual_screening"))
+        }
+      }
+      batches <- w04_model_batch_registry_read(meta$review_id)
+      resolved <- w04_model_verified_resolution_events(batches)
+      w04_screening_coverage_reconcile(corpus$record_ids,batches,human,resolved)
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_finalise_check_status(paste("Coverage check failed:",conditionMessage(result)))
+    } else {
+      w04_finalise_check_status(sprintf(
+        "Read-only coverage: %d eligible, %d resolved; %d missing, %d uncertain, %d conflicts. %s",
+        result$eligible,result$resolved,length(result$missing),
+        length(result$uncertain),length(result$conflicts),
+        if(result$ready)"All decisions reconciled; standard W04 publication is not yet connected."
+        else "Finalisation blocked until coverage and conflicts are resolved."))
+    }
+  })
   observeEvent(input$w04_reconstructed_verify,{
     req(authenticated())
     if(!session_can("control_workflows") ||
@@ -4963,7 +5011,9 @@ server <- function(input, output, session) {
                     uiOutput("w04_overview_conflicts"))),
                 tabPanel("Finalise",
                   div(class="px-3 pb-3",
-                    tags$p(class="saved-note","Corpus-wide reconciliation and finalisation are not yet implemented. Existing W04 records and decisions remain unchanged. No downstream workflow can be launched from this tab.")))
+                    tags$p(class="saved-note","Check saved W04 human and model decisions against the verified eligible corpus. Read-only: no publication or W05 launch."),
+                    actionButton("w04_finalise_check","Check screening coverage",class="btn-outline-primary btn-sm"),
+                    textOutput("w04_finalise_check_status")))
               )
             )),
             tabPanel("W08",uiOutput("w08_admin_controls")),
