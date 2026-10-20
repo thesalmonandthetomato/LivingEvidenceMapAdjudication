@@ -1,4 +1,4 @@
-name: Temporary W04 Shiny selection and human coverage validation
+name: Temporary W04 Shiny reconstructed launch and coverage validation
 on:
   push:
     paths:
