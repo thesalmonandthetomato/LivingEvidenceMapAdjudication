@@ -69,7 +69,7 @@ w04_shiny_model_bundle_build <- function(meta, subset, queue, prompt, decisions,
 # human-screening subset. Human decisions are never required or rewritten.
 w04_shiny_model_selection_bundle_build <- function(meta,selection,prompt,source) {
   ids <- w04_subset_record_ids(selection$record_ids)
-  member_sha <- digest::digest(paste(sort(ids),collapse="\\n"),
+  member_sha <- digest::digest(paste(sort(ids),collapse="\n"),
                                algo="sha256",serialize=FALSE)
   if(!identical(member_sha,as.character(selection$membership_sha256)) ||
      !identical(as.integer(length(ids)),as.integer(selection$record_count)))
