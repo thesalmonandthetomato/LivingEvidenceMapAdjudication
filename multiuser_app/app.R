@@ -25,8 +25,6 @@ source("R/w04_model_conflicts.R", local = TRUE)
 source("R/w04_prompt_refinement.R", local = TRUE)
 source("R/w04_highlight_sheets.R", local = TRUE)
 source("R/w04_subset_registry.R", local = TRUE)
-source("R/w04_model_selection.R", local = TRUE)
-source("R/w04_combined_execution.R", local = TRUE)
 source("R/w04_subset_storage.R", local = TRUE)
 source("R/w04_subset_eligible.R", local = TRUE)
 source("R/w04_subset_review_source.R", local = TRUE)
@@ -1073,8 +1071,6 @@ server <- function(input, output, session) {
   w04_model_versions_rv <- reactiveVal(list())
   w04_model_status_rv <- reactiveVal("")
   w04_model_launch_busy_rv <- reactiveVal(FALSE)
-  w04_model_selection_status_rv <- reactiveVal("Select a screening scope and verify it before launch.")
-  w04_model_selection_result_rv <- reactiveVal(NULL)
   w04_model_batches_rv <- reactiveVal(list())
   w04_model_results_rv <- reactiveVal(NULL)
   w04_model_selected_batch_rv <- reactiveVal(NULL)
@@ -4414,92 +4410,14 @@ server <- function(input, output, session) {
     w04_resolution_idx(1L)
     w04_reviewer_model_status_rv(sprintf("Loaded model run %s: %d uncertainties.",q$source_run_id,length(q$cases)))
   })
-  output$w04_model_selection_status <- renderText(w04_model_selection_status_rv())
-  output$w04_model_selection_summary <- renderUI({
-    x <- w04_model_selection_result_rv()
-    if(is.null(x))return(NULL)
-    tags$p(class="saved-note",sprintf(
-      "Verified eligible: %d · selected: %d · SHA-256: %s",
-      x$eligible,x$selected_count,x$membership_sha256))
-  })
-  observeEvent(list(input$w04_include_remaining,input$w04_model_subset_selected),{
-    w04_model_selection_result_rv(NULL)
-    w04_model_selection_status_rv("Selection changed; verify again.")
-  },ignoreInit=TRUE)
-  observeEvent(input$w04_model_selection_verify,{
-    req(authenticated(),session_can("control_workflows"))
-    w04_model_selection_result_rv(NULL)
-    result <- tryCatch({
-      corpus <- w04_subset_corpus_rv()
-      if(is.null(corpus))stop("Verify eligible corpus in Subsets & tasks first",call.=FALSE)
-      selected_ids <- as.character(input$w04_model_subset_selected %||% character())
-      registry <- w04_model_subsets_rv()
-      selected <- lapply(selected_ids,function(id) {
-        matches <- Filter(function(z)identical(as.character(z$subset_id),id),registry)
-        if(length(matches)!=1L)stop("Selected subset not found uniquely in registry",call.=FALSE)
-        matches[[1L]]
-      })
-      include_remaining <- isTRUE(input$w04_include_remaining)
-      coded <- character()
-      if(include_remaining) {
-        meta <- w04_prompt_review_metadata()
-        if(!identical(as.character(meta$review_id),as.character(corpus$review_id)))
-          stop("Active review changed since canonical verification",call.=FALSE)
-        # Each saved decision is interpreted only through its original queue.
-        # Missing queues and ambiguous identities stop the preflight.
-        registered <- w04_subset_registry_read(meta$review_id)
-        queues <- lapply(registered,function(z) {
-          q <- w04_subset_queue_read(as.character(z$subset_id),meta$review_id)
-          q
-        })
-        coded_human <- w04_model_resolve_human_coded(
-          active_sheet_w04_decisions(),queues,corpus$record_ids)
-        batches <- w04_model_batch_registry_read(meta$review_id)
-        model_records <- lapply(batches,function(b)
-          list(records=w04_model_batch_results_read(b)))
-        coded_model <- w04_model_resolve_model_coded(model_records,corpus$record_ids)
-        coded <- union(coded_human,coded_model)
-      }
-      w04_model_selection_combine(corpus,include_remaining=include_remaining,
-        subsets=selected,coded_ids=coded)
-    },error=function(e)e)
-    if(inherits(result,"error")){
-      w04_model_selection_status_rv(paste("Selection not verified:",conditionMessage(result)))
-      return()
-    }
-    w04_model_selection_result_rv(result)
-    w04_model_selection_status_rv("Read-only selection verified. Production dispatch remains disabled.")
-  })
-  observeEvent(input$w04_combined_manifest_prepare,{
-    req(authenticated(),session_can("control_workflows"))
-    result <- tryCatch({
-      selected <- w04_model_selection_result_rv()
-      if(is.null(selected))stop("Verify record selection first",call.=FALSE)
-      prompt_id <- as.character(input$w04_model_prompt_selected %||% "")
-      matches <- Filter(function(x)
-        identical(as.character(x$version_id),prompt_id),w04_model_versions_rv())
-      if(length(matches)!=1L)stop("Select one archived immutable prompt",call.=FALSE)
-      meta <- w04_prompt_review_metadata()
-      if(!identical(as.character(meta$review_id),as.character(selected$review_id)))
-        stop("Active review changed since record selection",call.=FALSE)
-      plan <- w04_combined_execution_plan(selected,matches[[1L]],
-        batch_size=as.integer(input$w04_combined_batch_size %||% 250L))
-      info <- w04_combined_manifest_archive(meta,plan)
-      sprintf("Archived proposed run %s: %d records in %d batches. Manifest %s (SHA-256 %s). No model execution dispatched.",
-        substr(info$run_key,1L,16L),plan$record_count,plan$batch_count,
-        info$filename,info$sha256)
-    },error=function(e)e)
-    w04_model_status_rv(if(inherits(result,"error"))
-      paste("Cannot prepare combined manifest:",conditionMessage(result)) else result)
-  })
   output$w04_model_status <- renderText(w04_model_status_rv())
   output$w04_model_subset_selector <- renderUI({
     xs <- w04_model_subsets_rv()
-    if(!length(xs))return(tags$span(class="saved-note","Load registered subsets and prompts first."))
-    ids <- vapply(xs,function(z)as.character(z$subset_id),character(1))
+    if(!length(xs)) return(tags$span(class="saved-note","No registered subsets loaded."))
+    ids <- vapply(xs,function(x)as.character(x$subset_id),character(1))
     labels <- vapply(xs,w04_subset_display,character(1))
-    selectInput("w04_model_subset_selected","Additional subsets (optional)",
-      choices=stats::setNames(ids,labels),selected=character(),multiple=TRUE)
+    selectInput("w04_model_subset_selected","Registered human-screened subset",
+      choices=stats::setNames(ids,labels))
   })
   output$w04_model_prompt_selector <- renderUI({
     versions <- w04_prompts_by_save_date(w04_model_versions_rv())
@@ -4535,17 +4453,12 @@ server <- function(input, output, session) {
       w04_model_status_rv("Only an administrator may launch W04 model screening.")
       return()
     }
-    if(isTRUE(input$w04_include_remaining) ||
-       length(input$w04_model_subset_selected %||% character())!=1L){
-      w04_model_status_rv("Combined and remaining-record runs are not enabled yet. The existing validated launcher currently supports one registered subset.")
-      return()
-    }
     if(isTRUE(w04_model_launch_busy_rv())) return()
     w04_model_launch_busy_rv(TRUE)
     on.exit(w04_model_launch_busy_rv(FALSE),add=TRUE)
     result <- tryCatch({
       meta <- w04_prompt_review_metadata()
-      subset_id <- as.character((input$w04_model_subset_selected %||% "")[[1L]])
+      subset_id <- as.character(input$w04_model_subset_selected %||% "")
       version_id <- as.character(input$w04_model_prompt_selected %||% "")
       subsets <- w04_model_subsets_rv()
       versions <- w04_model_versions_rv()
@@ -4876,17 +4789,8 @@ server <- function(input, output, session) {
                     onclick="window.lemBusyStart('w04_model_refresh','Loading review-bound model input options…')"),
                   tags$div(id="w04_model_refresh_busy",class="saved-note",
                     style="display:none;","Loading registered subsets and archived prompts…"),
-                  checkboxInput("w04_include_remaining","Include all remaining records without existing inclusion codes",value=TRUE),
                   uiOutput("w04_model_subset_selector"),
                   uiOutput("w04_model_prompt_selector"),
-                  actionButton("w04_model_selection_verify","Verify record selection",
-                    class="btn-outline-secondary btn-sm"),
-                  textOutput("w04_model_selection_status"),
-                  uiOutput("w04_model_selection_summary"),
-                  numericInput("w04_combined_batch_size","Combined execution batch size",
-                    value=250,min=1,max=1000,step=1),
-                  actionButton("w04_combined_manifest_prepare","Archive combined execution plan (no model run)",
-                    class="btn-outline-secondary btn-sm"),
                   actionButton("w04_model_launch","Run model on selected subset",
                     class="btn-primary btn-sm",
                     onclick="window.lemBusyStart('w04_model_launch','Validating and archiving W04 inputs, then dispatching GitHub…')"),
