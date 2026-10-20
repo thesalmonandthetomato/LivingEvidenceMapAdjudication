@@ -13,4 +13,11 @@ stopifnot(identical(selection$record_ids,c("r2","r4","r5")))
 conflicting <- function(b) data.frame(record_id="r1",
  decision=if(b$run_id=="1") "retain" else "exclude")
 stopifnot(inherits(tryCatch(w04_model_coded_ids(runs,ids,conflicting),error=identity),"error"))
+human <- list(list(record_id="r2",status="agreement",final_decision="retain"),
+ list(record_id="r4",status="conflict",final_decision=""),
+ list(record_id="r5",status="single_human",final_decision="exclude"))
+stopifnot(identical(w04_human_coded_ids(human,ids),c("r2","r5")))
+stopifnot(inherits(tryCatch(w04_human_coded_ids(c(human,list(
+ list(record_id="r2",status="agreement",final_decision="exclude"))),ids),
+ error=identity),"error"))
 cat("PASS verified existing model coverage and reconstruction\n")
