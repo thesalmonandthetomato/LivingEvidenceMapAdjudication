@@ -4453,7 +4453,7 @@ server <- function(input, output, session) {
     },error=function(e)e)
     w04_model_status_rv(if(inherits(result,"error"))
       paste("Reconstructed screening verification failed:",conditionMessage(result))
-      else sprintf("Verified %d unique canonical records (%d remaining; %d from subsets; %d overlaps removed). SHA-256: %s. Model launch is not yet enabled for reconstructed selections.",
+      else sprintf("Verified %d unique canonical records (%d remaining; %d from subsets; %d overlaps removed). SHA-256: %s. Reconstructed selection can be launched using the screening selection control.",
         result$record_count,result$remaining_count,result$selected_subset_count,
         result$duplicate_count,result$membership_sha256))
   })
@@ -4496,21 +4496,43 @@ server <- function(input, output, session) {
     on.exit(w04_model_launch_busy_rv(FALSE),add=TRUE)
     result <- tryCatch({
       meta <- w04_prompt_review_metadata()
+      launch_reconstructed <- identical(as.character(input$w04_model_launch_mode %||% "registered"),"reconstructed")
       subset_id <- as.character(input$w04_model_subset_selected %||% "")
       version_id <- as.character(input$w04_model_prompt_selected %||% "")
       subsets <- w04_model_subsets_rv()
       versions <- w04_model_versions_rv()
       selected <- Filter(function(x)identical(as.character(x$subset_id),subset_id),subsets)
       prompt <- Filter(function(x)identical(as.character(x$version_id),version_id),versions)
-      if(length(selected)!=1L||length(prompt)!=1L)
-        stop("Choose a registered subset and immutable prompt version",call.=FALSE)
-      subset <- selected[[1L]]
-      queue <- w04_subset_queue_read(subset_id,meta$review_id)
-      if(is.null(queue)) stop("Registered subset screening queue is missing",call.=FALSE)
-      ds <- w04_filter_batch_decisions(active_sheet_w04_decisions(),queue$queue_sha256)
-      edits <- active_sheet_w04_manual_abstract_edits(queue$queue_sha256)
-      bundle <- w04_shiny_model_bundle_build(meta,subset,queue,prompt[[1L]],ds,edits)
+      if(length(prompt)!=1L || (!launch_reconstructed && length(selected)!=1L))
+        stop("Choose a valid model selection and immutable prompt version",call.=FALSE)
       source <- w04_subset_review_source_pointers()
+      if(launch_reconstructed) {
+        corpus <- w04_subset_corpus_rv()
+        if(is.null(corpus) || !identical(as.character(corpus$review_id),as.character(meta$review_id)) ||
+           !identical(tolower(as.character(corpus$checkpoint_sha256)),
+             tolower(as.character(source$lean$lean_canonical_sha256))))
+          stop("Verify the current eligible canonical corpus before launching",call.=FALSE)
+        subset_ids <- as.character(input$w04_reconstructed_subsets %||% character())
+        chosen <- Filter(function(x)as.character(x$subset_id) %in% subset_ids,subsets)
+        if(length(chosen)!=length(unique(subset_ids)))stop("Registered subset selection is unavailable",call.=FALSE)
+        if(any(vapply(chosen,function(x)
+          !identical(tolower(as.character(x$source_checkpoint_sha256)),
+                     tolower(as.character(corpus$checkpoint_sha256))),logical(1))))
+          stop("Registered subset uses a different canonical checkpoint",call.=FALSE)
+        batches <- w04_model_batch_registry_read(meta$review_id)
+        coded <- w04_model_coded_ids(batches,corpus$record_ids)
+        selection <- w04_subset_reconstruct_selection(corpus$record_ids,coded,chosen,
+          isTRUE(input$w04_reconstructed_include_remaining))
+        bundle <- w04_shiny_model_selection_bundle_build(meta,selection,prompt[[1L]],source)
+        subset <- list(subset_id=bundle$subset_id,source_checkpoint_sha256=bundle$source_checkpoint_sha256)
+      } else {
+        subset <- selected[[1L]]
+        queue <- w04_subset_queue_read(subset_id,meta$review_id)
+        if(is.null(queue)) stop("Registered subset screening queue is missing",call.=FALSE)
+        ds <- w04_filter_batch_decisions(active_sheet_w04_decisions(),queue$queue_sha256)
+        edits <- active_sheet_w04_manual_abstract_edits(queue$queue_sha256)
+        bundle <- w04_shiny_model_bundle_build(meta,subset,queue,prompt[[1L]],ds,edits)
+      }
       if(!identical(tolower(as.character(source$lean$lean_canonical_sha256)),
                     tolower(as.character(bundle$source_checkpoint_sha256))))
         stop("Registered subset does not match the review-bound W03 source",call.=FALSE)
@@ -4827,7 +4849,11 @@ server <- function(input, output, session) {
                     onclick="window.lemBusyStart('w04_model_refresh','Loading review-bound model input options…')"),
                   tags$div(id="w04_model_refresh_busy",class="saved-note",
                     style="display:none;","Loading registered subsets and archived prompts…"),
-                  uiOutput("w04_model_subset_selector"),
+                  selectInput("w04_model_launch_mode","Screening selection",
+                    choices=c("Reconstructed selection (remaining records and/or subsets)"="reconstructed",
+                              "Existing human-screened validation subset"="registered")),
+                  conditionalPanel("input.w04_model_launch_mode == 'registered'",
+                    uiOutput("w04_model_subset_selector")),
                   uiOutput("w04_model_prompt_selector"),
                   tags$div(class="mt-3",
                     tags$strong("Reconstruct model screening selection"),
@@ -4838,7 +4864,7 @@ server <- function(input, output, session) {
                     actionButton("w04_reconstructed_verify","Verify reconstructed selection",
                       class="btn-outline-secondary btn-sm")),
 
-                  actionButton("w04_model_launch","Run model on selected subset",
+                  actionButton("w04_model_launch","Run selected W04 model screening",
                     class="btn-primary btn-sm",
                     onclick="window.lemBusyStart('w04_model_launch','Validating and archiving W04 inputs, then dispatching GitHub…')"),
                   tags$div(id="w04_model_launch_busy",class="saved-note",
