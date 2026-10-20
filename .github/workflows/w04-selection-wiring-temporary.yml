@@ -1,4 +1,4 @@
-name: Temporary W04 Shiny selection wiring validation
+name: Temporary W04 Shiny selection and human coverage validation
 on:
   push:
     paths:
