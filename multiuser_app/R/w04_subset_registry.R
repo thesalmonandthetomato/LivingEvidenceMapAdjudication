@@ -110,6 +110,6 @@ w04_subset_reconstruct_selection <- function(eligible_ids, coded_ids=character()
   list(record_ids=chosen,record_count=length(chosen),
        remaining_count=length(remaining),selected_subset_count=length(subset_ids),
        duplicate_count=length(remaining)+length(subset_ids)-length(chosen),
-       membership_sha256=digest::digest(paste(sort(chosen),collapse="\\n"),
+       membership_sha256=digest::digest(paste(sort(chosen),collapse="\n"),
          algo="sha256",serialize=FALSE))
 }
