@@ -197,12 +197,14 @@ w04_screening_coverage_reconcile <- function(eligible_ids,batches=list(),
     r <- resolved[[id]] %||% character()
     model_votes <- c(m,r)
     disagree <- length(unique(unname(model_votes)))>1L
+    human_model_disagree <- length(h)==1L && length(model_votes)>0L &&
+      any(unname(model_votes)!=h[[1L]])
     human_conflict <- length(h)>1L
     decision <- if(length(h)==1L)h[[1L]] else
       if(!human_conflict && length(model_votes) &&
          !disagree)unname(model_votes[[1L]]) else ""
     status <- if(human_conflict)"human_conflict" else
-      if(length(h)==1L && disagree)"human_authoritative_model_conflict" else
+      if(length(h)==1L && (disagree || human_model_disagree))"human_authoritative_model_conflict" else
       if(disagree)"model_conflict" else
       if(nzchar(decision))"resolved" else
       if(length(uncertain[[id]] %||% character()))"uncertain" else "missing"
