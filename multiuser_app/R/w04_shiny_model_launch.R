@@ -63,6 +63,42 @@ w04_shiny_model_bundle_build <- function(meta, subset, queue, prompt, decisions,
     prepared_by="shiny")
 }
 
+
+# Reconstructed model-only selections use the established archive and dispatch.
+# The synthetic subset ID is a deterministic run grouping key, not a registered
+# human-screening subset. Human decisions are never required or rewritten.
+w04_shiny_model_selection_bundle_build <- function(meta,selection,prompt,source) {
+  ids <- w04_subset_record_ids(selection$record_ids)
+  member_sha <- digest::digest(paste(sort(ids),collapse="\\n"),
+                               algo="sha256",serialize=FALSE)
+  if(!identical(member_sha,as.character(selection$membership_sha256)) ||
+     !identical(as.integer(length(ids)),as.integer(selection$record_count)))
+    stop("Reconstructed selection membership checksum mismatch",call.=FALSE)
+  if(!identical(as.character(meta$review_id),as.character(prompt$review_id)) ||
+     !identical(as.character(meta$review_id),as.character(source$review_id)))
+    stop("Reconstructed W04 selection review identity mismatch",call.=FALSE)
+  source_sha <- tolower(as.character(source$lean$lean_canonical_sha256 %||% ""))
+  if(!grepl("^[0-9a-f]{64}$",source_sha))
+    stop("Reconstructed W04 selection lacks a verified canonical checkpoint",call.=FALSE)
+  if(!identical(w04_prompt_checksum(prompt$content),as.character(prompt$sha256)) ||
+     !grepl("^w04-[0-9a-f]{20}$",as.character(prompt$version_id)))
+    stop("Reconstructed W04 prompt provenance mismatch",call.=FALSE)
+  key <- digest::digest(paste(meta$review_id,source_sha,member_sha,sep=":"),
+                        algo="sha256",serialize=FALSE)
+  list(schema="lem-w04-shiny-subset-input-v1",
+       selection_type="reconstructed",
+       membership_sha256=member_sha,
+       review_id=as.character(meta$review_id),
+       review_sheet_id=as.character(meta$sheet_id),
+       subset_id=paste0("w04-subset-",substr(key,1L,20L)),
+       queue_sha256=member_sha,
+       source_checkpoint_sha256=source_sha,
+       record_ids=as.list(ids),abstract_corrections=list(),
+       prompt_version_id=as.character(prompt$version_id),
+       prompt_sha256=as.character(prompt$sha256),
+       human_decision_count=0L,prepared_by="shiny")
+}
+
 w04_shiny_model_bundle_archive <- function(meta,bundle) {
   if(!identical(meta$review_id,bundle$review_id))
     stop("Cannot archive subset for another review",call.=FALSE)
