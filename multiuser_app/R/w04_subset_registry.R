@@ -81,3 +81,35 @@ w04_subset_pool_remainder <- function(eligible_ids,subsets) {
   }),use.names=FALSE))
   setdiff(ids,used)
 }
+
+# Reconstruct a W04 model selection without changing registered human subsets.
+# Caller supplies canonical IDs with already completed model codes; no inference
+# is made from subset membership or uncertain classifications.
+w04_subset_reconstruct_selection <- function(eligible_ids, coded_ids=character(),
+                                              selected_subsets=list(),
+                                              include_remaining=TRUE) {
+  eligible <- w04_subset_record_ids(eligible_ids)
+  coded <- as.character(coded_ids)
+  if(anyNA(coded)||any(!nzchar(coded))||!all(coded %in% eligible))
+    stop("Coded record IDs must belong to the eligible canonical corpus",call.=FALSE)
+  if(!is.logical(include_remaining)||length(include_remaining)!=1L||is.na(include_remaining))
+    stop("Invalid include_remaining selection",call.=FALSE)
+  if(!is.list(selected_subsets))
+    stop("Selected subsets must be registered subset records",call.=FALSE)
+  subset_ids <- character()
+  for(s in selected_subsets) {
+    w04_subset_verify(s)
+    member_ids <- as.character(s$record_ids)
+    if(!all(member_ids %in% eligible))
+      stop("Selected subset contains records outside the eligible canonical corpus",call.=FALSE)
+    subset_ids <- union(subset_ids,member_ids)
+  }
+  remaining <- if(include_remaining) setdiff(eligible,coded) else character()
+  chosen <- eligible[eligible %in% union(remaining,subset_ids)]
+  if(!length(chosen))stop("Selected screening set is empty",call.=FALSE)
+  list(record_ids=chosen,record_count=length(chosen),
+       remaining_count=length(remaining),selected_subset_count=length(subset_ids),
+       duplicate_count=length(remaining)+length(subset_ids)-length(chosen),
+       membership_sha256=digest::digest(paste(sort(chosen),collapse="\\n"),
+         algo="sha256",serialize=FALSE))
+}
