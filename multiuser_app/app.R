@@ -4490,14 +4490,16 @@ server <- function(input, output, session) {
       meta <- w04_prompt_review_metadata()
       source <- w04_subset_review_source_pointers()
       bundle <- w04_finalise_bundle_build(meta,source,snapshot)
-      w04_shiny_model_bundle_archive(meta,bundle)
+      archived <- w04_shiny_model_bundle_archive(meta,bundle)
+      w04_finalise_validation_dispatch(meta,source,archived)
+      archived
     },error=function(e)e)
     if(inherits(result,"error"))
-      w04_finalise_check_status(paste("Archiving was not confirmed:",conditionMessage(result)))
+      w04_finalise_check_status(paste("Archiving or offline validation dispatch was not confirmed:",conditionMessage(result)))
     else w04_finalise_check_status(paste(
       "Immutable reconciliation archived and verified:",result$filename,
       "SHA-256",result$sha256,
-      "No finalisation publication or W05 launch was triggered."))
+      "Offline GitHub validation dispatched; no publication or W05 launch."))
   })
   observeEvent(input$w04_finalise_check,{
     w04_finalise_export_rv(NULL)
