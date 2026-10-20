@@ -4599,23 +4599,39 @@ server <- function(input, output, session) {
     selectInput("w04_model_prompt_selected","Immutable archived prompt",
       choices=stats::setNames(ids,labels))
   })
+  output$w04_model_launch_control <- renderUI({
+    ready <- !is.null(w04_subset_corpus_rv()) &&
+      length(w04_model_versions_rv())>0L &&
+      !isTRUE(w04_model_launch_busy_rv())
+    if(!ready)
+      return(tags$p(class="saved-note","Prepare screening to enable model execution. No screening will run during preparation."))
+    actionButton("w04_model_launch","2. Run selected W04 model screening",
+      class="btn-primary btn-sm",
+      onclick="window.lemBusyStart('w04_model_launch','Validating and archiving W04 inputs, then dispatching GitHub…')")
+  })
   observeEvent(input$w04_model_refresh,{
     on.exit(session$sendCustomMessage("lem_busy_finished",list(id="w04_model_refresh")),add=TRUE)
     req(authenticated())
     if(!session_can("control_workflows")) return()
     result <- tryCatch({
       meta <- w04_prompt_review_metadata()
+      source <- w04_subset_review_source_pointers()
+      eligible <- w04_subset_load_eligible(source$lean,source$w03)
+      if(!identical(as.character(source$review_id),as.character(meta$review_id)))
+        stop("Review identity mismatch",call.=FALSE)
       list(subsets=w04_subset_registry_read(meta$review_id),
-           versions=w04_prompt_archive_versions(meta))
+           versions=w04_prompt_archive_versions(meta),
+           corpus=c(eligible,list(review_id=meta$review_id)))
     },error=function(e)e)
     if(inherits(result,"error")) {
       w04_model_status_rv(paste("Could not load model input options:",conditionMessage(result)))
       return()
     }
+    w04_subset_corpus_rv(result$corpus)
     w04_model_subsets_rv(result$subsets)
     w04_model_versions_rv(result$versions)
-    w04_model_status_rv(sprintf("%d registered subsets and %d prompt versions available.",
-      length(result$subsets),length(result$versions)))
+    w04_model_status_rv(sprintf("Prepared %d eligible canonical records, %d registered subsets and %d archived prompts. Choose the screening selection and press Run; all IDs and decisions will be checked again before launch.",
+      length(result$corpus$record_ids),length(result$subsets),length(result$versions)))
   })
   observeEvent(input$w04_model_launch,{
     on.exit(session$sendCustomMessage("lem_busy_finished",list(id="w04_model_launch")),add=TRUE)
@@ -4974,12 +4990,12 @@ server <- function(input, output, session) {
                   uiOutput("w04_prompt_archive_history"),
                   uiOutput("w04_prompt_zenodo_link")
                 )),
-                  tags$details(class="assignment-disclosure",
-                    tags$summary(tags$strong("Model execution and completed runs")),
+                  tags$details(class="assignment-disclosure",open="open",
+                    tags$summary(tags$strong("Screen remaining records")),
                     div(class="px-3 pb-3",
                   tags$p(class="saved-note",
-                    "Run the existing W04 model on a reconstructed canonical selection or a registered human-screened validation subset. This does not finalise W04 or trigger W05."),
-                  actionButton("w04_model_refresh","Load subsets and prompts",
+                    "Step 1: Prepare screening. The app verifies the eligible corpus and loads registered subsets and archived prompts together. Step 2: Choose the records and prompt, then run screening. You do not need to visit Subsets & tasks first."),
+                  actionButton("w04_model_refresh","1. Prepare screening",
                     class="btn-outline-secondary btn-sm",
                     onclick="window.lemBusyStart('w04_model_refresh','Loading review-bound model input options…')"),
                   tags$div(id="w04_model_refresh_busy",class="saved-note",
@@ -4990,18 +5006,13 @@ server <- function(input, output, session) {
                   conditionalPanel("input.w04_model_launch_mode == 'registered'",
                     uiOutput("w04_model_subset_selector")),
                   uiOutput("w04_model_prompt_selector"),
-                  tags$div(class="mt-3",
-                    tags$strong("Reconstruct model screening selection"),
-                    tags$p(class="saved-note","Combine remaining records and registered subsets by canonical ID. The selection is checked again at launch."),
-                    checkboxInput("w04_reconstructed_include_remaining",
-                      "Include eligible records without completed model classifications",value=TRUE),
-                    uiOutput("w04_reconstructed_subset_selector"),
-                    actionButton("w04_reconstructed_verify","Verify reconstructed selection",
-                      class="btn-outline-secondary btn-sm")),
-
-                  actionButton("w04_model_launch","Run selected W04 model screening",
-                    class="btn-primary btn-sm",
-                    onclick="window.lemBusyStart('w04_model_launch','Validating and archiving W04 inputs, then dispatching GitHub…')"),
+                  conditionalPanel("input.w04_model_launch_mode == 'reconstructed'",
+                    tags$div(class="mt-3",
+                      tags$p(class="saved-note","Remaining records exclude completed model classifications. Add previously registered subsets only if you intentionally want to rescreen them."),
+                      checkboxInput("w04_reconstructed_include_remaining",
+                        "Include remaining records",value=TRUE),
+                      uiOutput("w04_reconstructed_subset_selector"))),
+                  uiOutput("w04_model_launch_control"),
                   tags$div(id="w04_model_launch_busy",class="saved-note",
                     style="display:none;","Archiving selected subset and launching model screening…"),
                   textOutput("w04_model_status"),
