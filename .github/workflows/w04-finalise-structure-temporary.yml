@@ -1,4 +1,4 @@
-name: Temporary W04 Finalise handler validation
+name: Temporary W04 Finalise syntax and regression recheck
 on:
   push:
     paths:
