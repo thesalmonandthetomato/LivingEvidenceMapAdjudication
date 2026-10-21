@@ -4548,7 +4548,8 @@ server <- function(input, output, session) {
   })
   w04_finalise_prepare_status_rv <- reactiveVal("")
   output$w04_finalise_prepare_status <- renderText(w04_finalise_prepare_status_rv())
-  observeEvent(input$w04_finalise_prepare,{
+  observeEvent(list(input$w04_workspace_tab,input$w04_finalise_prepare),{
+    if(!identical(input$w04_workspace_tab,"Finalise")) return()
     req(authenticated())
     if(!session_can("control_workflows") ||
        !identical(as.character(current_user()$role),"administrator"))return()
@@ -5198,8 +5199,8 @@ server <- function(input, output, session) {
                     uiOutput("w04_overview_conflicts"))),
                 tabPanel("Finalise",
                   div(class="px-3 pb-3",
-                    tags$p(class="saved-note","Choose one completed model run per subset. Earlier experiments stay archived. Saved uncertainty decisions are retrieved automatically. The current final output action validates but cannot yet publish W04 or send records to W05."),
-                    actionButton("w04_finalise_prepare","Load finalisation data",class="btn-outline-secondary btn-sm"),
+                    tags$p(class="saved-note","Finalisation data loads when this tab opens. Select one authoritative model run per subset. Earlier runs remain archived, and saved adjudications are retrieved during reconciliation. Publication and W05 handoff are not yet enabled."),
+                    actionButton("w04_finalise_prepare","Refresh finalisation data",class="btn-outline-secondary btn-sm"),
                     textOutput("w04_finalise_prepare_status"),
                     uiOutput("w04_model_run_choices"),
                     actionButton("w04_finalise_check","Check final screening coverage",class="btn-outline-primary btn-sm"),
