@@ -48,8 +48,7 @@ w05_crop_match <- function(title,abstract,dictionary) {
     terms <- unique(w05_crop_normalise(terms[nzchar(terms)]))
     hit <- any(vapply(terms,function(t) {
       # Unicode-aware word boundaries after accent folding. Literal escaped terms.
-      p <- paste0("(?<![\\p{L}\\p{N}])",gsub("([][{}()+*^$|\\?.])","\\\\\\1",t,perl=TRUE),
-                  "(?![\\p{L}\\p{N}])")
+      p <- paste0("(?<![\\p{L}\\p{N}])\\Q",t,"\\E(?![\\p{L}\\p{N}])")
       isTRUE(grepl(p,text,perl=TRUE))
     },logical(1)))
     if(hit)found <- c(found,dict$code[[i]])
