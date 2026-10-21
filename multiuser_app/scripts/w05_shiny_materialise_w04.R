@@ -3,6 +3,7 @@
 # its corresponding checksum-verified canonical and included-ID files.
 # Does not publish, dispatch workflows, or modify production state.
 suppressPackageStartupMessages({library(jsonlite);library(digest)})
+`%||%` <- function(x,y)if(is.null(x))y else x
 args <- commandArgs(trailingOnly=TRUE)
 get <- function(flag) {
   i <- match(flag,args)
@@ -24,6 +25,10 @@ if(!identical(scalar(receipt$review_id),review) ||
    !identical(scalar(receipt$visibility),"restricted") ||
    !grepl("^[0-9]+$",scalar(receipt$publication_run_id)))
   stop("No verified restricted W04 publication for this review",call.=FALSE)
+canonical_sha <- scalar(receipt$upstream_lean_canonical_sha256)
+if(!grepl("^[0-9a-f]{64}$",canonical_sha) ||
+   !identical(digest(file=canonical,algo="sha256",serialize=FALSE),canonical_sha))
+  stop("Canonical W04 source checksum mismatch",call.=FALSE)
 expected_sha <- scalar(receipt$included_ids_sha256)
 actual_sha <- digest(file=included,algo="sha256",serialize=FALSE)
 if(!grepl("^[0-9a-f]{64}$",expected_sha) ||
