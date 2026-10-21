@@ -5069,8 +5069,17 @@ server <- function(input, output, session) {
        !identical(as.character(current_user()$role %||% ""),"administrator"))return()
     receipt <- w05_dictionary_receipt_rv()
     req(!is.null(receipt),nzchar(as.character(receipt$sha256)))
+    saved <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      w05_crop_approve_version(meta,receipt)
+      TRUE
+    },error=function(e)e)
+    if(inherits(saved,"error")) {
+      w05_crop_status_rv(paste("W05 approval could not be verified:",conditionMessage(saved)))
+      return()
+    }
     w05_dictionary_approved_sha_rv(as.character(receipt$sha256))
-    w05_crop_status_rv("W05 coding schema approved for this session. Execution remains paused until verified W04 publication and a review-bound input bundle are available.")
+    w05_crop_status_rv("W05 schema approval archived in restricted Zenodo. Execution remains paused until verified W04 publication and a review-bound input bundle are available.")
   })
   output$w05_shiny_subset_launch_control <- renderUI({
     if(!session_can("control_workflows") ||
