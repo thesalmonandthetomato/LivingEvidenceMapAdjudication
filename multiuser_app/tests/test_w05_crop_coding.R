@@ -66,7 +66,8 @@ w05_shiny_gh_request <- function(url,method="GET",payload=NULL) {
   invisible(TRUE)
 }
 stopifnot(inherits(try(w05_shiny_subset_dispatch(request),silent=TRUE),"try-error"),calls==0L)
-w05_shiny_subset_dispatch(request,w04_published=TRUE)
+stopifnot(inherits(try(w05_shiny_subset_dispatch(request,w04_published=TRUE),silent=TRUE),"try-error"),calls==0L)
+w05_shiny_subset_dispatch(request,w04_published=TRUE,schema_approved=TRUE)
 stopifnot(calls==1L)
 cat("PASS W05 Shiny dispatcher respects verified W04 gate and isolated workflow target\n")
 
