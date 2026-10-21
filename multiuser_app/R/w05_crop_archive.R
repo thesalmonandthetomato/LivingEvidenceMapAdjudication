@@ -1,6 +1,7 @@
 # W05 versioned private draft. Never publish the draft during upload or testing.
 w05_crop_draft_id <- function(meta) {
-  id <- as.character(meta$values[["w05_crop_zenodo_draft_id"]] %||% "")
+  id <- if("w05_crop_zenodo_draft_id" %in% names(meta$values))
+    as.character(meta$values[["w05_crop_zenodo_draft_id"]]) else ""
   if(length(id)!=1L || is.na(id))return("")
   if(nzchar(id) && !grepl("^[0-9]+$",id))stop("Invalid W05 Zenodo deposit ID",call.=FALSE)
   id
