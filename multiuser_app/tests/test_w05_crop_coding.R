@@ -315,3 +315,11 @@ ptr$retained <- 7L
 stopifnot(inherits(try(w05_shiny_w04_pipeline_metrics(base,ptr,"another-review",
   run,ptr$upstream_lean_canonical_sha256),silent=TRUE),"try-error"))
 cat("PASS W04 overview is data-driven and refuses inconsistent publication counts\\n")
+
+
+# Review metadata is a named character vector; the W05 draft key is
+# normally absent until the first approved schema creates the draft.
+stopifnot(identical(w05_crop_draft_id(list(values=c(review_id="almeria-map"))),""),
+          identical(w05_crop_draft_id(list(values=c(review_id="almeria-map",
+            w05_crop_zenodo_draft_id="12345"))),"12345"))
+cat("PASS missing W05 draft metadata key is treated as an uninitialised draft\\n")
