@@ -1795,19 +1795,26 @@ server <- function(input, output, session) {
       w04_subset_registry_read(meta$review_id))
     assignments <- read_assignment_registry(assignment_path)
     events <- active_sheet_w04_decisions()
-    outcomes <- list()
-    canonical_ids <- character()
+    manually_screened_ids <- character()
     for(subset in subsets) {
       queue <- w04_subset_queue_read(as.character(subset$subset_id),meta$review_id)
       if(is.null(queue)) next
-      ids <- vapply(queue$cases,function(x)as.character(x$record_id),character(1))
-      canonical_ids <- union(canonical_ids,ids)
+      queue_ids <- vapply(queue$cases,function(x)as.character(x$record_id),character(1))
+      case_ids <- vapply(queue$cases,function(x)
+        as.character(x$review_case_id %||% ""),character(1))
+      if(anyDuplicated(queue_ids) || anyDuplicated(case_ids))
+        stop("W04 KPI queue contains duplicate canonical or case identities",call.=FALSE)
       decisions <- w04_filter_batch_decisions(events,queue$queue_sha256)
-      outcomes <- c(outcomes,w04_blind_case_outcomes(queue$cases,assignments,
-        decisions,batch_id=paste0("w04-human-",subset$subset_id),
-        task_type="manual_screening"))
+      valid <- Filter(function(x) {
+        case_id <- as.character(x$review_case_id %||% x$case_id %||% "")
+        n <- match(case_id,case_ids)
+        !is.na(n) && identical(as.character(x$record_id %||% ""),queue_ids[[n]]) &&
+          as.character(x$decision %||% "") %in% c("retain","exclude")
+      },decisions)
+      manually_screened_ids <- union(manually_screened_ids,
+        vapply(valid,function(x)as.character(x$record_id),character(1)))
     }
-    manual <- length(w04_human_coded_ids(outcomes,canonical_ids))
+    manual <- length(manually_screened_ids)
     latest <- w04_latest_subset_model_kappa(
       read_w04_consistency_analyses(),w04_model_batch_registry_read(meta$review_id))
     list(manually_screened=as.integer(manual),kappa=latest$kappa,
@@ -1937,7 +1944,7 @@ server <- function(input, output, session) {
         kpi(
           "Database searching",
           fmt_pipeline_n(p$search_results_total),
-          if(isTRUE(p$search_total_is_ingested)) "source records ingested (W01)" else "records",
+          "search results",
           stage_position=1L,
           inline_note=if(stage_complete(1L)) fmt_pipeline_delta(p$search_results_update) else NULL
         ),
