@@ -199,7 +199,7 @@ w05_shiny_restore_published_sources <- function(source, publication_pointer,
                 receipt$upstream_lean_canonical_sha256))
     stop("W04 publication does not match this review's W02 canonical source",call.=FALSE)
   canonical_lines <- w04_subset_verified_archive(source$lean,"lean")
-  ids_archive <- w04_subset_verified_archive(publication_pointer,"w04")
+  ids_archive <- w05_shiny_w04_included_ids(publication_pointer)
   ids <- ids_archive[nzchar(trimws(ids_archive))]
   if(length(ids)!=receipt$retained || anyDuplicated(ids))
     stop("W04 publication included-record count mismatch",call.=FALSE)
@@ -217,4 +217,45 @@ w05_shiny_restore_published_sources <- function(source, publication_pointer,
     stop("Restored W04 publication source checksum mismatch",call.=FALSE)
   }
   list(directory=root,canonical=canonical,included_ids=included,receipt=receipt)
+}
+
+# Restricted W04 archive reader. Validate archive and included-ID bytes.
+w05_shiny_w04_included_ids <- function(pointer) {
+  files <- pointer$archive_files %||% list()
+  archives <- Filter(function(x)grepl("[.]tar[.]gz$",as.character(x$filename %||% "")),files)
+  if(length(archives)!=1L)stop("W04 archive identity missing or duplicated",call.=FALSE)
+  item <- archives[[1L]]
+  id <- as.character(pointer$zenodo_deposition_id %||% "")
+  sha <- as.character(item$sha256 %||% "")
+  if(!grepl("^[0-9]+$",id)||!grepl("^[0-9a-f]{64}$",sha))
+    stop("Invalid restricted W04 archive provenance",call.=FALSE)
+  dep <- w04_prompt_zenodo_request(w04_prompt_deposit_endpoint(id))
+  if(!isTRUE(dep$submitted))stop("W04 archive is not published",call.=FALSE)
+  matches <- Filter(function(x)identical(as.character(x$filename),as.character(item$filename)),
+                    dep$files %||% list())
+  if(length(matches)!=1L)stop("Published W04 archive file missing",call.=FALSE)
+  url <- as.character(matches[[1L]]$links$download %||% "")
+  if(!startsWith(url,"https://zenodo.org/"))
+    stop("Untrusted W04 archive URL",call.=FALSE)
+  temp <- tempfile(fileext=".tar.gz")
+  on.exit(unlink(temp),add=TRUE)
+  req <- httr2::req_headers(httr2::request(url),
+    Authorization=paste("Bearer",Sys.getenv("ZENODO_ACCESS_TOKEN",unset="")))
+  response <- httr2::req_perform(httr2::req_timeout(req,1800),path=temp)
+  if(httr2::resp_status(response)!=200L ||
+     !identical(digest::digest(file=temp,algo="sha256",serialize=FALSE),sha))
+    stop("W04 archive checksum mismatch",call.=FALSE)
+  entries <- utils::untar(temp,list=TRUE)
+  wanted <- entries[basename(entries)=="workflow04_included_record_ids.txt"]
+  if(length(wanted)!=1L || grepl("(^/|(^|/)\\.\\.(/|$))",wanted))
+    stop("Unsafe or missing W04 included-ID archive member",call.=FALSE)
+  target <- tempfile("w04-included-")
+  dir.create(target)
+  on.exit(unlink(target,recursive=TRUE),add=TRUE)
+  utils::untar(temp,files=wanted,exdir=target)
+  p <- file.path(target,wanted)
+  if(!identical(digest::digest(file=p,algo="sha256",serialize=FALSE),
+                as.character(pointer$included_record_ids_sha256)))
+    stop("W04 included-record IDs checksum mismatch",call.=FALSE)
+  readLines(p,warn=FALSE,encoding="UTF-8")
 }
