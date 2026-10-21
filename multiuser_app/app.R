@@ -4633,9 +4633,9 @@ server <- function(input, output, session) {
        is.null(w04_finalise_export_rv()))return()
     showModal(modalDialog(
       title="Confirm W04 finalisation",
-      "Publish the verified W04 screening results to restricted Zenodo and start W05 after successful publication? This cannot be undone from the application.",
+      "Publish the verified W04 screening results to restricted Zenodo? W05 will remain paused until its coding schema is approved. W04 publication cannot be undone from the application.",
       footer=tagList(modalButton("Cancel"),
-        actionButton("w04_finalise_confirm_publish","Confirm publication and W05 handoff",class="btn-danger")),
+        actionButton("w04_finalise_confirm_publish","Confirm W04 publication only",class="btn-danger")),
       easyClose=TRUE))
   })
   observeEvent(input$w04_finalise_confirm_publish,{
