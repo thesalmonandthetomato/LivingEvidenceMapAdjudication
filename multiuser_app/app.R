@@ -22,6 +22,7 @@ source("R/w04_model_batches.R", local = TRUE)
 source("R/w05_crop_coding.R", local = TRUE)
 source("R/w05_crop_archive.R", local = TRUE)
 source("R/w05_shiny_subset_dispatch.R", local = TRUE)
+source("R/w05_shiny_subset_results.R", local = TRUE)
 source("R/w04_workspace_overview.R", local = TRUE)
 source("R/w04_work_overview_sheets.R", local = TRUE)
 source("R/w04_model_conflicts.R", local = TRUE)
@@ -1062,6 +1063,7 @@ server <- function(input, output, session) {
   w05_crop_status_rv <- reactiveVal("W05 is paused. Upload a validated CSV to archive its version in a restricted Zenodo draft.")
   w05_crop_frequencies_rv <- reactiveVal(NULL)
   w05_shiny_subset_launch_status_rv <- reactiveVal("Waiting for verified W04 publication and a validated W05 input bundle.")
+  w05_shiny_results_status_rv <- reactiveVal("No completed W05 Shiny subset results loaded.")
   w04_manual_queue_choices_rv <- reactiveVal(list())
   w04_manual_queue_status_rv <- reactiveVal("")
   w04_subsets_rv <- reactiveVal(list())
@@ -5052,6 +5054,25 @@ server <- function(input, output, session) {
   })
   output$w05_shiny_subset_launch_status <- renderText(
     w05_shiny_subset_launch_status_rv())
+  output$w05_shiny_results_status <- renderText(w05_shiny_results_status_rv())
+  observeEvent(input$w05_shiny_load_results,{
+    req(authenticated())
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role %||% ""),"administrator"))return()
+    run <- trimws(as.character(input$w05_shiny_completed_run %||% ""))
+    if(!grepl("^[0-9]+$",run)) {
+      w05_shiny_results_status_rv("Enter a numeric W05 Shiny GitHub Actions run ID.")
+      return()
+    }
+    result <- tryCatch(w05_shiny_subset_results(run),error=function(e)e)
+    if(inherits(result,"error")) {
+      w05_shiny_results_status_rv(paste("Cannot verify W05 subset results:",conditionMessage(result)))
+      return()
+    }
+    w05_crop_frequencies_rv(result$frequencies)
+    w05_shiny_results_status_rv(sprintf("Verified W05 Shiny subset run %s: %s records coded. Results are experimental, not finalised.",
+      run,result$manifest$processed_records))
+  })
   output$w05_crop_table <- renderTable({
     dict <- w05_crop_dictionary_rv()
     if(is.null(dict))return(NULL)
@@ -5501,6 +5522,11 @@ server <- function(input, output, session) {
               numericInput("w05_shiny_subset_size","Records to test",value=100,min=1,max=100000,step=1),
               uiOutput("w05_shiny_subset_launch_control"),
               textOutput("w05_shiny_subset_launch_status"),
+              tags$h6("Retrieve completed subset results"),
+              tags$p(class="saved-note","Enter a completed W05 Shiny subset GitHub Actions run ID. Results are read only, retrieved on demand, and checked against their assignments."),
+              textInput("w05_shiny_completed_run","W05 Shiny run ID",value=""),
+              actionButton("w05_shiny_load_results","Load code frequencies",class="btn-outline-secondary"),
+              textOutput("w05_shiny_results_status"),
               tags$p(class="saved-note","Full-corpus execution and final Zenodo publication remain disabled until W04 has a verified publication receipt and the Shiny execution pathway is approved."))),
             tabPanel("W08",uiOutput("w08_admin_controls")),
             tabPanel("System",uiOutput("system_admin_controls"))
