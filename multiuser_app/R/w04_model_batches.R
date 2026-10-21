@@ -209,12 +209,13 @@ w04_screening_coverage_reconcile <- function(eligible_ids,batches=list(),
       if(!human_conflict && length(model_votes) &&
          !disagree)unname(model_votes[[1L]]) else ""
     status <- if(human_conflict)"human_conflict" else
-      if(length(h)==1L && (disagree || human_model_disagree))"human_authoritative_model_conflict" else
+      if(length(h)==1L)"resolved" else
       if(disagree)"model_conflict" else
       if(length(unresolved_runs))"uncertain" else
       if(nzchar(decision))"resolved" else "missing"
     list(record_id=id,decision=decision,status=status,
          human_decisions=h,model_votes=m,adjudicated_model_votes=r,
+         human_model_disagreement=isTRUE(human_model_disagree || disagree) && length(h)==1L,
          uncertain_run_ids=uncertain[[id]] %||% character(),
          unresolved_run_ids=unresolved_runs)
   })
@@ -314,7 +315,8 @@ w04_reconciled_export_rows <- function(reconciliation,batches,
     exact <- Filter(function(z)identical(z$decision,d),candidates)
     uncertain <- Filter(function(z)identical(z$decision,"uncertain"),candidates)
     chosen <- if(length(exact))exact[[1L]] else
-              if(length(uncertain))uncertain[[1L]] else NULL
+              if(length(uncertain))uncertain[[1L]] else
+              if(length(human[[id]] %||% character())==1L && length(candidates))candidates[[1L]] else NULL
     hs <- human[[id]] %||% character()
     adjudicated <- rec$adjudicated_model_votes %||% character()
     explicit_human <- if(length(hs)==1L)hs[[1L]] else
