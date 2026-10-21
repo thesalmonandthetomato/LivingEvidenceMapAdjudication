@@ -5084,7 +5084,7 @@ server <- function(input, output, session) {
   })
   output$w05_dictionary_approval_status <- renderText({
     receipt <- w05_dictionary_receipt_rv()
-    if(is.null(receipt))return("Awaiting uploaded, verified dictionary CSV.")
+    if(is.null(receipt))return("Displayed schema is ready for approval. No CSV upload is needed unless you want to replace it.")
     if(identical(w05_dictionary_approved_sha_rv(),as.character(receipt$sha256)))
       return(paste("Approved dictionary version:",receipt$sha256,
                    "| Restricted Zenodo draft:",receipt$deposit_id))
@@ -5094,26 +5094,35 @@ server <- function(input, output, session) {
     if(!session_can("control_workflows") ||
        !identical(as.character(current_user()$role %||% ""),"administrator"))return(NULL)
     receipt <- w05_dictionary_receipt_rv()
-    if(is.null(receipt) || identical(w05_dictionary_approved_sha_rv(),as.character(receipt$sha256)))return(NULL)
-    actionButton("w05_dictionary_approve","Approve archived W05 coding schema",class="btn-primary")
+    if(!is.null(receipt) && identical(w05_dictionary_approved_sha_rv(),as.character(receipt$sha256)))return(NULL)
+    actionButton("w05_dictionary_approve","Approve displayed W05 coding schema",class="btn-primary")
   })
   observeEvent(input$w05_dictionary_approve,{
     req(authenticated())
     if(!session_can("control_workflows") ||
        !identical(as.character(current_user()$role %||% ""),"administrator"))return()
-    receipt <- w05_dictionary_receipt_rv()
-    req(!is.null(receipt),nzchar(as.character(receipt$sha256)))
     saved <- tryCatch({
+      path <- w05_crop_dictionary_path_rv()
+      if(length(path)!=1L || !nzchar(path) || !file.exists(path))
+        stop("No displayed CSV dictionary source is available",call.=FALSE)
+      current <- w05_crop_dictionary_rv()
+      if(is.null(current))stop("No displayed dictionary to approve",call.=FALSE)
+      disk <- w05_crop_read(path)
+      if(!identical(current,disk))
+        stop("Displayed dictionary differs from its source CSV; refresh the tab",call.=FALSE)
       meta <- w04_prompt_review_metadata()
-      w05_crop_approve_version(meta,receipt)
-      TRUE
+      receipt <- w05_crop_archive_upload(meta,path)
+      w05_crop_approve_version(w04_prompt_review_metadata(force=TRUE),receipt)
+      receipt
     },error=function(e)e)
     if(inherits(saved,"error")) {
       w05_crop_status_rv(paste("W05 approval could not be verified:",conditionMessage(saved)))
       return()
     }
-    w05_dictionary_approved_sha_rv(as.character(receipt$sha256))
-    w05_crop_status_rv("W05 schema approval archived in restricted Zenodo. Execution remains paused until verified W04 publication and a review-bound input bundle are available.")
+    w05_verified_input_rv(NULL)
+    w05_dictionary_receipt_rv(saved)
+    w05_dictionary_approved_sha_rv(as.character(saved$sha256))
+    w05_crop_status_rv("Displayed W05 schema approved and version archived in restricted Zenodo. You can now verify and prepare the published W04 records.")
   })
   observeEvent(input$w05_shiny_prepare_input,{
     req(authenticated())
@@ -5683,7 +5692,7 @@ server <- function(input, output, session) {
             )),
             tabPanel("W05",div(class="px-3 pb-3",
               tags$h5("W05 entity coding"),
-              tags$p(class="saved-note","The crop dictionary is read-only here. Edit a CSV outside the app and upload a new version. Unspecified crop is automatically assigned whenever no named crop matches."),
+              tags$p(class="saved-note","The displayed coding schema can be approved directly. Upload a CSV only to replace it. Unspecified crop is assigned when no named crop matches."),
               fileInput("w05_crop_upload","Upload entity coding dictionary CSV",accept=c(".csv","text/csv")),
               downloadButton("w05_crop_download","Download CSV",class="btn-outline-secondary btn-sm"),
               textOutput("w05_crop_status"),
