@@ -1223,6 +1223,18 @@ server <- function(input, output, session) {
     }
   })
 
+  # Restore saved manual-screening and model-comparison statistics at
+  # login. No separate Compare coding tab visit is required for the KPI.
+  observeEvent(authenticated(), {
+    req(authenticated())
+    summary <- tryCatch(read_manual_screening_metrics(),error=function(e)e)
+    if(inherits(summary,"error")) {
+      message("LEM W04 manual screening KPI read failed: ",conditionMessage(summary))
+    } else {
+      manual_screening_rv(summary)
+    }
+  })
+
   # Restore the read-only published W04 model-run registry when the session
   # authenticates. The summary must not depend on a separate admin button.
   observeEvent(authenticated(), {
@@ -1923,25 +1935,13 @@ server <- function(input, output, session) {
           inline_note=if(stage_complete(4L)) fmt_pipeline_delta(p$retracted_update) else NULL
         ),
         {
-          m <- if(review_mode) NULL else manual_screening_rv()
+          m <- manual_screening_rv()
           kpi(
             "Manually screened",
             if(is.null(m)) "—" else fmt_pipeline_n(m$manually_screened),
             if(is.null(m) || is.na(m$kappa)) NULL else paste0("κ ",sprintf("%.3f",m$kappa)),
             stage_position=5L
           )
-        },
-        {
-          batches <- w04_model_batches_rv()
-          latest <- if(length(batches)) {
-            ord <- order(vapply(batches,function(b)as.character(b$published_at_utc %||% ""),character(1)),decreasing=TRUE)
-            batches[[ord[[1L]]]]
-          } else NULL
-          kpi("Latest model batch",
-              if(is.null(latest)) "—" else fmt_pipeline_n(latest$total),
-              if(is.null(latest)) "load completed batches" else
-                paste0("run ",latest$run_id," · ",latest$uncertain," uncertain"),
-              stage_position=5L)
         },
         kpi(
           "Screened",
@@ -5171,7 +5171,7 @@ server <- function(input, output, session) {
                     uiOutput("w04_overview_conflicts"))),
                 tabPanel("Finalise",
                   div(class="px-3 pb-3",
-                    tags$p(class="saved-note","Check saved W04 human and model decisions against the verified eligible corpus. Read-only: no publication or W05 launch."),
+                    tags$p(class="saved-note","Your model-uncertainty decisions are saved in Shiny as you make them. They do not need a separate Send W04 to GitHub action. After selecting one model run per subset under Run model and preparing the corpus, use Check screening coverage here. When all decisions are resolved, Archive verified W04 input launches offline validation only; production publication and W05 remain disabled."),
                     actionButton("w04_finalise_check","Check screening coverage",class="btn-outline-primary btn-sm"),
                     textOutput("w04_finalise_check_status"),
                     uiOutput("w04_finalise_export_control"),
