@@ -6,18 +6,19 @@ w05_crop_validate <- function(x) {
   x[] <- lapply(x,as.character)
   x[is.na(x)] <- ""
   x[] <- lapply(x,trimws)
-  if(any(x$entity!="crop")||any(!nzchar(x$code))||anyDuplicated(x$code))
-    stop("W05 entity must be crop and codes must be unique",call.=FALSE)
-  if(!"unspecified_horticultural_crop"%in%x$code)
+  if(any(!nzchar(x$entity))||any(!nzchar(x$code))||
+     anyDuplicated(paste(x$entity,x$code,sep="::")))
+    stop("W05 entity/code pairs must be present and unique",call.=FALSE)
+  if(!any(x$entity=="crop" & x$code=="unspecified_horticultural_crop"))
     stop("W05 requires unspecified_horticultural_crop",call.=FALSE)
-  if(nzchar(x$matching_terms[x$code=="unspecified_horticultural_crop"]))
+  if(any(nzchar(x$matching_terms[x$entity=="crop" & x$code=="unspecified_horticultural_crop"])))
     stop("Unspecified crop is automatic and must have no matching terms",call.=FALSE)
-  if(any(!nzchar(x$matching_terms[x$code!="unspecified_horticultural_crop"])))
+  if(any(!nzchar(x$matching_terms[!(x$entity=="crop" & x$code=="unspecified_horticultural_crop")])))
     stop("All identified crop codes require matching terms",call.=FALSE)
   term_sets <- lapply(x$matching_terms,function(t)
     unique(tolower(trimws(strsplit(t,";",fixed=TRUE)[[1L]]))))
   term_sets <- lapply(term_sets,function(t)t[nzchar(t)])
-  owner <- unlist(Map(function(code,terms)rep(code,length(terms)),x$code,term_sets))
+  owner <- unlist(Map(function(entity,code,terms)rep(paste(entity,code,sep="::"),length(terms)),x$entity,x$code,term_sets))
   tokens <- unlist(term_sets,use.names=FALSE)
   if(anyDuplicated(paste(owner,tokens,sep=":")))
     stop("Duplicate terms detected",call.=FALSE)
@@ -41,13 +42,13 @@ w05_crop_normalise <- function(x) {
 }
 w05_crop_compile <- function(dictionary) {
   dict <- w05_crop_validate(dictionary)
-  indices <- which(dict$code!="unspecified_horticultural_crop")
+  indices <- which(!(dict$entity=="crop" & dict$code=="unspecified_horticultural_crop"))
   rules <- lapply(indices,function(i) {
     terms <- trimws(strsplit(dict$matching_terms[[i]],";",fixed=TRUE)[[1L]])
     terms <- unique(w05_crop_normalise(terms[nzchar(terms)]))
     paste0("(?<![\\p{L}\\p{N}])\\Q",terms,"\\E(?![\\p{L}\\p{N}])")
   })
-  names(rules) <- dict$code[indices]
+  names(rules) <- paste(dict$entity[indices],dict$code[indices],sep="::")
   rules
 }
 w05_crop_match_compiled <- function(title,abstract,rules) {
@@ -55,7 +56,10 @@ w05_crop_match_compiled <- function(title,abstract,rules) {
   found <- names(rules)[vapply(rules,function(patterns)
     any(vapply(patterns,function(p)isTRUE(grepl(p,txt,perl=TRUE)),logical(1))),
     logical(1))]
-  if(!length(found))"unspecified_horticultural_crop" else found
+  # Crop has a required automatic fallback; other entities only emit actual matches.
+  if(!any(startsWith(found,"crop::")))
+    found <- c(found,"crop::unspecified_horticultural_crop")
+  found
 }
 w05_crop_match <- function(title,abstract,dictionary) {
   w05_crop_match_compiled(title,abstract,w05_crop_compile(dictionary))
@@ -64,13 +68,19 @@ w05_crop_code_records <- function(records,dictionary) {
   stopifnot(is.data.frame(records),all(c("record_id","title","abstract")%in%names(records)))
   if(anyDuplicated(records$record_id)||any(!nzchar(records$record_id)))
     stop("W05 input record identifiers must be unique",call.=FALSE)
-  rules <- w05_crop_compile(dictionary)
+  dict <- w05_crop_validate(dictionary)
+  rules <- w05_crop_compile(dict)
   matched <- lapply(seq_len(nrow(records)),function(i)
     w05_crop_match_compiled(records$title[[i]],records$abstract[[i]],rules))
+  keys <- unlist(matched,use.names=FALSE)
+  parts <- strsplit(keys,"::",fixed=TRUE)
   assignments <- data.frame(record_id=rep(as.character(records$record_id),lengths(matched)),
-    code=unlist(matched,use.names=FALSE),stringsAsFactors=FALSE)
-  counts <- table(factor(assignments$code,levels=dictionary$code))
-  list(assignments=assignments,frequencies=data.frame(
-    code=names(counts),records=as.integer(counts),stringsAsFactors=FALSE),
-    records_processed=nrow(records))
+    entity=vapply(parts,`[[`,character(1),1L),
+    code=vapply(parts,`[[`,character(1),2L),stringsAsFactors=FALSE)
+  wanted <- paste(dict$entity,dict$code,sep="::")
+  counts <- table(factor(keys,levels=wanted))
+  frequencies <- data.frame(entity=dict$entity,code=dict$code,
+    records=as.integer(counts),stringsAsFactors=FALSE)
+  list(assignments=assignments,frequencies=frequencies,
+       records_processed=nrow(records))
 }
