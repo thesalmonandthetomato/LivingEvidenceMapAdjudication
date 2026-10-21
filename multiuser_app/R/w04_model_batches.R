@@ -108,10 +108,10 @@ w04_model_coded_ids <- function(batches,eligible_ids,read_results=w04_model_batc
       stop("Existing model run contains invalid canonical IDs or decisions",call.=FALSE)
     for(i in seq_along(ids)) {
       if(identical(votes[[i]],"uncertain")) next
-      old <- coded[[ids[[i]]]]
-      if(!is.null(old) && !identical(old,votes[[i]]))
-        stop("Conflicting existing model decisions for canonical ID ",ids[[i]],call.=FALSE)
-      coded[[ids[[i]]]] <- votes[[i]]
+      # This helper answers only whether an ID has been screened already.
+      # Conflicting votes remain in the saved runs for W04 reconciliation;
+      # they do not justify paid repeat screening of the same canonical ID.
+      coded[[ids[[i]]]] <- TRUE
     }
   }
   sort(names(coded))
