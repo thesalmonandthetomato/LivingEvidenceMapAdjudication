@@ -52,6 +52,7 @@ cat("PASS matching-term conflicts are scoped by entity\n")
 
 # W05 Shiny dispatcher is never permitted to launch without W04 publication,
 # and the only allowed endpoint is this repository's isolated Shiny workflow.
+github_dispatch_repo <- function() "thesalmonandthetomato/LivingEvidenceMap"
 source("R/w05_shiny_subset_dispatch.R")
 request <- list(review_id="almeria-map",zenodo_draft_id="123456",
   input_filename="w05-input.jsonl",input_sha256=paste(rep("a",64L),collapse=""),
