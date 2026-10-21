@@ -1,0 +1,37 @@
+name: Temporary W04 release guard regression
+on:
+  push:
+    paths:
+      - .github/workflows/w04_temp_final_release_guard.yml
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Parse the actual W04 Shiny deployment source and checks
+        shell: Rscript {0}
+        run: |
+          x <- parse(file="multiuser_app/app.R")
+          for(p in c("multiuser_app/R/w04_model_batches.R",
+                     "multiuser_app/R/w04_shiny_model_launch.R",
+                     "multiuser_app/R/w04_kappa_registry.R",
+                     "multiuser_app/R/w04_human_kappa_registry.R"))
+            parse(file=p)
+          app <- paste(readLines("multiuser_app/app.R",warn=FALSE),collapse="\n")
+          stopifnot(length(gregexpr('LEM_W04_SHINY_PUBLISH_ENABLED',app,
+                            fixed=TRUE)[[1L]])==3L)
+          stopifnot(grepl('unset="true"',app,fixed=TRUE))
+          stopifnot(grepl('Confirm W04 finalisation',app,fixed=TRUE))
+          stopifnot(grepl('w04_finalise_export_rv(NULL)',app,fixed=TRUE))
+          stopifnot(grepl('w04_finalise_selection_signature',app,fixed=TRUE))
+          helper <- paste(readLines("multiuser_app/R/w04_shiny_model_launch.R",
+                           warn=FALSE),collapse="\n")
+          stopifnot(grepl('w04_shiny_reconciled_publish.yml',helper,fixed=TRUE))
+          cat("PASS W04 Shiny confirmation, safety guards and deployment parser\n")
