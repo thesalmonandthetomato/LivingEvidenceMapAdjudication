@@ -170,3 +170,24 @@ bad <- run_bridge()
 stopifnot(!is.null(attr(bad,"status")),!file.exists(out))
 unlink(tmp,recursive=TRUE)
 cat("PASS offline published-W04-to-W05 materialisation and fail-closed checksum checks\\n")
+
+
+# Archive bridge must reject unverifiable input without any Zenodo writes.
+bridge_input <- tempfile(fileext=".jsonl")
+bridge_prov <- tempfile(fileext=".json")
+writeLines('{"identity":{"record_id":"r1"}}',bridge_input)
+real_sha <- digest::digest(file=bridge_input,algo="sha256",serialize=FALSE)
+bridge_meta <- list(review_id="almeria-map")
+bridge_receipt <- list(review_id="almeria-map",visibility="restricted",
+  publication_status="published",publication_run_id="123",
+  included_ids_sha256=paste(rep("a",64),collapse=""),retained=1L)
+bridge_data <- list(review_id="almeria-map",record_count=1L,
+  included_ids_sha256=bridge_receipt$included_ids_sha256,
+  input_sha256=paste(rep("b",64),collapse=""))
+jsonlite::write_json(bridge_data,bridge_prov,auto_unbox=TRUE)
+archive_calls <- 0L
+w05_crop_draft <- function(meta) {archive_calls <<- archive_calls+1L;stop("Must not reach Zenodo")}
+stopifnot(inherits(try(w05_shiny_archive_input(bridge_meta,bridge_input,
+  bridge_prov,bridge_receipt),silent=TRUE),"try-error"),archive_calls==0L)
+unlink(c(bridge_input,bridge_prov))
+cat("PASS invalid W05 input rejected before Zenodo archive activity\\n")
