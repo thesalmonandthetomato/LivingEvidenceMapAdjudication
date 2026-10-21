@@ -1062,6 +1062,7 @@ server <- function(input, output, session) {
   w05_crop_dictionary_path_rv <- reactiveVal("")
   w05_crop_status_rv <- reactiveVal("W05 is paused. Upload a validated CSV to archive its version in a restricted Zenodo draft.")
   w05_crop_frequencies_rv <- reactiveVal(NULL)
+  w05_unspecified_evidence_rv <- reactiveVal(NULL)
   w05_dictionary_receipt_rv <- reactiveVal(NULL)
   w05_verified_input_rv <- reactiveVal(NULL)
   w05_dictionary_approved_sha_rv <- reactiveVal("")
@@ -5248,6 +5249,7 @@ server <- function(input, output, session) {
       return()
     }
     w05_crop_frequencies_rv(result$frequencies)
+    w05_unspecified_evidence_rv(result$evidence)
     w05_shiny_results_status_rv(sprintf("Verified W05 Shiny subset run %s: %s records coded. Results are experimental, not finalised.",
       run,result$manifest$processed_records))
   })
@@ -5257,6 +5259,19 @@ server <- function(input, output, session) {
     dict
   },striped=TRUE,bordered=FALSE,spacing="xs",width="100%")
   output$w05_crop_status <- renderText(w05_crop_status_rv())
+  output$w05_unspecified_evidence <- renderTable({
+    evidence <- w05_unspecified_evidence_rv()
+    if(is.null(evidence))return(NULL)
+    evidence
+  },striped=TRUE,spacing="xs",width="100%")
+  output$w05_unspecified_download <- downloadHandler(
+    filename=function()"w05_unspecified_crop_evidence.csv",
+    content=function(file) {
+      req(authenticated())
+      evidence <- w05_unspecified_evidence_rv()
+      req(!is.null(evidence))
+      utils::write.csv(evidence,file,row.names=FALSE,na="")
+    },contentType="text/csv")
   output$w05_crop_frequencies <- renderTable({
     frequencies <- w05_crop_frequencies_rv()
     if(is.null(frequencies))return(data.frame(
@@ -5723,6 +5738,8 @@ server <- function(input, output, session) {
               textInput("w05_shiny_completed_run","W05 Shiny run ID",value=""),
               actionButton("w05_shiny_load_results","Load code frequencies",class="btn-outline-secondary"),
               textOutput("w05_shiny_results_status"),
+              downloadButton("w05_unspecified_download","Download unspecified-crop titles and abstracts"),
+              tableOutput("w05_unspecified_evidence"),
               tags$p(class="saved-note","Full-corpus execution and final Zenodo publication remain disabled until W04 has a verified publication receipt and the Shiny execution pathway is approved."))),
             tabPanel("W08",uiOutput("w08_admin_controls")),
             tabPanel("System",uiOutput("system_admin_controls"))
