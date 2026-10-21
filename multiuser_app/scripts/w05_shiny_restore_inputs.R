@@ -13,8 +13,10 @@ token <- scalar("ZENODO_ACCESS_TOKEN")
 if(!grepl("^[A-Za-z0-9][A-Za-z0-9._-]{2,127}$",review)||
    !grepl("^[0-9]+$",id)||
    !all(grepl("^[A-Za-z0-9][A-Za-z0-9._-]*$",c(input,dict)))||
-   !all(grepl("^[a-f0-9]{64}$",c(ish,dsh)))||!nzchar(token))
-  stop("Invalid W05 Shiny Zenodo input parameters",call.=FALSE)
+   !all(grepl("^[a-f0-9]{64}$",c(ish,dsh))) )
+  stop("Invalid W05 Shiny input identifiers or checksums",call.=FALSE)
+if(!nzchar(token))
+  stop("ZENODO_ACCESS_TOKEN is missing from the Adjudication repository Actions secrets",call.=FALSE)
 get <- function(url) {
   req <- request(url) |> req_headers(Authorization=paste("Bearer",token))
   resp <- req_perform(req_timeout(req,180))
@@ -30,9 +32,10 @@ files <- dep$files %||% list()
 find_one <- function(name) {
   found <- Filter(function(f)identical(as.character(f$filename),name),files)
   if(length(found)!=1L)stop("W05 Zenodo draft input missing or duplicated",call.=FALSE)
-  url <- as.character(found[[1L]]$links$download %||% "")
-  if(!startsWith(url,"https://zenodo.org/"))stop("Untrusted Zenodo file link",call.=FALSE)
-  url
+  bucket <- as.character(dep$links$bucket %||% "")
+  if(!startsWith(bucket,"https://zenodo.org/api/files/"))
+    stop("Unexpected restricted Zenodo deposit bucket",call.=FALSE)
+  paste0(sub("/$","",bucket),"/",utils::URLencode(name,reserved=TRUE))
 }
 dest <- file.path(Sys.getenv("RUNNER_TEMP"),"w05-shiny")
 dir.create(dest,recursive=TRUE,showWarnings=FALSE)
