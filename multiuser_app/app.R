@@ -1227,7 +1227,24 @@ server <- function(input, output, session) {
       review <- as.character(metadata$value[match("review_id",metadata$key)])
       if(length(review)!=1L||is.na(review)||!grepl("^[A-Za-z0-9._-]{3,128}$",review))
         stop("Missing valid review_id in the active review_metadata tab")
-      read_review_published_w01_w02(review,ss)
+      base <- read_review_published_w01_w02(review,ss)
+      # Only use an exact-review successful W04-only workflow and its
+      # independently published pointer, bound to this review's W03 source.
+      tryCatch({
+        runs <- github_api_get_json(sprintf(
+          "https://api.github.com/repos/%s/actions/runs?per_page=100",
+          github_dispatch_repo()))$workflow_runs %||% list()
+        run <- w05_shiny_discover_w04_publication(review,runs)
+        if(is.null(run)) return(base)
+        pointer <- jsonlite::fromJSON(read_github_text_file(sprintf(
+          "docs/workflow04/zenodo/run-%s.json",run$id)),simplifyVector=FALSE)
+        source <- w04_subset_review_source_pointers()
+        w05_shiny_w04_pipeline_metrics(base,pointer,review,run,
+          source$lean$lean_canonical_sha256)
+      },error=function(e) {
+        message("W04 overview publication overlay not verified: ",conditionMessage(e))
+        base
+      })
     },error=function(e)e)
     if(inherits(metrics,"error")) {
       review_reporting_error_rv(conditionMessage(metrics))
