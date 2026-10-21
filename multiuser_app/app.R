@@ -4616,6 +4616,19 @@ server <- function(input, output, session) {
       url=as.character(result$html_url %||% ""))
     if(!identical(current,updated))w04_finalise_submission_rv(updated)
   })
+  output$w04_finalise_publish_reason <- renderText({
+    if(!identical(Sys.getenv("LEM_W04_SHINY_PUBLISH_ENABLED",unset="true"),"true"))
+      return("Publication is disabled by the Shiny deployment setting LEM_W04_SHINY_PUBLISH_ENABLED. An administrator must enable it.")
+    snapshot <- w04_finalise_export_rv()
+    if(is.null(snapshot))
+      return("Publication is not ready: no verified export bundle is held in this session. Refresh finalisation data, then verify the final screening runs.")
+    rows <- snapshot$rows %||% list()
+    if(!length(rows))
+      return("Publication is not ready: the verified export contains no records.")
+    if(isTRUE(w04_finalise_dispatch_busy_rv()))
+      return("W04 publication submission is being processed.")
+    "Ready to request publication. Click Finalise W04, then confirm in the dialogue."
+  })
   output$w04_finalise_publish_control <- renderUI({
     if(!session_can("control_workflows") ||
        !identical(as.character(current_user()$role %||% ""),"administrator"))
@@ -5644,6 +5657,7 @@ server <- function(input, output, session) {
                     uiOutput("w04_model_run_choices"),
                     textOutput("w04_finalise_check_status"),
                     uiOutput("w04_finalise_publish_control"),
+                    textOutput("w04_finalise_publish_reason"),
                     uiOutput("w04_finalise_submission_status")))
               )
             )),
