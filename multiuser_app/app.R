@@ -4546,6 +4546,33 @@ server <- function(input, output, session) {
       "SHA-256",result$sha256,
       "Offline GitHub validation dispatched; no publication or W05 launch."))
   })
+  w04_finalise_prepare_status_rv <- reactiveVal("")
+  output$w04_finalise_prepare_status <- renderText(w04_finalise_prepare_status_rv())
+  observeEvent(input$w04_finalise_prepare,{
+    req(authenticated())
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role),"administrator"))return()
+    w04_finalise_export_rv(NULL)
+    w04_finalise_selection_batches_rv(list())
+    result <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      source <- w04_subset_review_source_pointers()
+      if(!identical(as.character(meta$review_id),as.character(source$review_id)))
+        stop("Review-bound source mismatch",call.=FALSE)
+      eligible <- w04_subset_load_eligible(source$lean,source$w03)
+      list(corpus=c(eligible,list(review_id=meta$review_id)),
+           batches=w04_model_batch_registry_read(meta$review_id))
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_finalise_prepare_status_rv(paste("Cannot load finalisation:",conditionMessage(result)))
+      return()
+    }
+    w04_subset_corpus_rv(result$corpus)
+    w04_finalise_selection_batches_rv(result$batches)
+    w04_finalise_prepare_status_rv(sprintf(
+      "%d eligible records; %d saved model runs. Select one run per subset, then check coverage.",
+      length(result$corpus$record_ids),length(result$batches)))
+  })
   observeEvent(input$w04_finalise_check,{
     w04_finalise_export_rv(NULL)
     req(authenticated())
@@ -5089,9 +5116,6 @@ server <- function(input, output, session) {
                   conditionalPanel("input.w04_model_launch_mode == 'registered'",
                     uiOutput("w04_model_subset_selector")),
                   uiOutput("w04_model_prompt_selector"),
-                  tags$h5("Select authoritative model runs for existing subsets"),
-                  tags$p(class="saved-note","Choose one completed run for each subset. Earlier versions remain archived for comparison and will not contribute to this screening selection."),
-                  uiOutput("w04_model_run_choices"),
                   conditionalPanel("input.w04_model_launch_mode == 'reconstructed'",
                     tags$div(class="mt-3",
                       tags$p(class="saved-note","Remaining records exclude completed model classifications. Add previously registered subsets only if you intentionally want to rescreen them."),
@@ -5174,8 +5198,11 @@ server <- function(input, output, session) {
                     uiOutput("w04_overview_conflicts"))),
                 tabPanel("Finalise",
                   div(class="px-3 pb-3",
-                    tags$p(class="saved-note","Your model-uncertainty decisions are saved in Shiny as you make them. They do not need a separate Send W04 to GitHub action. After selecting one model run per subset under Run model and preparing the corpus, use Check screening coverage here. When all decisions are resolved, Archive verified W04 input launches offline validation only; production publication and W05 remain disabled."),
-                    actionButton("w04_finalise_check","Check screening coverage",class="btn-outline-primary btn-sm"),
+                    tags$p(class="saved-note","Choose the final completed model run for each subset below. Previous experimental runs are retained but not used. Your saved uncertainty decisions are included automatically. No model screening is run here."),
+                    actionButton("w04_finalise_prepare","Load finalisation data",class="btn-outline-secondary btn-sm"),
+                    textOutput("w04_finalise_prepare_status"),
+                    uiOutput("w04_model_run_choices"),
+                    actionButton("w04_finalise_check","Check final screening coverage",class="btn-outline-primary btn-sm"),
                     textOutput("w04_finalise_check_status"),
                     uiOutput("w04_finalise_export_control"),
                     actionButton("w04_finalise_archive","Archive verified W04 input",
