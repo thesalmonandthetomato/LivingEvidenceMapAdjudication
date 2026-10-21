@@ -1780,13 +1780,38 @@ server <- function(input, output, session) {
   }
 
   read_manual_screening_metrics <- function() {
-    registry <- if (identical(storage_backend(),"google_sheets")) {
-      sync_w04_kappa_registry_from_github()
-    } else {
-      read_github_w04_kappa_registry()
+    if(!identical(storage_backend(),"google_sheets")) {
+      registry <- read_github_w04_kappa_registry()
+      w04_kappa_registry_rv(registry)
+      return(w04_kappa_registry_summary(registry))
     }
-    w04_kappa_registry_rv(registry)
-    w04_kappa_registry_summary(registry)
+    meta <- w04_prompt_review_metadata()
+    source <- w04_subset_review_source_pointers()
+    if(!identical(as.character(meta$review_id),as.character(source$review_id)))
+      stop("W04 manual screening KPI review mismatch",call.=FALSE)
+    subsets <- Filter(function(x)
+      identical(tolower(as.character(x$source_checkpoint_sha256)),
+        tolower(as.character(source$lean$lean_canonical_sha256))),
+      w04_subset_registry_read(meta$review_id))
+    assignments <- read_assignment_registry(assignment_path)
+    events <- active_sheet_w04_decisions()
+    outcomes <- list()
+    canonical_ids <- character()
+    for(subset in subsets) {
+      queue <- w04_subset_queue_read(as.character(subset$subset_id),meta$review_id)
+      if(is.null(queue)) next
+      ids <- vapply(queue$cases,function(x)as.character(x$record_id),character(1))
+      canonical_ids <- union(canonical_ids,ids)
+      decisions <- w04_filter_batch_decisions(events,queue$queue_sha256)
+      outcomes <- c(outcomes,w04_blind_case_outcomes(queue$cases,assignments,
+        decisions,batch_id=paste0("w04-human-",subset$subset_id),
+        task_type="manual_screening"))
+    }
+    manual <- length(w04_human_coded_ids(outcomes,canonical_ids))
+    latest <- w04_latest_subset_model_kappa(
+      read_w04_consistency_analyses(),w04_model_batch_registry_read(meta$review_id))
+    list(manually_screened=as.integer(manual),kappa=latest$kappa,
+         kappa_n=latest$kappa_n,batches=latest$subsets)
   }
 
   pipeline_summary_ui <- function() {
