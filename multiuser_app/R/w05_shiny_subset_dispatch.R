@@ -145,3 +145,32 @@ w05_shiny_w04_publication_status <- function(review_id, registry_text) {
   list(status="candidate_receipt_only",review_id=review_id,
        publication_run_id=as.character(x$publication_github_run_id))
 }
+
+# Translate the established production W04 receipt into the Shiny bridge
+# contract, only after independently binding the run to the current review.
+w05_shiny_bind_w04_receipt <- function(pointer, review_id, run) {
+  scalar <- function(x)if(is.null(x)||length(x)!=1L||is.na(x)) "" else as.character(x)
+  id <- scalar(pointer$publication_github_run_id)
+  title <- scalar(run$display_title)
+  if(!identical(scalar(pointer$workflow),"04") ||
+     !identical(scalar(pointer$state),"relevance_screening") ||
+     !identical(scalar(pointer$status),"published") ||
+     !identical(scalar(pointer$visibility),"restricted") ||
+     !grepl("^[0-9]+$",id) ||
+     !identical(id,scalar(run$id)) ||
+     !identical(scalar(run$path),".github/workflows/w04_shiny_publish_only.yml") ||
+     !identical(scalar(run$conclusion),"success") ||
+     !startsWith(title,paste0("W04 Shiny only publication ",review_id," ")))
+    stop("W04 receipt has no verified Shiny publication binding to this review",call.=FALSE)
+  sha <- scalar(pointer$included_record_ids_sha256)
+  lean <- scalar(pointer$upstream_lean_canonical_sha256)
+  if(!grepl("^[a-f0-9]{64}$",sha) || !grepl("^[a-f0-9]{64}$",lean) ||
+     is.na(suppressWarnings(as.integer(pointer$retained))) ||
+     as.integer(pointer$retained)<1L)
+    stop("Invalid published W04 receipt provenance",call.=FALSE)
+  list(review_id=review_id,publication_status="published",
+       publication_run_id=id,visibility="restricted",
+       included_ids_sha256=sha,upstream_lean_canonical_sha256=lean,
+       retained=as.integer(pointer$retained),
+       zenodo_record_id=scalar(pointer$zenodo_record_id))
+}
