@@ -217,6 +217,13 @@ w04_finalise_bundle_build <- function(meta,source,snapshot) {
        !identical(as.character(x$status %||% ""),"resolved") ||
        !as.character(x$decision %||% "") %in% c("retain","exclude"),logical(1))))
     stop("W04 finalisation archive requires complete substantive decisions",call.=FALSE)
+  selected <- snapshot$selected_model_runs %||% list()
+  if(!length(selected) || anyDuplicated(vapply(selected,function(x)
+      as.character(x$subset_id %||% ""),character(1))) ||
+     any(vapply(selected,function(x)
+       !grepl("^[0-9]+$",as.character(x$run_id %||% "")) ||
+       !grepl("^[0-9a-f]{64}$",tolower(as.character(x$prompt_sha256 %||% ""))),logical(1))))
+    stop("Selected model run and prompt provenance is incomplete",call.=FALSE)
   payload <- vapply(rows,function(x)jsonlite::toJSON(x,auto_unbox=TRUE,
      null="null",na="null",digits=NA),character(1))
   sha <- digest::digest(paste(payload,collapse="\n"),algo="sha256",serialize=FALSE)
@@ -225,6 +232,7 @@ w04_finalise_bundle_build <- function(meta,source,snapshot) {
        source_checkpoint_sha256=tolower(as.character(snapshot$checkpoint_sha256)),
        source_lean_pointer=as.character(source$lean_path),
        source_w03_pointer=as.character(source$w03_path),
+       selected_model_runs=selected,
        record_count=length(rows),records_sha256=sha,
        records=rows)
 }
