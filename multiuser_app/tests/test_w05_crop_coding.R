@@ -39,3 +39,13 @@ stopifnot(all(c("tomato")%in%one$code),
           !any(two$entity=="practice" & two$code=="unspecified_horticultural_crop"),
           all(c("entity","code","records")%in%names(multi_result$frequencies)))
 cat("PASS multi-entity assignments and crop-only fallback\n")
+
+# A term may be relevant in distinct entity types but cannot map to two codes
+# inside the same entity.
+shared <- rbind(d,data.frame(entity="intervention",code="tomato_training",
+  matching_terms="tomato",stringsAsFactors=FALSE))
+stopifnot(nrow(w05_crop_validate(shared))==49L)
+conflicted <- rbind(d,data.frame(entity="crop",code="duplicate_tomato",
+  matching_terms="tomato",stringsAsFactors=FALSE))
+stopifnot(inherits(try(w05_crop_validate(conflicted),silent=TRUE),"try-error"))
+cat("PASS matching-term conflicts are scoped by entity\n")
