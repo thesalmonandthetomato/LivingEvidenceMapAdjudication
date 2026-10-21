@@ -4561,7 +4561,8 @@ server <- function(input, output, session) {
     if(!session_can("control_workflows") ||
        !identical(as.character(current_user()$role %||% ""),"administrator"))
       return(NULL)
-    ready <- !is.null(w04_finalise_export_rv()) &&
+    ready <- identical(Sys.getenv("LEM_W04_SHINY_PUBLISH_ENABLED",unset="false"),"true") &&
+      !is.null(w04_finalise_export_rv()) &&
       !isTRUE(w04_finalise_dispatch_busy_rv())
     actionButton("w04_finalise_publish",
       "Finalise W04 and proceed to W05",
@@ -4572,6 +4573,7 @@ server <- function(input, output, session) {
     if(!session_can("control_workflows") ||
        !identical(as.character(current_user()$role %||% ""),"administrator") ||
        isTRUE(w04_finalise_dispatch_busy_rv()) ||
+       !identical(Sys.getenv("LEM_W04_SHINY_PUBLISH_ENABLED",unset="false"),"true") ||
        is.null(w04_finalise_export_rv()))return()
     showModal(modalDialog(
       title="Confirm W04 finalisation",
@@ -4585,7 +4587,8 @@ server <- function(input, output, session) {
     req(authenticated())
     if(!session_can("control_workflows") ||
        !identical(as.character(current_user()$role %||% ""),"administrator") ||
-       isTRUE(w04_finalise_dispatch_busy_rv()))return()
+       isTRUE(w04_finalise_dispatch_busy_rv()) ||
+       !identical(Sys.getenv("LEM_W04_SHINY_PUBLISH_ENABLED",unset="false"),"true"))return()
     w04_finalise_dispatch_busy_rv(TRUE)
     on.exit(w04_finalise_dispatch_busy_rv(FALSE),add=TRUE)
     result <- tryCatch({
