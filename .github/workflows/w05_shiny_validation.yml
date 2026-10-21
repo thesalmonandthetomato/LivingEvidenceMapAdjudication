@@ -1,6 +1,15 @@
 name: W05 Shiny pathway isolated validation
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'multiuser_app/R/w05_crop_coding.R'
+      - 'multiuser_app/R/w05_crop_archive.R'
+      - 'multiuser_app/scripts/w05_crop_worker.R'
+      - 'multiuser_app/tests/test_w05_crop_coding.R'
+      - 'multiuser_app/config/w05_almeria_crop_dictionary.csv'
+      - '.github/workflows/w05_shiny_validation.yml'
 permissions:
   contents: read
 jobs:
