@@ -49,3 +49,23 @@ conflicted <- rbind(d,data.frame(entity="crop",code="duplicate_tomato",
   matching_terms="tomato",stringsAsFactors=FALSE))
 stopifnot(inherits(try(w05_crop_validate(conflicted),silent=TRUE),"try-error"))
 cat("PASS matching-term conflicts are scoped by entity\n")
+
+# W05 Shiny dispatcher is never permitted to launch without W04 publication,
+# and the only allowed endpoint is this repository's isolated Shiny workflow.
+source("R/w05_shiny_subset_dispatch.R")
+request <- list(review_id="almeria-map",zenodo_draft_id="123456",
+  input_filename="w05-input.jsonl",input_sha256=paste(rep("a",64L),collapse=""),
+  dictionary_filename="w05-crops.csv",dictionary_sha256=paste(rep("b",64L),collapse=""),
+  subset_count="100")
+calls <- 0L
+w05_shiny_gh_request <- function(url,method="GET",payload=NULL) {
+  calls <<- calls+1L
+  stopifnot(identical(method,"POST"),
+    identical(url,"https://api.github.com/repos/thesalmonandthetomato/LivingEvidenceMapAdjudication/actions/workflows/w05_shiny_subset.yml/dispatches"),
+    identical(payload$ref,"main"),identical(payload$inputs$subset_count,"100"))
+  invisible(TRUE)
+}
+stopifnot(inherits(try(w05_shiny_subset_dispatch(request),silent=TRUE),"try-error"),calls==0L)
+w05_shiny_subset_dispatch(request,w04_published=TRUE)
+stopifnot(calls==1L)
+cat("PASS W05 Shiny dispatcher respects verified W04 gate and isolated workflow target\n")
