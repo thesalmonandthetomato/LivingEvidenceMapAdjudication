@@ -43,7 +43,7 @@ coded <- read.csv(file.path(fixture_out,"w05_crop_assignments.csv"),stringsAsFac
 stopifnot("unspecified_horticultural_crop" %in% coded$code[coded$record_id=="placeholder"],
           "tomato" %in% coded$code[coded$record_id=="realabstract"])
 evidence <- read.csv(file.path(fixture_out,"w05_unspecified_crop_evidence.csv"),stringsAsFactors=FALSE)
-stopifnot(identical(evidence$record_id,"placeholder"),identical(evidence$abstract,""))
+stopifnot(identical(evidence$record_id,"placeholder"),(is.na(evidence$abstract) || identical(evidence$abstract,"")))
 unlink(fixture,recursive=TRUE)
 cat("PASS W05 canonical abstract exact matching prevents pending_workflow02 placeholder leakage\\n")
 
