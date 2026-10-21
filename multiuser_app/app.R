@@ -4660,8 +4660,8 @@ server <- function(input, output, session) {
     paste(choices,collapse="|")
   })
   observeEvent(w04_finalise_selection_signature(),{
-    req(w04_finalise_selection_signature())
     w04_finalise_export_rv(NULL)
+    req(w04_finalise_selection_signature())
     req(authenticated())
     if(!session_can("control_workflows") ||
        !identical(as.character(current_user()$role),"administrator"))return()
