@@ -225,3 +225,25 @@ legacy <- paste('"publication_github_run_id","visibility","retained","unresolved
 state <- w05_shiny_w04_publication_status("almeria-map",legacy)
 stopifnot(identical(state$status,"awaiting_review_bound_receipt"))
 cat("PASS Shiny does not adopt an unbound global W04 publication\\n")
+
+
+# Exact Shiny publication run binds an established, unmodified W04 pointer
+# to the review. Reject other reviews and the automatic-handoff workflow.
+p <- list(workflow="04",state="relevance_screening",status="published",
+ visibility="restricted",publication_github_run_id="919",
+ retained=12L,zenodo_record_id="5151",
+ included_record_ids_sha256=paste(rep("a",64L),collapse=""),
+ upstream_lean_canonical_sha256=paste(rep("b",64L),collapse=""))
+run <- list(id=919L,conclusion="success",
+ path=".github/workflows/w04_shiny_publish_only.yml",
+ display_title="W04 Shiny only publication almeria-map bundle.json")
+bound <- w05_shiny_bind_w04_receipt(p,"almeria-map",run)
+stopifnot(identical(bound$review_id,"almeria-map"),
+ identical(bound$included_ids_sha256,p$included_record_ids_sha256),
+ identical(bound$publication_status,"published"))
+bad <- run;bad$path <- ".github/workflows/w04_shiny_reconciled_publish.yml"
+stopifnot(inherits(try(w05_shiny_bind_w04_receipt(p,"almeria-map",bad),
+ silent=TRUE),"try-error"))
+stopifnot(inherits(try(w05_shiny_bind_w04_receipt(p,"other-map",run),
+ silent=TRUE),"try-error"))
+cat("PASS existing W04 receipt bound to exact Shiny publication review and run\n")
