@@ -21,6 +21,7 @@ source("R/w04_shiny_model_launch.R", local = TRUE)
 source("R/w04_model_batches.R", local = TRUE)
 source("R/w05_crop_coding.R", local = TRUE)
 source("R/w05_crop_archive.R", local = TRUE)
+source("R/w05_shiny_subset_dispatch.R", local = TRUE)
 source("R/w04_workspace_overview.R", local = TRUE)
 source("R/w04_work_overview_sheets.R", local = TRUE)
 source("R/w04_model_conflicts.R", local = TRUE)
@@ -1060,6 +1061,7 @@ server <- function(input, output, session) {
   w05_crop_dictionary_path_rv <- reactiveVal("")
   w05_crop_status_rv <- reactiveVal("W05 is paused. Upload a validated CSV to archive its version in a restricted Zenodo draft.")
   w05_crop_frequencies_rv <- reactiveVal(NULL)
+  w05_shiny_subset_launch_status_rv <- reactiveVal("Waiting for verified W04 publication and a validated W05 input bundle.")
   w04_manual_queue_choices_rv <- reactiveVal(list())
   w04_manual_queue_status_rv <- reactiveVal("")
   w04_subsets_rv <- reactiveVal(list())
@@ -5042,6 +5044,14 @@ server <- function(input, output, session) {
       } else w05_crop_status_rv(paste("Cannot load draft vocabulary:",conditionMessage(example)))
     }
   })
+  output$w05_shiny_subset_launch_control <- renderUI({
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role %||% ""),"administrator"))return(NULL)
+    actionButton("w05_shiny_subset_launch","Run W05 Shiny subset",
+      class="btn-outline-primary",disabled="disabled")
+  })
+  output$w05_shiny_subset_launch_status <- renderText(
+    w05_shiny_subset_launch_status_rv())
   output$w05_crop_table <- renderTable({
     dict <- w05_crop_dictionary_rv()
     if(is.null(dict))return(NULL)
@@ -5486,8 +5496,12 @@ server <- function(input, output, session) {
               tags$h6("Deterministic coding results"),
               tags$p(class="saved-note","Frequency counts are the number of distinct records assigned to each code. One record can have multiple identified crops; unspecified is assigned only when no crop is identified."),
               tableOutput("w05_crop_frequencies"),
-              tags$p(class="saved-note","Subset and full-corpus execution are temporarily paused. The existing W05 worker uses a salmon-species configuration and must be adapted and validated before either can run. Experimental subset results will not contribute to the future full-corpus run."),
-              tags$span(class="badge bg-secondary","W05 execution paused"))),
+              tags$h6("Shiny subset testing"),
+              tags$p(class="saved-note","This is the separate W05 Shiny execution pathway, not the existing production GitHub pipeline. Experimental subset runs use the uploaded dictionary. The full-corpus run will later start afresh."),
+              numericInput("w05_shiny_subset_size","Records to test",value=100,min=1,max=100000,step=1),
+              uiOutput("w05_shiny_subset_launch_control"),
+              textOutput("w05_shiny_subset_launch_status"),
+              tags$p(class="saved-note","Full-corpus execution and final Zenodo publication remain disabled until W04 has a verified publication receipt and the Shiny execution pathway is approved."))),
             tabPanel("W08",uiOutput("w08_admin_controls")),
             tabPanel("System",uiOutput("system_admin_controls"))
           )
