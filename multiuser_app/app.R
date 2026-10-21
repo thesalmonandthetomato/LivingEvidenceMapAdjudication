@@ -4601,10 +4601,21 @@ server <- function(input, output, session) {
     w04_finalise_selection_batches_rv(result$batches)
     w04_finalise_last_refresh_rv(refresh)
     w04_finalise_prepare_status_rv(sprintf(
-      "%d eligible records; %d saved model runs. Select one run per subset, then check coverage.",
+      "%d eligible records; %d saved model runs. Select one run per subset. Coverage checks then run automatically.",
       length(result$corpus$record_ids),length(result$batches)))
   })
-  observeEvent(input$w04_finalise_check,{
+  w04_finalise_selection_signature <- reactive({
+    batches <- w04_finalise_selection_batches_rv()
+    if(!length(batches)) return(NULL)
+    ids <- unique(vapply(batches,function(b)as.character(b$subset_id),character(1)))
+    choices <- vapply(ids,function(id)as.character(input[[paste0(
+      "w04_use_run_",substr(digest::digest(id,algo="sha256",serialize=FALSE),1L,16L)
+    )]] %||% ""),character(1))
+    if(any(!nzchar(choices))) return(NULL)
+    paste(choices,collapse="|")
+  })
+  observeEvent(w04_finalise_selection_signature(),{
+    req(w04_finalise_selection_signature())
     w04_finalise_export_rv(NULL)
     req(authenticated())
     if(!session_can("control_workflows") ||
@@ -5238,7 +5249,6 @@ server <- function(input, output, session) {
                     actionButton("w04_finalise_prepare","Refresh finalisation data",class="btn-outline-secondary btn-sm"),
                     textOutput("w04_finalise_prepare_status"),
                     uiOutput("w04_model_run_choices"),
-                    actionButton("w04_finalise_check","Check final screening coverage",class="btn-outline-primary btn-sm"),
                     textOutput("w04_finalise_check_status"),
                     uiOutput("w04_finalise_export_control"),
                     actionButton("w04_finalise_archive","Validate reconciled W04 outputs (does not publish)",
