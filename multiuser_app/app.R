@@ -4617,6 +4617,10 @@ server <- function(input, output, session) {
       export <- if(isTRUE(coverage$ready))
         w04_reconciled_export_rows(coverage,batches,human) else NULL
       list(coverage=coverage,export=export,review_id=meta$review_id,
+           selected_model_runs=lapply(batches,function(b)list(
+             run_id=as.character(b$run_id),subset_id=as.character(b$subset_id),
+             prompt_version_id=as.character(b$prompt_version_id),
+             prompt_sha256=as.character(b$prompt_sha256))),
            checkpoint_sha256=tolower(as.character(corpus$checkpoint_sha256)))
     },error=function(e)e)
     if(inherits(result,"error")) {
@@ -4625,7 +4629,8 @@ server <- function(input, output, session) {
       coverage <- result$coverage
       if(isTRUE(coverage$ready))
         w04_finalise_export_rv(list(rows=result$export,
-          review_id=result$review_id,checkpoint_sha256=result$checkpoint_sha256))
+          review_id=result$review_id,selected_model_runs=result$selected_model_runs,
+          checkpoint_sha256=result$checkpoint_sha256))
       w04_finalise_check_status(sprintf(
         "Verified: %d eligible, %d resolved; %d missing, %d uncertain, %d conflicts. %s",
         coverage$eligible,coverage$resolved,length(coverage$missing),
