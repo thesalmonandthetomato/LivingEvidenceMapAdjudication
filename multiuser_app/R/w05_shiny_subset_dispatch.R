@@ -240,9 +240,14 @@ w05_shiny_w04_included_ids <- function(pointer) {
   matches <- Filter(function(x)identical(as.character(x$filename),as.character(item$filename)),
                     dep$files %||% list())
   if(length(matches)!=1L)stop("Published W04 archive file missing",call.=FALSE)
-  url <- as.character(matches[[1L]]$links$download %||% "")
-  if(!startsWith(url,"https://zenodo.org/"))
-    stop("Untrusted W04 archive URL",call.=FALSE)
+  # Published restricted archives are retrieved from the authenticated
+  # deposition bucket, as in the already working W02 restoration path.
+  # Public record-file download links can return 404 for restricted files.
+  bucket <- as.character(dep$links$bucket %||% "")
+  if(!startsWith(bucket,"https://zenodo.org/api/files/"))
+    stop("Unexpected published W04 Zenodo bucket",call.=FALSE)
+  url <- paste0(sub("/$","",bucket),"/",
+    utils::URLencode(as.character(item$filename),reserved=TRUE))
   temp <- tempfile(fileext=".tar.gz")
   on.exit(unlink(temp),add=TRUE)
   req <- httr2::req_headers(httr2::request(url),
