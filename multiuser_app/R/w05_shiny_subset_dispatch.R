@@ -55,6 +55,22 @@ w05_shiny_subset_dispatch <- function(request, w04_published=FALSE, schema_appro
   invisible(TRUE)
 }
 
+# Finalisation is separate from trials: never supplies subset_count or trial outputs.
+w05_shiny_finalise_dispatch <- function(request,w04_published=FALSE,schema_approved=FALSE) {
+  if(!isTRUE(w04_published)||!isTRUE(schema_approved))
+    stop("Final W05 requires verified W04 publication and approved dictionary",call.=FALSE)
+  expected <- c("review_id","zenodo_draft_id","input_filename","input_sha256",
+                "dictionary_filename","dictionary_sha256")
+  if(!identical(sort(names(request)),sort(expected)))
+    stop("Final W05 accepts only immutable full-corpus inputs",call.=FALSE)
+  checked <- w05_shiny_subset_validate_request(c(request,list(subset_count="1")))
+  checked$subset_count <- NULL
+  url <- sprintf("https://api.github.com/repos/%s/actions/workflows/w05_shiny_finalise.yml/dispatches",
+                 w05_shiny_repo())
+  w05_shiny_gh_request(url,"POST",list(ref="main",inputs=checked))
+  invisible(TRUE)
+}
+
 # Pure, fail-closed provenance gate; deliberately does not download, publish or
 # dispatch any workflow. The archive materialisation step must supply these
 # independently verified values from the authoritative W04 publication receipt.
