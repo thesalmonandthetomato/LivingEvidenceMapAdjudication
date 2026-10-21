@@ -5235,10 +5235,14 @@ server <- function(input, output, session) {
     w06_prompt_receipt_rv(NULL)
     uploaded <- input$w06_shiny_prompt_upload
     result <- tryCatch({
-      if(is.null(uploaded) || !grepl("[.]txt$|[.]md$",uploaded$name,ignore.case=TRUE))
-        stop("Upload a .txt or .md prompt",call.=FALSE)
+      if(is.null(uploaded))stop("Upload a W06 prompt",call.=FALSE)
+      content <- w04_prompt_from_upload(uploaded$datapath,uploaded$name)
+      if(!nzchar(trimws(content)))stop("Extracted W06 prompt is empty",call.=FALSE)
+      prompt_path <- tempfile(fileext=".txt")
+      on.exit(unlink(prompt_path),add=TRUE)
+      writeLines(content,prompt_path,useBytes=TRUE)
       meta <- w04_prompt_review_metadata()
-      w06_shiny_prompt_save(meta,uploaded$datapath)
+      w06_shiny_prompt_save(meta,prompt_path)
     },error=function(e)e)
     if(inherits(result,"error")) {
       w06_prompt_status_rv(paste("W06 prompt not archived:",conditionMessage(result)))
@@ -5883,8 +5887,8 @@ server <- function(input, output, session) {
             tabPanel("W06",div(class="px-3 pb-3",
               tags$h5("W06 geography prompt configuration"),
               tags$p(class="saved-note","W06 is topic-agnostic. Any geography limits, location definitions and extraction rules belong in the uploaded prompt. No model runs automatically."),
-              fileInput("w06_shiny_prompt_upload","Upload W06 model prompt (.txt or .md)",
-                accept=c(".txt",".md","text/plain","text/markdown")),
+              fileInput("w06_shiny_prompt_upload","Upload W06 model prompt (TXT, Markdown, DOCX or PDF)",
+                accept=c(".txt",".md",".docx",".pdf")),
               textOutput("w06_shiny_prompt_status"),
               actionButton("w06_shiny_prompt_approve","Approve archived W06 prompt",
                 class="btn-outline-primary"),
