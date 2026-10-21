@@ -8,7 +8,8 @@ w06_shiny_prompt_text <- function(path) {
   content
 }
 w06_shiny_prompt_draft_id <- function(meta) {
-  id <- as.character(meta$values[["w06_prompt_zenodo_draft_id"]] %||% "")
+  id <- if("w06_prompt_zenodo_draft_id" %in% names(meta$values))
+    as.character(meta$values[["w06_prompt_zenodo_draft_id"]]) else ""
   if(length(id)!=1L || is.na(id) ||
      (nzchar(id) && !grepl("^[0-9]+$",id)))
     stop("Invalid review W06 prompt draft",call.=FALSE)
