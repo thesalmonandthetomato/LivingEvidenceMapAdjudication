@@ -120,3 +120,28 @@ w05_shiny_prepare_handover <- function(meta, canonical, included_ids,
   w05_shiny_verify_w04_bridge(publication_receipt,provenance,meta$review_id)
   w05_shiny_archive_input(meta,output,manifest,publication_receipt)
 }
+
+# Read-only review-scoped lookup. Absence of a registered W04 publication is
+# a normal "awaiting publication" state, never a reason to run production W05.
+w05_shiny_w04_publication_status <- function(review_id, registry_text) {
+  if(length(review_id)!=1L || !grepl("^[A-Za-z0-9._-]+$",review_id))
+    stop("Invalid W05 review identity",call.=FALSE)
+  rows <- utils::read.csv(text=registry_text,stringsAsFactors=FALSE,
+                          check.names=FALSE)
+  required <- c("review_id","publication_github_run_id","visibility",
+                "unresolved","retained","included_record_ids_sha256",
+                "upstream_lean_canonical_sha256")
+  if(!all(required %in% names(rows)))
+    return(list(status="awaiting_review_bound_receipt"))
+  matches <- rows[rows$review_id==review_id & rows$visibility=="restricted" &
+                    rows$unresolved==0L,,drop=FALSE]
+  if(nrow(matches)!=1L)
+    return(list(status="awaiting_review_bound_receipt"))
+  x <- matches[1L,,drop=FALSE]
+  if(!grepl("^[0-9]+$",as.character(x$publication_github_run_id)) ||
+     !grepl("^[0-9a-f]{64}$",as.character(x$included_record_ids_sha256)) ||
+     !grepl("^[0-9a-f]{64}$",as.character(x$upstream_lean_canonical_sha256)))
+    stop("Invalid W04 publication registry provenance",call.=FALSE)
+  list(status="candidate_receipt_only",review_id=review_id,
+       publication_run_id=as.character(x$publication_github_run_id))
+}
