@@ -21,6 +21,7 @@ source("R/w04_shiny_model_launch.R", local = TRUE)
 source("R/w04_model_batches.R", local = TRUE)
 source("R/w05_crop_coding.R", local = TRUE)
 source("R/w05_crop_archive.R", local = TRUE)
+source("R/w06_shiny_prompt.R", local = TRUE)
 source("R/w05_shiny_subset_dispatch.R", local = TRUE)
 source("R/w05_shiny_subset_results.R", local = TRUE)
 source("R/w04_workspace_overview.R", local = TRUE)
@@ -1064,6 +1065,9 @@ server <- function(input, output, session) {
   w05_crop_frequencies_rv <- reactiveVal(NULL)
   w05_unspecified_evidence_rv <- reactiveVal(NULL)
   w05_dictionary_receipt_rv <- reactiveVal(NULL)
+  w06_prompt_receipt_rv <- reactiveVal(NULL)
+  w06_prompt_approved_rv <- reactiveVal(FALSE)
+  w06_prompt_status_rv <- reactiveVal("W06 paused: upload and approve a review-specific prompt.")
   w05_verified_input_rv <- reactiveVal(NULL)
   w05_dictionary_approved_sha_rv <- reactiveVal("")
   w05_shiny_subset_launch_status_rv <- reactiveVal("Waiting for verified W04 publication and a validated W05 input bundle.")
@@ -5220,6 +5224,51 @@ server <- function(input, output, session) {
     w05_shiny_subset_launch_status_rv(sprintf(
       "GitHub accepted an isolated W05 subset request for %d records. Check its completed run before interpreting results.",result))
   })
+  observeEvent(input$w06_shiny_prompt_upload,{
+    req(authenticated())
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role %||% ""),"administrator"))return()
+    w06_prompt_approved_rv(FALSE)
+    w06_prompt_receipt_rv(NULL)
+    uploaded <- input$w06_shiny_prompt_upload
+    result <- tryCatch({
+      if(is.null(uploaded) || !grepl("[.]txt$|[.]md$",uploaded$name,ignore.case=TRUE))
+        stop("Upload a .txt or .md prompt",call.=FALSE)
+      meta <- w04_prompt_review_metadata()
+      w06_shiny_prompt_save(meta,uploaded$datapath)
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w06_prompt_status_rv(paste("W06 prompt not archived:",conditionMessage(result)))
+      return()
+    }
+    w06_prompt_receipt_rv(result)
+    w06_prompt_status_rv(sprintf("Archived W06 prompt %s in restricted Zenodo draft %s. Awaiting explicit approval.",
+      substr(result$sha256,1L,16L),result$draft_id))
+  })
+  observeEvent(input$w06_shiny_prompt_approve,{
+    req(authenticated())
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role %||% ""),"administrator"))return()
+    result <- tryCatch({
+      receipt <- w06_prompt_receipt_rv()
+      if(is.null(receipt))stop("Upload and archive the W06 prompt first",call.=FALSE)
+      w06_shiny_prompt_approve(w04_prompt_review_metadata(),receipt)
+      receipt
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w06_prompt_status_rv(paste("W06 prompt approval failed:",conditionMessage(result)))
+      return()
+    }
+    w06_prompt_approved_rv(TRUE)
+    w06_prompt_status_rv(sprintf("W06 prompt %s approved and archived. W06 model execution remains paused.",
+      substr(result$sha256,1L,16L)))
+  })
+  output$w06_shiny_prompt_status <- renderText(w06_prompt_status_rv())
+  output$w06_shiny_prompt_preview <- renderText({
+    receipt <- w06_prompt_receipt_rv()
+    if(is.null(receipt))return("No W06 prompt uploaded this session.")
+    receipt$content
+  })
   observeEvent(input$w05_shiny_finalise,{
     req(authenticated())
     if(!session_can("control_workflows") ||
@@ -5781,6 +5830,18 @@ server <- function(input, output, session) {
               downloadButton("w05_unspecified_download","Download unspecified-crop titles and abstracts"),
               tableOutput("w05_unspecified_evidence"),
               tags$p(class="saved-note","Full-corpus execution and final Zenodo publication remain disabled until W04 has a verified publication receipt and the Shiny execution pathway is approved."))),
+            tabPanel("W06",div(class="px-3 pb-3",
+              tags$h5("W06 geography prompt configuration"),
+              tags$p(class="saved-note","W06 is topic-agnostic. Any geography limits, location definitions and extraction rules belong in the uploaded prompt. No model runs automatically."),
+              fileInput("w06_shiny_prompt_upload","Upload W06 model prompt (.txt or .md)",
+                accept=c(".txt",".md","text/plain","text/markdown")),
+              textOutput("w06_shiny_prompt_status"),
+              actionButton("w06_shiny_prompt_approve","Approve archived W06 prompt",
+                class="btn-outline-primary"),
+              tags$h6("Prompt preview"),
+              tags$pre(style="white-space:pre-wrap;max-height:350px;overflow:auto;",
+                textOutput("w06_shiny_prompt_preview")),
+              tags$p(class="saved-note","W06 subset execution and full-corpus finalisation are not enabled. W05 final publication must be independently verified first."))),
             tabPanel("W08",uiOutput("w08_admin_controls")),
             tabPanel("System",uiOutput("system_admin_controls"))
           )
