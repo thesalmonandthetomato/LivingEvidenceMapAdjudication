@@ -1223,6 +1223,21 @@ server <- function(input, output, session) {
     }
   })
 
+  # Restore the read-only published W04 model-run registry when the session
+  # authenticates. The summary must not depend on a separate admin button.
+  observeEvent(authenticated(), {
+    req(authenticated(),identical(storage_backend(),"google_sheets"))
+    result <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      w04_model_batch_registry_read(meta$review_id)
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w04_model_return_status_rv(paste("W04 screening KPI unavailable:",conditionMessage(result)))
+    } else {
+      w04_model_batches_rv(result)
+    }
+  })
+
   decision_ids <- function(ds = decisions()) {
     if (!length(ds)) return(character())
     keep <- vapply(ds,function(x)as.character(x$decision %||% "") %in% c("duplicate","not_duplicate"),logical(1))
