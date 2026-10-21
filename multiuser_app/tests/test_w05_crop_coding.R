@@ -69,3 +69,23 @@ stopifnot(inherits(try(w05_shiny_subset_dispatch(request),silent=TRUE),"try-erro
 w05_shiny_subset_dispatch(request,w04_published=TRUE)
 stopifnot(calls==1L)
 cat("PASS W05 Shiny dispatcher respects verified W04 gate and isolated workflow target\n")
+
+# Verified results reader uses only the Shiny W05 workflow and confirms
+# frequencies against record-level assignments. No GitHub/Zenodo calls.
+source("R/w05_shiny_subset_results.R")
+fake_api <- function(url,method="GET",payload=NULL) {
+  if(grepl("/artifacts$",url))
+    return(list(artifacts=list(list(name="w05-shiny-subset-12345",expired=FALSE,
+      archive_download_url=paste0("https://api.github.com/repos/",
+        "thesalmonandthetomato/LivingEvidenceMapAdjudication/actions/artifacts/999/zip")))))
+  list(path=".github/workflows/w05_shiny_subset.yml",
+       status="completed",conclusion="success",
+       html_url="https://github.com/test/actions/runs/12345")
+}
+stopifnot(identical(w05_shiny_subset_run_status("12345",fake_api)$conclusion,"success"))
+fake_bad_api <- function(url,method="GET",payload=NULL) {
+  list(path=".github/workflows/workflow_05_production.yml",
+       status="completed",conclusion="success")
+}
+stopifnot(inherits(try(w05_shiny_subset_run_status("12345",fake_bad_api),silent=TRUE),"try-error"))
+cat("PASS W05 results reader restricts origin to Shiny-only workflow\n")
