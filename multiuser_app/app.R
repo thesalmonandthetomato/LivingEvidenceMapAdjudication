@@ -4588,7 +4588,7 @@ server <- function(input, output, session) {
         "Open W04 publication workflow") else NULL,
       tags$p(class="small",
         if(state=="completed" && identical(submission$conclusion,"success"))
-          "Check the W05 job inside GitHub before considering downstream processing complete."
+          "W04 workflow succeeded. Confirm the restricted Zenodo receipt separately; W05 remains paused pending approved coding inputs."
         else "This is not confirmation of published Zenodo state or a completed W05 run.")
     )
   })
