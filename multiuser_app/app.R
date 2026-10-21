@@ -4583,7 +4583,7 @@ server <- function(input, output, session) {
         "GitHub accepted the request. Waiting for workflow registration."),
       tags$p(paste("Bundle:",submission$bundle)),
       if(nzchar(url))tags$a(href=url,target="_blank",rel="noopener noreferrer",
-        "Open GitHub workflow and W05 handoff status") else NULL,
+        "Open W04 publication workflow") else NULL,
       tags$p(class="small",
         if(state=="completed" && identical(submission$conclusion,"success"))
           "Check the W05 job inside GitHub before considering downstream processing complete."
@@ -4595,7 +4595,7 @@ server <- function(input, output, session) {
     if(is.null(submission) || identical(submission$status,"completed"))return()
     shiny::invalidateLater(12000,session)
     result <- tryCatch({
-      endpoint <- sprintf("https://api.github.com/repos/%s/actions/workflows/w04_shiny_reconciled_publish.yml/runs?per_page=30",
+      endpoint <- sprintf("https://api.github.com/repos/%s/actions/workflows/w04_shiny_publish_only.yml/runs?per_page=30",
                           github_dispatch_repo())
       x <- github_api_get_json(endpoint)
       matched <- Filter(function(z)
@@ -4621,7 +4621,7 @@ server <- function(input, output, session) {
       !is.null(w04_finalise_export_rv()) &&
       !isTRUE(w04_finalise_dispatch_busy_rv())
     actionButton("w04_finalise_publish",
-      "Finalise W04 and proceed to W05",
+      "Finalise W04 (pause before W05)",
       class="btn-primary",disabled=if(!ready)"disabled" else NULL)
   })
   observeEvent(input$w04_finalise_publish,{
