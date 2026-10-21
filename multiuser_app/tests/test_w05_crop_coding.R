@@ -61,7 +61,7 @@ calls <- 0L
 w05_shiny_gh_request <- function(url,method="GET",payload=NULL) {
   calls <<- calls+1L
   stopifnot(identical(method,"POST"),
-    identical(url,"https://api.github.com/repos/thesalmonandthetomato/LivingEvidenceMapAdjudication/actions/workflows/w05_shiny_subset.yml/dispatches"),
+    identical(url,"https://api.github.com/repos/thesalmonandthetomato/LivingEvidenceMap/actions/workflows/w05_shiny_subset.yml/dispatches"),
     identical(payload$ref,"main"),identical(payload$inputs$subset_count,"100"))
   invisible(TRUE)
 }
