@@ -45,7 +45,7 @@ original_count <- nrow(rows)
 if(!full)rows <- head(rows,as.integer(count))
 result <- w05_crop_code_records(rows,dict)
 stopifnot(length(unique(result$assignments$record_id))==nrow(rows),
-          !anyDuplicated(result$assignments[,c("record_id","code")]),
+          !anyDuplicated(result$assignments[,c("record_id","entity","code")]),
           sum(result$frequencies$records)==nrow(result$assignments))
 dir.create(output,recursive=TRUE,showWarnings=FALSE)
 utils::write.csv(result$assignments,file.path(output,"w05_crop_assignments.csv"),row.names=FALSE,na="")
@@ -53,7 +53,7 @@ utils::write.csv(result$frequencies,file.path(output,"w05_crop_frequencies.csv")
 manifest <- list(schema="lem-w05-crop-test-v1",mode=if(full)"full_corpus" else "subset_test",
   dictionary_sha256=sha,input_sha256=digest::digest(file=input,algo="sha256",serialize=FALSE),
   input_records=original_count,processed_records=nrow(rows),
-  unmatched_records=sum(result$assignments$code=="unspecified_horticultural_crop"),
+  unmatched_records=sum(result$assignments$entity=="crop" & result$assignments$code=="unspecified_horticultural_crop"),
   outputs=c("w05_crop_assignments.csv","w05_crop_frequencies.csv"),
   created_at_utc=format(Sys.time(),"%Y-%m-%dT%H:%M:%SZ",tz="UTC"))
 writeLines(jsonlite::toJSON(manifest,pretty=TRUE,auto_unbox=TRUE),
