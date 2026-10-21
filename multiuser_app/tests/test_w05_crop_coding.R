@@ -22,6 +22,31 @@ bad$matching_terms[bad$code=="unspecified_horticultural_crop"] <- "greenhouse"
 stopifnot(inherits(try(w05_crop_validate(bad),silent=TRUE),"try-error"))
 cat("PASS W05 crop CSV schema, multilingual matches, multi-crop and automatic unmatched fallback\n")
 
+# Regression: W01 abstract_enrichment must NEVER be read as abstract by
+# R's partial $ matching when canonical.abstract is absent.
+fixture <- tempfile("w05-abstract-");dir.create(fixture)
+fixture_in <- file.path(fixture,"input.jsonl")
+fixture_out <- file.path(fixture,"coded")
+records <- list(
+  list(identity=list(record_id="placeholder"),canonical=list(title="Unrelated irrigation system",abstract=NULL),
+       abstract_enrichment=list(status="pending_workflow02",manifestations_missing_abstract=1L)),
+  list(identity=list(record_id="realabstract"),canonical=list(title="Greenhouse production",abstract="Tomato cultivation"),
+       abstract_enrichment=list(status="pending_workflow02",manifestations_missing_abstract=0L)))
+writeLines(vapply(records,function(x)jsonlite::toJSON(x,auto_unbox=TRUE,null="null"),character(1)),fixture_in)
+worker <- system2(file.path(R.home("bin"),"Rscript"),
+  args=c("scripts/w05_crop_worker.R","--input",shQuote(fixture_in),"--dictionary",
+         "config/w05_almeria_crop_dictionary.csv","--output-dir",shQuote(fixture_out),
+         "--subset-count","2"),stdout=TRUE,stderr=TRUE)
+if(!is.null(attr(worker,"status")) && attr(worker,"status")!=0L)
+  stop(paste(worker,collapse="; "),call.=FALSE)
+coded <- read.csv(file.path(fixture_out,"w05_crop_assignments.csv"),stringsAsFactors=FALSE)
+stopifnot("unspecified_horticultural_crop" %in% coded$code[coded$record_id=="placeholder"],
+          "tomato" %in% coded$code[coded$record_id=="realabstract"])
+evidence <- read.csv(file.path(fixture_out,"w05_unspecified_crop_evidence.csv"),stringsAsFactors=FALSE)
+stopifnot(identical(evidence$record_id,"placeholder"),identical(evidence$abstract,""))
+unlink(fixture,recursive=TRUE)
+cat("PASS W05 canonical abstract exact matching prevents pending_workflow02 placeholder leakage\\n")
+
 # Two entity types, independent matching and multiple codes on one record.
 multi <- rbind(d,data.frame(entity=c("practice","practice"),
   code=c("irrigation","integrated_pest_management"),
