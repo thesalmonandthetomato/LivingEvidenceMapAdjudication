@@ -251,7 +251,8 @@ cat("PASS existing W04 receipt bound to exact Shiny publication review and run\n
 
 # Review-bound W04 source restoration, with archive transport stubbed.
 # The selected W04 included IDs must match its receipt SHA.
-orig_archive <- w04_subset_verified_archive
+had_archive <- exists("w04_subset_verified_archive",mode="function")
+orig_archive <- if(had_archive) w04_subset_verified_archive else NULL
 orig_included <- w05_shiny_w04_included_ids
 canon_lines <- c('{"identity":{"record_id":"r1"},"canonical":{"title":"Tomato"}}',
                  '{"identity":{"record_id":"r2"},"canonical":{"title":"Pepper"}}')
@@ -275,6 +276,6 @@ restored <- w05_shiny_restore_published_sources(src,ptr,"almeria-map",run)
 stopifnot(identical(readLines(restored$included_ids),"r2"),
           length(readLines(restored$canonical))==2L)
 unlink(restored$directory,recursive=TRUE)
-w04_subset_verified_archive <- orig_archive
+if(had_archive)w04_subset_verified_archive <- orig_archive else rm(w04_subset_verified_archive)
 w05_shiny_w04_included_ids <- orig_included
 cat("PASS W05 restoration binds W04 included IDs and canonical SHA to review\\n")
