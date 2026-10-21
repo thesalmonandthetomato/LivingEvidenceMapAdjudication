@@ -275,3 +275,34 @@ w05_shiny_discover_w04_publication <- function(review_id, runs) {
   candidates[[which.max(vapply(candidates,function(x)
     suppressWarnings(as.numeric(x$id %||% 0)),numeric(1)))]]
 }
+
+# Review-bound reporting projection, computed from an actual published W04
+# pointer. Does not change upstream metrics or persistent source records.
+w05_shiny_w04_pipeline_metrics <- function(metrics, pointer, review_id, run, upstream_lean_sha) {
+  receipt <- w05_shiny_bind_w04_receipt(pointer,review_id,run)
+  if(!identical(receipt$upstream_lean_canonical_sha256,
+                tolower(as.character(upstream_lean_sha))))
+    stop("W04 overview publication and review-specific W03 source differ",call.=FALSE)
+  count <- function(x) {
+    y <- suppressWarnings(as.integer(as.character(x)))
+    if(length(y)!=1L || is.na(y) || y<0L)stop("Invalid W04 published count",call.=FALSE)
+    y
+  }
+  eligible <- count(pointer$records)
+  retained <- count(pointer$retained)
+  excluded <- count(pointer$excluded)
+  unresolved <- count(pointer$unresolved)
+  if(unresolved!=0L || eligible!=retained+excluded)
+    stop("W04 publication counts do not reconcile",call.=FALSE)
+  p <- metrics %||% list()
+  prior <- suppressWarnings(as.integer(as.character(p$completed_through %||% 0L)))
+  if(length(prior)!=1L || is.na(prior)) prior <- 0L
+  p$completed_through <- max(5L,prior)
+  p$active_workflow <- ""
+  p$status_label <- "W04 published; W05 awaiting coding"
+  p$screened_include <- retained
+  p$screened_exclude <- excluded
+  p$run_id <- receipt$publication_run_id
+  p$w04_publication_run_id <- receipt$publication_run_id
+  p
+}
