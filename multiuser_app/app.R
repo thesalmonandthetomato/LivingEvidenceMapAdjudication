@@ -22,6 +22,7 @@ source("R/w04_model_batches.R", local = TRUE)
 source("R/w05_crop_coding.R", local = TRUE)
 source("R/w05_crop_archive.R", local = TRUE)
 source("R/w06_shiny_prompt.R", local = TRUE)
+source("R/w06_shiny_subset_dispatch.R", local = TRUE)
 source("R/w05_shiny_subset_dispatch.R", local = TRUE)
 source("R/w05_shiny_subset_results.R", local = TRUE)
 source("R/w04_workspace_overview.R", local = TRUE)
@@ -1065,6 +1066,8 @@ server <- function(input, output, session) {
   w05_crop_frequencies_rv <- reactiveVal(NULL)
   w05_unspecified_evidence_rv <- reactiveVal(NULL)
   w05_dictionary_receipt_rv <- reactiveVal(NULL)
+  w06_results_rv <- reactiveVal(NULL)
+  w06_trial_status_rv <- reactiveVal("No W06 model subset has been run.")
   w06_prompt_receipt_rv <- reactiveVal(NULL)
   w06_prompt_approved_rv <- reactiveVal(FALSE)
   w06_prompt_status_rv <- reactiveVal("W06 paused: upload and approve a review-specific prompt.")
@@ -5263,6 +5266,53 @@ server <- function(input, output, session) {
     w06_prompt_status_rv(sprintf("W06 prompt %s approved and archived. W06 model execution remains paused.",
       substr(result$sha256,1L,16L)))
   })
+  observeEvent(input$w06_shiny_subset_launch,{
+    req(authenticated())
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role %||% ""),"administrator"))return()
+    result <- tryCatch({
+      if(!isTRUE(w06_prompt_approved_rv()))
+        stop("Approve the archived W06 prompt before running a subset",call.=FALSE)
+      meta <- w04_prompt_review_metadata()
+      receipt <- w06_prompt_receipt_rv()
+      n <- suppressWarnings(as.integer(input$w06_shiny_subset_size))
+      if(is.na(n)||n<1L)stop("Specify a positive subset size",call.=FALSE)
+      w06_shiny_subset_dispatch(meta,receipt,as.character(n))
+      n
+    },error=function(e)e)
+    w06_trial_status_rv(if(inherits(result,"error"))
+      paste("W06 subset dispatch not confirmed:",conditionMessage(result)) else
+      sprintf("Dispatched isolated W06 model trial on %d records. Retrieve results using its completed GitHub Actions run ID.",result))
+  })
+  observeEvent(input$w06_shiny_load_results,{
+    req(authenticated())
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role %||% ""),"administrator"))return()
+    run <- trimws(as.character(input$w06_shiny_run_id %||% ""))
+    result <- tryCatch(w06_shiny_subset_results(run),error=function(e)e)
+    if(inherits(result,"error")) {
+      w06_trial_status_rv(paste("W06 results retrieval failed:",conditionMessage(result)))
+      return()
+    }
+    w06_results_rv(result$results)
+    w06_trial_status_rv(sprintf("Verified W06 subset: %s records, %s review needed. Prompt SHA %s. Results are experimental.",
+      result$manifest$subset_records,result$manifest$needs_review,
+      substr(result$manifest$prompt_sha256,1L,16L)))
+  })
+  output$w06_shiny_trial_status <- renderText(w06_trial_status_rv())
+  output$w06_shiny_trial_table <- renderTable({
+    x <- w06_results_rv()
+    if(is.null(x))return(NULL)
+    x
+  },striped=TRUE,spacing="xs",width="100%")
+  output$w06_shiny_trial_download <- downloadHandler(
+    filename=function()"w06_geography_subset_review.csv",
+    content=function(file){
+      req(authenticated())
+      x <- w06_results_rv()
+      req(!is.null(x))
+      utils::write.csv(x,file,row.names=FALSE,na="")
+    },contentType="text/csv")
   output$w06_shiny_prompt_status <- renderText(w06_prompt_status_rv())
   output$w06_shiny_prompt_preview <- renderText({
     receipt <- w06_prompt_receipt_rv()
@@ -5841,7 +5891,18 @@ server <- function(input, output, session) {
               tags$h6("Prompt preview"),
               tags$pre(style="white-space:pre-wrap;max-height:350px;overflow:auto;",
                 textOutput("w06_shiny_prompt_preview")),
-              tags$p(class="saved-note","W06 subset execution and full-corpus finalisation are not enabled. W05 final publication must be independently verified first."))),
+              tags$hr(),
+              tags$h6("Geography model subset testing"),
+              tags$p(class="saved-note","After prompt approval, test any chosen number of published W05 records. Geographic restrictions belong only in the prompt. Trial outputs are not final W06 decisions."),
+              numericInput("w06_shiny_subset_size","Records to test",value=20,min=1,max=100000,step=1),
+              actionButton("w06_shiny_subset_launch","Run W06 model subset",class="btn-outline-primary"),
+              textInput("w06_shiny_run_id","Completed W06 Shiny Actions run ID",value=""),
+              actionButton("w06_shiny_load_results","Load W06 trial results",class="btn-outline-secondary"),
+              textOutput("w06_shiny_trial_status"),
+              downloadButton("w06_shiny_trial_download","Download W06 trial records"),
+              tags$div(style="max-height:420px;overflow:auto;",
+                tableOutput("w06_shiny_trial_table")),
+              tags$p(class="saved-note","Full-corpus W06 finalisation is not enabled. Review trial outputs and uncertainties before approving a final prompt."))),
             tabPanel("W08",uiOutput("w08_admin_controls")),
             tabPanel("System",uiOutput("system_admin_controls"))
           )
