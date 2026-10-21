@@ -12,12 +12,28 @@ w04_prompt_zenodo_request <- function(endpoint, method="GET", body=NULL, file=NU
     req <- httr2::req_body_raw(req,charToRaw("{}"),type="application/json")
   } else if(!is.null(body)) req <- httr2::req_body_json(req,body,auto_unbox=TRUE)
   if(!is.null(file)) req <- httr2::req_body_file(req,file)
-  resp <- httr2::req_perform(httr2::req_error(httr2::req_timeout(req,120),
-    is_error=function(resp)FALSE))
+  # Retry only read-only requests. Never silently repeat a draft creation or
+  # bucket upload: Zenodo may have persisted a write despite an HTTP 500.
+  attempts <- if(identical(method,"GET"))2L else 1L
+  resp <- NULL
+  for(attempt in seq_len(attempts)) {
+    resp <- tryCatch(httr2::req_perform(httr2::req_error(httr2::req_timeout(req,120),
+      is_error=function(resp)FALSE)),error=function(e)e)
+    status <- if(inherits(resp,"error"))NA_integer_ else httr2::resp_status(resp)
+    if(status %in% expected)break
+    transient <- inherits(resp,"error") || (!is.na(status) && status %in% c(500L,502L,503L,504L))
+    if(attempt==attempts || !transient)break
+    Sys.sleep(1)
+  }
+  if(inherits(resp,"error"))
+    stop(paste("Zenodo W04 draft request failed:",conditionMessage(resp),
+      "No further request was attempted."),call.=FALSE)
   status <- httr2::resp_status(resp)
   if(!status %in% expected)
-    stop(sprintf("Zenodo W04 draft HTTP %d: %s",status,
-      substr(httr2::resp_body_string(resp),1,240)),call.=FALSE)
+    stop(sprintf("Zenodo W04 draft HTTP %d: %s%s",status,
+      substr(httr2::resp_body_string(resp),1,240),
+      if(identical(method,"GET"))" (read-only retry exhausted; no publication dispatched)" else
+        " (write outcome must be checked before any retry; no publication dispatched)"),call.=FALSE)
   if(status==204L) return(NULL)
   httr2::resp_body_json(resp,simplifyVector=FALSE)
 }
