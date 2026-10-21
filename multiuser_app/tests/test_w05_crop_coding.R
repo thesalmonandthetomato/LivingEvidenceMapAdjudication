@@ -279,3 +279,17 @@ unlink(restored$directory,recursive=TRUE)
 if(had_archive)w04_subset_verified_archive <- orig_archive else rm(w04_subset_verified_archive)
 w05_shiny_w04_included_ids <- orig_included
 cat("PASS W05 restoration binds W04 included IDs and canonical SHA to review\\n")
+
+
+# Auto discovery considers only completed successful exact-review W04-only runs.
+candidate <- list(id=100L,path=".github/workflows/w04_shiny_publish_only.yml",
+  status="completed",conclusion="success",
+  display_title="W04 Shiny only publication almeria-map bundle.json")
+unrelated <- candidate;unrelated$id <- 200L
+unrelated$display_title <- "W04 Shiny only publication other-map bundle.json"
+failed <- candidate;failed$id <- 300L;failed$conclusion <- "failure"
+got <- w05_shiny_discover_w04_publication("almeria-map",
+  list(unrelated,failed,candidate))
+stopifnot(identical(got$id,100L),
+ is.null(w05_shiny_discover_w04_publication("other-review",list(candidate))))
+cat("PASS review-bound W04 publication discovery excludes other reviews and failed runs\n")
