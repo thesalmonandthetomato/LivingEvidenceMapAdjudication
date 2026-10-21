@@ -4547,12 +4547,16 @@ server <- function(input, output, session) {
       "Offline GitHub validation dispatched; no publication or W05 launch."))
   })
   w04_finalise_prepare_status_rv <- reactiveVal("")
+  w04_finalise_last_refresh_rv <- reactiveVal(-1L)
   output$w04_finalise_prepare_status <- renderText(w04_finalise_prepare_status_rv())
   observeEvent(list(input$w04_workspace_tab,input$w04_finalise_prepare),{
     if(!identical(input$w04_workspace_tab,"Finalise")) return()
     req(authenticated())
     if(!session_can("control_workflows") ||
        !identical(as.character(current_user()$role),"administrator"))return()
+    refresh <- as.integer(input$w04_finalise_prepare %||% 0L)
+    if(length(w04_finalise_selection_batches_rv()) &&
+       identical(w04_finalise_last_refresh_rv(),refresh)) return()
     w04_finalise_export_rv(NULL)
     w04_finalise_selection_batches_rv(list())
     result <- tryCatch({
@@ -4570,6 +4574,7 @@ server <- function(input, output, session) {
     }
     w04_subset_corpus_rv(result$corpus)
     w04_finalise_selection_batches_rv(result$batches)
+    w04_finalise_last_refresh_rv(refresh)
     w04_finalise_prepare_status_rv(sprintf(
       "%d eligible records; %d saved model runs. Select one run per subset, then check coverage.",
       length(result$corpus$record_ids),length(result$batches)))
