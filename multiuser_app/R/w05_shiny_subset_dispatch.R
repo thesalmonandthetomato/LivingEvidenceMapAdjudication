@@ -1,5 +1,5 @@
 # Isolated W05 Shiny runner. Does not touch LivingEvidenceMap production workflows.
-w05_shiny_repo <- function() "thesalmonandthetomato/LivingEvidenceMapAdjudication"
+w05_shiny_repo <- function() github_dispatch_repo()
 w05_shiny_subset_validate_request <- function(request) {
   required <- c("review_id","zenodo_draft_id","input_filename","input_sha256",
                 "dictionary_filename","dictionary_sha256","subset_count")
@@ -24,8 +24,7 @@ w05_shiny_subset_validate_request <- function(request) {
 w05_shiny_gh_request <- function(url,method="GET",payload=NULL) {
   # Reuse the already configured Shiny GitHub token by default.
   # A W05-specific credential is optional, never a prerequisite.
-  token <- Sys.getenv("LEM_W05_SHINY_GITHUB_TOKEN",unset="")
-  if(!nzchar(token)) token <- github_dispatch_token()
+  token <- github_dispatch_token()
   req <- httr2::request(url) |> 
     httr2::req_headers(Authorization=paste("Bearer",token),
       Accept="application/vnd.github+json",
@@ -37,7 +36,7 @@ w05_shiny_gh_request <- function(url,method="GET",payload=NULL) {
     is_error=function(resp)FALSE))
   status <- httr2::resp_status(resp)
   if(status==403L)
-    stop("W05 subset dispatch forbidden (HTTP 403). The existing Shiny GitHub token must have Actions: write access to LivingEvidenceMapAdjudication; a separate token is optional, not required. No workflow was dispatched.",call.=FALSE)
+    stop("W05 subset dispatch forbidden (HTTP 403). The existing Shiny GitHub token must have Actions: write access to LivingEvidenceMap. No workflow was dispatched.",call.=FALSE)
   if(identical(method,"POST") && status!=204L)
     stop(sprintf("W05 Shiny Actions dispatch failed: HTTP %d",status),call.=FALSE)
   if(identical(method,"POST"))return(invisible(TRUE))
