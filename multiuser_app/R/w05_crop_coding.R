@@ -39,28 +39,34 @@ w05_crop_normalise <- function(x) {
   y[is.na(y)] <- x[is.na(y)]
   trimws(gsub("[[:space:]]+"," ",y,perl=TRUE))
 }
-w05_crop_match <- function(title,abstract,dictionary) {
+w05_crop_compile <- function(dictionary) {
   dict <- w05_crop_validate(dictionary)
-  text <- w05_crop_normalise(paste(title,abstract))
-  found <- character()
-  for(i in which(dict$code!="unspecified_horticultural_crop")) {
+  indices <- which(dict$code!="unspecified_horticultural_crop")
+  rules <- lapply(indices,function(i) {
     terms <- trimws(strsplit(dict$matching_terms[[i]],";",fixed=TRUE)[[1L]])
     terms <- unique(w05_crop_normalise(terms[nzchar(terms)]))
-    hit <- any(vapply(terms,function(t) {
-      # Unicode-aware word boundaries after accent folding. Literal escaped terms.
-      p <- paste0("(?<![\\p{L}\\p{N}])\\Q",t,"\\E(?![\\p{L}\\p{N}])")
-      isTRUE(grepl(p,text,perl=TRUE))
-    },logical(1)))
-    if(hit)found <- c(found,dict$code[[i]])
-  }
-  if(!length(found))"unspecified_horticultural_crop" else unique(found)
+    paste0("(?<![\\p{L}\\p{N}])\\Q",terms,"\\E(?![\\p{L}\\p{N}])")
+  })
+  names(rules) <- dict$code[indices]
+  rules
+}
+w05_crop_match_compiled <- function(title,abstract,rules) {
+  txt <- w05_crop_normalise(paste(title,abstract))
+  found <- names(rules)[vapply(rules,function(patterns)
+    any(vapply(patterns,function(p)isTRUE(grepl(p,txt,perl=TRUE)),logical(1))),
+    logical(1))]
+  if(!length(found))"unspecified_horticultural_crop" else found
+}
+w05_crop_match <- function(title,abstract,dictionary) {
+  w05_crop_match_compiled(title,abstract,w05_crop_compile(dictionary))
 }
 w05_crop_code_records <- function(records,dictionary) {
   stopifnot(is.data.frame(records),all(c("record_id","title","abstract")%in%names(records)))
   if(anyDuplicated(records$record_id)||any(!nzchar(records$record_id)))
     stop("W05 input record identifiers must be unique",call.=FALSE)
+  rules <- w05_crop_compile(dictionary)
   matched <- lapply(seq_len(nrow(records)),function(i)
-    w05_crop_match(records$title[[i]],records$abstract[[i]],dictionary))
+    w05_crop_match_compiled(records$title[[i]],records$abstract[[i]],rules))
   assignments <- data.frame(record_id=rep(as.character(records$record_id),lengths(matched)),
     code=unlist(matched,use.names=FALSE),stringsAsFactors=FALSE)
   counts <- table(factor(assignments$code,levels=dictionary$code))
