@@ -1793,7 +1793,6 @@ server <- function(input, output, session) {
       identical(tolower(as.character(x$source_checkpoint_sha256)),
         tolower(as.character(source$lean$lean_canonical_sha256))),
       w04_subset_registry_read(meta$review_id))
-    assignments <- read_assignment_registry(assignment_path)
     events <- active_sheet_w04_decisions()
     manually_screened_ids <- character()
     for(subset in subsets) {
