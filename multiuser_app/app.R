@@ -4561,7 +4561,7 @@ server <- function(input, output, session) {
     if(!session_can("control_workflows") ||
        !identical(as.character(current_user()$role %||% ""),"administrator"))
       return(NULL)
-    ready <- identical(Sys.getenv("LEM_W04_SHINY_PUBLISH_ENABLED",unset="false"),"true") &&
+    ready <- identical(Sys.getenv("LEM_W04_SHINY_PUBLISH_ENABLED",unset="true"),"true") &&
       !is.null(w04_finalise_export_rv()) &&
       !isTRUE(w04_finalise_dispatch_busy_rv())
     actionButton("w04_finalise_publish",
@@ -4573,7 +4573,7 @@ server <- function(input, output, session) {
     if(!session_can("control_workflows") ||
        !identical(as.character(current_user()$role %||% ""),"administrator") ||
        isTRUE(w04_finalise_dispatch_busy_rv()) ||
-       !identical(Sys.getenv("LEM_W04_SHINY_PUBLISH_ENABLED",unset="false"),"true") ||
+       !identical(Sys.getenv("LEM_W04_SHINY_PUBLISH_ENABLED",unset="true"),"true") ||
        is.null(w04_finalise_export_rv()))return()
     showModal(modalDialog(
       title="Confirm W04 finalisation",
@@ -4588,7 +4588,7 @@ server <- function(input, output, session) {
     if(!session_can("control_workflows") ||
        !identical(as.character(current_user()$role %||% ""),"administrator") ||
        isTRUE(w04_finalise_dispatch_busy_rv()) ||
-       !identical(Sys.getenv("LEM_W04_SHINY_PUBLISH_ENABLED",unset="false"),"true"))return()
+       !identical(Sys.getenv("LEM_W04_SHINY_PUBLISH_ENABLED",unset="true"),"true"))return()
     w04_finalise_dispatch_busy_rv(TRUE)
     on.exit(w04_finalise_dispatch_busy_rv(FALSE),add=TRUE)
     result <- tryCatch({
@@ -4716,7 +4716,7 @@ server <- function(input, output, session) {
         "Verified: %d eligible, %d resolved; %d missing, %d uncertain, %d conflicts. %s",
         coverage$eligible,coverage$resolved,length(coverage$missing),
         length(coverage$uncertain),length(coverage$conflicts),
-        if(coverage$ready)"Reconciled export available. No publication or W05 launch."
+        if(coverage$ready)"Ready for explicit publication confirmation. No publication has occurred."
         else "Finalisation blocked until coverage and conflicts are resolved."))
     }
   },ignoreNULL=FALSE)
@@ -5290,7 +5290,7 @@ server <- function(input, output, session) {
                     uiOutput("w04_overview_conflicts"))),
                 tabPanel("Finalise",
                   div(class="px-3 pb-3",
-                    tags$p(class="saved-note","Finalisation data loads when this tab opens. Select one authoritative model run per subset. Earlier runs remain archived, and saved adjudications are retrieved during reconciliation. The final action is enabled only after complete reconciliation; publication requires confirmation."),
+                    tags$p(class="saved-note","Select one authoritative model run for each of the three subsets. Earlier runs remain archived. Saved manual screening and uncertainty decisions are loaded automatically. When all 3,083 eligible records are reconciled, confirm finalisation to publish restricted W04 state and initiate W05."),
                     actionButton("w04_finalise_prepare","Refresh finalisation data",class="btn-outline-secondary btn-sm"),
                     textOutput("w04_finalise_prepare_status"),
                     uiOutput("w04_model_run_choices"),
