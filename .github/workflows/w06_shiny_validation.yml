@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'multiuser_app/R/w06_shiny_prompt.R'
+      - 'multiuser_app/R/w06_shiny_subset_dispatch.R'
       - 'multiuser_app/tests/test_w06_shiny_prompt.R'
       - 'multiuser_app/app.R'
       - '.github/workflows/w06_shiny_validation.yml'
@@ -28,6 +29,7 @@ jobs:
         shell: Rscript {0}
         run: |
           parse(file="R/w06_shiny_prompt.R")
+          parse(file="R/w06_shiny_subset_dispatch.R")
           parse(file="app.R")
           cat("PASS W06 prompt module and app parse\n")
       - name: Run offline prompt regression checks
