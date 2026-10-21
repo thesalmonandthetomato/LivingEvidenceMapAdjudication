@@ -2,11 +2,11 @@
 # W06 uses the existing W04 importer when xml2 is installed, otherwise
 # extracts WordprocessingML paragraph text with base R.
 w06_shiny_docx_decode <- function(xml) {
-  xml <- gsub("</w:p>", "\\n", xml, fixed=TRUE)
-  xml <- gsub("</w:tab>", "\\t", xml, fixed=TRUE)
-  xml <- gsub("<w:tab[^>]*/>", "\\t", xml, perl=TRUE)
-  xml <- gsub("</w:br>", "\\n", xml, fixed=TRUE)
-  xml <- gsub("<w:br[^>]*/>", "\\n", xml, perl=TRUE)
+  xml <- gsub("</w:p>", "\n", xml, fixed=TRUE)
+  xml <- gsub("</w:tab>", "\t", xml, fixed=TRUE)
+  xml <- gsub("<w:tab[^>]*/>", "\t", xml, perl=TRUE)
+  xml <- gsub("</w:br>", "\n", xml, fixed=TRUE)
+  xml <- gsub("<w:br[^>]*/>", "\n", xml, perl=TRUE)
   xml <- gsub("<[^>]*>", "", xml, perl=TRUE)
   xml <- gsub("&lt;", "<", xml, fixed=TRUE)
   xml <- gsub("&gt;", ">", xml, fixed=TRUE)
