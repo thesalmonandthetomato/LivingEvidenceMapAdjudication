@@ -22,7 +22,8 @@ w05_crop_validate <- function(x) {
   tokens <- unlist(term_sets,use.names=FALSE)
   if(anyDuplicated(paste(owner,tokens,sep=":")))
     stop("Duplicate terms detected",call.=FALSE)
-  conflicts <- unique(tokens[duplicated(tokens)])
+  scoped_terms <- paste(rep(x$entity,lengths(term_sets)),tokens,sep="::")
+  conflicts <- unique(scoped_terms[duplicated(scoped_terms)])
   if(length(conflicts))
     stop(paste("Matching terms used by more than one code:",paste(head(conflicts,8),collapse=", ")),call.=FALSE)
   x
