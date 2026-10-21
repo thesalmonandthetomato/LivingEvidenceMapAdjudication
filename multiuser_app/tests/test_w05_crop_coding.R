@@ -217,3 +217,11 @@ stopifnot(inherits(try(w05_shiny_prepare_handover(meta,cpath,ipath,
  minimal,schema_receipt),silent=TRUE),"try-error"))
 unlink(fixture_dir,recursive=TRUE)
 cat("PASS W05 handover requires restored sources and approved dictionary before execution\\n")
+
+# The existing global W04 registry has no review_id: never infer that its
+# entries belong to the selected Shiny review.
+legacy <- paste('"publication_github_run_id","visibility","retained","unresolved"',
+                '"100","restricted",5,0',sep="\\n")
+state <- w05_shiny_w04_publication_status("almeria-map",legacy)
+stopifnot(identical(state$status,"awaiting_review_bound_receipt"))
+cat("PASS Shiny does not adopt an unbound global W04 publication\\n")
