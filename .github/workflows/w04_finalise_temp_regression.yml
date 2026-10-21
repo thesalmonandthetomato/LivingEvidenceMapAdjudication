@@ -20,6 +20,7 @@ jobs:
         shell: Rscript {0}
         run: |
           `%||%` <- function(x,y) if(is.null(x)||!length(x)) y else x
+          w04_subset_record_ids <- function(x) sort(unique(as.character(x)))
           source("multiuser_app/R/w04_model_batches.R")
           check <- function(ok,label) {
             if(!isTRUE(ok))stop(paste("FAIL",label),call.=FALSE)
