@@ -5220,6 +5220,45 @@ server <- function(input, output, session) {
     w05_shiny_subset_launch_status_rv(sprintf(
       "GitHub accepted an isolated W05 subset request for %d records. Check its completed run before interpreting results.",result))
   })
+  observeEvent(input$w05_shiny_finalise,{
+    req(authenticated())
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role %||% ""),"administrator"))return()
+    result <- tryCatch({
+      prepared <- w05_verified_input_rv()
+      dictionary <- w05_dictionary_receipt_rv()
+      meta <- w04_prompt_review_metadata()
+      if(is.null(prepared)||is.null(dictionary)||
+         !identical(as.character(prepared$review_id),as.character(meta$review_id))||
+         !identical(prepared$dictionary,dictionary)||
+         !identical(w05_dictionary_approved_sha_rv(),as.character(dictionary$sha256)))
+        stop("Verified W04 corpus and explicitly approved dictionary required",call.=FALSE)
+      if(as.integer(prepared$input$record_count)<1L)
+        stop("No verified W04 included records",call.=FALSE)
+      request <- list(review_id=meta$review_id,
+        zenodo_draft_id=prepared$input$deposit_id,
+        input_filename=prepared$input$filename,
+        input_sha256=prepared$input$sha256,
+        dictionary_filename=dictionary$filename,
+        dictionary_sha256=dictionary$sha256)
+      w05_shiny_finalise_dispatch(request,w04_published=TRUE,schema_approved=TRUE)
+      as.integer(prepared$input$record_count)
+    },error=function(e)e)
+    w05_shiny_subset_launch_status_rv(if(inherits(result,"error"))
+      paste("Full-corpus W05 dispatch failed:",conditionMessage(result)) else
+      sprintf("Full-corpus W05 coding dispatched for %d records. W06 remains paused until final W05 verification and prompt approval.",result))
+  })
+  output$w05_shiny_finalise_control <- renderUI({
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role %||% ""),"administrator"))return(NULL)
+    prepared <- w05_verified_input_rv()
+    dictionary <- w05_dictionary_receipt_rv()
+    ready <- !is.null(prepared) && !is.null(dictionary) &&
+      identical(prepared$dictionary,dictionary) &&
+      identical(w05_dictionary_approved_sha_rv(),as.character(dictionary$sha256))
+    actionButton("w05_shiny_finalise","Finalise W05: code complete corpus",
+      class="btn-primary",disabled=if(ready)NULL else "disabled")
+  })
   output$w05_shiny_subset_launch_control <- renderUI({
     if(!session_can("control_workflows") ||
        !identical(as.character(current_user()$role %||% ""),"administrator"))return(NULL)
@@ -5732,6 +5771,7 @@ server <- function(input, output, session) {
               actionButton("w05_shiny_prepare_input","Verify and prepare W04-included records",class="btn-outline-secondary"),
               numericInput("w05_shiny_subset_size","Records to test",value=100,min=1,max=100000,step=1),
               uiOutput("w05_shiny_subset_launch_control"),
+              uiOutput("w05_shiny_finalise_control"),
               textOutput("w05_shiny_subset_launch_status"),
               tags$h6("Retrieve completed subset results"),
               tags$p(class="saved-note","Enter a completed W05 Shiny subset GitHub Actions run ID. Results are read only, retrieved on demand, and checked against their assignments."),
