@@ -38,9 +38,11 @@ w05_shiny_gh_request <- function(url,method="GET",payload=NULL) {
   if(status!=200L)stop(sprintf("W05 Shiny Actions status failed: HTTP %d",status),call.=FALSE)
   httr2::resp_body_json(resp,simplifyVector=FALSE)
 }
-w05_shiny_subset_dispatch <- function(request, w04_published=FALSE) {
+w05_shiny_subset_dispatch <- function(request, w04_published=FALSE, schema_approved=FALSE) {
   if(!isTRUE(w04_published))
     stop("W05 Shiny subset is paused until verified W04 publication",call.=FALSE)
+  if(!isTRUE(schema_approved))
+    stop("W05 Shiny subset is paused until its archived coding schema is explicitly approved",call.=FALSE)
   v <- w05_shiny_subset_validate_request(request)
   url <- sprintf("https://api.github.com/repos/%s/actions/workflows/w05_shiny_subset.yml/dispatches",
                   w05_shiny_repo())
