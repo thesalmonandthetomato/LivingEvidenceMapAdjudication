@@ -114,3 +114,20 @@ wrong <- receipt
 wrong$sha256 <- paste(rep("d",64L),collapse="")
 stopifnot(inherits(try(w05_crop_approve_version(meta,wrong),silent=TRUE),"try-error"))
 cat("PASS review-scoped W05 approval marker creation, verification and idempotence\\n")
+
+# W04 bridge must reject any corpus/review/publication mismatch.
+good_sha <- paste(rep("a",64L),collapse="")
+receipt <- list(review_id="almeria-map",visibility="restricted",
+  publication_status="published",publication_run_id="12345",
+  included_ids_sha256=good_sha,retained=25L)
+provenance <- list(review_id="almeria-map",
+  included_ids_sha256=good_sha,input_sha256=paste(rep("b",64L),collapse=""),
+  record_count=25L)
+stopifnot(isTRUE(w05_shiny_verify_w04_bridge(receipt,provenance,"almeria-map")))
+bad <- provenance;bad$record_count <- 24L
+stopifnot(inherits(try(w05_shiny_verify_w04_bridge(receipt,bad,"almeria-map"),silent=TRUE),"try-error"))
+bad <- provenance;bad$included_ids_sha256 <- paste(rep("c",64L),collapse="")
+stopifnot(inherits(try(w05_shiny_verify_w04_bridge(receipt,bad,"almeria-map"),silent=TRUE),"try-error"))
+bad_receipt <- receipt;bad_receipt$publication_status <- "draft"
+stopifnot(inherits(try(w05_shiny_verify_w04_bridge(bad_receipt,provenance,"almeria-map"),silent=TRUE),"try-error"))
+cat("PASS isolated W04-to-W05 corpus provenance gate\\n")
