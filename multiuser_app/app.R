@@ -5149,7 +5149,17 @@ server <- function(input, output, session) {
     dest <- tempfile("w05-verified-",fileext=".csv")
     if(!file.copy(info$datapath,dest,overwrite=TRUE))
       stop("Cannot preserve verified W05 CSV",call.=FALSE)
-    w05_dictionary_approved_sha_rv("")
+    # Restore an already-approved immutable version across Shiny sessions.
+    approval <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      draft <- w05_crop_draft(meta)
+      marker <- paste0("w05-approved-",as.character(result$receipt$sha256),".json")
+      files <- draft$files %||% list()
+      sum(vapply(files,function(x)identical(as.character(x$filename),marker),
+                 logical(1)))==1L
+    },error=function(e)FALSE)
+    w05_dictionary_approved_sha_rv(if(isTRUE(approval))
+      as.character(result$receipt$sha256) else "")
     w05_dictionary_receipt_rv(result$receipt)
     w05_crop_dictionary_rv(result$dictionary)
     w05_crop_dictionary_path_rv(dest)
