@@ -174,3 +174,16 @@ w05_shiny_bind_w04_receipt <- function(pointer, review_id, run) {
        retained=as.integer(pointer$retained),
        zenodo_record_id=scalar(pointer$zenodo_record_id))
 }
+
+# Fetch the immutable receipt belonging to a specific completed Shiny W04
+# publication, rather than selecting a global/latest W04 registry entry.
+w05_shiny_fetch_w04_publication <- function(review_id,run_id) {
+  if(length(run_id)!=1L || !grepl("^[0-9]+$",as.character(run_id)))
+    stop("A specific W04 Shiny publication run ID is required",call.=FALSE)
+  repo <- github_dispatch_repo()
+  endpoint <- sprintf("https://api.github.com/repos/%s/actions/runs/%s",repo,run_id)
+  run <- github_api_get_json(endpoint)
+  path <- sprintf("docs/workflow04/zenodo/run-%s.json",run_id)
+  pointer <- jsonlite::fromJSON(read_github_text_file(path),simplifyVector=FALSE)
+  w05_shiny_bind_w04_receipt(pointer,review_id,run)
+}
