@@ -1,0 +1,69 @@
+name: W05 Shiny deterministic subset (isolated)
+run-name: W05 Shiny subset ${{ inputs.review_id }} n=${{ inputs.subset_count }}
+on:
+  workflow_dispatch:
+    inputs:
+      review_id:
+        description: Review identifier
+        required: true
+        type: string
+      zenodo_draft_id:
+        description: Restricted Zenodo draft containing input JSONL and dictionary
+        required: true
+        type: string
+      input_filename:
+        required: true
+        type: string
+      input_sha256:
+        required: true
+        type: string
+      dictionary_filename:
+        required: true
+        type: string
+      dictionary_sha256:
+        required: true
+        type: string
+      subset_count:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  shiny-subset:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Install deterministic dependencies
+        shell: Rscript {0}
+        run: install.packages(c("jsonlite","digest","httr2"))
+      - name: Restore checksum-verified Shiny subset inputs
+        working-directory: multiuser_app
+        shell: Rscript {0}
+        env:
+          ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+          W05_REVIEW_ID: ${{ inputs.review_id }}
+          W05_DRAFT_ID: ${{ inputs.zenodo_draft_id }}
+          W05_INPUT_FILE: ${{ inputs.input_filename }}
+          W05_INPUT_SHA: ${{ inputs.input_sha256 }}
+          W05_DICT_FILE: ${{ inputs.dictionary_filename }}
+          W05_DICT_SHA: ${{ inputs.dictionary_sha256 }}
+        run: |
+          source("scripts/w05_shiny_restore_inputs.R")
+      - name: Code experimental subset only
+        working-directory: multiuser_app
+        shell: bash
+        env:
+          W05_SUBSET_COUNT: ${{ inputs.subset_count }}
+        run: |
+          set -euo pipefail
+          Rscript scripts/w05_crop_worker.R --input "$RUNNER_TEMP/w05-shiny/input.jsonl" --dictionary "$RUNNER_TEMP/w05-shiny/dictionary.csv" --output-dir "$RUNNER_TEMP/w05-shiny-results" --subset-count "$W05_SUBSET_COUNT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: w05-shiny-subset-${{ github.run_id }}
+          path: ${{ runner.temp }}/w05-shiny-results/
+          retention-days: 30
