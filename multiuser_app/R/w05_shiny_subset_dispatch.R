@@ -259,3 +259,19 @@ w05_shiny_w04_included_ids <- function(pointer) {
     stop("W04 included-record IDs checksum mismatch",call.=FALSE)
   readLines(p,warn=FALSE,encoding="UTF-8")
 }
+
+# Locate the latest completed, successful publication for this exact review.
+# Candidates are verified again against their immutable W04 Zenodo pointers.
+w05_shiny_discover_w04_publication <- function(review_id, runs) {
+  if(length(review_id)!=1L || !grepl("^[A-Za-z0-9._-]{3,128}$",review_id))
+    stop("Invalid Shiny review identifier",call.=FALSE)
+  prefix <- paste0("W04 Shiny only publication ",review_id," ")
+  candidates <- Filter(function(x)
+    (identical(as.character(x$path %||% ""),".github/workflows/w04_shiny_publish_only.yml") &&
+       identical(as.character(x$status %||% ""),"completed") &&
+       identical(as.character(x$conclusion %||% ""),"success") &&
+       startsWith(as.character(x$display_title %||% ""),prefix)),runs)
+  if(!length(candidates))return(NULL)
+  candidates[[which.max(vapply(candidates,function(x)
+    suppressWarnings(as.numeric(x$id %||% 0)),numeric(1)))]]
+}
