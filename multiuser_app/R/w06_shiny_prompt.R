@@ -1,3 +1,37 @@
+# DOCX fallback without undeclared Posit Connect/Cloud system packages.
+# W06 uses the existing W04 importer when xml2 is installed, otherwise
+# extracts WordprocessingML paragraph text with base R.
+w06_shiny_docx_decode <- function(xml) {
+  xml <- gsub("</w:p>", "\\n", xml, fixed=TRUE)
+  xml <- gsub("</w:tab>", "\\t", xml, fixed=TRUE)
+  xml <- gsub("<w:tab[^>]*/>", "\\t", xml, perl=TRUE)
+  xml <- gsub("</w:br>", "\\n", xml, fixed=TRUE)
+  xml <- gsub("<w:br[^>]*/>", "\\n", xml, perl=TRUE)
+  xml <- gsub("<[^>]*>", "", xml, perl=TRUE)
+  xml <- gsub("&lt;", "<", xml, fixed=TRUE)
+  xml <- gsub("&gt;", ">", xml, fixed=TRUE)
+  xml <- gsub("&quot;", '"', xml, fixed=TRUE)
+  xml <- gsub("&apos;", "'", xml, fixed=TRUE)
+  xml <- gsub("&amp;", "&", xml, fixed=TRUE)
+  trimws(xml)
+}
+w06_shiny_import_prompt <- function(path,filename) {
+  ext <- tolower(tools::file_ext(filename))
+  if(!identical(ext,"docx") || requireNamespace("xml2",quietly=TRUE))
+    return(w04_prompt_from_upload(path,filename))
+  if(!file.exists(path)||file.info(path)$size>10*1024*1024)
+    stop("W06 DOCX is missing or exceeds 10 MB",call.=FALSE)
+  contents <- utils::unzip(path,list=TRUE)$Name
+  if(!"word/document.xml" %in% contents)
+    stop("Invalid DOCX: word/document.xml missing",call.=FALSE)
+  connection <- unz(path,"word/document.xml",open="r")
+  on.exit(close(connection),add=TRUE)
+  xml <- paste(readLines(connection,warn=FALSE,encoding="UTF-8"),collapse="")
+  txt <- w06_shiny_docx_decode(xml)
+  if(!nzchar(txt))stop("DOCX contains no extractable prompt text",call.=FALSE)
+  txt
+}
+
 # Review-agnostic W06 prompt staging. No geographic rules or model dispatch.
 w06_shiny_prompt_text <- function(path) {
   if(!file.exists(path) || is.na(file.info(path)$size) ||
