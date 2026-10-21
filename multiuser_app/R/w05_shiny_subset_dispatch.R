@@ -47,3 +47,33 @@ w05_shiny_subset_dispatch <- function(request, w04_published=FALSE) {
   w05_shiny_gh_request(url,"POST",list(ref="main",inputs=v))
   invisible(TRUE)
 }
+
+# Pure, fail-closed provenance gate; deliberately does not download, publish or
+# dispatch any workflow. The archive materialisation step must supply these
+# independently verified values from the authoritative W04 publication receipt.
+w05_shiny_verify_w04_bridge <- function(receipt, input_provenance, expected_review) {
+  one <- function(x) length(x)==1L && !is.na(x) && nzchar(as.character(x))
+  hash <- function(x) one(x) && grepl("^[0-9a-f]{64}$",as.character(x))
+  if(!is.list(receipt)||!is.list(input_provenance) || !one(expected_review))
+    stop("Missing W04-to-W05 provenance",call.=FALSE)
+  if(!identical(as.character(receipt$review_id),as.character(expected_review)) ||
+     !identical(as.character(input_provenance$review_id),as.character(expected_review)))
+    stop("W04/W05 review identities differ",call.=FALSE)
+  if(!identical(as.character(receipt$visibility),"restricted") ||
+     !identical(as.character(receipt$publication_status),"published") ||
+     !grepl("^[0-9]+$",as.character(receipt$publication_run_id)))
+    stop("A verified restricted W04 publication is required",call.=FALSE)
+  if(!hash(receipt$included_ids_sha256) || !hash(input_provenance$included_ids_sha256) ||
+     !identical(as.character(receipt$included_ids_sha256),
+                as.character(input_provenance$included_ids_sha256)) ||
+     !hash(input_provenance$input_sha256))
+    stop("W05 input does not match published W04 included-record provenance",call.=FALSE)
+  if(!one(receipt$retained) || !one(input_provenance$record_count) ||
+     is.na(suppressWarnings(as.integer(receipt$retained))) ||
+     is.na(suppressWarnings(as.integer(input_provenance$record_count))) ||
+     as.integer(receipt$retained)<1L ||
+     !identical(as.integer(receipt$retained),
+                as.integer(input_provenance$record_count)))
+    stop("W05 input count differs from the published W04 retained count",call.=FALSE)
+  invisible(TRUE)
+}
