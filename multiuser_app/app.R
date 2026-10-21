@@ -1063,6 +1063,7 @@ server <- function(input, output, session) {
   w05_crop_status_rv <- reactiveVal("W05 is paused. Upload a validated CSV to archive its version in a restricted Zenodo draft.")
   w05_crop_frequencies_rv <- reactiveVal(NULL)
   w05_dictionary_receipt_rv <- reactiveVal(NULL)
+  w05_verified_input_rv <- reactiveVal(NULL)
   w05_dictionary_approved_sha_rv <- reactiveVal("")
   w05_shiny_subset_launch_status_rv <- reactiveVal("Waiting for verified W04 publication and a validated W05 input bundle.")
   w05_shiny_results_status_rv <- reactiveVal("No completed W05 Shiny subset results loaded.")
@@ -5081,11 +5082,94 @@ server <- function(input, output, session) {
     w05_dictionary_approved_sha_rv(as.character(receipt$sha256))
     w05_crop_status_rv("W05 schema approval archived in restricted Zenodo. Execution remains paused until verified W04 publication and a review-bound input bundle are available.")
   })
+  observeEvent(input$w05_shiny_prepare_input,{
+    req(authenticated())
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role %||% ""),"administrator"))return()
+    w05_verified_input_rv(NULL)
+    w05_shiny_subset_launch_status_rv("Verifying review-bound W04 publication and restoring its included records.")
+    result <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      dictionary <- w05_dictionary_receipt_rv()
+      if(is.null(dictionary) ||
+         !identical(w05_dictionary_approved_sha_rv(),as.character(dictionary$sha256)))
+        stop("Approve the archived W05 dictionary first",call.=FALSE)
+      run_id <- trimws(as.character(input$w05_w04_publication_run %||% ""))
+      if(!grepl("^[0-9]+$",run_id))
+        stop("Enter the exact completed W04 Shiny publication run ID",call.=FALSE)
+      source <- w04_subset_review_source_pointers()
+      pointer_path <- sprintf("docs/workflow04/zenodo/run-%s.json",run_id)
+      pointer <- jsonlite::fromJSON(read_github_text_file(pointer_path),
+                                    simplifyVector=FALSE)
+      run <- github_api_get_json(sprintf(
+        "https://api.github.com/repos/%s/actions/runs/%s",
+        github_dispatch_repo(),run_id))
+      restored <- w05_shiny_restore_published_sources(
+        source,pointer,meta$review_id,run)
+      on.exit(unlink(restored$directory,recursive=TRUE),add=TRUE)
+      receipt <- w05_shiny_prepare_handover(meta,restored$canonical,
+        restored$included_ids,restored$receipt,dictionary)
+      if(!identical(as.character(receipt$deposit_id),
+                    as.character(dictionary$deposit_id)))
+        stop("W05 input archive and approved dictionary drafts differ",call.=FALSE)
+      list(input=receipt,dictionary=dictionary,review_id=meta$review_id,
+           publication_run_id=run_id)
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w05_shiny_subset_launch_status_rv(
+        paste("W05 input preparation failed:",conditionMessage(result)))
+      return()
+    }
+    w05_verified_input_rv(result)
+    w05_shiny_subset_launch_status_rv(sprintf(
+      "Verified %d W04-included records in restricted W05 draft %s. Ready for an experimental subset.",
+      result$input$record_count,result$input$deposit_id))
+  })
+  observeEvent(input$w05_shiny_subset_launch,{
+    req(authenticated())
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role %||% ""),"administrator"))return()
+    result <- tryCatch({
+      prepared <- w05_verified_input_rv()
+      dictionary <- w05_dictionary_receipt_rv()
+      meta <- w04_prompt_review_metadata()
+      if(is.null(prepared) || is.null(dictionary) ||
+         !identical(as.character(prepared$review_id),as.character(meta$review_id)) ||
+         !identical(prepared$dictionary,dictionary) ||
+         !identical(w05_dictionary_approved_sha_rv(),as.character(dictionary$sha256)))
+        stop("Verified W04 input and approved coding schema are required",call.=FALSE)
+      n <- suppressWarnings(as.integer(input$w05_shiny_subset_size))
+      if(is.na(n)||n<1L||n>as.integer(prepared$input$record_count))
+        stop("Subset size exceeds the verified included-record corpus",call.=FALSE)
+      request <- list(review_id=meta$review_id,
+        zenodo_draft_id=prepared$input$deposit_id,
+        input_filename=prepared$input$filename,
+        input_sha256=prepared$input$sha256,
+        dictionary_filename=dictionary$filename,
+        dictionary_sha256=dictionary$sha256,
+        subset_count=as.character(n))
+      w05_shiny_subset_dispatch(request,w04_published=TRUE,
+                                schema_approved=TRUE)
+      n
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w05_shiny_subset_launch_status_rv(
+        paste("W05 subset dispatch not confirmed:",conditionMessage(result)))
+      return()
+    }
+    w05_shiny_subset_launch_status_rv(sprintf(
+      "GitHub accepted an isolated W05 subset request for %d records. Check its completed run before interpreting results.",result))
+  })
   output$w05_shiny_subset_launch_control <- renderUI({
     if(!session_can("control_workflows") ||
        !identical(as.character(current_user()$role %||% ""),"administrator"))return(NULL)
+    prepared <- w05_verified_input_rv()
+    dictionary <- w05_dictionary_receipt_rv()
+    ready <- !is.null(prepared) && !is.null(dictionary) &&
+      identical(prepared$dictionary,dictionary) &&
+      identical(w05_dictionary_approved_sha_rv(),as.character(dictionary$sha256))
     actionButton("w05_shiny_subset_launch","Run W05 Shiny subset",
-      class="btn-outline-primary",disabled="disabled")
+      class="btn-outline-primary",disabled=if(ready)NULL else "disabled")
   })
   output$w05_shiny_subset_launch_status <- renderText(
     w05_shiny_subset_launch_status_rv())
@@ -5160,6 +5244,7 @@ server <- function(input, output, session) {
     },error=function(e)FALSE)
     w05_dictionary_approved_sha_rv(if(isTRUE(approval))
       as.character(result$receipt$sha256) else "")
+    w05_verified_input_rv(NULL)
     w05_dictionary_receipt_rv(result$receipt)
     w05_crop_dictionary_rv(result$dictionary)
     w05_crop_dictionary_path_rv(dest)
@@ -5568,6 +5653,8 @@ server <- function(input, output, session) {
               tableOutput("w05_crop_frequencies"),
               tags$h6("Shiny subset testing"),
               tags$p(class="saved-note","This is the separate W05 Shiny execution pathway, not the existing production GitHub pipeline. Experimental subset runs use the uploaded dictionary. The full-corpus run will later start afresh."),
+              textInput("w05_w04_publication_run","Completed W04 Shiny publication run ID",value=""),
+              actionButton("w05_shiny_prepare_input","Verify and prepare W04-included records",class="btn-outline-secondary"),
               numericInput("w05_shiny_subset_size","Records to test",value=100,min=1,max=100000,step=1),
               uiOutput("w05_shiny_subset_launch_control"),
               textOutput("w05_shiny_subset_launch_status"),
