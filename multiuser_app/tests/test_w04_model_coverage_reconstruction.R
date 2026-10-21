@@ -22,4 +22,12 @@ stopifnot(identical(w04_human_coded_ids(human,ids),c("r2","r5")))
 stopifnot(inherits(tryCatch(w04_human_coded_ids(c(human,list(
  list(record_id="r2",status="agreement",final_decision="exclude"))),ids),
  error=identity),"error"))
+choices_batches <- list(
+ list(run_id="11",subset_id="s1",prompt_version_id="old"),
+ list(run_id="12",subset_id="s1",prompt_version_id="new"),
+ list(run_id="21",subset_id="s2",prompt_version_id="chosen"))
+chosen <- w04_selected_model_batches(choices_batches,c(s1="11",s2="21"))
+stopifnot(identical(vapply(chosen,function(b)b$run_id,character(1)),c("11","21")))
+stopifnot(inherits(tryCatch(w04_selected_model_batches(choices_batches,c(s1="",s2="21")),error=identity),"error"))
+stopifnot(inherits(tryCatch(w04_selected_model_batches(choices_batches,c(s1="12")),error=identity),"error"))
 cat("PASS verified existing model coverage and reconstruction\n")
