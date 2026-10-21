@@ -4598,10 +4598,11 @@ server <- function(input, output, session) {
     if(is.null(result))return()
     current <- w04_finalise_submission_rv()
     if(is.null(current)||!identical(as.character(current$bundle),as.character(submission$bundle)))return()
-    w04_finalise_submission_rv(list(bundle=submission$bundle,
+    updated <- list(bundle=submission$bundle,
       status=as.character(result$status %||% "queued"),
       conclusion=as.character(result$conclusion %||% ""),
-      url=as.character(result$html_url %||% "")))
+      url=as.character(result$html_url %||% ""))
+    if(!identical(current,updated))w04_finalise_submission_rv(updated)
   })
   output$w04_finalise_publish_control <- renderUI({
     if(!session_can("control_workflows") ||
