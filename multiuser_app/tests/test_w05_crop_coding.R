@@ -293,3 +293,25 @@ got <- w05_shiny_discover_w04_publication("almeria-map",
 stopifnot(identical(got$id,100L),
  is.null(w05_shiny_discover_w04_publication("other-review",list(candidate))))
 cat("PASS review-bound W04 publication discovery excludes other reviews and failed runs\n")
+
+
+# Overview projection is based entirely on W04 receipt fields, never project constants.
+ptr <- list(workflow="04",state="relevance_screening",status="published",
+  visibility="restricted",publication_github_run_id="123",records=12L,
+  retained=8L,excluded=4L,unresolved=0L,
+  included_record_ids_sha256=paste(rep("a",64L),collapse=""),
+  upstream_lean_canonical_sha256=paste(rep("b",64L),collapse=""))
+run <- list(id=123L,path=".github/workflows/w04_shiny_publish_only.yml",
+  status="completed",conclusion="success",
+  display_title="W04 Shiny only publication another-review model-bundle.json")
+base <- list(completed_through=4L,search_results_total=99L,deduplicated_records=20L)
+mapped <- w05_shiny_w04_pipeline_metrics(base,ptr,"another-review",run,
+  ptr$upstream_lean_canonical_sha256)
+stopifnot(identical(mapped$screened_include,8L),
+          identical(mapped$screened_exclude,4L),
+          identical(mapped$completed_through,5L),
+          identical(mapped$search_results_total,99L))
+ptr$retained <- 7L
+stopifnot(inherits(try(w05_shiny_w04_pipeline_metrics(base,ptr,"another-review",
+  run,ptr$upstream_lean_canonical_sha256),silent=TRUE),"try-error"))
+cat("PASS W04 overview is data-driven and refuses inconsistent publication counts\\n")
