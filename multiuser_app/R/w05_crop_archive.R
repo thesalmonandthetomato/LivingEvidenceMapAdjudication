@@ -114,3 +114,46 @@ w05_crop_approve_version <- function(meta,receipt) {
     stop("W05 schema approval was not confirmed in restricted Zenodo draft",call.=FALSE)
   invisible(TRUE)
 }
+
+# Archive a separately materialised, verified W04-included corpus in the
+# review-specific W05 draft. No workflow dispatch and no draft publication.
+w05_shiny_archive_input <- function(meta, input_path, provenance_path, receipt) {
+  if(!file.exists(input_path) || !file.exists(provenance_path))
+    stop("Materialised W05 input and provenance are required",call.=FALSE)
+  provenance <- jsonlite::fromJSON(provenance_path,simplifyVector=FALSE)
+  w05_shiny_verify_w04_bridge(receipt,provenance,meta$review_id)
+  sha <- digest::digest(file=input_path,algo="sha256",serialize=FALSE)
+  if(!identical(sha,as.character(provenance$input_sha256)))
+    stop("Materialised W05 input bytes do not match provenance",call.=FALSE)
+  dep <- w05_crop_draft(meta)
+  if(is.null(dep))stop("Upload a coding dictionary to create the W05 restricted draft first",call.=FALSE)
+  name <- paste0("w05-shiny-w04-input-",substr(sha,1L,20L),".jsonl")
+  files <- dep$files %||% list()
+  matches <- Filter(function(x)identical(as.character(x$filename),name),files)
+  if(length(matches)>1L)stop("Duplicate archived W05 input",call.=FALSE)
+  if(!length(matches)) {
+    bucket <- as.character(dep$links$bucket %||% "")
+    if(!startsWith(bucket,"https://zenodo.org/api/files/"))
+      stop("Unexpected W05 Zenodo draft bucket",call.=FALSE)
+    w04_prompt_zenodo_request(paste0(bucket,"/",name),method="PUT",
+                              file=input_path,expected=c(200L,201L))
+  }
+  fresh <- w05_crop_draft(w04_prompt_review_metadata(force=TRUE))
+  verified <- Filter(function(x)identical(as.character(x$filename),name),
+                     fresh$files %||% list())
+  if(length(verified)!=1L)
+    stop("W05 input upload is unverified; do not retry blindly",call.=FALSE)
+  url <- as.character(verified[[1L]]$links$download %||% "")
+  if(!startsWith(url,"https://zenodo.org/"))
+    stop("Untrusted W05 input download URL",call.=FALSE)
+  req <- httr2::req_headers(httr2::request(url),
+    Authorization=paste("Bearer",Sys.getenv("ZENODO_ACCESS_TOKEN",unset="")))
+  response <- httr2::req_perform(httr2::req_timeout(req,180))
+  if(httr2::resp_status(response)!=200L ||
+     !identical(digest::digest(httr2::resp_body_raw(response),
+       algo="sha256",serialize=FALSE),sha))
+    stop("Archived W05 input byte verification failed",call.=FALSE)
+  list(deposit_id=as.character(fresh$id),filename=name,sha256=sha,
+       record_count=as.integer(provenance$record_count),
+       included_ids_sha256=as.character(provenance$included_ids_sha256))
+}
