@@ -19,6 +19,8 @@ source("R/w04_prompt_versions.R", local = TRUE)
 source("R/w04_prompt_zenodo.R", local = TRUE)
 source("R/w04_shiny_model_launch.R", local = TRUE)
 source("R/w04_model_batches.R", local = TRUE)
+source("R/w05_crop_coding.R", local = TRUE)
+source("R/w05_crop_archive.R", local = TRUE)
 source("R/w04_workspace_overview.R", local = TRUE)
 source("R/w04_work_overview_sheets.R", local = TRUE)
 source("R/w04_model_conflicts.R", local = TRUE)
@@ -1054,6 +1056,10 @@ server <- function(input, output, session) {
 
   w04_subset_status_rv <- reactiveVal("")
   w04_subset_corpus_rv <- reactiveVal(NULL)
+  w05_crop_dictionary_rv <- reactiveVal(NULL)
+  w05_crop_dictionary_path_rv <- reactiveVal("")
+  w05_crop_status_rv <- reactiveVal("W05 is paused. Upload a validated CSV to archive its version in a restricted Zenodo draft.")
+  w05_crop_frequencies_rv <- reactiveVal(NULL)
   w04_manual_queue_choices_rv <- reactiveVal(list())
   w04_manual_queue_status_rv <- reactiveVal("")
   w04_subsets_rv <- reactiveVal(list())
@@ -5024,6 +5030,65 @@ server <- function(input, output, session) {
     if(!isTRUE(authenticated())) configure_review_requested(FALSE)
   })
 
+  # W05 is configured independently and never dispatches the existing salmon worker.
+  observeEvent(configure_review_requested(),{
+    if(!isTRUE(configure_review_requested()) || !authenticated())return()
+    if(is.null(w05_crop_dictionary_rv())) {
+      example <- tryCatch(w05_crop_read("config/w05_almeria_crop_dictionary.csv"),
+                          error=function(e)e)
+      if(!inherits(example,"error")) {
+        w05_crop_dictionary_rv(example)
+        w05_crop_dictionary_path_rv("config/w05_almeria_crop_dictionary.csv")
+      } else w05_crop_status_rv(paste("Cannot load draft vocabulary:",conditionMessage(example)))
+    }
+  })
+  output$w05_crop_table <- renderTable({
+    dict <- w05_crop_dictionary_rv()
+    if(is.null(dict))return(NULL)
+    dict
+  },striped=TRUE,bordered=FALSE,spacing="xs",width="100%")
+  output$w05_crop_status <- renderText(w05_crop_status_rv())
+  output$w05_crop_frequencies <- renderTable({
+    frequencies <- w05_crop_frequencies_rv()
+    if(is.null(frequencies))return(data.frame(
+       Status="No W05 coding has been executed",check.names=FALSE))
+    frequencies
+  },striped=TRUE,spacing="xs")
+  output$w05_crop_download <- downloadHandler(
+    filename=function()"w05_crop_dictionary.csv",
+    content=function(file) {
+      req(authenticated())
+      src <- w05_crop_dictionary_path_rv()
+      if(!nzchar(src) || !file.exists(src))stop("No dictionary available",call.=FALSE)
+      file.copy(src,file,overwrite=TRUE)
+    },contentType="text/csv")
+  observeEvent(input$w05_crop_upload,{
+    req(authenticated())
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role %||% ""),"administrator"))return()
+    info <- input$w05_crop_upload
+    if(is.null(info))return()
+    result <- tryCatch({
+      dict <- w05_crop_read(info$datapath)
+      meta <- w04_prompt_review_metadata()
+      receipt <- w05_crop_archive_upload(meta,info$datapath)
+      list(dictionary=dict,receipt=receipt)
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w05_crop_status_rv(paste("W05 upload not confirmed:",conditionMessage(result)))
+      showNotification("W05 dictionary upload could not be confirmed. Check status before retrying.",
+                       type="error",duration=10)
+      return()
+    }
+    dest <- tempfile("w05-verified-",fileext=".csv")
+    if(!file.copy(info$datapath,dest,overwrite=TRUE))
+      stop("Cannot preserve verified W05 CSV",call.=FALSE)
+    w05_crop_dictionary_rv(result$dictionary)
+    w05_crop_dictionary_path_rv(dest)
+    w05_crop_frequencies_rv(NULL)
+    w05_crop_status_rv(sprintf("Archived %d codes in restricted Zenodo draft %s; immutable file %s. W05 execution remains paused.",
+      result$receipt$codes,result$receipt$deposit_id,result$receipt$filename))
+  })
   # Keep the administrator entry point independent of the expensive configuration
   # renderer. Once mounted, the entry point remains available during reactivity.
   output$configure_review <- renderUI({
@@ -5409,6 +5474,20 @@ server <- function(input, output, session) {
                     uiOutput("w04_finalise_submission_status")))
               )
             )),
+            tabPanel("W05",div(class="px-3 pb-3",
+              tags$h5("W05 crop coding"),
+              tags$p(class="saved-note","The crop dictionary is read-only here. Edit a CSV outside the app and upload a new version. Unspecified crop is automatically assigned whenever no named crop matches."),
+              fileInput("w05_crop_upload","Upload crop dictionary CSV",accept=c(".csv","text/csv")),
+              downloadButton("w05_crop_download","Download CSV",class="btn-outline-secondary btn-sm"),
+              textOutput("w05_crop_status"),
+              tags$div(style="max-height:420px;overflow:auto;border:1px solid #dce3e8;border-radius:6px;margin-top:10px;",
+                tableOutput("w05_crop_table")),
+              tags$hr(),
+              tags$h6("Deterministic coding results"),
+              tags$p(class="saved-note","Frequency counts are the number of distinct records assigned to each code. One record can have multiple identified crops; unspecified is assigned only when no crop is identified."),
+              tableOutput("w05_crop_frequencies"),
+              tags$p(class="saved-note","Subset and full-corpus execution are temporarily paused. The existing W05 worker uses a salmon-species configuration and must be adapted and validated before either can run. Experimental subset results will not contribute to the future full-corpus run."),
+              tags$span(class="badge bg-secondary","W05 execution paused"))),
             tabPanel("W08",uiOutput("w08_admin_controls")),
             tabPanel("System",uiOutput("system_admin_controls"))
           )
