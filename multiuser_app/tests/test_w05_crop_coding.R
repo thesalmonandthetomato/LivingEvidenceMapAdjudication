@@ -191,3 +191,29 @@ stopifnot(inherits(try(w05_shiny_archive_input(bridge_meta,bridge_input,
   bridge_prov,bridge_receipt),silent=TRUE),"try-error"),archive_calls==0L)
 unlink(c(bridge_input,bridge_prov))
 cat("PASS invalid W05 input rejected before Zenodo archive activity\\n")
+
+
+# Handover composition: authenticated schema marker is required before
+# materialisation; no real Zenodo upload or GitHub dispatch.
+schema_sha <- paste(rep("e",64L),collapse="")
+schema_receipt <- list(deposit_id="123456",sha256=schema_sha)
+meta <- list(review_id="almeria-map",values=list(w05_crop_zenodo_draft_id="123456"))
+w05_crop_draft <- function(meta)list(files=list(),id=123456L)
+w05_crop_draft_id <- function(meta)as.character(meta$values$w05_crop_zenodo_draft_id)
+missing_source <- tempfile()
+stopifnot(inherits(try(w05_shiny_prepare_handover(meta,missing_source,
+ missing_source,list(),schema_receipt),silent=TRUE),"try-error"))
+# Create complete fixture to prove the approval check fails closed.
+dir.create(fixture_dir <- tempfile("w05-handover-"))
+cpath <- file.path(fixture_dir,"canonical.jsonl")
+ipath <- file.path(fixture_dir,"included.txt")
+writeLines('{"identity":{"record_id":"a"}}',cpath)
+writeLines("a",ipath)
+minimal <- list(review_id="almeria-map",publication_status="published",
+ visibility="restricted",publication_run_id="101",retained=1L,
+ included_ids_sha256=digest::digest(file=ipath,algo="sha256",serialize=FALSE),
+ upstream_lean_canonical_sha256=digest::digest(file=cpath,algo="sha256",serialize=FALSE))
+stopifnot(inherits(try(w05_shiny_prepare_handover(meta,cpath,ipath,
+ minimal,schema_receipt),silent=TRUE),"try-error"))
+unlink(fixture_dir,recursive=TRUE)
+cat("PASS W05 handover requires restored sources and approved dictionary before execution\\n")
