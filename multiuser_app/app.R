@@ -5095,8 +5095,18 @@ server <- function(input, output, session) {
          !identical(w05_dictionary_approved_sha_rv(),as.character(dictionary$sha256)))
         stop("Approve the archived W05 dictionary first",call.=FALSE)
       run_id <- trimws(as.character(input$w05_w04_publication_run %||% ""))
+      if(!nzchar(run_id)) {
+        endpoint <- sprintf(
+          "https://api.github.com/repos/%s/actions/runs?per_page=100",
+          github_dispatch_repo())
+        runs <- github_api_get_json(endpoint)$workflow_runs %||% list()
+        found <- w05_shiny_discover_w04_publication(meta$review_id,runs)
+        if(is.null(found))
+          stop("No completed W04-only publication found for this review in the recent Actions history. Finalise W04 first, or enter its specific successful run ID.",call.=FALSE)
+        run_id <- as.character(found$id)
+      }
       if(!grepl("^[0-9]+$",run_id))
-        stop("Enter the exact completed W04 Shiny publication run ID",call.=FALSE)
+        stop("Invalid W04 Shiny publication run ID",call.=FALSE)
       source <- w04_subset_review_source_pointers()
       pointer_path <- sprintf("docs/workflow04/zenodo/run-%s.json",run_id)
       pointer <- jsonlite::fromJSON(read_github_text_file(pointer_path),
@@ -5653,7 +5663,7 @@ server <- function(input, output, session) {
               tableOutput("w05_crop_frequencies"),
               tags$h6("Shiny subset testing"),
               tags$p(class="saved-note","This is the separate W05 Shiny execution pathway, not the existing production GitHub pipeline. Experimental subset runs use the uploaded dictionary. The full-corpus run will later start afresh."),
-              textInput("w05_w04_publication_run","Completed W04 Shiny publication run ID",value=""),
+              textInput("w05_w04_publication_run","W04 publication run ID (optional; automatically detect latest for this review)",value=""),
               actionButton("w05_shiny_prepare_input","Verify and prepare W04-included records",class="btn-outline-secondary"),
               numericInput("w05_shiny_subset_size","Records to test",value=100,min=1,max=100000,step=1),
               uiOutput("w05_shiny_subset_launch_control"),
