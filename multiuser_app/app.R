@@ -4556,26 +4556,62 @@ server <- function(input, output, session) {
                        null="null",na="null",digits=NA),character(1)),
                  file,useBytes=TRUE)
     })
-  observeEvent(input$w04_finalise_archive,{
+  w04_finalise_dispatch_busy_rv <- reactiveVal(FALSE)
+  output$w04_finalise_publish_control <- renderUI({
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role %||% ""),"administrator"))
+      return(NULL)
+    ready <- !is.null(w04_finalise_export_rv()) &&
+      !isTRUE(w04_finalise_dispatch_busy_rv())
+    actionButton("w04_finalise_publish",
+      "Finalise W04 and proceed to W05",
+      class="btn-primary",disabled=if(!ready)"disabled" else NULL)
+  })
+  observeEvent(input$w04_finalise_publish,{
     req(authenticated())
     if(!session_can("control_workflows") ||
-       !identical(as.character(current_user()$role),"administrator"))return()
+       !identical(as.character(current_user()$role %||% ""),"administrator") ||
+       isTRUE(w04_finalise_dispatch_busy_rv()) ||
+       is.null(w04_finalise_export_rv()))return()
+    showModal(modalDialog(
+      title="Confirm W04 finalisation",
+      "Publish the verified W04 screening results to restricted Zenodo and start W05 after successful publication? This cannot be undone from the application.",
+      footer=tagList(modalButton("Cancel"),
+        actionButton("w04_finalise_confirm_publish","Confirm publication and W05 handoff",class="btn-danger")),
+      easyClose=TRUE))
+  })
+  observeEvent(input$w04_finalise_confirm_publish,{
+    removeModal()
+    req(authenticated())
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role %||% ""),"administrator") ||
+       isTRUE(w04_finalise_dispatch_busy_rv()))return()
+    w04_finalise_dispatch_busy_rv(TRUE)
+    on.exit(w04_finalise_dispatch_busy_rv(FALSE),add=TRUE)
     result <- tryCatch({
       snapshot <- w04_finalise_export_rv()
-      if(is.null(snapshot))stop("Run the verified coverage check first",call.=FALSE)
+      if(is.null(snapshot))stop("Verified reconciliation is no longer current",call.=FALSE)
       meta <- w04_prompt_review_metadata()
       source <- w04_subset_review_source_pointers()
+      if(!identical(as.character(meta$review_id),snapshot$review_id) ||
+         !identical(tolower(as.character(source$lean$lean_canonical_sha256)),
+                    snapshot$checkpoint_sha256))
+        stop("Review or canonical checkpoint changed; refresh Finalise",call.=FALSE)
       bundle <- w04_finalise_bundle_build(meta,source,snapshot)
       archived <- w04_shiny_model_bundle_archive(meta,bundle)
-      w04_finalise_validation_dispatch(meta,source,archived)
+      w04_finalise_publication_dispatch(meta,source,archived)
       archived
     },error=function(e)e)
     if(inherits(result,"error"))
-      w04_finalise_check_status(paste("Archiving or offline validation dispatch was not confirmed:",conditionMessage(result)))
-    else w04_finalise_check_status(paste(
-      "Immutable reconciliation archived and verified:",result$filename,
-      "SHA-256",result$sha256,
-      "Offline GitHub validation dispatched; no publication or W05 launch."))
+      w04_finalise_check_status(paste("W04 publication was not confirmed:",
+        conditionMessage(result)))
+    else {
+      w04_finalise_export_rv(NULL)
+      w04_finalise_check_status(paste(
+        "W04 publication and W05 handoff workflow dispatched.",
+        "GitHub must confirm publication and W05 success before W04 is considered finalised.",
+        "Verified bundle:",result$filename))
+    }
   })
   w04_finalise_prepare_status_rv <- reactiveVal("")
   w04_finalise_last_refresh_rv <- reactiveVal(-1L)
@@ -5251,14 +5287,12 @@ server <- function(input, output, session) {
                     uiOutput("w04_overview_conflicts"))),
                 tabPanel("Finalise",
                   div(class="px-3 pb-3",
-                    tags$p(class="saved-note","Finalisation data loads when this tab opens. Select one authoritative model run per subset. Earlier runs remain archived, and saved adjudications are retrieved during reconciliation. Publication and W05 handoff are not yet enabled."),
+                    tags$p(class="saved-note","Finalisation data loads when this tab opens. Select one authoritative model run per subset. Earlier runs remain archived, and saved adjudications are retrieved during reconciliation. The final action is enabled only after complete reconciliation; publication requires confirmation."),
                     actionButton("w04_finalise_prepare","Refresh finalisation data",class="btn-outline-secondary btn-sm"),
                     textOutput("w04_finalise_prepare_status"),
                     uiOutput("w04_model_run_choices"),
                     textOutput("w04_finalise_check_status"),
-                    uiOutput("w04_finalise_export_control"),
-                    actionButton("w04_finalise_archive","Validate reconciled W04 outputs (does not publish)",
-                                 class="btn-outline-secondary btn-sm")))
+                    uiOutput("w04_finalise_publish_control")))
               )
             )),
             tabPanel("W08",uiOutput("w08_admin_controls")),
