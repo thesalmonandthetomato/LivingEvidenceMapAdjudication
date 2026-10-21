@@ -50,11 +50,22 @@ stopifnot(length(unique(result$assignments$record_id))==nrow(rows),
 dir.create(output,recursive=TRUE,showWarnings=FALSE)
 utils::write.csv(result$assignments,file.path(output,"w05_crop_assignments.csv"),row.names=FALSE,na="")
 utils::write.csv(result$frequencies,file.path(output,"w05_crop_frequencies.csv"),row.names=FALSE,na="")
+# Reviewable evidence for records that received no named crop. The same
+# checksum-verified input records supply IDs, titles and abstracts.
+unspecified_ids <- unique(as.character(result$assignments$record_id[
+  result$assignments$entity=="crop" &
+  result$assignments$code=="unspecified_horticultural_crop"]))
+unspecified <- rows[match(unspecified_ids,rows$record_id),c("record_id","title","abstract"),drop=FALSE]
+if(anyNA(unspecified$record_id) || nrow(unspecified)!=length(unspecified_ids))
+  stop("Unspecified crop IDs cannot be joined to source records",call.=FALSE)
+utils::write.csv(unspecified,file.path(output,"w05_unspecified_crop_evidence.csv"),
+                 row.names=FALSE,na="")
+
 manifest <- list(schema="lem-w05-crop-test-v1",mode=if(full)"full_corpus" else "subset_test",
   dictionary_sha256=sha,input_sha256=digest::digest(file=input,algo="sha256",serialize=FALSE),
   input_records=original_count,processed_records=nrow(rows),
   unmatched_records=sum(result$assignments$entity=="crop" & result$assignments$code=="unspecified_horticultural_crop"),
-  outputs=c("w05_crop_assignments.csv","w05_crop_frequencies.csv"),
+  outputs=c("w05_crop_assignments.csv","w05_crop_frequencies.csv","w05_unspecified_crop_evidence.csv"),
   created_at_utc=format(Sys.time(),"%Y-%m-%dT%H:%M:%SZ",tz="UTC"))
 writeLines(jsonlite::toJSON(manifest,pretty=TRUE,auto_unbox=TRUE),
            file.path(output,"w05_crop_manifest.json"))
