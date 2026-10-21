@@ -78,7 +78,7 @@ fake_api <- function(url,method="GET",payload=NULL) {
   if(grepl("/artifacts$",url))
     return(list(artifacts=list(list(name="w05-shiny-subset-12345",expired=FALSE,
       archive_download_url=paste0("https://api.github.com/repos/",
-        "thesalmonandthetomato/LivingEvidenceMapAdjudication/actions/artifacts/999/zip")))))
+        "thesalmonandthetomato/LivingEvidenceMap/actions/artifacts/999/zip")))))
   list(path=".github/workflows/w05_shiny_subset.yml",
        status="completed",conclusion="success",
        html_url="https://github.com/test/actions/runs/12345")
