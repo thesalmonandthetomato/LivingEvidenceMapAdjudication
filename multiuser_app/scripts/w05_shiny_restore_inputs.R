@@ -1,6 +1,7 @@
 # Isolated Shiny W05 subset input restoration. Reads an existing Zenodo draft;
 # never creates/publishes a draft or dispatches another workflow.
 suppressPackageStartupMessages({library(httr2);library(jsonlite);library(digest)})
+`%||%` <- function(x,y)if(is.null(x)||length(x)==0L)y else x
 scalar <- function(key) Sys.getenv(key,unset="")
 review <- scalar("W05_REVIEW_ID")
 id <- scalar("W05_DRAFT_ID")
@@ -33,7 +34,6 @@ find_one <- function(name) {
   if(!startsWith(url,"https://zenodo.org/"))stop("Untrusted Zenodo file link",call.=FALSE)
   url
 }
-`%||%` <- function(x,y)if(is.null(x)||length(x)==0L)y else x
 dest <- file.path(Sys.getenv("RUNNER_TEMP"),"w05-shiny")
 dir.create(dest,recursive=TRUE,showWarnings=FALSE)
 for(item in list(list(name=input,sha=ish,target="input.jsonl"),
