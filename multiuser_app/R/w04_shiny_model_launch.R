@@ -268,6 +268,7 @@ w04_finalise_validation_dispatch <- function(meta,source,archive) {
 
 # Explicitly confirmed publication. Never invoke from a reactive selection.
 w04_finalise_publication_dispatch <- function(meta,source,archive) {
+  stop("W04 publication dispatch is paused until the W05 automatic handoff is separated. W05 coding schema is not configured.",call.=FALSE)
   if(!identical(as.character(meta$review_id),as.character(source$review_id)) ||
      !grepl("^[0-9a-f]{64}$",as.character(archive$sha256 %||% "")))
     stop("Invalid W04 finalisation validation provenance",call.=FALSE)
