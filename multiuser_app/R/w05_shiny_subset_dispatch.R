@@ -79,3 +79,39 @@ w05_shiny_verify_w04_bridge <- function(receipt, input_provenance, expected_revi
     stop("W05 input count differs from the published W04 retained count",call.=FALSE)
   invisible(TRUE)
 }
+
+# Single Shiny-only handover operation. The caller supplies files restored from
+# authoritative W04 publication, never raw unverified screening selections.
+# Does not dispatch W05; the user must separately request experimental execution.
+w05_shiny_prepare_handover <- function(meta, canonical, included_ids,
+                                        publication_receipt, dictionary_receipt) {
+  if(!is.list(publication_receipt) || !is.list(dictionary_receipt))
+    stop("W04 publication and W05 dictionary receipts are required",call.=FALSE)
+  if(!identical(as.character(dictionary_receipt$deposit_id),
+                w05_crop_draft_id(meta)) ||
+     !identical(as.character(dictionary_receipt$sha256),
+                as.character(dictionary_receipt$sha256 %||% "")) ||
+     !grepl("^[0-9a-f]{64}$",as.character(dictionary_receipt$sha256)))
+    stop("Dictionary receipt does not identify this review's W05 draft",call.=FALSE)
+  tmp <- tempfile("w05-shiny-handover-")
+  dir.create(tmp,recursive=TRUE)
+  on.exit(unlink(tmp,recursive=TRUE),add=TRUE)
+  receipt_path <- file.path(tmp,"publication.json")
+  output <- file.path(tmp,"w05-input.jsonl")
+  manifest <- file.path(tmp,"provenance.json")
+  jsonlite::write_json(publication_receipt,receipt_path,auto_unbox=TRUE)
+  script <- "scripts/w05_shiny_materialise_w04.R"
+  if(!file.exists(script))
+    stop("W05 Shiny materialisation script missing",call.=FALSE)
+  arguments <- c(shQuote(script),"--canonical",shQuote(normalizePath(canonical)),
+    "--included-ids",shQuote(normalizePath(included_ids)),
+    "--receipt",shQuote(receipt_path),"--review-id",shQuote(meta$review_id),
+    "--output",shQuote(output),"--manifest",shQuote(manifest))
+  status <- suppressWarnings(system2(file.path(R.home("bin"),"Rscript"),
+    arguments,stdout=TRUE,stderr=TRUE))
+  if(!is.null(attr(status,"status")) && attr(status,"status")!=0L)
+    stop("W05 Shiny materialisation failed: ",paste(status,collapse="; "),call.=FALSE)
+  provenance <- jsonlite::fromJSON(manifest,simplifyVector=FALSE)
+  w05_shiny_verify_w04_bridge(publication_receipt,provenance,meta$review_id)
+  w05_shiny_archive_input(meta,output,manifest,publication_receipt)
+}
