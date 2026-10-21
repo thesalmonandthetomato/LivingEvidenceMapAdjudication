@@ -4082,9 +4082,9 @@ server <- function(input, output, session) {
     if(!length(xs))return(tags$p(class="saved-note",
       "No model batches loaded. Click Load completed model batches; any read error appears below."))
     tags$p(class="saved-note",sprintf(
-      "%d saved model runs loaded from the active review registry. Run 39551137733: %s.",
-      length(xs),if(any(vapply(xs,function(x)
-        identical(as.character(x$run_id),"39551137733"),logical(1)))) "found" else "not found"))
+      "%d saved model runs loaded. Run IDs: %s.",
+      length(xs),paste(vapply(xs,function(x)as.character(x$run_id),character(1)),
+        collapse=", ")))
   })
   output$w04_model_batch_selector <- renderUI({
     req(authenticated())
