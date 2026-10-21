@@ -5198,14 +5198,14 @@ server <- function(input, output, session) {
                     uiOutput("w04_overview_conflicts"))),
                 tabPanel("Finalise",
                   div(class="px-3 pb-3",
-                    tags$p(class="saved-note","Choose the final completed model run for each subset below. Previous experimental runs are retained but not used. Your saved uncertainty decisions are included automatically. No model screening is run here."),
+                    tags$p(class="saved-note","Choose one completed model run per subset. Earlier experiments stay archived. Saved uncertainty decisions are retrieved automatically. The current final output action validates but cannot yet publish W04 or send records to W05."),
                     actionButton("w04_finalise_prepare","Load finalisation data",class="btn-outline-secondary btn-sm"),
                     textOutput("w04_finalise_prepare_status"),
                     uiOutput("w04_model_run_choices"),
                     actionButton("w04_finalise_check","Check final screening coverage",class="btn-outline-primary btn-sm"),
                     textOutput("w04_finalise_check_status"),
                     uiOutput("w04_finalise_export_control"),
-                    actionButton("w04_finalise_archive","Archive verified W04 input",
+                    actionButton("w04_finalise_archive","Validate reconciled W04 outputs (does not publish)",
                                  class="btn-outline-secondary btn-sm")))
               )
             )),
