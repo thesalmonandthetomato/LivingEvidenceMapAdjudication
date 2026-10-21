@@ -187,3 +187,34 @@ w05_shiny_fetch_w04_publication <- function(review_id,run_id) {
   pointer <- jsonlite::fromJSON(read_github_text_file(path),simplifyVector=FALSE)
   w05_shiny_bind_w04_receipt(pointer,review_id,run)
 }
+
+# Restore canonical and included identifiers only from checksum-verified
+# upstream publication archives. This is invoked after binding the exact W04
+# Shiny publication receipt; no latest-run fallback is permitted.
+w05_shiny_restore_published_sources <- function(source, publication_pointer,
+                                                 review_id, publication_run) {
+  receipt <- w05_shiny_bind_w04_receipt(publication_pointer,review_id,
+                                       publication_run)
+  if(!identical(tolower(as.character(source$lean$lean_canonical_sha256)),
+                receipt$upstream_lean_canonical_sha256))
+    stop("W04 publication does not match this review's W02 canonical source",call.=FALSE)
+  canonical_lines <- w04_subset_verified_archive(source$lean,"lean")
+  ids_archive <- w04_subset_verified_archive(publication_pointer,"w04")
+  ids <- ids_archive[nzchar(trimws(ids_archive))]
+  if(length(ids)!=receipt$retained || anyDuplicated(ids))
+    stop("W04 publication included-record count mismatch",call.=FALSE)
+  root <- tempfile("w05-w04-")
+  dir.create(root)
+  canonical <- file.path(root,"canonical.jsonl")
+  included <- file.path(root,"included.txt")
+  writeLines(canonical_lines,canonical,useBytes=TRUE)
+  writeLines(ids,included,useBytes=TRUE)
+  if(!identical(digest::digest(file=canonical,algo="sha256",serialize=FALSE),
+                receipt$upstream_lean_canonical_sha256) ||
+     !identical(digest::digest(file=included,algo="sha256",serialize=FALSE),
+                receipt$included_ids_sha256)) {
+    unlink(root,recursive=TRUE)
+    stop("Restored W04 publication source checksum mismatch",call.=FALSE)
+  }
+  list(directory=root,canonical=canonical,included_ids=included,receipt=receipt)
+}
