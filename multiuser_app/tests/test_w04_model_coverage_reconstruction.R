@@ -12,7 +12,9 @@ selection <- w04_subset_reconstruct_selection(ids,
 stopifnot(identical(selection$record_ids,c("r2","r4","r5")))
 conflicting <- function(b) data.frame(record_id="r1",
  decision=if(b$run_id=="1") "retain" else "exclude")
-stopifnot(inherits(tryCatch(w04_model_coded_ids(runs,ids,conflicting),error=identity),"error"))
+stopifnot(identical(w04_model_coded_ids(runs,ids,conflicting),"r1"))
+stopifnot(!"r1" %in% w04_subset_reconstruct_selection(ids,
+ coded_ids=w04_model_coded_ids(runs,ids,conflicting))$record_ids)
 human <- list(list(record_id="r2",status="agreement",final_decision="retain"),
  list(record_id="r4",status="conflict",final_decision=""),
  list(record_id="r5",status="single_human",final_decision="exclude"))
