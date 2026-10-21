@@ -1973,8 +1973,7 @@ server <- function(input, output, session) {
           kpi(
             "Manually screened",
             if(nzchar(manual_screening_kpi_error_rv())) "Unavailable" else if(is.null(m)) "—" else fmt_pipeline_n(m$manually_screened),
-            if(nzchar(manual_screening_kpi_error_rv())) "Saved κ could not be loaded" else if(is.null(m) || is.na(m$kappa)) "κ not recorded in registry" else paste0("κ ",sprintf("%.3f",m$kappa)),
-            stage_position=5L
+            if(nzchar(manual_screening_kpi_error_rv())) "Saved κ could not be loaded" else if(is.null(m) || is.na(m$kappa)) "κ not recorded in registry" else paste0("κ ",sprintf("%.3f",m$kappa))
           )
         },
         kpi(
