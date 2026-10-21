@@ -161,7 +161,17 @@ w04_latest_subset_model_kappa <- function(analyses,batches) {
       as.character(x$patterns_json %||% "[]"),simplifyVector=FALSE),
       error=function(e)stop("Saved W04 comparison pattern JSON is invalid",call.=FALSE))
     if(!is.list(value))stop("Saved W04 comparison patterns are invalid",call.=FALSE)
-    value
+    raters <- as.character(jsonlite::fromJSON(as.character(x$rater_ids_json)))
+    if(length(raters)!=2L || sum(raters=="model")!=1L)
+      stop("Saved W04 comparison rater provenance is invalid",call.=FALSE)
+    if(identical(raters[[1L]],"model")) return(value)
+    lapply(value,function(z) {
+      pieces <- strsplit(as.character(z$pattern %||% "")," \\| ")[[1L]]
+      if(length(pieces)!=2L)
+        stop("Saved W04 comparison pattern has invalid rater cardinality",call.=FALSE)
+      z$pattern <- paste(rev(pieces),collapse=" | ")
+      z
+    })
   }),recursive=FALSE)
   if(!length(patterns))
     return(list(kappa=NA_real_,kappa_n=0L,subsets=length(selected)))
