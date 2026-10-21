@@ -1916,6 +1916,18 @@ server <- function(input, output, session) {
             stage_position=5L
           )
         },
+        {
+          batches <- w04_model_batches_rv()
+          latest <- if(length(batches)) {
+            ord <- order(vapply(batches,function(b)as.character(b$published_at_utc %||% ""),character(1)),decreasing=TRUE)
+            batches[[ord[[1L]]]]
+          } else NULL
+          kpi("Latest model batch",
+              if(is.null(latest)) "—" else fmt_pipeline_n(latest$total),
+              if(is.null(latest)) "load completed batches" else
+                paste0("run ",latest$run_id," · ",latest$uncertain," uncertain"),
+              stage_position=5L)
+        },
         kpi(
           "Screened",
           paste0(fmt_pipeline_n(p$screened_include)," / ",fmt_pipeline_n(p$screened_exclude)),
@@ -4052,6 +4064,7 @@ server <- function(input, output, session) {
       return()
     }
     w04_model_batches_rv(result)
+    w04_finalise_selection_batches_rv(result)
     # Publication metadata is synchronised in bulk when completed model runs
     # are loaded; never poll the model registry from the read-only overview.
     synced <- tryCatch({
@@ -4063,6 +4076,15 @@ server <- function(input, output, session) {
         length(result),conditionMessage(synced))
       else sprintf("%d completed model run(s) available; %d new summary row(s).",
         length(result),synced))
+  })
+  output$w04_model_registry_diagnostic <- renderUI({
+    xs <- w04_model_batches_rv()
+    if(!length(xs))return(tags$p(class="saved-note",
+      "No model batches loaded. Click Load completed model batches; any read error appears below."))
+    tags$p(class="saved-note",sprintf(
+      "%d saved model runs loaded from the active review registry. Run 39551137733: %s.",
+      length(xs),if(any(vapply(xs,function(x)
+        identical(as.character(x$run_id),"39551137733"),logical(1)))) "found" else "not found"))
   })
   output$w04_model_batch_selector <- renderUI({
     req(authenticated())
@@ -5111,6 +5133,7 @@ server <- function(input, output, session) {
                   tags$h5("Inspect completed model runs"),
                   tags$p(class="saved-note","Inspect completed runs here; launching models remains in Run model."),
                   actionButton("w04_model_batches_refresh","Load completed model batches",class="btn-outline-secondary btn-sm"),
+                  uiOutput("w04_model_registry_diagnostic"),
                   uiOutput("w04_model_batch_selector"),
                   actionButton("w04_model_batch_open","Open selected model batch",class="btn-outline-primary btn-sm"),
                   textOutput("w04_model_return_status"),
