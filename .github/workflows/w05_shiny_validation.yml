@@ -6,6 +6,8 @@ on:
     paths:
       - 'multiuser_app/R/w05_crop_coding.R'
       - 'multiuser_app/R/w05_crop_archive.R'
+      - 'multiuser_app/R/w05_shiny_subset_dispatch.R'
+      - 'multiuser_app/app.R'
       - 'multiuser_app/scripts/w05_crop_worker.R'
       - 'multiuser_app/scripts/w05_shiny_restore_inputs.R'
       - '.github/workflows/w05_shiny_subset.yml'
@@ -31,7 +33,7 @@ jobs:
         working-directory: multiuser_app
         shell: Rscript {0}
         run: |
-          for (p in c("R/w05_crop_coding.R", "R/w05_crop_archive.R", "scripts/w05_crop_worker.R", "scripts/w05_shiny_restore_inputs.R", "app.R")) parse(file=p)
+          for (p in c("R/w05_crop_coding.R", "R/w05_crop_archive.R", "R/w05_shiny_subset_dispatch.R", "scripts/w05_crop_worker.R", "scripts/w05_shiny_restore_inputs.R", "app.R")) parse(file=p)
           cat("PASS W05 Shiny parse\n")
       - name: Run independent W05 regression tests
         working-directory: multiuser_app
