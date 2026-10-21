@@ -4650,14 +4650,17 @@ server <- function(input, output, session) {
       length(result$corpus$record_ids),length(result$batches)))
   })
   w04_finalise_selection_signature <- reactive({
-    batches <- w04_finalise_selection_batches_rv()
-    if(!length(batches)) return(NULL)
-    ids <- unique(vapply(batches,function(b)as.character(b$subset_id),character(1)))
-    choices <- vapply(ids,function(id)as.character(input[[paste0(
-      "w04_use_run_",substr(digest::digest(id,algo="sha256",serialize=FALSE),1L,16L)
-    )]] %||% ""),character(1))
-    if(any(!nzchar(choices))) return(NULL)
-    paste(choices,collapse="|")
+    candidates <- w04_finalise_common_prompt_runs()
+    if(!length(candidates))return(NULL)
+    selected <- as.character(input$w04_finalise_prompt_sha %||% "")
+    if(!selected %in% names(candidates)) {
+      scores <- vapply(candidates,function(xs)
+        max(vapply(xs,function(x)as.character(x$published_at_utc %||% ""),character(1))),
+        character(1))
+      selected <- names(candidates)[[order(scores,decreasing=TRUE)[[1L]]]]
+    }
+    paste(selected,paste(vapply(candidates[[selected]],
+      function(x)as.character(x$run_id),character(1)),collapse="|"),sep="|")
   })
   observeEvent(w04_finalise_selection_signature(),{
     w04_finalise_export_rv(NULL)
@@ -4759,45 +4762,78 @@ server <- function(input, output, session) {
     selectInput("w04_model_prompt_selected","Immutable archived prompt",
       choices=stats::setNames(ids,labels))
   })
-  output$w04_model_run_choices <- renderUI({
-    batches <- w04_finalise_selection_batches_rv()
-    if(!length(batches))return(tags$p(class="saved-note","No completed saved model runs to select."))
-    subset_ids <- unique(vapply(batches,function(x)as.character(x$subset_id),character(1)))
-    tagList(lapply(subset_ids,function(id) {
-      options <- Filter(function(b)identical(as.character(b$subset_id),id),batches)
-      keys <- vapply(options,function(b)as.character(b$run_id),character(1))
-      labels <- vapply(options,function(b) {
-        date <- as.character(b$published_at_utc %||% "")
-        day <- if(nchar(date)>=16L) paste0(substr(date,1L,10L)," ",substr(date,12L,16L)," UTC") else date
-        paste0(day," | ",b$retain," include, ",b$exclude," exclude, ",
-          b$uncertain," uncertain | prompt ",substr(as.character(b$prompt_version_id),1L,15L),
-          " | run ",b$run_id)
-      },character(1))
-      title <- paste("Subset",match(id,subset_ids),"of",length(subset_ids))
-      div(class="mb-3",
-        tags$strong(title),
-        tags$p(class="saved-note",
-          paste0("Records in each run: ",paste(unique(vapply(options,function(b)as.character(b$total),character(1))),collapse=", "),
-          ". Choose by screening outcomes, prompt and date. No run is selected automatically.")),
-        selectInput(paste0("w04_use_run_",substr(digest::digest(id,algo="sha256",serialize=FALSE),1L,16L)),
-          "Model run to retain",
-          choices=c("Select a model run"="",stats::setNames(keys,labels)),selected=""),
-        tags$details(tags$summary("Show full run provenance"),
-          tags$small(class="text-muted",paste("Subset ID:",id)),
-          tags$ul(lapply(options,function(b)tags$li(
-            paste0("Run ",b$run_id," | prompt ",b$prompt_version_id,
-                   " | ",b$published_at_utc," | ",b$total," records; ",
-                   b$retain," include, ",b$exclude," exclude, ",b$uncertain," uncertain")))))
-      )
-    }))
-  })
-  w04_selected_batches <- function() {
+  w04_finalise_common_prompt_runs <- reactive({
     batches <- w04_finalise_selection_batches_rv()
     if(!length(batches))return(list())
-    ids <- unique(vapply(batches,function(x)as.character(x$subset_id),character(1)))
-    choices <- stats::setNames(vapply(ids,function(id)
-      as.character(input[[paste0("w04_use_run_",substr(digest::digest(id,algo="sha256",serialize=FALSE),1L,16L))]] %||% ""),character(1)),ids)
-    w04_selected_model_batches(batches,choices)
+    subset_ids <- unique(vapply(batches,function(x)as.character(x$subset_id),character(1)))
+    hashes <- unique(vapply(batches,function(x)tolower(as.character(x$prompt_sha256 %||% "")),character(1)))
+    hashes <- hashes[grepl("^[0-9a-f]{64}$",hashes)]
+    candidates <- list()
+    for(hash in hashes) {
+      same <- Filter(function(x)identical(tolower(as.character(x$prompt_sha256)),hash),batches)
+      present <- unique(vapply(same,function(x)as.character(x$subset_id),character(1)))
+      if(!setequal(present,subset_ids))next
+      chosen <- lapply(subset_ids,function(id) {
+        runs <- Filter(function(x)identical(as.character(x$subset_id),id),same)
+        dates <- vapply(runs,function(x)as.character(x$published_at_utc %||% ""),character(1))
+        ids <- suppressWarnings(as.numeric(vapply(runs,function(x)as.character(x$run_id),character(1))))
+        runs[[order(dates,ids,decreasing=TRUE)[[1L]]]]
+      })
+      candidates[[hash]] <- chosen
+    }
+    candidates
+  })
+  output$w04_model_run_choices <- renderUI({
+    batches <- w04_finalise_selection_batches_rv()
+    if(!length(batches))return(tags$p(class="saved-note","No completed model runs are available."))
+    candidates <- w04_finalise_common_prompt_runs()
+    if(!length(candidates))return(div(class="alert alert-warning",
+      tags$strong("No single prompt was used across all three subsets."),
+      tags$p("Finalisation is blocked. The same saved prompt must have completed model runs for every subset. Existing results will not be mixed across different prompts.")))
+    hashes <- names(candidates)
+    scores <- vapply(candidates,function(xs)
+      max(vapply(xs,function(x)as.character(x$published_at_utc %||% ""),character(1))),
+      character(1))
+    proposed <- hashes[[order(scores,decreasing=TRUE)[[1L]]]]
+    selected <- as.character(input$w04_finalise_prompt_sha %||% "")
+    if(!selected %in% hashes) selected <- proposed
+    runs <- candidates[[selected]]
+    labels <- vapply(hashes,function(h) {
+      xs <- candidates[[h]]
+      paste0("Saved prompt ",substr(as.character(xs[[1L]]$prompt_version_id),1L,22L),
+        " (",length(xs)," subsets, latest ",substr(scores[[h]],1L,10L),")")
+    },character(1))
+    div(class="mb-3",
+      tags$h5("One final screening prompt"),
+      tags$p(class="saved-note","The app automatically matches the same saved prompt across all three subsets and selects the most recent completed run for each subset. It will never combine different prompts."),
+      selectInput("w04_finalise_prompt_sha","Prompt used for the final screening",
+        choices=stats::setNames(hashes,labels),selected=selected),
+      tags$p(class="saved-note",
+        paste0("Automatically matched: ",paste(vapply(runs,function(x)
+          paste0(x$total," records (run ",x$run_id,")"),character(1)),collapse="; "))),
+      tags$details(tags$summary("View technical provenance"),
+        tags$p(paste("Prompt checksum:",selected)),
+        tags$ul(lapply(runs,function(x)tags$li(paste0("Run ",x$run_id,
+          "; ",x$total," records; ",x$retain," include, ",x$exclude,
+          " exclude, ",x$uncertain," uncertain")))))
+    )
+  })
+  w04_selected_batches <- function() {
+    candidates <- w04_finalise_common_prompt_runs()
+    if(!length(candidates))stop("No prompt has completed runs covering all subsets",call.=FALSE)
+    hashes <- names(candidates)
+    chosen <- as.character(input$w04_finalise_prompt_sha %||% "")
+    if(!chosen %in% hashes) {
+      scores <- vapply(candidates,function(xs)
+        max(vapply(xs,function(x)as.character(x$published_at_utc %||% ""),character(1))),
+        character(1))
+      chosen <- hashes[[order(scores,decreasing=TRUE)[[1L]]]]
+    }
+    selected <- candidates[[chosen]]
+    if(length(unique(vapply(selected,function(x)
+      tolower(as.character(x$prompt_sha256)),character(1))))!=1L)
+      stop("Selected model runs do not share the identical final prompt",call.=FALSE)
+    selected
   }
   output$w04_model_launch_control <- renderUI({
     ready <- !is.null(w04_subset_corpus_rv()) &&
