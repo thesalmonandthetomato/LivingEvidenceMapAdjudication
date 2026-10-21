@@ -4557,6 +4557,52 @@ server <- function(input, output, session) {
                  file,useBytes=TRUE)
     })
   w04_finalise_dispatch_busy_rv <- reactiveVal(FALSE)
+  w04_finalise_submission_rv <- reactiveVal(NULL)
+  output$w04_finalise_submission_status <- renderUI({
+    submission <- w04_finalise_submission_rv()
+    if(is.null(submission))return(tags$p(class="saved-note",
+      "No finalisation has been dispatched in this session."))
+    state <- as.character(submission$status %||% "queued")
+    url <- as.character(submission$url %||% "")
+    div(class=if(state=="completed" && identical(submission$conclusion,"success"))
+        "alert alert-success" else if(state=="completed")"alert alert-danger" else
+        "alert alert-info",
+      tags$strong(if(state=="completed" && identical(submission$conclusion,"success"))
+        "W04 publication workflow succeeded." else if(state=="completed")
+        "W04 publication workflow failed." else if(nzchar(url))
+        "W04 publication workflow is running." else
+        "GitHub accepted the request. Waiting for workflow registration."),
+      tags$p(paste("Bundle:",submission$bundle)),
+      if(nzchar(url))tags$a(href=url,target="_blank",rel="noopener noreferrer",
+        "Open GitHub workflow and W05 handoff status") else NULL,
+      tags$p(class="small",
+        if(state=="completed" && identical(submission$conclusion,"success"))
+          "Check the W05 job inside GitHub before considering downstream processing complete."
+        else "This is not confirmation of published Zenodo state or a completed W05 run.")
+    )
+  })
+  observe({
+    submission <- w04_finalise_submission_rv()
+    if(is.null(submission) || identical(submission$status,"completed"))return()
+    shiny::invalidateLater(12000,session)
+    result <- tryCatch({
+      endpoint <- sprintf("https://api.github.com/repos/%s/actions/workflows/w04_shiny_reconciled_publish.yml/runs?per_page=30",
+                          github_dispatch_repo())
+      x <- github_api_get_json(endpoint)
+      matched <- Filter(function(z)
+        grepl(as.character(submission$bundle),as.character(z$display_title %||% ""),
+              fixed=TRUE),x$workflow_runs %||% list())
+      if(!length(matched))return(NULL)
+      matched[[1L]]
+    },error=function(e)NULL)
+    if(is.null(result))return()
+    current <- w04_finalise_submission_rv()
+    if(is.null(current)||!identical(as.character(current$bundle),as.character(submission$bundle)))return()
+    w04_finalise_submission_rv(list(bundle=submission$bundle,
+      status=as.character(result$status %||% "queued"),
+      conclusion=as.character(result$conclusion %||% ""),
+      url=as.character(result$html_url %||% "")))
+  })
   output$w04_finalise_publish_control <- renderUI({
     if(!session_can("control_workflows") ||
        !identical(as.character(current_user()$role %||% ""),"administrator"))
@@ -4591,6 +4637,7 @@ server <- function(input, output, session) {
        !identical(Sys.getenv("LEM_W04_SHINY_PUBLISH_ENABLED",unset="true"),"true"))return()
     w04_finalise_dispatch_busy_rv(TRUE)
     on.exit(w04_finalise_dispatch_busy_rv(FALSE),add=TRUE)
+    showNotification("Submitting verified W04 finalisation to GitHub…",type="message",duration=8)
     result <- tryCatch({
       snapshot <- w04_finalise_export_rv()
       if(is.null(snapshot))stop("Verified reconciliation is no longer current",call.=FALSE)
@@ -4605,15 +4652,16 @@ server <- function(input, output, session) {
       w04_finalise_publication_dispatch(meta,source,archived)
       archived
     },error=function(e)e)
-    if(inherits(result,"error"))
-      w04_finalise_check_status(paste("W04 publication was not confirmed:",
-        conditionMessage(result)))
-    else {
+    if(inherits(result,"error")) {
+      message <- paste("W04 submission failed:",conditionMessage(result))
+      w04_finalise_check_status(message)
+      showNotification(message,type="error",duration=NULL)
+    } else {
+      w04_finalise_submission_rv(list(bundle=as.character(result$filename),
+        status="queued",conclusion="",url=""))
       w04_finalise_export_rv(NULL)
-      w04_finalise_check_status(paste(
-        "W04 publication and W05 handoff workflow dispatched.",
-        "GitHub must confirm publication and W05 success before W04 is considered finalised.",
-        "Verified bundle:",result$filename))
+      w04_finalise_check_status("GitHub accepted the submission; monitoring publication workflow.")
+      showNotification("GitHub accepted the finalisation request. Its status appears below.",type="message",duration=12)
     }
   })
   w04_finalise_prepare_status_rv <- reactiveVal("")
@@ -5326,12 +5374,13 @@ server <- function(input, output, session) {
                     uiOutput("w04_overview_conflicts"))),
                 tabPanel("Finalise",
                   div(class="px-3 pb-3",
-                    tags$p(class="saved-note","Select one authoritative model run for each of the three subsets. Earlier runs remain archived. Saved manual screening and uncertainty decisions are loaded automatically. When all 3,083 eligible records are reconciled, confirm finalisation to publish restricted W04 state and initiate W05."),
+                    tags$p(class="saved-note","Choose the approved final prompt once. The app matches its completed screening runs across all subsets, reconciles saved human decisions and checks all 3,083 eligible records before enabling publication."),
                     actionButton("w04_finalise_prepare","Refresh finalisation data",class="btn-outline-secondary btn-sm"),
                     textOutput("w04_finalise_prepare_status"),
                     uiOutput("w04_model_run_choices"),
                     textOutput("w04_finalise_check_status"),
-                    uiOutput("w04_finalise_publish_control")))
+                    uiOutput("w04_finalise_publish_control"),
+                    uiOutput("w04_finalise_submission_status")))
               )
             )),
             tabPanel("W08",uiOutput("w08_admin_controls")),
