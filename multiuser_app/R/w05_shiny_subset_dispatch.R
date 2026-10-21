@@ -198,8 +198,14 @@ w05_shiny_restore_published_sources <- function(source, publication_pointer,
   if(!identical(tolower(as.character(source$lean$lean_canonical_sha256)),
                 receipt$upstream_lean_canonical_sha256))
     stop("W04 publication does not match this review's W02 canonical source",call.=FALSE)
-  canonical_lines <- w04_subset_verified_archive(source$lean,"lean")
-  ids_archive <- w05_shiny_w04_included_ids(publication_pointer)
+  canonical_lines <- tryCatch(w04_subset_verified_archive(source$lean,"lean"),
+    error=function(e)stop(paste("W02 canonical archive retrieval failed (Zenodo deposition",
+      as.character(source$lean$zenodo_deposition_id %||% "unknown"),"):",
+      conditionMessage(e)),call.=FALSE))
+  ids_archive <- tryCatch(w05_shiny_w04_included_ids(publication_pointer),
+    error=function(e)stop(paste("W04 included-ID archive retrieval failed (Zenodo deposition",
+      as.character(publication_pointer$zenodo_deposition_id %||% "unknown"),"):",
+      conditionMessage(e)),call.=FALSE))
   ids <- ids_archive[nzchar(trimws(ids_archive))]
   if(length(ids)!=receipt$retained || anyDuplicated(ids))
     stop("W04 publication included-record count mismatch",call.=FALSE)
