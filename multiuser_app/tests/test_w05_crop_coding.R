@@ -317,6 +317,8 @@ stopifnot(inherits(try(w05_shiny_w04_pipeline_metrics(base,ptr,"another-review",
 cat("PASS W04 overview is data-driven and refuses inconsistent publication counts\\n")
 
 
+# Reload actual archive implementation after earlier network stubs.
+source("R/w05_crop_archive.R")
 # Review metadata is a named character vector; the W05 draft key is
 # normally absent until the first approved schema creates the draft.
 stopifnot(identical(w05_crop_draft_id(list(values=c(review_id="almeria-map"))),""),
