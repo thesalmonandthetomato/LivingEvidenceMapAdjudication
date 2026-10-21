@@ -132,3 +132,41 @@ stopifnot(inherits(try(w05_shiny_verify_w04_bridge(receipt,bad,"almeria-map"),si
 bad_receipt <- receipt;bad_receipt$publication_status <- "draft"
 stopifnot(inherits(try(w05_shiny_verify_w04_bridge(bad_receipt,provenance,"almeria-map"),silent=TRUE),"try-error"))
 cat("PASS isolated W04-to-W05 corpus provenance gate\\n")
+
+
+# End-to-end offline bridge fixture: correct included IDs are materialised;
+# incorrect canonical checksum must fail before creating an output.
+tmp <- tempfile("w05-bridge-");dir.create(tmp)
+canon <- file.path(tmp,"canonical.jsonl")
+idsfile <- file.path(tmp,"included.txt")
+recfile <- file.path(tmp,"receipt.json")
+out <- file.path(tmp,"w05-input.jsonl")
+manifest <- file.path(tmp,"manifest.json")
+writeLines(c('{"identity":{"record_id":"r1"},"canonical":{"title":"Tomato"}}',
+             '{"identity":{"record_id":"r2"},"canonical":{"title":"Pepper"}}'),
+           canon,useBytes=TRUE)
+writeLines("r2",idsfile,useBytes=TRUE)
+bridge_receipt <- list(review_id="almeria-map",
+  publication_status="published",visibility="restricted",publication_run_id="1234",
+  upstream_lean_canonical_sha256=digest::digest(file=canon,algo="sha256",serialize=FALSE),
+  included_ids_sha256=digest::digest(file=idsfile,algo="sha256",serialize=FALSE),
+  retained=1L)
+jsonlite::write_json(bridge_receipt,recfile,auto_unbox=TRUE)
+run_bridge <- function() {
+  suppressWarnings(system2(file.path(R.home("bin"),"Rscript"),
+    c("scripts/w05_shiny_materialise_w04.R","--canonical",canon,
+      "--included-ids",idsfile,"--receipt",recfile,
+      "--review-id","almeria-map","--output",out,"--manifest",manifest),
+    stdout=TRUE,stderr=TRUE))
+}
+ok <- run_bridge()
+stopifnot(is.null(attr(ok,"status")) || identical(attr(ok,"status"),0L),
+          length(readLines(out))==1L,
+          grepl('"r2"',readLines(out),fixed=TRUE))
+unlink(c(out,manifest))
+bridge_receipt$upstream_lean_canonical_sha256 <- paste(rep("0",64L),collapse="")
+jsonlite::write_json(bridge_receipt,recfile,auto_unbox=TRUE)
+bad <- run_bridge()
+stopifnot(!is.null(attr(bad,"status")),!file.exists(out))
+unlink(tmp,recursive=TRUE)
+cat("PASS offline published-W04-to-W05 materialisation and fail-closed checksum checks\\n")
