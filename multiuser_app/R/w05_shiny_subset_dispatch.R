@@ -89,10 +89,15 @@ w05_shiny_prepare_handover <- function(meta, canonical, included_ids,
     stop("W04 publication and W05 dictionary receipts are required",call.=FALSE)
   if(!identical(as.character(dictionary_receipt$deposit_id),
                 w05_crop_draft_id(meta)) ||
-     !identical(as.character(dictionary_receipt$sha256),
-                as.character(dictionary_receipt$sha256 %||% "")) ||
      !grepl("^[0-9a-f]{64}$",as.character(dictionary_receipt$sha256)))
     stop("Dictionary receipt does not identify this review's W05 draft",call.=FALSE)
+  if(!file.exists(canonical) || !file.exists(included_ids))
+    stop("W04 canonical and included-record files must be restored first",call.=FALSE)
+  draft <- w05_crop_draft(meta)
+  marker <- paste0("w05-approved-",as.character(dictionary_receipt$sha256),".json")
+  files <- draft$files %||% list()
+  if(sum(vapply(files,function(x)identical(as.character(x$filename),marker),logical(1)))!=1L)
+    stop("W05 schema approval not verified in restricted draft",call.=FALSE)
   tmp <- tempfile("w05-shiny-handover-")
   dir.create(tmp,recursive=TRUE)
   on.exit(unlink(tmp,recursive=TRUE),add=TRUE)
