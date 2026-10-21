@@ -1062,6 +1062,8 @@ server <- function(input, output, session) {
   w05_crop_dictionary_path_rv <- reactiveVal("")
   w05_crop_status_rv <- reactiveVal("W05 is paused. Upload a validated CSV to archive its version in a restricted Zenodo draft.")
   w05_crop_frequencies_rv <- reactiveVal(NULL)
+  w05_dictionary_receipt_rv <- reactiveVal(NULL)
+  w05_dictionary_approved_sha_rv <- reactiveVal("")
   w05_shiny_subset_launch_status_rv <- reactiveVal("Waiting for verified W04 publication and a validated W05 input bundle.")
   w05_shiny_results_status_rv <- reactiveVal("No completed W05 Shiny subset results loaded.")
   w04_manual_queue_choices_rv <- reactiveVal(list())
@@ -5046,6 +5048,30 @@ server <- function(input, output, session) {
       } else w05_crop_status_rv(paste("Cannot load draft vocabulary:",conditionMessage(example)))
     }
   })
+  output$w05_dictionary_approval_status <- renderText({
+    receipt <- w05_dictionary_receipt_rv()
+    if(is.null(receipt))return("Awaiting uploaded, verified dictionary CSV.")
+    if(identical(w05_dictionary_approved_sha_rv(),as.character(receipt$sha256)))
+      return(paste("Approved dictionary version:",receipt$sha256,
+                   "| Restricted Zenodo draft:",receipt$deposit_id))
+    paste("Awaiting administrator approval of archived dictionary version:",receipt$sha256)
+  })
+  output$w05_dictionary_approve_control <- renderUI({
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role %||% ""),"administrator"))return(NULL)
+    receipt <- w05_dictionary_receipt_rv()
+    if(is.null(receipt) || identical(w05_dictionary_approved_sha_rv(),as.character(receipt$sha256)))return(NULL)
+    actionButton("w05_dictionary_approve","Approve archived W05 coding schema",class="btn-primary")
+  })
+  observeEvent(input$w05_dictionary_approve,{
+    req(authenticated())
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role %||% ""),"administrator"))return()
+    receipt <- w05_dictionary_receipt_rv()
+    req(!is.null(receipt),nzchar(as.character(receipt$sha256)))
+    w05_dictionary_approved_sha_rv(as.character(receipt$sha256))
+    w05_crop_status_rv("W05 coding schema approved for this session. Execution remains paused until verified W04 publication and a review-bound input bundle are available.")
+  })
   output$w05_shiny_subset_launch_control <- renderUI({
     if(!session_can("control_workflows") ||
        !identical(as.character(current_user()$role %||% ""),"administrator"))return(NULL)
@@ -5114,6 +5140,8 @@ server <- function(input, output, session) {
     dest <- tempfile("w05-verified-",fileext=".csv")
     if(!file.copy(info$datapath,dest,overwrite=TRUE))
       stop("Cannot preserve verified W05 CSV",call.=FALSE)
+    w05_dictionary_approved_sha_rv("")
+    w05_dictionary_receipt_rv(result$receipt)
     w05_crop_dictionary_rv(result$dictionary)
     w05_crop_dictionary_path_rv(dest)
     w05_crop_frequencies_rv(NULL)
@@ -5506,11 +5534,13 @@ server <- function(input, output, session) {
               )
             )),
             tabPanel("W05",div(class="px-3 pb-3",
-              tags$h5("W05 crop coding"),
+              tags$h5("W05 entity coding"),
               tags$p(class="saved-note","The crop dictionary is read-only here. Edit a CSV outside the app and upload a new version. Unspecified crop is automatically assigned whenever no named crop matches."),
-              fileInput("w05_crop_upload","Upload crop dictionary CSV",accept=c(".csv","text/csv")),
+              fileInput("w05_crop_upload","Upload entity coding dictionary CSV",accept=c(".csv","text/csv")),
               downloadButton("w05_crop_download","Download CSV",class="btn-outline-secondary btn-sm"),
               textOutput("w05_crop_status"),
+              textOutput("w05_dictionary_approval_status"),
+              uiOutput("w05_dictionary_approve_control"),
               tags$div(style="max-height:420px;overflow:auto;border:1px solid #dce3e8;border-radius:6px;margin-top:10px;",
                 tableOutput("w05_crop_table")),
               tags$hr(),
