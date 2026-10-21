@@ -4607,12 +4607,29 @@ server <- function(input, output, session) {
     tagList(lapply(subset_ids,function(id) {
       options <- Filter(function(b)identical(as.character(b$subset_id),id),batches)
       keys <- vapply(options,function(b)as.character(b$run_id),character(1))
-      labels <- vapply(options,function(b)paste0("Run ",b$run_id,
-        " · prompt ",b$prompt_version_id,
-        " · ",b$published_at_utc),character(1))
-      selectInput(paste0("w04_use_run_",substr(digest::digest(id,algo="sha256",serialize=FALSE),1L,16L)),
-        paste("Use one model run for subset",id),
-        choices=c("Choose a run"="",stats::setNames(keys,labels)),selected="")
+      labels <- vapply(options,function(b) {
+        date <- as.character(b$published_at_utc %||% "")
+        day <- if(nchar(date)>=16L) paste0(substr(date,1L,10L)," ",substr(date,12L,16L)," UTC") else date
+        paste0(day," | ",b$retain," include, ",b$exclude," exclude, ",
+          b$uncertain," uncertain | prompt ",substr(as.character(b$prompt_version_id),1L,15L),
+          " | run ",b$run_id)
+      },character(1))
+      title <- paste("Subset",match(id,subset_ids),"of",length(subset_ids))
+      div(class="mb-3",
+        tags$strong(title),
+        tags$p(class="saved-note",
+          paste0("Records in each run: ",paste(unique(vapply(options,function(b)as.character(b$total),character(1))),collapse=", "),
+          ". Choose by screening outcomes, prompt and date. No run is selected automatically.")),
+        selectInput(paste0("w04_use_run_",substr(digest::digest(id,algo="sha256",serialize=FALSE),1L,16L)),
+          "Model run to retain",
+          choices=c("Select a model run"="",stats::setNames(keys,labels)),selected=""),
+        tags$details(tags$summary("Show full run provenance"),
+          tags$small(class="text-muted",paste("Subset ID:",id)),
+          tags$ul(lapply(options,function(b)tags$li(
+            paste0("Run ",b$run_id," | prompt ",b$prompt_version_id,
+                   " | ",b$published_at_utc," | ",b$total," records; ",
+                   b$retain," include, ",b$exclude," exclude, ",b$uncertain," uncertain")))))
+      )
     }))
   })
   w04_selected_batches <- function() {
