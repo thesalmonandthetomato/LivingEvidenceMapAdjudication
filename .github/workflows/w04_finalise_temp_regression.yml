@@ -1,0 +1,61 @@
+name: Temporary W04 finalisation regression
+on:
+  push:
+    paths:
+      - .github/workflows/w04_finalise_temp_regression.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Run isolated W04 reconciliation regression
+        shell: Rscript {0}
+        run: |
+          `%||%` <- function(x,y) if(is.null(x)||!length(x)) y else x
+          source("multiuser_app/R/w04_model_batches.R")
+          check <- function(ok,label) {
+            if(!isTRUE(ok))stop(paste("FAIL",label),call.=FALSE)
+            cat("PASS",label,"\n")
+          }
+          b <- list(
+            list(subset_id="set-a",run_id="100",uncertain="1"),
+            list(subset_id="set-a",run_id="101",uncertain="1"),
+            list(subset_id="set-b",run_id="200",uncertain="0")
+          )
+          chosen <- w04_selected_model_batches(b,c("set-a"="101","set-b"="200"))
+          check(identical(vapply(chosen,function(x)x$run_id,character(1)),c("101","200")),
+                "explicit one run per subset")
+          bad <- tryCatch(w04_selected_model_batches(b,c("set-a"="101","set-b"="")),error=identity)
+          check(inherits(bad,"error"),"incomplete selections blocked")
+          fake <- function(batch) {
+            if(batch$run_id=="101") return(data.frame(record_id=c("a","b"),
+               decision=c("retain","uncertain"),stringsAsFactors=FALSE))
+            data.frame(record_id="c",decision="exclude",stringsAsFactors=FALSE)
+          }
+          without <- w04_screening_coverage_reconcile(c("a","b","c"),chosen,
+             resolution_events=list(),read_results=fake)
+          check(!without$ready && length(without$uncertain)==1L,
+                "unresolved model uncertainty blocks publication")
+          resolved <- w04_screening_coverage_reconcile(c("a","b","c"),chosen,
+             resolution_events=list(list(record_id="b",source_run_id="101",
+                 decision="retain")),read_results=fake)
+          check(resolved$ready && resolved$resolved==3L,
+                "saved uncertainty decision completes coverage")
+          wrong <- tryCatch(w04_screening_coverage_reconcile(c("a","b","c"),chosen,
+             resolution_events=list(list(record_id="b",source_run_id="100",
+                 decision="retain")),read_results=fake),error=identity)
+          check(inherits(wrong,"error"),"superseded run resolutions rejected")
+      - name: Parse Shiny app and isolated publication dispatch
+        shell: Rscript {0}
+        run: |
+          parse(file="multiuser_app/app.R")
+          parse(file="multiuser_app/R/w04_shiny_model_launch.R")
+          cat("PASS R parse checks\n")
