@@ -247,3 +247,34 @@ stopifnot(inherits(try(w05_shiny_bind_w04_receipt(p,"almeria-map",bad),
 stopifnot(inherits(try(w05_shiny_bind_w04_receipt(p,"other-map",run),
  silent=TRUE),"try-error"))
 cat("PASS existing W04 receipt bound to exact Shiny publication review and run\n")
+
+
+# Review-bound W04 source restoration, with archive transport stubbed.
+# The selected W04 included IDs must match its receipt SHA.
+orig_archive <- w04_subset_verified_archive
+orig_included <- w05_shiny_w04_included_ids
+canon_lines <- c('{"identity":{"record_id":"r1"},"canonical":{"title":"Tomato"}}',
+                 '{"identity":{"record_id":"r2"},"canonical":{"title":"Pepper"}}')
+w04_subset_verified_archive <- function(pointer,kind) {
+  stopifnot(identical(kind,"lean"))
+  canon_lines
+}
+w05_shiny_w04_included_ids <- function(pointer)c("r2")
+tmp_canon <- tempfile();writeLines(canon_lines,tmp_canon,useBytes=TRUE)
+tmp_ids <- tempfile();writeLines("r2",tmp_ids,useBytes=TRUE)
+lean_sha <- digest::digest(file=tmp_canon,algo="sha256",serialize=FALSE)
+included_sha <- digest::digest(file=tmp_ids,algo="sha256",serialize=FALSE)
+unlink(c(tmp_canon,tmp_ids))
+src <- list(lean=list(lean_canonical_sha256=lean_sha))
+ptr <- list(workflow="04",state="relevance_screening",status="published",
+ visibility="restricted",publication_github_run_id="123",retained=1L,
+ included_record_ids_sha256=included_sha,upstream_lean_canonical_sha256=lean_sha)
+run <- list(id=123L,path=".github/workflows/w04_shiny_publish_only.yml",
+ conclusion="success",display_title="W04 Shiny only publication almeria-map test.csv")
+restored <- w05_shiny_restore_published_sources(src,ptr,"almeria-map",run)
+stopifnot(identical(readLines(restored$included_ids),"r2"),
+          length(readLines(restored$canonical))==2L)
+unlink(restored$directory,recursive=TRUE)
+w04_subset_verified_archive <- orig_archive
+w05_shiny_w04_included_ids <- orig_included
+cat("PASS W05 restoration binds W04 included IDs and canonical SHA to review\\n")
