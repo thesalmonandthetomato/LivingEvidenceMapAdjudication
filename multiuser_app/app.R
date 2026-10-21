@@ -5130,7 +5130,9 @@ server <- function(input, output, session) {
        !identical(as.character(current_user()$role %||% ""),"administrator"))return()
     w05_verified_input_rv(NULL)
     w05_shiny_subset_launch_status_rv("Verifying review-bound W04 publication and restoring its included records.")
+    stage <- "begin preparation"
     result <- tryCatch({
+      stage <- "load review metadata and approved dictionary"
       meta <- w04_prompt_review_metadata()
       dictionary <- w05_dictionary_receipt_rv()
       if(is.null(dictionary) ||
@@ -5149,16 +5151,21 @@ server <- function(input, output, session) {
       }
       if(!grepl("^[0-9]+$",run_id))
         stop("Invalid W04 Shiny publication run ID",call.=FALSE)
+      stage <- "resolve review-specific W03 and canonical pointers"
       source <- w04_subset_review_source_pointers()
+      stage <- "read the published W04 pointer from GitHub"
       pointer_path <- sprintf("docs/workflow04/zenodo/run-%s.json",run_id)
       pointer <- jsonlite::fromJSON(read_github_text_file(pointer_path),
                                     simplifyVector=FALSE)
+      stage <- "verify W04 GitHub publication run"
       run <- github_api_get_json(sprintf(
         "https://api.github.com/repos/%s/actions/runs/%s",
         github_dispatch_repo(),run_id))
+      stage <- "download and verify W02 canonical and W04 included-ID archives"
       restored <- w05_shiny_restore_published_sources(
         source,pointer,meta$review_id,run)
       on.exit(unlink(restored$directory,recursive=TRUE),add=TRUE)
+      stage <- "materialise included records and archive W05 inputs"
       receipt <- w05_shiny_prepare_handover(meta,restored$canonical,
         restored$included_ids,restored$receipt,dictionary)
       if(!identical(as.character(receipt$deposit_id),
@@ -5169,7 +5176,7 @@ server <- function(input, output, session) {
     },error=function(e)e)
     if(inherits(result,"error")) {
       w05_shiny_subset_launch_status_rv(
-        paste("W05 input preparation failed:",conditionMessage(result)))
+        paste("W05 input preparation failed during",stage,":",conditionMessage(result)))
       return()
     }
     w05_verified_input_rv(result)
