@@ -365,3 +365,20 @@ w04_model_verify_batch_checkpoints <- function(batches,review_id,canonical_sha,
   }
   invisible(TRUE)
 }
+
+# Explicit review-specific model-run choices. No implicit latest-run default.
+# Every subset with completed model runs needs exactly one selected run.
+w04_selected_model_batches <- function(batches,choices) {
+  ids <- unique(vapply(batches,function(b)as.character(b$subset_id),character(1)))
+  if(any(!nzchar(ids)) || anyDuplicated(vapply(batches,function(b)as.character(b$run_id),character(1))))
+    stop("Invalid model batch registry",call.=FALSE)
+  if(!length(ids))return(list())
+  if(is.null(choices) || !setequal(names(choices),ids))
+    stop("Select exactly one model run for every registered model subset",call.=FALSE)
+  lapply(ids,function(id) {
+    match <- Filter(function(b)identical(as.character(b$subset_id),id) &&
+      identical(as.character(b$run_id),as.character(choices[[id]])),batches)
+    if(length(match)!=1L)stop("Selected W04 model run is unavailable: ",id,call.=FALSE)
+    match[[1L]]
+  })
+}
