@@ -1068,6 +1068,7 @@ server <- function(input, output, session) {
   w05_dictionary_receipt_rv <- reactiveVal(NULL)
   w06_results_rv <- reactiveVal(NULL)
   w06_trial_status_rv <- reactiveVal("No W06 model subset has been run.")
+  w06_prompt_preview_rv <- reactiveVal("")
   w06_prompt_receipt_rv <- reactiveVal(NULL)
   w06_prompt_approved_rv <- reactiveVal(FALSE)
   w06_prompt_status_rv <- reactiveVal("W06 paused: upload and approve a review-specific prompt.")
@@ -5233,11 +5234,13 @@ server <- function(input, output, session) {
        !identical(as.character(current_user()$role %||% ""),"administrator"))return()
     w06_prompt_approved_rv(FALSE)
     w06_prompt_receipt_rv(NULL)
+    w06_prompt_preview_rv("")
     uploaded <- input$w06_shiny_prompt_upload
     result <- tryCatch({
       if(is.null(uploaded))stop("Upload a W06 prompt",call.=FALSE)
       content <- w04_prompt_from_upload(uploaded$datapath,uploaded$name)
       if(!nzchar(trimws(content)))stop("Extracted W06 prompt is empty",call.=FALSE)
+      w06_prompt_preview_rv(content)
       prompt_path <- tempfile(fileext=".txt")
       on.exit(unlink(prompt_path),add=TRUE)
       writeLines(content,prompt_path,useBytes=TRUE)
@@ -5319,9 +5322,9 @@ server <- function(input, output, session) {
     },contentType="text/csv")
   output$w06_shiny_prompt_status <- renderText(w06_prompt_status_rv())
   output$w06_shiny_prompt_preview <- renderText({
-    receipt <- w06_prompt_receipt_rv()
-    if(is.null(receipt))return("No W06 prompt uploaded this session.")
-    receipt$content
+    content <- w06_prompt_preview_rv()
+    if(!nzchar(content))return("No W06 prompt text extracted this session.")
+    content
   })
   observeEvent(input$w05_shiny_finalise,{
     req(authenticated())
