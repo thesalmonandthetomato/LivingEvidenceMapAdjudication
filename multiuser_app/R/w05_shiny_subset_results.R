@@ -47,10 +47,13 @@ w05_shiny_subset_results <- function(run_id,api=w05_shiny_gh_request,
   entries <- utils::unzip(zipfile,list=TRUE)$Name
   required <- c("w05_crop_manifest.json","w05_crop_frequencies.csv",
                 "w05_crop_assignments.csv")
-  if(!setequal(entries,required) ||
+  evidence_name <- "w05_unspecified_crop_evidence.csv"
+  allowed <- c(required,evidence_name)
+  if(!all(required %in% entries) || !all(entries %in% allowed) ||
+     anyDuplicated(entries) ||
      any(grepl("(^/|(^|/)\\.\\.(/|$))",entries)))
     stop("W05 Shiny results archive has unexpected contents",call.=FALSE)
-  utils::unzip(zipfile,files=required,exdir=unpacked)
+  utils::unzip(zipfile,files=entries,exdir=unpacked)
   manifest <- jsonlite::fromJSON(file.path(unpacked,required[[1L]]),simplifyVector=FALSE)
   if(!identical(as.character(manifest$schema),"lem-w05-crop-test-v1")||
      !identical(as.character(manifest$mode),"subset_test"))
@@ -73,5 +76,18 @@ w05_shiny_subset_results <- function(run_id,api=w05_shiny_gh_request,
      !identical(sort(paste(actual$entity,actual$code,actual$x)),
                 sort(paste(reported$entity,reported$code,reported$records))))
     stop("W05 Shiny frequencies do not match assignments",call.=FALSE)
-  list(status=status,frequencies=freq,manifest=manifest)
+  evidence <- NULL
+  if(evidence_name %in% entries) {
+    evidence <- utils::read.csv(file.path(unpacked,evidence_name),
+      stringsAsFactors=FALSE,check.names=FALSE)
+    if(!identical(names(evidence),c("record_id","title","abstract")) ||
+       anyDuplicated(evidence$record_id) ||
+       any(!evidence$record_id %in% assignments$record_id) ||
+       nrow(evidence)!=as.integer(manifest$unmatched_records) ||
+       !setequal(evidence$record_id,assignments$record_id[
+         assignments$entity=="crop" &
+         assignments$code=="unspecified_horticultural_crop"]))
+      stop("W05 unspecified crop evidence does not match assignments",call.=FALSE)
+  }
+  list(status=status,frequencies=freq,manifest=manifest,evidence=evidence)
 }
