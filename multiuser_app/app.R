@@ -4719,7 +4719,7 @@ server <- function(input, output, session) {
         if(coverage$ready)"Reconciled export available. No publication or W05 launch."
         else "Finalisation blocked until coverage and conflicts are resolved."))
     }
-  })
+  },ignoreNULL=FALSE)
   observeEvent(input$w04_reconstructed_verify,{
     req(authenticated())
     if(!session_can("control_workflows") ||
