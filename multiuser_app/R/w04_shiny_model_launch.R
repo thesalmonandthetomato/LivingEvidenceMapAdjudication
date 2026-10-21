@@ -264,3 +264,31 @@ w04_finalise_validation_dispatch <- function(meta,source,archive) {
     stop("GitHub offline W04 validation dispatch not confirmed",call.=FALSE)
   invisible(TRUE)
 }
+
+
+# Explicitly confirmed publication. Never invoke from a reactive selection.
+w04_finalise_publication_dispatch <- function(meta,source,archive) {
+  if(!identical(as.character(meta$review_id),as.character(source$review_id)) ||
+     !grepl("^[0-9a-f]{64}$",as.character(archive$sha256 %||% "")))
+    stop("Invalid W04 finalisation validation provenance",call.=FALSE)
+  assert_development_github_target()
+  endpoint <- sprintf("https://api.github.com/repos/%s/actions/workflows/w04_shiny_reconciled_publish.yml/dispatches",
+                      github_dispatch_repo())
+  request <- httr2::request(endpoint) |>
+    httr2::req_method("POST") |>
+    httr2::req_headers(Authorization=paste("Bearer",github_dispatch_token()),
+      Accept="application/vnd.github+json",
+      `X-GitHub-Api-Version`="2022-11-28",
+      `User-Agent`="LivingEvidenceMap-Adjudication") |>
+    httr2::req_body_json(list(ref=github_scoping_ref(),inputs=list(
+       lean_pointer_path=as.character(source$lean_path),
+       workflow03_pointer_path=as.character(source$w03_path),
+       review_id=as.character(meta$review_id),
+       prompt_draft_id=as.character(archive$deposit_id),
+       bundle_file=as.character(archive$filename),
+       bundle_sha256=as.character(archive$sha256))))
+  resp<-httr2::req_perform(request)
+  if(httr2::resp_status(resp)!=204L)
+    stop("GitHub W04 publication dispatch not confirmed",call.=FALSE)
+  invisible(TRUE)
+}
