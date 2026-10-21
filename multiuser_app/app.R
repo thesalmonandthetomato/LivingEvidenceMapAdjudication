@@ -1069,6 +1069,7 @@ server <- function(input, output, session) {
   w04_prompt_versions_rv <- reactiveVal(list())
   w04_model_subsets_rv <- reactiveVal(list())
   w04_model_versions_rv <- reactiveVal(list())
+  w04_finalise_selection_batches_rv <- reactiveVal(list())
   w04_model_status_rv <- reactiveVal("")
   w04_model_launch_busy_rv <- reactiveVal(FALSE)
   w04_model_batches_rv <- reactiveVal(list())
@@ -4535,7 +4536,7 @@ server <- function(input, output, session) {
              ds,paste0("w04-human-",s$subset_id),"manual_screening"))
         }
       }
-      batches <- w04_model_batch_registry_read(meta$review_id)
+      batches <- w04_selected_batches()
       w04_model_verify_batch_checkpoints(batches,meta$review_id,
         corpus$checkpoint_sha256,subsets)
       resolved <- w04_model_verified_resolution_events(batches)
@@ -4579,7 +4580,7 @@ server <- function(input, output, session) {
         !identical(tolower(as.character(x$source_checkpoint_sha256)),
                    tolower(as.character(corpus$checkpoint_sha256))),logical(1))))
         stop("A selected subset refers to a different canonical checkpoint",call.=FALSE)
-      runs <- w04_model_batch_registry_read(meta$review_id)
+      runs <- w04_selected_batches()
       coded <- union(w04_model_coded_ids(runs,corpus$record_ids),
         w04_registered_human_coded_ids(meta,corpus,w04_model_subsets_rv()))
       w04_subset_reconstruct_selection(corpus$record_ids,coded,subsets,
@@ -4599,6 +4600,29 @@ server <- function(input, output, session) {
     selectInput("w04_model_prompt_selected","Immutable archived prompt",
       choices=stats::setNames(ids,labels))
   })
+  output$w04_model_run_choices <- renderUI({
+    batches <- w04_finalise_selection_batches_rv()
+    if(!length(batches))return(tags$p(class="saved-note","No completed saved model runs to select."))
+    subset_ids <- unique(vapply(batches,function(x)as.character(x$subset_id),character(1)))
+    tagList(lapply(subset_ids,function(id) {
+      options <- Filter(function(b)identical(as.character(b$subset_id),id),batches)
+      keys <- vapply(options,function(b)as.character(b$run_id),character(1))
+      labels <- vapply(options,function(b)paste0("Run ",b$run_id,
+        " · prompt ",b$prompt_version_id,
+        " · ",b$published_at_utc),character(1))
+      selectInput(paste0("w04_use_run_",substr(digest::digest(id,algo="sha256",serialize=FALSE),1L,16L)),
+        paste("Use one model run for subset",id),
+        choices=c("Choose a run"="",stats::setNames(keys,labels)),selected="")
+    }))
+  })
+  w04_selected_batches <- function() {
+    batches <- w04_finalise_selection_batches_rv()
+    if(!length(batches))return(list())
+    ids <- unique(vapply(batches,function(x)as.character(x$subset_id),character(1)))
+    choices <- stats::setNames(vapply(ids,function(id)
+      as.character(input[[paste0("w04_use_run_",substr(digest::digest(id,algo="sha256",serialize=FALSE),1L,16L))]] %||% ""),character(1)),ids)
+    w04_selected_model_batches(batches,choices)
+  }
   output$w04_model_launch_control <- renderUI({
     ready <- !is.null(w04_subset_corpus_rv()) &&
       length(w04_model_versions_rv())>0L &&
@@ -4620,6 +4644,7 @@ server <- function(input, output, session) {
       if(!identical(as.character(source$review_id),as.character(meta$review_id)))
         stop("Review identity mismatch",call.=FALSE)
       list(subsets=w04_subset_registry_read(meta$review_id),
+           batches=w04_model_batch_registry_read(meta$review_id),
            versions=w04_prompt_archive_versions(meta),
            corpus=c(eligible,list(review_id=meta$review_id)))
     },error=function(e)e)
@@ -4629,6 +4654,7 @@ server <- function(input, output, session) {
     }
     w04_subset_corpus_rv(result$corpus)
     w04_model_subsets_rv(result$subsets)
+    w04_finalise_selection_batches_rv(result$batches)
     w04_model_versions_rv(result$versions)
     w04_model_status_rv(sprintf("Prepared %d eligible canonical records, %d registered subsets and %d archived prompts. Choose the screening selection and press Run; all IDs and decisions will be checked again before launch.",
       length(result$corpus$record_ids),length(result$subsets),length(result$versions)))
@@ -4669,7 +4695,7 @@ server <- function(input, output, session) {
           !identical(tolower(as.character(x$source_checkpoint_sha256)),
                      tolower(as.character(corpus$checkpoint_sha256))),logical(1))))
           stop("Registered subset uses a different canonical checkpoint",call.=FALSE)
-        batches <- w04_model_batch_registry_read(meta$review_id)
+        batches <- w04_selected_batches()
         coded <- union(w04_model_coded_ids(batches,corpus$record_ids),
           w04_registered_human_coded_ids(meta,corpus,subsets))
         selection <- w04_subset_reconstruct_selection(corpus$record_ids,coded,chosen,
@@ -5006,6 +5032,9 @@ server <- function(input, output, session) {
                   conditionalPanel("input.w04_model_launch_mode == 'registered'",
                     uiOutput("w04_model_subset_selector")),
                   uiOutput("w04_model_prompt_selector"),
+                  tags$h5("Select authoritative model runs for existing subsets"),
+                  tags$p(class="saved-note","Choose one completed run for each subset. Earlier versions remain archived for comparison and will not contribute to this screening selection."),
+                  uiOutput("w04_model_run_choices"),
                   conditionalPanel("input.w04_model_launch_mode == 'reconstructed'",
                     tags$div(class="mt-3",
                       tags$p(class="saved-note","Remaining records exclude completed model classifications. Add previously registered subsets only if you intentionally want to rescreen them."),
