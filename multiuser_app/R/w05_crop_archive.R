@@ -73,3 +73,44 @@ w05_crop_archive_upload <- function(meta,path) {
   list(deposit_id=as.character(refreshed$id),filename=fname,sha256=sha,
        codes=nrow(dict))
 }
+
+# Approval is an immutable, review-scoped object in the same restricted draft.
+# No W05 execution or draft publication occurs here.
+w05_crop_approve_version <- function(meta,receipt) {
+  sha <- as.character(receipt$sha256 %||% "")
+  id <- as.character(receipt$deposit_id %||% "")
+  file <- as.character(receipt$filename %||% "")
+  if(!grepl("^[0-9a-f]{64}$",sha) || !grepl("^[0-9]+$",id) ||
+     !grepl("^w05-crops-[0-9a-f]{20}\\.csv$",file) ||
+     !identical(file,paste0("w05-crops-",substr(sha,1L,20L),".csv")))
+    stop("Cannot approve an unverified W05 dictionary receipt",call.=FALSE)
+  dep <- w05_crop_draft(meta)
+  if(is.null(dep) || !identical(as.character(dep$id),id))
+    stop("W05 approval deposit does not match this review",call.=FALSE)
+  files <- dep$files %||% list()
+  if(sum(vapply(files,function(x)identical(as.character(x$filename),file),logical(1)))!=1L)
+    stop("W05 dictionary version is absent from the restricted draft",call.=FALSE)
+  marker <- paste0("w05-approved-",sha,".json")
+  existing <- Filter(function(x)identical(as.character(x$filename),marker),files)
+  if(length(existing)>1L)stop("Duplicate W05 schema approval markers",call.=FALSE)
+  if(!length(existing)) {
+    path <- tempfile(fileext=".json")
+    on.exit(unlink(path),add=TRUE)
+    writeLines(jsonlite::toJSON(list(
+      schema="lem-w05-shiny-schema-approval-v1",review_id=meta$review_id,
+      deposit_id=id,dictionary_file=file,dictionary_sha256=sha,
+      approved_at_utc=format(Sys.time(),"%Y-%m-%dT%H:%M:%SZ",tz="UTC")
+    ),auto_unbox=TRUE,pretty=TRUE),path,useBytes=TRUE)
+    bucket <- as.character(dep$links$bucket %||% "")
+    if(!startsWith(bucket,"https://zenodo.org/api/files/"))
+      stop("Unexpected W05 approval archive location",call.=FALSE)
+    w04_prompt_zenodo_request(paste0(bucket,"/",marker),"PUT",
+                              file=path,expected=c(200L,201L))
+  }
+  fresh <- w05_crop_draft(w04_prompt_review_metadata(force=TRUE))
+  if(sum(vapply(fresh$files %||% list(),
+                function(x)identical(as.character(x$filename),marker),
+                logical(1)))!=1L)
+    stop("W05 schema approval was not confirmed in restricted Zenodo draft",call.=FALSE)
+  invisible(TRUE)
+}
