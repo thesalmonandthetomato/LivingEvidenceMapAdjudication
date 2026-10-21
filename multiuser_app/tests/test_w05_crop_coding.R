@@ -89,3 +89,28 @@ fake_bad_api <- function(url,method="GET",payload=NULL) {
 }
 stopifnot(inherits(try(w05_shiny_subset_run_status("12345",fake_bad_api),silent=TRUE),"try-error"))
 cat("PASS W05 results reader restricts origin to Shiny-only workflow\n")
+
+
+# Approval is written only for the archived matching dictionary and verified again.
+# Network dependencies are mocked; no Zenodo credentials or real publications.
+source("R/w05_crop_archive.R")
+sha <- paste(rep("c",64L),collapse="")
+fname <- paste0("w05-crops-",substr(sha,1L,20L),".csv")
+meta <- list(review_id="almeria-map")
+receipt <- list(deposit_id="123456",filename=fname,sha256=sha)
+saved <- list(list(filename=fname))
+w05_crop_draft <- function(meta) list(id=123456L,files=saved,
+  links=list(bucket="https://zenodo.org/api/files/test"))
+w04_prompt_zenodo_request <- function(url,method="GET",file=NULL,expected=NULL) {
+  stopifnot(identical(method,"PUT"),grepl(paste0("w05-approved-",sha),url))
+  saved <<- append(saved,list(list(filename=paste0("w05-approved-",sha,".json"))))
+  invisible(TRUE)
+}
+w04_prompt_review_metadata <- function(force=FALSE) meta
+stopifnot(isTRUE(w05_crop_approve_version(meta,receipt)))
+stopifnot(length(saved)==2L)
+stopifnot(isTRUE(w05_crop_approve_version(meta,receipt)),length(saved)==2L)
+wrong <- receipt
+wrong$sha256 <- paste(rep("d",64L),collapse="")
+stopifnot(inherits(try(w05_crop_approve_version(meta,wrong),silent=TRUE),"try-error"))
+cat("PASS review-scoped W05 approval marker creation, verification and idempotence\\n")
