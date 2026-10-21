@@ -124,3 +124,55 @@ w04_kappa_registry_summary <- function(registry) {
     rr=as.integer(rr),re=as.integer(re),er=as.integer(er),ee=as.integer(ee)
   )
 }
+
+
+# Latest saved human-model comparison per canonical W04 subset. Historical
+# comparisons and repeated model runs of the same subset are not cumulative.
+w04_latest_subset_model_kappa <- function(analyses,batches) {
+  if(!length(analyses) || !length(batches))
+    return(list(kappa=NA_real_,kappa_n=0L,subsets=0L))
+  run_subsets <- setNames(vapply(batches,function(b)
+    as.character(b$subset_id),character(1)),
+    vapply(batches,function(b)as.character(b$run_id),character(1)))
+  candidates <- Filter(function(x) {
+    run <- sub("^w04-model-run-","",as.character(x$batch_id %||% ""))
+    raters <- tryCatch(as.character(jsonlite::fromJSON(
+      as.character(x$rater_ids_json %||% "[]"))),error=function(e)character())
+    identical(as.character(x$review_mode %||% ""),"subset_model_validation") &&
+      grepl("^w04-model-run-[0-9]+$",as.character(x$batch_id %||% "")) &&
+      run %in% names(run_subsets) && length(raters)==2L &&
+      sum(raters=="model")==1L
+  },analyses)
+  if(!length(candidates))
+    return(list(kappa=NA_real_,kappa_n=0L,subsets=0L))
+  subset <- vapply(candidates,function(x)
+    unname(run_subsets[[sub("^w04-model-run-","",
+      as.character(x$batch_id))]]),character(1))
+  selected <- lapply(unique(subset),function(id) {
+    group <- candidates[subset==id]
+    date <- vapply(group,function(x)
+      as.character(x$created_at_utc %||% ""),character(1))
+    aid <- vapply(group,function(x)
+      as.character(x$analysis_id %||% ""),character(1))
+    group[[order(date,aid,decreasing=TRUE)[[1L]]]]
+  })
+  patterns <- unlist(lapply(selected,function(x) {
+    value <- tryCatch(jsonlite::fromJSON(
+      as.character(x$patterns_json %||% "[]"),simplifyVector=FALSE),
+      error=function(e)stop("Saved W04 comparison pattern JSON is invalid",call.=FALSE))
+    if(!is.list(value))stop("Saved W04 comparison patterns are invalid",call.=FALSE)
+    value
+  }),recursive=FALSE)
+  if(!length(patterns))
+    return(list(kappa=NA_real_,kappa_n=0L,subsets=length(selected)))
+  stats <- w04_human_pattern_stats(patterns,2L)
+  expected <- sum(vapply(selected,function(x) {
+    n <- suppressWarnings(as.integer(x$complete_n))
+    if(length(n)!=1L||is.na(n)||n<0L)
+      stop("Latest W04 comparison has invalid record count",call.=FALSE)
+    n
+  },integer(1)))
+  if(!identical(as.integer(stats$n),as.integer(expected)))
+    stop("Latest W04 comparison patterns do not match saved comparable counts",call.=FALSE)
+  list(kappa=stats$kappa,kappa_n=stats$n,subsets=length(selected))
+}
