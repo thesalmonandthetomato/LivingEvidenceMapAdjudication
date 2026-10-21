@@ -1235,12 +1235,15 @@ server <- function(input, output, session) {
           "https://api.github.com/repos/%s/actions/runs?per_page=100",
           github_dispatch_repo()))$workflow_runs %||% list()
         run <- w05_shiny_discover_w04_publication(review,runs)
-        if(is.null(run)) return(base)
-        pointer <- jsonlite::fromJSON(read_github_text_file(sprintf(
-          "docs/workflow04/zenodo/run-%s.json",run$id)),simplifyVector=FALSE)
-        source <- w04_subset_review_source_pointers()
-        w05_shiny_w04_pipeline_metrics(base,pointer,review,run,
-          source$lean$lean_canonical_sha256)
+        if(is.null(run)) {
+          base
+        } else {
+          pointer <- jsonlite::fromJSON(read_github_text_file(sprintf(
+            "docs/workflow04/zenodo/run-%s.json",run$id)),simplifyVector=FALSE)
+          source <- w04_subset_review_source_pointers()
+          w05_shiny_w04_pipeline_metrics(base,pointer,review,run,
+            source$lean$lean_canonical_sha256)
+        }
       },error=function(e) {
         message("W04 overview publication overlay not verified: ",conditionMessage(e))
         base
