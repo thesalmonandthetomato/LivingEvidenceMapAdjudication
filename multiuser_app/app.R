@@ -4738,17 +4738,43 @@ server <- function(input, output, session) {
           q <- w04_subset_queue_read(as.character(s$subset_id),meta$review_id)
           if(is.null(q))next
           ds <- w04_filter_batch_decisions(events,q$queue_sha256)
-          human <- c(human,w04_blind_case_outcomes(q$cases,assignment_registry_rv(),
-             ds,paste0("w04-human-",s$subset_id),"manual_screening"))
+          queue_cases <- q$cases %||% list()
+          for(case in queue_cases) {
+            case_id <- as.character(case$review_case_id %||% case$case_id %||% "")
+            record_id <- as.character(case$record_id %||% "")
+            matches <- Filter(function(d)
+              identical(as.character(d$review_case_id %||% d$case_id %||% ""),case_id) &&
+              identical(as.character(d$record_id %||% ""),record_id),ds)
+            by_reviewer <- list()
+            for(d in matches) {
+              reviewer <- as.character(d$reviewer %||% d$user_id %||% "")
+              decision <- as.character(d$decision %||% "")
+              if(!nzchar(reviewer) || !decision %in% c("retain","exclude"))next
+              if(is.null(by_reviewer[[reviewer]]))by_reviewer[[reviewer]] <- decision
+            }
+            decisions <- unique(unlist(by_reviewer,use.names=FALSE))
+            if(!length(decisions))next
+            human[[length(human)+1L]] <- list(record_id=record_id,
+              status=if(length(decisions)==1L)"single_human" else "conflict",
+              final_decision=if(length(decisions)==1L)decisions[[1L]] else "")
+          }
         }
       }
       batches <- w04_selected_batches()
+      result_cache <- new.env(parent=emptyenv())
+      cached_results <- function(batch) {
+        key <- paste0("run_",as.character(batch$run_id))
+        if(!exists(key,envir=result_cache,inherits=FALSE))
+          assign(key,w04_model_batch_results_read(batch),envir=result_cache)
+        get(key,envir=result_cache,inherits=FALSE)
+      }
       w04_model_verify_batch_checkpoints(batches,meta$review_id,
-        corpus$checkpoint_sha256,subsets)
+        corpus$checkpoint_sha256,subsets,read_results=cached_results)
       resolved <- w04_model_verified_resolution_events(batches)
-      coverage <- w04_screening_coverage_reconcile(corpus$record_ids,batches,human,resolved)
+      coverage <- w04_screening_coverage_reconcile(corpus$record_ids,batches,human,resolved,
+        read_results=cached_results)
       export <- if(isTRUE(coverage$ready))
-        w04_reconciled_export_rows(coverage,batches,human) else NULL
+        w04_reconciled_export_rows(coverage,batches,human,read_results=cached_results) else NULL
       list(coverage=coverage,export=export,review_id=meta$review_id,
            selected_model_runs=lapply(batches,function(b)list(
              run_id=as.character(b$run_id),subset_id=as.character(b$subset_id),
