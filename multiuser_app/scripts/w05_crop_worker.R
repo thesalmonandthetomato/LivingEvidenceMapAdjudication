@@ -35,7 +35,7 @@ parse_record <- function(line) {
   }
   data.frame(record_id=scalar(x$record_id %||% (x$identity %||% list())$record_id),
     title=scalar(x$title %||% (x$canonical %||% list())$title),
-    abstract=scalar(x$abstract %||% (x$canonical %||% list())$abstract),
+    abstract=scalar(x[["abstract",exact=TRUE]] %||% (x[["canonical",exact=TRUE]] %||% list())[["abstract",exact=TRUE]]),
     stringsAsFactors=FALSE)
 }
 rows <- do.call(rbind,lapply(lines,parse_record))
