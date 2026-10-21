@@ -5238,7 +5238,7 @@ server <- function(input, output, session) {
     uploaded <- input$w06_shiny_prompt_upload
     result <- tryCatch({
       if(is.null(uploaded))stop("Upload a W06 prompt",call.=FALSE)
-      content <- w04_prompt_from_upload(uploaded$datapath,uploaded$name)
+      content <- w06_shiny_import_prompt(uploaded$datapath,uploaded$name)
       if(!nzchar(trimws(content)))stop("Extracted W06 prompt is empty",call.=FALSE)
       w06_prompt_preview_rv(content)
       prompt_path <- tempfile(fileext=".txt")
