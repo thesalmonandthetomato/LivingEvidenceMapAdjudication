@@ -1156,6 +1156,7 @@ server <- function(input, output, session) {
   review_published_metrics_rv <- reactiveVal(NULL)
   review_reporting_error_rv <- reactiveVal("")
   manual_screening_rv <- reactiveVal(NULL)
+  manual_screening_kpi_error_rv <- reactiveVal("")
   authoritative_w08_rv <- reactiveVal(NULL)
   backend_reset_status <- reactiveVal("")
 
@@ -1229,8 +1230,10 @@ server <- function(input, output, session) {
     req(authenticated())
     summary <- tryCatch(read_manual_screening_metrics(),error=function(e)e)
     if(inherits(summary,"error")) {
+      manual_screening_kpi_error_rv(conditionMessage(summary))
       message("LEM W04 manual screening KPI read failed: ",conditionMessage(summary))
     } else {
+      manual_screening_kpi_error_rv("")
       manual_screening_rv(summary)
     }
   })
@@ -1938,8 +1941,8 @@ server <- function(input, output, session) {
           m <- manual_screening_rv()
           kpi(
             "Manually screened",
-            if(is.null(m)) "—" else fmt_pipeline_n(m$manually_screened),
-            if(is.null(m) || is.na(m$kappa)) NULL else paste0("κ ",sprintf("%.3f",m$kappa)),
+            if(nzchar(manual_screening_kpi_error_rv())) "Unavailable" else if(is.null(m)) "—" else fmt_pipeline_n(m$manually_screened),
+            if(nzchar(manual_screening_kpi_error_rv())) "Saved κ could not be loaded" else if(is.null(m) || is.na(m$kappa)) "κ not recorded in registry" else paste0("κ ",sprintf("%.3f",m$kappa)),
             stage_position=5L
           )
         },
