@@ -1,1 +1,49 @@
 entity,code,matching_terms
+crop,tomato,tomato;tomatoes;tomate;tomates;tomatera;tomateras;Solanum lycopersicum;Lycopersicon esculentum;cherry tomato;tomate cherry;tomate pera;tomate rama
+crop,pepper,pepper;peppers;sweet pepper;sweet peppers;bell pepper;bell peppers;capsicum;pimiento;pimientos;pimiento morrón;pimiento italiano;pimiento california;pimiento lamuyo;Capsicum annuum
+crop,chilli_pepper,chilli;chillies;chili pepper;chili peppers;chilli pepper;chilli peppers;hot pepper;hot peppers;guindilla;guindillas;chile picante;chiles picantes;pimiento picante;pimientos picantes;jalapeño;jalapeno;Capsicum frutescens;Capsicum chinense
+crop,cucumber,cucumber;cucumbers;pepino;pepinos;pepino holandés;pepino francés;pepino español;Cucumis sativus
+crop,courgette,courgette;courgettes;zucchini;zucchinis;zucchino;calabacín;calabacines;calabacita;Cucurbita pepo
+crop,aubergine,aubergine;aubergines;eggplant;eggplants;berenjena;berenjenas;Solanum melongena
+crop,melon,melon;melons;melón;melones;Cucumis melo;piel de sapo;melón piel de sapo;galia melon;melón galia;cantaloupe
+crop,watermelon,watermelon;watermelons;sandía;sandías;Citrullus lanatus
+crop,pumpkin_squash,pumpkin;pumpkins;winter squash;summer squash;squash;calabaza;calabazas;zapallo;Cucurbita maxima;Cucurbita moschata
+crop,green_bean,green bean;green beans;string bean;string beans;snap bean;snap beans;runner bean;runner beans;judía verde;judías verdes;habichuela verde;habichuelas verdes;alubia verde;alubias verdes;Phaseolus vulgaris;Phaseolus coccineus
+crop,pea,pea;peas;garden pea;snow pea;sugar snap pea;guisante;guisantes;arveja;arvejas;tirabeque;tirabeques;Pisum sativum
+crop,broad_bean,broad bean;broad beans;fava bean;fava beans;haba;habas;Vicia faba
+crop,other_legume,legume crop;legume crops;leguminous vegetable;leguminous vegetables;leguminosa;leguminosas;cultivo de leguminosas
+crop,lettuce,lettuce;lettuces;lechuga;lechugas;Lactuca sativa;romaine lettuce;lechuga romana;iceberg lettuce;lechuga iceberg
+crop,spinach,spinach;espinaca;espinacas;Spinacia oleracea
+crop,endive_escarole,endive;endives;escarole;escarola;escarolas;endivia;endivias;Cichorium endivia;Cichorium intybus var foliosum
+crop,chard,chard;Swiss chard;acelga;acelgas;Beta vulgaris var cicla
+crop,rocket_arugula,rocket;arugula;rucola;rúcula;rucula;Eruca vesicaria;Eruca sativa
+crop,kale,kale;curly kale;col rizada;berza rizada;Brassica oleracea var sabellica
+crop,cabbage,cabbage;cabbages;repollo;repollos;col;coles;Brassica oleracea var capitata
+crop,broccoli,broccoli;brócoli;brocoli;brécol;brecol;Brassica oleracea var italica
+crop,cauliflower,cauliflower;cauliflowers;coliflor;coliflores;Brassica oleracea var botrytis
+crop,pak_choi,pak choi;pak choy;bok choy;bok choi;col china;pak choi chino;Brassica rapa subsp chinensis
+crop,other_leafy_greens,leafy greens;baby leaf;baby leaves;microgreens;hojas verdes;verduras de hoja;brotes tiernos;microvegetales
+crop,strawberry,strawberry;strawberries;fresa;fresas;fresón;fresones;Fragaria × ananassa;Fragaria x ananassa
+crop,raspberry,raspberry;raspberries;frambuesa;frambuesas;Rubus idaeus
+crop,blueberry,blueberry;blueberries;arándano;arándanos;Vaccinium corymbosum
+crop,blackberry,blackberry;blackberries;mora;moras;zarzamora;zarzamoras;Rubus fruticosus
+crop,other_berries,berry crop;berry crops;berries;frutos rojos;frutos del bosque;bayas;pequeños frutos
+crop,basil,basil;albahaca;Ocimum basilicum
+crop,parsley,parsley;perejil;Petroselinum crispum
+crop,coriander,coriander;cilantro;cilantro fresco;Coriandrum sativum
+crop,mint,mint;peppermint;spearmint;menta;hierbabuena;Mentha spicata;Mentha piperita
+crop,other_culinary_herbs,culinary herbs;aromatic herbs;fresh herbs;herbs;hierbas aromáticas;plantas aromáticas;hierbas culinarias
+crop,radish,radish;radishes;rábano;rábanos;Raphanus sativus
+crop,carrot,carrot;carrots;zanahoria;zanahorias;Daucus carota
+crop,onion_spring_onion,onion;onions;spring onion;spring onions;scallion;scallions;cebolla;cebollas;cebolleta;cebolletas;Allium cepa
+crop,leek,leek;leeks;puerro;puerros;Allium ampeloprasum var porrum
+crop,celery,celery;apio;Apium graveolens
+crop,asparagus,asparagus;espárrago;espárragos;Asparagus officinalis
+crop,artichoke,artichoke;artichokes;alcachofa;alcachofas;Cynara cardunculus var scolymus
+crop,cut_flowers,cut flower;cut flowers;flor cortada;flores cortadas;roses;rose;rosa;rosas;carnation;carnations;clavel;claveles;chrysanthemum;chrysanthemums;crisantemo;crisantemos;gerbera;gerberas
+crop,ornamental_potted_plants,potted ornamental;ornamental pot plants;pot plants;plantas ornamentales en maceta;plantas de maceta;poinsettia;flor de pascua;Euphorbia pulcherrima;geranium;geranios;pelargonium
+crop,ornamental_nursery_plants,ornamental nursery;ornamental nurseries;vivero ornamental;viveros ornamentales;ornamental seedlings;plantones ornamentales
+crop,other_covered_floriculture,covered floriculture;greenhouse floriculture;floricultura bajo invernadero;floricultura protegida;flores ornamentales;plantas ornamentales
+crop,crop_seedlings_propagation,vegetable seedling;vegetable seedlings;crop seedlings;seedling production;plant nursery;semilleros;semillero hortícola;plantones hortícolas;plántulas hortícolas;vivero hortícola
+crop,other_identified_crop,other identified crop;otros cultivos identificados;otro cultivo especificado
+crop,unspecified_horticultural_crop,
