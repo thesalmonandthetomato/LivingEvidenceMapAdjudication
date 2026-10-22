@@ -1,5 +1,9 @@
 source("multiuser_app/R/w06_shiny_prompt.R")
 source("multiuser_app/R/w07_shiny_configuration.R")
+# New reviews have no W07 configuration draft metadata yet.
+stopifnot(identical(w07_shiny_config_id(list(values=character())), ""))
+stopifnot(identical(w07_shiny_config_id(list(values=c(other_key="12"))), ""))
+stopifnot(identical(w07_shiny_config_id(list(values=c(w07_config_zenodo_draft_id="23540408"))), "23540408"))
 write_tmp <- function(lines,extension) {
   p <- tempfile(fileext=extension)
   writeLines(lines,p,useBytes=TRUE)
