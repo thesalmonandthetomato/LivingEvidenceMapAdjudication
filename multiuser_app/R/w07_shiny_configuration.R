@@ -1,6 +1,7 @@
 # Review-specific W07 topic configuration, separate from W06 and production pathways.
 w07_shiny_config_id <- function(meta) {
-  id <- as.character(meta$values[["w07_config_zenodo_draft_id"]] %||% "")
+  id <- if("w07_config_zenodo_draft_id" %in% names(meta$values))
+    as.character(meta$values[["w07_config_zenodo_draft_id"]]) else ""
   if(length(id)!=1L || is.na(id) ||
      (nzchar(id) && !grepl("^[0-9]+$",id)))
     stop("Invalid W07 configuration draft ID",call.=FALSE)
