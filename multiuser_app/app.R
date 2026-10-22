@@ -5289,7 +5289,7 @@ server <- function(input, output, session) {
     type <- as.character(input$w07_config_type %||% "ontology")
     r <- w07_config_receipts_rv()[[type]]
     if(is.null(r))return("No uploaded version for this selection.")
-    paste0("SHA-256: ",r$sha256,"\\n\\n",r$content)
+    paste0("SHA-256: ",r$sha256,"\n\n",r$content)
   })
   w07_prepare_status_rv <- reactiveVal("W07 preparation has not been requested.")
   observeEvent(input$w07_shiny_prepare,{
