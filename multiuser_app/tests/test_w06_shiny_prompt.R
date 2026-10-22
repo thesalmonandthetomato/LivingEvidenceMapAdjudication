@@ -41,8 +41,11 @@ xml_text <- readLines(unz(docx_file,"word/document.xml"),warn=FALSE)
 stopifnot(grepl("Study location",w06_shiny_docx_decode(paste(xml_text,collapse="")),fixed=TRUE))
 source("R/w04_prompt_versions.R")
 imported <- w06_shiny_import_prompt(docx_file,"geography.DOCX")
+fallback_imported <- w06_shiny_import_docx_fallback(docx_file)
 stopifnot(grepl("Study location",imported,fixed=TRUE),
-          grepl("Include reported areas",imported,fixed=TRUE))
+          grepl("Include reported areas",imported,fixed=TRUE),
+          grepl("Study location",fallback_imported,fixed=TRUE),
+          grepl("Include reported areas",fallback_imported,fixed=TRUE))
 unlink(docx_file)
 unlink(docx_dir,recursive=TRUE)
 for(ext in c("txt","md")) {
