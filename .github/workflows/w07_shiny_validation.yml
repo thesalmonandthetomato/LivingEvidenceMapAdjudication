@@ -1,0 +1,31 @@
+name: Validate isolated W07 Shiny configuration
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'multiuser_app/R/w07_shiny_configuration.R'
+      - 'multiuser_app/R/w07_shiny_prepare_dispatch.R'
+      - 'multiuser_app/tests/test_w07_shiny_configuration.R'
+      - '.github/workflows/w07_shiny_validation.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - name: Parse W07 Shiny modules and app
+        shell: Rscript {0}
+        run: |
+          parse(file="multiuser_app/R/w07_shiny_configuration.R")
+          parse(file="multiuser_app/R/w07_shiny_prepare_dispatch.R")
+          parse(file="multiuser_app/app.R")
+      - name: Test W07 offline configuration contract
+        shell: Rscript {0}
+        run: source("multiuser_app/tests/test_w07_shiny_configuration.R")
