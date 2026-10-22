@@ -61,7 +61,14 @@ w07_shiny_config_parse <- function(path,type) {
       collapse="\n"),count=nrow(ontology)))
   }
   if(!identical(type,"prompt"))stop("Unknown W07 configuration type",call.=FALSE)
-  content <- paste(readLines(path,warn=FALSE,encoding="UTF-8"),collapse="\n")
+  # Reuse W06's existing TXT/MD/DOCX/PDF importer, including DOCX
+  # fallback when xml2 is absent on Posit Connect Cloud.
+  extension <- tolower(tools::file_ext(path))
+  if(extension %in% c("docx","pdf")) {
+    content <- w06_shiny_import_prompt(path,path)
+  } else {
+    content <- paste(readLines(path,warn=FALSE,encoding="UTF-8"),collapse="\n")
+  }
   if(!nzchar(trimws(content)))stop("W07 prompt is empty",call.=FALSE)
   list(contents=content,count=NA_integer_)
 }
