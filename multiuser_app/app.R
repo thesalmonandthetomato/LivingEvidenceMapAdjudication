@@ -5234,6 +5234,53 @@ server <- function(input, output, session) {
   w07_config_receipts_rv <- reactiveVal(list())
   w07_config_status_rv <- reactiveVal("Loading saved W07 configuration when W07 is opened.")
   w07_approval_status_rv <- reactiveVal(list())
+  w07_versions_rv <- reactiveVal(data.frame(type=character(),sha256=character(),
+                                             approved=logical()))
+  refresh_w07_versions <- function() {
+    versions <- w07_shiny_config_versions(w04_prompt_review_metadata(force=TRUE))
+    w07_versions_rv(versions)
+    versions
+  }
+  output$w07_saved_versions <- renderUI({
+    versions <- w07_versions_rv()
+    if(!nrow(versions))return(tags$p("No saved W07 versions found in this review."))
+    tags$div(lapply(c("ontology","prompt"),function(type) {
+      choices <- versions[versions$type==type,,drop=FALSE]
+      if(!nrow(choices))return(tags$p(paste("No saved",type,"versions.")))
+      tags$div(class="mb-3",
+        tags$strong(paste("Saved",type,"versions")),
+        selectInput(paste0("w07_saved_",type),NULL,
+          choices=setNames(choices$sha256,
+            paste0(substr(choices$sha256,1L,12L),
+                   ifelse(choices$approved," (approved)"," (not approved)"))),
+          selected=if(any(choices$approved))choices$sha256[which(choices$approved)[1L]]
+                   else choices$sha256[1L]))
+    }))
+  })
+  observeEvent(input$w07_select_saved,{
+    req(authenticated())
+    type <- as.character(input$w07_config_type %||% "ontology")
+    if(!type %in% c("ontology","prompt"))return()
+    sha <- input[[paste0("w07_saved_",type)]]
+    if(is.null(sha)||!nzchar(sha))return()
+    result <- tryCatch(w07_shiny_config_select(w04_prompt_review_metadata(),type,sha),
+                       error=function(e)e)
+    if(inherits(result,"error")) {
+      w07_config_status_rv(paste("Could not load selected version:",conditionMessage(result)))
+      return()
+    }
+    receipts <- w07_config_receipts_rv()
+    receipts[[type]] <- result
+    w07_config_receipts_rv(receipts)
+    versions <- w07_versions_rv()
+    is_approved <- any(versions$type==type & versions$sha256==sha & versions$approved)
+    approvals <- w07_approval_status_rv()
+    approvals[[type]] <- if(is_approved)sha else NULL
+    w07_approval_status_rv(approvals)
+    w07_config_status_rv(paste("Selected saved",type,"version",substr(sha,1L,12L),
+      if(is_approved)"(approved)." else "(approval required)."))
+  })
+
   observeEvent(input$configure_workflow_tab,{
     req(authenticated())
     if(!identical(input$configure_workflow_tab,"W07"))return()
@@ -5242,6 +5289,11 @@ server <- function(input, output, session) {
     if(inherits(result,"error")) {
       w07_config_status_rv(paste("Could not restore saved W07 configuration:",
                                  conditionMessage(result)))
+      return()
+    }
+    versions <- tryCatch(refresh_w07_versions(),error=function(e)e)
+    if(inherits(versions,"error")) {
+      w07_config_status_rv(paste("Could not list saved W07 versions:",conditionMessage(versions)))
       return()
     }
     w07_config_receipts_rv(result$receipts)
@@ -6077,7 +6129,12 @@ server <- function(input, output, session) {
               tags$p(class="saved-note","Approval confirmation appears here after Zenodo verifies the saved marker. The button does not change appearance."),
               textOutput("w07_config_status"),
               tags$strong(textOutput("w07_approval_summary")),
-              selectInput("w07_config_type","Review uploaded version",
+              tags$h6("Existing saved versions"),
+              tags$p(class="saved-note","Choose an archived version below. No upload or new Zenodo record is needed."),
+              uiOutput("w07_saved_versions"),
+              actionButton("w07_select_saved","Use selected saved version",
+                class="btn-outline-secondary"),
+              selectInput("w07_config_type","Review version",
                 choices=c("Ontology"="ontology","Prompt"="prompt")),
               tags$pre(style="white-space:pre-wrap;max-height:260px;overflow:auto;",
                 textOutput("w07_config_preview")),
