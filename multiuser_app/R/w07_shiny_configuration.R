@@ -149,3 +149,57 @@ w07_shiny_config_approve <- function(meta,receipt) {
   if(sum(present==name)!=1L)stop("W07 approval was not persisted",call.=FALSE)
   invisible(TRUE)
 }
+
+# Restore archived W07 versions independently of Shiny session upload state.
+w07_shiny_config_restore <- function(meta) {
+  dep <- w07_shiny_config_deposit(meta)
+  if(is.null(dep))return(list(receipts=list(),approved=list()))
+  files <- dep$files %||% list()
+  filenames <- vapply(files,function(f)as.character(f$filename %||% ""),character(1))
+  receipts <- list()
+  approved <- list()
+  for(type in c("ontology","prompt")) {
+    pattern <- paste0("^w07-",type,"-[a-f0-9]{64}\\.json$")
+    matches <- which(grepl(pattern,filenames))
+    if(!length(matches))next
+    if(anyDuplicated(filenames[matches]))
+      stop("Duplicate archived W07 ",type," versions",call.=FALSE)
+    # Depositions normally report files in upload order. Use a deterministic
+    # version selection by the latest valid file ID; never silently overwrite.
+    file_ids <- vapply(files[matches],function(f)
+      suppressWarnings(as.numeric(f$id %||% NA_real_)),numeric(1))
+    if(all(is.finite(file_ids))) {
+      matches <- matches[order(file_ids,decreasing=TRUE)]
+    } else {
+      matches <- rev(matches)
+    }
+    selected <- NULL
+    for(i in matches) {
+      name <- filenames[[i]]
+      sha <- sub(paste0("^w07-",type,"-([a-f0-9]{64})\\.json$"),"\\1",name)
+      url <- as.character(files[[i]]$links$download %||% "")
+      if(!startsWith(url,"https://zenodo.org/"))
+        stop("Untrusted W07 archived version download URL",call.=FALSE)
+      token <- Sys.getenv("ZENODO_ACCESS_TOKEN",unset="")
+      req <- httr2::req_auth_bearer_token(httr2::request(url),token)
+      response <- httr2::req_perform(httr2::req_timeout(req,120))
+      obj <- jsonlite::fromJSON(httr2::resp_body_string(response),simplifyVector=FALSE)
+      if(!identical(obj$schema,"lem-w07-shiny-configuration-v1") ||
+         !identical(obj$review_id,meta$review_id) ||
+         !identical(obj$type,type) ||
+         !identical(obj$sha256,sha) ||
+         !identical(digest::digest(obj$content,algo="sha256",serialize=FALSE),sha))
+        stop("Archived W07 ",type," version failed integrity checks",call.=FALSE)
+      selected <- list(draft_id=as.character(dep$id),type=type,
+        filename=name,sha256=sha,content=obj$content,
+        count=if(identical(type,"ontology")) as.integer(obj$categories) else NA_integer_)
+      break
+    }
+    receipts[[type]] <- selected
+    marker <- paste0("w07-approved-",type,"-",selected$sha256,".json")
+    if(sum(filenames==marker)>1L)
+      stop("Duplicate W07 approval marker",call.=FALSE)
+    if(sum(filenames==marker)==1L)approved[[type]] <- selected$sha256
+  }
+  list(receipts=receipts,approved=approved)
+}
