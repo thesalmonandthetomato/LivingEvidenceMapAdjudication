@@ -5377,6 +5377,7 @@ server <- function(input, output, session) {
       approvals <- w07_approval_status_rv()
       approvals[[type]] <- receipt$sha256
       w07_approval_status_rv(approvals)
+      try(refresh_w07_versions(),silent=TRUE)
       w07_config_status_rv(paste("W07",type,"approved and verified in Zenodo. SHA-256:",receipt$sha256))
       shiny::showNotification(paste("W07",type,"approval confirmed"),
                               type="message",duration=8)
