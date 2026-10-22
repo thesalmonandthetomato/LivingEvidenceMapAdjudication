@@ -24,6 +24,7 @@ source("R/w05_crop_archive.R", local = TRUE)
 source("R/w06_shiny_prompt.R", local = TRUE)
 source("R/w06_shiny_subset_dispatch.R", local = TRUE)
 source("R/w07_shiny_prepare_dispatch.R", local = TRUE)
+source("R/w07_shiny_configuration.R", local = TRUE)
 source("R/w05_shiny_subset_dispatch.R", local = TRUE)
 source("R/w05_shiny_subset_results.R", local = TRUE)
 source("R/w04_workspace_overview.R", local = TRUE)
@@ -5229,6 +5230,67 @@ server <- function(input, output, session) {
     w05_shiny_subset_launch_status_rv(sprintf(
       "GitHub accepted an isolated W05 subset request for %d records. Check its completed run before interpreting results.",result))
   })
+  w07_config_receipts_rv <- reactiveVal(list())
+  w07_config_status_rv <- reactiveVal("Upload ontology and prompt files separately.")
+  observeEvent(input$w07_ontology_upload,{
+    req(authenticated())
+    if(!session_can("control_workflows"))return()
+    uploaded <- input$w07_ontology_upload
+    result <- tryCatch({
+      if(!identical(tolower(tools::file_ext(uploaded$name)),"csv"))
+        stop("W07 ontology must be a CSV",call.=FALSE)
+      w07_shiny_config_archive(w04_prompt_review_metadata(),
+        uploaded$datapath,"ontology")
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w07_config_status_rv(paste("Ontology upload failed:",conditionMessage(result)))
+    } else {
+      receipts <- w07_config_receipts_rv();receipts$ontology <- result
+      w07_config_receipts_rv(receipts)
+      w07_config_status_rv(paste("W07 ontology archived:",result$count,
+        "codes. Review and approve this version."))
+    }
+  })
+  observeEvent(input$w07_prompt_upload,{
+    req(authenticated())
+    if(!session_can("control_workflows"))return()
+    uploaded <- input$w07_prompt_upload
+    result <- tryCatch({
+      if(!tolower(tools::file_ext(uploaded$name)) %in% c("txt","md"))
+        stop("W07 model prompt must be TXT or Markdown",call.=FALSE)
+      w07_shiny_config_archive(w04_prompt_review_metadata(),
+        uploaded$datapath,"prompt")
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w07_config_status_rv(paste("Prompt upload failed:",conditionMessage(result)))
+    } else {
+      receipts <- w07_config_receipts_rv();receipts$prompt <- result
+      w07_config_receipts_rv(receipts)
+      w07_config_status_rv("W07 model prompt archived. Review and approve this version.")
+    }
+  })
+  observeEvent(input$w07_config_approve,{
+    req(authenticated())
+    if(!session_can("control_workflows"))return()
+    type <- as.character(input$w07_config_type %||% "")
+    receipt <- w07_config_receipts_rv()[[type]]
+    if(is.null(receipt)) {
+      w07_config_status_rv("Upload the selected W07 configuration first.")
+      return()
+    }
+    result <- tryCatch(w07_shiny_config_approve(
+      w04_prompt_review_metadata(),receipt),error=function(e)e)
+    w07_config_status_rv(if(inherits(result,"error"))
+      paste("W07 approval failed:",conditionMessage(result)) else
+      paste("Approved W07",type,"version",receipt$sha256))
+  })
+  output$w07_config_status <- renderText(w07_config_status_rv())
+  output$w07_config_preview <- renderText({
+    type <- as.character(input$w07_config_type %||% "ontology")
+    r <- w07_config_receipts_rv()[[type]]
+    if(is.null(r))return("No uploaded version for this selection.")
+    paste0("SHA-256: ",r$sha256,"\\n\\n",r$content)
+  })
   w07_prepare_status_rv <- reactiveVal("W07 preparation has not been requested.")
   observeEvent(input$w07_shiny_prepare,{
     req(authenticated())
@@ -5936,7 +5998,20 @@ server <- function(input, output, session) {
               actionButton("w07_shiny_prepare","Prepare W07 input from published W05",
                            class="btn-outline-primary"),
               textOutput("w07_shiny_prepare_status"),
-              tags$p(class="saved-note","Topic ontology upload, prompt approval and subset model testing are not yet enabled."))),
+              tags$hr(),
+              tags$h6("W07 topic classification configuration"),
+              fileInput("w07_ontology_upload","Upload topic ontology (CSV)",
+                accept=".csv"),
+              fileInput("w07_prompt_upload","Upload topic model prompt (TXT or Markdown)",
+                accept=c(".txt",".md")),
+              textOutput("w07_config_status"),
+              selectInput("w07_config_type","Review uploaded version",
+                choices=c("Ontology"="ontology","Prompt"="prompt")),
+              tags$pre(style="white-space:pre-wrap;max-height:260px;overflow:auto;",
+                textOutput("w07_config_preview")),
+              actionButton("w07_config_approve","Approve selected archived version",
+                class="btn-outline-primary"),
+              tags$p(class="saved-note","Model subset execution and finalisation remain disabled pending configuration validation."))),
             tabPanel("W08",uiOutput("w08_admin_controls")),
             tabPanel("System",uiOutput("system_admin_controls"))
           )
