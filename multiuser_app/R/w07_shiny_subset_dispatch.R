@@ -18,8 +18,13 @@ w07_shiny_subset_dispatch <- function(meta,ontology_receipt,prompt_receipt,n) {
     marker <- paste0("w07-approved-",r$type,"-",r$sha256,".json")
     if(!identical(r$filename,version) ||
        !grepl("^[a-f0-9]{64}$",r$sha256) ||
-       sum(files==version)!=1L||sum(files==marker)!=1L)
-      stop("W07 trial requires explicitly approved immutable versions",call.=FALSE)
+       sum(files==version)!=1L)
+      stop("W07 ",r$type," archived version is missing or invalid",call.=FALSE)
+    if(sum(files==marker)!=1L)
+      stop("W07 ",r$type," version ",substr(r$sha256,1L,12L),
+           " has not been approved in Zenodo. Select ",r$type,
+           " in 'Review uploaded version' and click 'Approve selected archived version'.",
+           call.=FALSE)
   }
   w05 <- w05_crop_draft_id(meta)
   if(!nzchar(w05))stop("W05 source is not registered",call.=FALSE)
