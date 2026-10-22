@@ -5256,10 +5256,10 @@ server <- function(input, output, session) {
     if(!session_can("control_workflows"))return()
     uploaded <- input$w07_prompt_upload
     result <- tryCatch({
-      if(!tolower(tools::file_ext(uploaded$name)) %in% c("txt","md"))
-        stop("W07 model prompt must be TXT or Markdown",call.=FALSE)
+      if(!tolower(tools::file_ext(uploaded$name)) %in% c("txt","md","docx","pdf"))
+        stop("W07 model prompt must be TXT, Markdown, DOCX or PDF",call.=FALSE)
       w07_shiny_config_archive(w04_prompt_review_metadata(),
-        uploaded$datapath,"prompt")
+        uploaded$datapath,"prompt",uploaded$name)
     },error=function(e)e)
     if(inherits(result,"error")) {
       w07_config_status_rv(paste("Prompt upload failed:",conditionMessage(result)))
@@ -6002,8 +6002,8 @@ server <- function(input, output, session) {
               tags$h6("W07 topic classification configuration"),
               fileInput("w07_ontology_upload","Upload topic ontology (CSV)",
                 accept=".csv"),
-              fileInput("w07_prompt_upload","Upload topic model prompt (TXT or Markdown)",
-                accept=c(".txt",".md")),
+              fileInput("w07_prompt_upload","Upload topic model prompt (TXT, Markdown, DOCX or PDF)",
+                accept=c(".txt",".md",".docx",".pdf")),
               textOutput("w07_config_status"),
               selectInput("w07_config_type","Review uploaded version",
                 choices=c("Ontology"="ontology","Prompt"="prompt")),
