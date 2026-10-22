@@ -15,10 +15,7 @@ w06_shiny_docx_decode <- function(xml) {
   xml <- gsub("&amp;", "&", xml, fixed=TRUE)
   trimws(xml)
 }
-w06_shiny_import_prompt <- function(path,filename) {
-  ext <- tolower(tools::file_ext(filename))
-  if(!identical(ext,"docx") || requireNamespace("xml2",quietly=TRUE))
-    return(w04_prompt_from_upload(path,filename))
+w06_shiny_import_docx_fallback <- function(path) {
   if(!file.exists(path)||file.info(path)$size>10*1024*1024)
     stop("W06 DOCX is missing or exceeds 10 MB",call.=FALSE)
   contents <- utils::unzip(path,list=TRUE)$Name
@@ -30,6 +27,12 @@ w06_shiny_import_prompt <- function(path,filename) {
   txt <- w06_shiny_docx_decode(xml)
   if(!nzchar(txt))stop("DOCX contains no extractable prompt text",call.=FALSE)
   txt
+}
+w06_shiny_import_prompt <- function(path,filename) {
+  ext <- tolower(tools::file_ext(filename))
+  if(identical(ext,"docx") && !requireNamespace("xml2",quietly=TRUE))
+    return(w06_shiny_import_docx_fallback(path))
+  w04_prompt_from_upload(path,filename)
 }
 
 # Review-agnostic W06 prompt staging. No geographic rules or model dispatch.
