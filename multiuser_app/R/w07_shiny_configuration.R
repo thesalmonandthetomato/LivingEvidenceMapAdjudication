@@ -213,3 +213,48 @@ w07_shiny_config_restore <- function(meta) {
   }
   list(receipts=receipts,approved=approved)
 }
+
+# List all archived configuration versions without downloading their content.
+w07_shiny_config_versions <- function(meta) {
+  dep <- w07_shiny_config_deposit(meta)
+  if(is.null(dep))return(data.frame(type=character(),sha256=character(),
+                                    approved=logical(),stringsAsFactors=FALSE))
+  names <- vapply(dep$files %||% list(),
+    function(f)as.character(f$filename %||% ""),character(1))
+  versions <- grep("^w07-(ontology|prompt)-[a-f0-9]{64}\\.json$",names,value=TRUE)
+  if(!length(versions))return(data.frame(type=character(),sha256=character(),
+                                         approved=logical(),stringsAsFactors=FALSE))
+  if(anyDuplicated(versions))stop("Duplicate W07 archived versions",call.=FALSE)
+  type <- sub("^w07-(ontology|prompt)-.*$","\\1",versions)
+  sha <- sub("^w07-(?:ontology|prompt)-([a-f0-9]{64})\\.json$","\\1",versions,perl=TRUE)
+  data.frame(type=type,sha256=sha,
+    approved=mapply(function(t,h)
+      sum(names==paste0("w07-approved-",t,"-",h,".json"))==1L,
+      type,sha,USE.NAMES=FALSE),stringsAsFactors=FALSE)
+}
+w07_shiny_config_select <- function(meta,type,sha) {
+  if(!type %in% c("ontology","prompt")||
+     length(sha)!=1L || !grepl("^[a-f0-9]{64}$",sha))
+    stop("Invalid W07 saved version selection",call.=FALSE)
+  versions <- w07_shiny_config_versions(meta)
+  if(sum(versions$type==type & versions$sha256==sha)!=1L)
+    stop("Requested W07 version is not archived in this review",call.=FALSE)
+  dep <- w07_shiny_config_deposit(meta)
+  filename <- paste0("w07-",type,"-",sha,".json")
+  found <- Filter(function(x)identical(as.character(x$filename),filename),
+                  dep$files %||% list())
+  url <- as.character(found[[1L]]$links$download %||% "")
+  if(!startsWith(url,"https://zenodo.org/"))stop("Untrusted W07 archive URL",call.=FALSE)
+  req <- httr2::req_auth_bearer_token(httr2::request(url),
+             Sys.getenv("ZENODO_ACCESS_TOKEN",unset=""))
+  obj <- jsonlite::fromJSON(httr2::resp_body_string(
+    httr2::req_perform(httr2::req_timeout(req,120))),simplifyVector=FALSE)
+  if(!identical(obj$schema,"lem-w07-shiny-configuration-v1") ||
+     !identical(obj$review_id,meta$review_id) ||
+     !identical(obj$type,type)||!identical(obj$sha256,sha) ||
+     !identical(digest::digest(obj$content,algo="sha256",serialize=FALSE),sha))
+    stop("Selected W07 version failed checksum or review validation",call.=FALSE)
+  list(draft_id=as.character(dep$id),type=type,filename=filename,
+       sha256=sha,content=obj$content,
+       count=if(identical(type,"ontology")) as.integer(obj$categories) else NA_integer_)
+}
