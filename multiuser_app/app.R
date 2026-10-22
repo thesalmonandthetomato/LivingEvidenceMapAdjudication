@@ -5235,6 +5235,7 @@ server <- function(input, output, session) {
   w07_config_receipts_rv <- reactiveVal(list())
   w07_config_status_rv <- reactiveVal("Loading saved W07 configuration when W07 is opened.")
   w07_approval_status_rv <- reactiveVal(list())
+  w07_preferred_versions_rv <- reactiveVal(list())
   w07_versions_rv <- reactiveVal(data.frame(type=character(),sha256=character(),
                                              approved=logical()))
   refresh_w07_versions <- function() {
@@ -5254,8 +5255,12 @@ server <- function(input, output, session) {
           choices=setNames(choices$sha256,
             paste0(substr(choices$sha256,1L,12L),
                    ifelse(choices$approved," (approved)"," (not approved)"))),
-          selected=if(any(choices$approved))choices$sha256[which(choices$approved)[1L]]
-                   else choices$sha256[1L]))
+          selected={
+            preferred <- w07_preferred_versions_rv()[[type]]
+            if(!is.null(preferred) && preferred %in% choices$sha256) preferred
+            else if(any(choices$approved))choices$sha256[which(choices$approved)[1L]]
+            else choices$sha256[1L]
+          }))
     }))
   })
   observeEvent(input$w07_select_saved,{
@@ -5324,6 +5329,11 @@ server <- function(input, output, session) {
     } else {
       receipts <- w07_config_receipts_rv();receipts$ontology <- result
       w07_config_receipts_rv(receipts)
+      preferred <- w07_preferred_versions_rv()
+      preferred$ontology <- result$sha256
+      w07_preferred_versions_rv(preferred)
+      tryCatch(refresh_w07_versions(),error=function(e)
+        w07_config_status_rv(paste("Saved W07 versions could not be refreshed:",conditionMessage(e))))
       approved <- w07_approval_status_rv()
       if(!identical(approved$ontology,result$sha256)) {
         approved$ontology <- NULL
@@ -5348,6 +5358,11 @@ server <- function(input, output, session) {
     } else {
       receipts <- w07_config_receipts_rv();receipts$prompt <- result
       w07_config_receipts_rv(receipts)
+      preferred <- w07_preferred_versions_rv()
+      preferred$prompt <- result$sha256
+      w07_preferred_versions_rv(preferred)
+      tryCatch(refresh_w07_versions(),error=function(e)
+        w07_config_status_rv(paste("Saved W07 versions could not be refreshed:",conditionMessage(e))))
       approved <- w07_approval_status_rv()
       if(!identical(approved$prompt,result$sha256)) {
         approved$prompt <- NULL
@@ -5364,24 +5379,35 @@ server <- function(input, output, session) {
       w07_config_status_rv("W07 approval unavailable: insufficient permissions.")
       return()
     }
-    receipt <- w07_config_receipts_rv()[[type]]
-    if(is.null(receipt)) {
-      w07_config_status_rv("Upload the selected W07 configuration first.")
+    sha <- as.character(input[[paste0("w07_saved_",type)]] %||% "")
+    if(length(sha)!=1L || !grepl("^[a-f0-9]{64}$",sha)) {
+      w07_config_status_rv(paste("Select a saved",type,"version to approve."))
       return()
     }
-    w07_config_status_rv(paste("Approving W07",type,"version; verifying Zenodo archive..."))
-    result <- tryCatch(w07_shiny_config_approve(
-      w04_prompt_review_metadata(),receipt),error=function(e)e)
+    w07_config_status_rv(paste("Verifying and approving selected W07",type,
+                               "version",substr(sha,1L,12L),"..."))
+    result <- tryCatch({
+      receipt <- w07_shiny_config_select(w04_prompt_review_metadata(),type,sha)
+      w07_shiny_config_approve(w04_prompt_review_metadata(),receipt)
+      receipt
+    },error=function(e)e)
     if(inherits(result,"error")) {
-      w07_config_status_rv(paste("W07 approval failed:",conditionMessage(result)))
+      w07_config_status_rv(paste("W07 approval failed for",type,
+                                substr(sha,1L,12L),":",conditionMessage(result)))
     } else {
+      receipts <- w07_config_receipts_rv()
+      receipts[[type]] <- result
+      w07_config_receipts_rv(receipts)
+      preferred <- w07_preferred_versions_rv()
+      preferred[[type]] <- sha
+      w07_preferred_versions_rv(preferred)
       approvals <- w07_approval_status_rv()
-      approvals[[type]] <- receipt$sha256
+      approvals[[type]] <- sha
       w07_approval_status_rv(approvals)
       try(refresh_w07_versions(),silent=TRUE)
-      w07_config_status_rv(paste("W07",type,"approved and verified in Zenodo. SHA-256:",receipt$sha256))
-      shiny::showNotification(paste("W07",type,"approval confirmed"),
-                              type="message",duration=8)
+      w07_config_status_rv(paste("W07",type,"approved and verified in Zenodo. SHA-256:",sha))
+      shiny::showNotification(paste("W07",type,substr(sha,1L,12L),
+                                    "approval confirmed"),type="message",duration=8)
     }
   })
   output$w07_approval_summary <- renderText({
@@ -5394,6 +5420,12 @@ server <- function(input, output, session) {
         return(paste(type,": approved (",substr(r$sha256,1L,12L),")",sep=""))
       paste(type,": approval required (",substr(r$sha256,1L,12L),")",sep="")
     },character(1)),collapse=" | ")
+  })
+  output$w07_approval_target <- renderText({
+    type <- as.character(input$w07_config_type %||% "ontology")
+    sha <- input[[paste0("w07_saved_",type)]]
+    if(is.null(sha)||!nzchar(sha))return(paste("No saved",type,"version selected."))
+    paste("Approval target:",type,substr(sha,1L,12L))
   })
   output$w07_config_status <- renderText(w07_config_status_rv())
   output$w07_config_preview <- renderText({
@@ -6170,7 +6202,9 @@ server <- function(input, output, session) {
                 choices=c("Ontology"="ontology","Prompt"="prompt")),
               tags$pre(style="white-space:pre-wrap;max-height:260px;overflow:auto;",
                 textOutput("w07_config_preview")),
-              actionButton("w07_config_approve","Approve selected archived version",
+              tags$p(class="saved-note","Approval uses the version selected under Existing saved versions for the chosen Review version type. You do not need to click Use selected saved version first."),
+              textOutput("w07_approval_target"),
+              actionButton("w07_config_approve","Approve chosen version",
                 class="btn-outline-primary"),
               tags$hr(),
               tags$h6("Experimental W07 topic subset"),
