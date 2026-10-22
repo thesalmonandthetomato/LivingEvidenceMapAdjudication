@@ -26,6 +26,7 @@ source("R/w06_shiny_subset_dispatch.R", local = TRUE)
 source("R/w07_shiny_prepare_dispatch.R", local = TRUE)
 source("R/w07_shiny_configuration.R", local = TRUE)
 source("R/w07_shiny_subset_dispatch.R", local = TRUE)
+source("R/w07_shiny_results.R", local = TRUE)
 source("R/w05_shiny_subset_dispatch.R", local = TRUE)
 source("R/w05_shiny_subset_results.R", local = TRUE)
 source("R/w04_workspace_overview.R", local = TRUE)
@@ -5414,6 +5415,36 @@ server <- function(input, output, session) {
       "W07 experimental trial dispatched. Review results in the isolated W07 GitHub Actions workflow; no final classification has been published.")
   })
   output$w07_trial_status <- renderText(w07_trial_status_rv())
+  w07_results_rv <- reactiveVal(NULL)
+  w07_results_status_rv <- reactiveVal("No W07 trial results loaded.")
+  observeEvent(input$w07_results_load,{
+    req(authenticated())
+    run_id <- trimws(as.character(input$w07_results_run %||% ""))
+    result <- tryCatch(w07_shiny_load_results(run_id),error=function(e)e)
+    if(inherits(result,"error")) {
+      w07_results_rv(NULL)
+      w07_results_status_rv(paste("W07 results could not be loaded:",conditionMessage(result)))
+    } else {
+      w07_results_rv(result)
+      w07_results_status_rv(paste("Loaded",nrow(result$table),
+        "W07 records. These are experimental results, not final classifications."))
+    }
+  })
+  output$w07_results_status <- renderText(w07_results_status_rv())
+  output$w07_results_table <- renderTable({
+    result <- w07_results_rv()
+    if(is.null(result))return(NULL)
+    result$table
+  },striped=TRUE,bordered=FALSE,spacing="s")
+  output$w07_results_csv <- downloadHandler(
+    filename=function()paste0("w07-experimental-",Sys.Date(),".csv"),
+    content=function(file) {
+      result <- w07_results_rv()
+      req(!is.null(result))
+      utils::write.csv(result$table,file,row.names=FALSE,na="")
+    }
+  )
+
   w07_prepare_status_rv <- reactiveVal("W07 preparation has not been requested.")
   observeEvent(input$w07_shiny_prepare,{
     req(authenticated())
@@ -6148,6 +6179,15 @@ server <- function(input, output, session) {
               actionButton("w07_trial_launch","Run W07 topic subset",
                 class="btn-outline-primary"),
               textOutput("w07_trial_status"),
+              tags$hr(),
+              tags$h6("Inspect completed W07 trial results"),
+              textInput("w07_results_run","Successful W07 Actions run ID",value=""),
+              actionButton("w07_results_load","Load W07 results",
+                class="btn-outline-secondary"),
+              textOutput("w07_results_status"),
+              downloadButton("w07_results_csv","Download readable W07 CSV"),
+              tags$div(style="max-height:520px;overflow:auto;",
+                tableOutput("w07_results_table")),
               tags$p(class="saved-note","Results are experimental GitHub artefacts; human-review and finalisation are not yet enabled."))),
             tabPanel("W08",uiOutput("w08_admin_controls")),
             tabPanel("System",uiOutput("system_admin_controls"))
