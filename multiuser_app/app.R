@@ -5232,7 +5232,30 @@ server <- function(input, output, session) {
       "GitHub accepted an isolated W05 subset request for %d records. Check its completed run before interpreting results.",result))
   })
   w07_config_receipts_rv <- reactiveVal(list())
-  w07_config_status_rv <- reactiveVal("Upload ontology and prompt files separately.")
+  w07_config_status_rv <- reactiveVal("Loading saved W07 configuration when W07 is opened.")
+  w07_approval_status_rv <- reactiveVal(list())
+  observeEvent(input$configure_workflow_tab,{
+    req(authenticated())
+    if(!identical(input$configure_workflow_tab,"W07"))return()
+    result <- tryCatch(w07_shiny_config_restore(w04_prompt_review_metadata()),
+                       error=function(e)e)
+    if(inherits(result,"error")) {
+      w07_config_status_rv(paste("Could not restore saved W07 configuration:",
+                                 conditionMessage(result)))
+      return()
+    }
+    w07_config_receipts_rv(result$receipts)
+    w07_approval_status_rv(result$approved)
+    statuses <- vapply(c("ontology","prompt"),function(type) {
+      r <- result$receipts[[type]]
+      if(is.null(r))return(paste(type,"not uploaded"))
+      if(identical(result$approved[[type]],r$sha256))
+        return(paste(type,"saved and approved"))
+      paste(type,"saved; approval required")
+    },character(1))
+    w07_config_status_rv(paste("Restored from restricted Zenodo:",
+                               paste(statuses,collapse="; ")))
+  })
   observeEvent(input$w07_ontology_upload,{
     req(authenticated())
     if(!session_can("control_workflows"))return()
@@ -5270,7 +5293,6 @@ server <- function(input, output, session) {
       w07_config_status_rv("W07 model prompt archived. Review and approve this version.")
     }
   })
-  w07_approval_status_rv <- reactiveVal(list())
   observeEvent(input$w07_config_approve,{
     req(authenticated())
     type <- as.character(input$w07_config_type %||% "")
