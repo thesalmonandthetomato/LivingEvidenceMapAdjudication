@@ -58,10 +58,10 @@ w07_shiny_config_parse <- function(path,type) {
        any(is.na(ontology$definition)|!nzchar(trimws(ontology$definition))))
       stop("W07 ontology requires unique path_id and nonempty hierarchy/definitions",call.=FALSE)
     return(list(contents=paste(readLines(path,warn=FALSE,encoding="UTF-8"),
-      collapse="\\n"),count=nrow(ontology)))
+      collapse="\n"),count=nrow(ontology)))
   }
   if(!identical(type,"prompt"))stop("Unknown W07 configuration type",call.=FALSE)
-  content <- paste(readLines(path,warn=FALSE,encoding="UTF-8"),collapse="\\n")
+  content <- paste(readLines(path,warn=FALSE,encoding="UTF-8"),collapse="\n")
   if(!nzchar(trimws(content)))stop("W07 prompt is empty",call.=FALSE)
   list(contents=content,count=NA_integer_)
 }
