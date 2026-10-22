@@ -5320,6 +5320,14 @@ server <- function(input, output, session) {
       req(!is.null(x))
       utils::write.csv(x,file,row.names=FALSE,na="")
     },contentType="text/csv")
+  output$w06_shiny_prompt_approval_control <- renderUI({
+    receipt <- w06_prompt_receipt_rv()
+    if(is.null(receipt) || !nzchar(as.character(receipt$sha256 %||% "")) ||
+       !nzchar(as.character(receipt$draft_id %||% "")) ||
+       isTRUE(w06_prompt_approved_rv())) return(NULL)
+    actionButton("w06_shiny_prompt_approve","Approve archived W06 prompt",
+                 class="btn-outline-primary")
+  })
   output$w06_shiny_prompt_status <- renderText(w06_prompt_status_rv())
   output$w06_shiny_prompt_preview <- renderText({
     content <- w06_prompt_preview_rv()
@@ -5893,8 +5901,7 @@ server <- function(input, output, session) {
               fileInput("w06_shiny_prompt_upload","Upload W06 model prompt (TXT, Markdown, DOCX or PDF)",
                 accept=c(".txt",".md",".docx",".pdf")),
               textOutput("w06_shiny_prompt_status"),
-              actionButton("w06_shiny_prompt_approve","Approve archived W06 prompt",
-                class="btn-outline-primary"),
+              uiOutput("w06_shiny_prompt_approval_control"),
               tags$h6("Prompt preview"),
               tags$pre(style="white-space:pre-wrap;max-height:350px;overflow:auto;",
                 textOutput("w06_shiny_prompt_preview")),
