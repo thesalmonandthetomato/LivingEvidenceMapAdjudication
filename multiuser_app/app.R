@@ -5271,6 +5271,11 @@ server <- function(input, output, session) {
     } else {
       receipts <- w07_config_receipts_rv();receipts$ontology <- result
       w07_config_receipts_rv(receipts)
+      approved <- w07_approval_status_rv()
+      if(!identical(approved$ontology,result$sha256)) {
+        approved$ontology <- NULL
+        w07_approval_status_rv(approved)
+      }
       w07_config_status_rv(paste("W07 ontology archived:",result$count,
         "codes. Review and approve this version."))
     }
@@ -5290,6 +5295,11 @@ server <- function(input, output, session) {
     } else {
       receipts <- w07_config_receipts_rv();receipts$prompt <- result
       w07_config_receipts_rv(receipts)
+      approved <- w07_approval_status_rv()
+      if(!identical(approved$prompt,result$sha256)) {
+        approved$prompt <- NULL
+        w07_approval_status_rv(approved)
+      }
       w07_config_status_rv("W07 model prompt archived. Review and approve this version.")
     }
   })
@@ -5319,6 +5329,17 @@ server <- function(input, output, session) {
       shiny::showNotification(paste("W07",type,"approval confirmed"),
                               type="message",duration=8)
     }
+  })
+  output$w07_approval_summary <- renderText({
+    receipts <- w07_config_receipts_rv()
+    approved <- w07_approval_status_rv()
+    paste(vapply(c("ontology","prompt"),function(type) {
+      r <- receipts[[type]]
+      if(is.null(r))return(paste(type,": not uploaded"))
+      if(identical(approved[[type]],r$sha256))
+        return(paste(type,": approved (",substr(r$sha256,1L,12L),")",sep=""))
+      paste(type,": approval required (",substr(r$sha256,1L,12L),")",sep="")
+    },character(1)),collapse=" | ")
   })
   output$w07_config_status <- renderText(w07_config_status_rv())
   output$w07_config_preview <- renderText({
@@ -6055,6 +6076,7 @@ server <- function(input, output, session) {
                 accept=c(".txt",".md",".docx",".pdf")),
               tags$p(class="saved-note","Approval confirmation appears here after Zenodo verifies the saved marker. The button does not change appearance."),
               textOutput("w07_config_status"),
+              tags$strong(textOutput("w07_approval_summary")),
               selectInput("w07_config_type","Review uploaded version",
                 choices=c("Ontology"="ontology","Prompt"="prompt")),
               tags$pre(style="white-space:pre-wrap;max-height:260px;overflow:auto;",
