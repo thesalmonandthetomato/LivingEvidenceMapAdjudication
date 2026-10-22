@@ -44,7 +44,7 @@ w07_shiny_config_create <- function(meta) {
     id,conditionMessage(e)),call.=FALSE))
   id
 }
-w07_shiny_config_parse <- function(path,type) {
+w07_shiny_config_parse <- function(path,type,original_filename=path) {
   if(!file.exists(path)||is.na(file.info(path)$size)||
      file.info(path)$size<1L||file.info(path)$size>2*1024*1024)
     stop("W07 configuration must be nonempty and smaller than 2 MB",call.=FALSE)
@@ -63,18 +63,18 @@ w07_shiny_config_parse <- function(path,type) {
   if(!identical(type,"prompt"))stop("Unknown W07 configuration type",call.=FALSE)
   # Reuse W06's existing TXT/MD/DOCX/PDF importer, including DOCX
   # fallback when xml2 is absent on Posit Connect Cloud.
-  extension <- tolower(tools::file_ext(path))
+  extension <- tolower(tools::file_ext(original_filename))
   if(extension %in% c("docx","pdf")) {
-    content <- w06_shiny_import_prompt(path,path)
+    content <- w06_shiny_import_prompt(path,original_filename)
   } else {
     content <- paste(readLines(path,warn=FALSE,encoding="UTF-8"),collapse="\n")
   }
   if(!nzchar(trimws(content)))stop("W07 prompt is empty",call.=FALSE)
   list(contents=content,count=NA_integer_)
 }
-w07_shiny_config_archive <- function(meta,path,type) {
+w07_shiny_config_archive <- function(meta,path,type,original_filename=path) {
   type <- match.arg(type,c("ontology","prompt"))
-  parsed <- w07_shiny_config_parse(path,type)
+  parsed <- w07_shiny_config_parse(path,type,original_filename)
   content <- parsed$contents
   sha <- digest::digest(content,algo="sha256",serialize=FALSE)
   filename <- paste0("w07-",type,"-",sha,".json")
