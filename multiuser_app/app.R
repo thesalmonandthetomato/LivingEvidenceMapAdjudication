@@ -23,6 +23,7 @@ source("R/w05_crop_coding.R", local = TRUE)
 source("R/w05_crop_archive.R", local = TRUE)
 source("R/w06_shiny_prompt.R", local = TRUE)
 source("R/w06_shiny_subset_dispatch.R", local = TRUE)
+source("R/w07_shiny_prepare_dispatch.R", local = TRUE)
 source("R/w05_shiny_subset_dispatch.R", local = TRUE)
 source("R/w05_shiny_subset_results.R", local = TRUE)
 source("R/w04_workspace_overview.R", local = TRUE)
@@ -5228,6 +5229,18 @@ server <- function(input, output, session) {
     w05_shiny_subset_launch_status_rv(sprintf(
       "GitHub accepted an isolated W05 subset request for %d records. Check its completed run before interpreting results.",result))
   })
+  w07_prepare_status_rv <- reactiveVal("W07 preparation has not been requested.")
+  observeEvent(input$w07_shiny_prepare,{
+    req(authenticated())
+    if(!session_can("control_workflows") ||
+       !identical(as.character(current_user()$role %||% ""),"administrator"))return()
+    result <- tryCatch(w07_shiny_prepare_dispatch(w04_prompt_review_metadata()),
+                       error=function(e)e)
+    w07_prepare_status_rv(if(inherits(result,"error"))
+      paste("W07 preparation not dispatched:",conditionMessage(result)) else
+      "W07 read-only W05 handover dispatched. Find the completed run in W07 Shiny prepare Actions; no LLM or Zenodo publication occurs.")
+  })
+  output$w07_shiny_prepare_status <- renderText(w07_prepare_status_rv())
   observeEvent(input$w06_shiny_prompt_upload,{
     req(authenticated())
     if(!session_can("control_workflows") ||
@@ -5917,6 +5930,13 @@ server <- function(input, output, session) {
               tags$div(style="max-height:420px;overflow:auto;",
                 tableOutput("w06_shiny_trial_table")),
               tags$p(class="saved-note","Full-corpus W06 finalisation is not enabled. Review trial outputs and uncertainties before approving a final prompt."))),
+            tabPanel("W07",div(class="px-3 pb-3",
+              tags$h5("W07 topic coding"),
+              tags$p(class="saved-note","W06 is bypassed for this review. Prepare an isolated, read-only W05 to W07 handover. This operation does not classify records or publish results."),
+              actionButton("w07_shiny_prepare","Prepare W07 input from published W05",
+                           class="btn-outline-primary"),
+              textOutput("w07_shiny_prepare_status"),
+              tags$p(class="saved-note","Topic ontology upload, prompt approval and subset model testing are not yet enabled."))),
             tabPanel("W08",uiOutput("w08_admin_controls")),
             tabPanel("System",uiOutput("system_admin_controls"))
           )
