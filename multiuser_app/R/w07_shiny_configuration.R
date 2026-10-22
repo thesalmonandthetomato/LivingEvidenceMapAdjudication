@@ -173,6 +173,16 @@ w07_shiny_config_restore <- function(meta) {
     } else {
       matches <- rev(matches)
     }
+    # Prefer a version with an existing approval marker. A newer unapproved
+    # upload must not silently replace the approved version on session restore.
+    approved_matches <- matches[vapply(matches,function(i) {
+      sha <- sub(paste0("^w07-",type,"-([a-f0-9]{64})\\\\.json$"),
+                 "\\\\1",filenames[[i]])
+      marker <- paste0("w07-approved-",type,"-",sha,".json")
+      sum(filenames==marker)==1L
+    },logical(1))]
+    if(length(approved_matches))
+      matches <- c(approved_matches,matches[!matches %in% approved_matches])
     selected <- NULL
     for(i in matches) {
       name <- filenames[[i]]
