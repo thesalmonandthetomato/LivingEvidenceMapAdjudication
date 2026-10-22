@@ -5270,20 +5270,33 @@ server <- function(input, output, session) {
       w07_config_status_rv("W07 model prompt archived. Review and approve this version.")
     }
   })
+  w07_approval_status_rv <- reactiveVal(list())
   observeEvent(input$w07_config_approve,{
     req(authenticated())
-    if(!session_can("control_workflows"))return()
     type <- as.character(input$w07_config_type %||% "")
+    if(!type %in% c("ontology","prompt"))return()
+    if(!session_can("control_workflows")) {
+      w07_config_status_rv("W07 approval unavailable: insufficient permissions.")
+      return()
+    }
     receipt <- w07_config_receipts_rv()[[type]]
     if(is.null(receipt)) {
       w07_config_status_rv("Upload the selected W07 configuration first.")
       return()
     }
+    w07_config_status_rv(paste("Approving W07",type,"version; verifying Zenodo archive..."))
     result <- tryCatch(w07_shiny_config_approve(
       w04_prompt_review_metadata(),receipt),error=function(e)e)
-    w07_config_status_rv(if(inherits(result,"error"))
-      paste("W07 approval failed:",conditionMessage(result)) else
-      paste("Approved W07",type,"version",receipt$sha256))
+    if(inherits(result,"error")) {
+      w07_config_status_rv(paste("W07 approval failed:",conditionMessage(result)))
+    } else {
+      approvals <- w07_approval_status_rv()
+      approvals[[type]] <- receipt$sha256
+      w07_approval_status_rv(approvals)
+      w07_config_status_rv(paste("W07",type,"approved and verified in Zenodo. SHA-256:",receipt$sha256))
+      shiny::showNotification(paste("W07",type,"approval confirmed"),
+                              type="message",duration=8)
+    }
   })
   output$w07_config_status <- renderText(w07_config_status_rv())
   output$w07_config_preview <- renderText({
@@ -6018,6 +6031,7 @@ server <- function(input, output, session) {
                 accept=".csv"),
               fileInput("w07_prompt_upload","Upload topic model prompt (TXT, Markdown, DOCX or PDF)",
                 accept=c(".txt",".md",".docx",".pdf")),
+              tags$p(class="saved-note","Approval confirmation appears here after Zenodo verifies the saved marker. The button does not change appearance."),
               textOutput("w07_config_status"),
               selectInput("w07_config_type","Review uploaded version",
                 choices=c("Ontology"="ontology","Prompt"="prompt")),
