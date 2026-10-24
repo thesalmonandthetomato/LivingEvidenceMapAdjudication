@@ -2050,7 +2050,7 @@ server <- function(input, output, session) {
                  " / ",fmt_pipeline_n(if(reconciled_eligibility) final_exclude else p$screened_exclude)),
           if(reconciled_eligibility) "final include / exclude after W08" else "include / exclude",
           stage_position=5L,
-          inline_note=if(stage_complete(5L)) fmt_pipeline_pair_delta(p$screened_include_update,p$screened_exclude_update) else NULL,
+          inline_note=if(reconciled_eligibility) NULL else if(stage_complete(5L)) fmt_pipeline_pair_delta(p$screened_include_update,p$screened_exclude_update) else NULL,
           compact_value=TRUE
         ),
         kpi(
@@ -2058,7 +2058,7 @@ server <- function(input, output, session) {
           fmt_pipeline_n(if(reconciled_eligibility) final_include else p$species_records),
           if(reconciled_eligibility) "eligible records after W08" else "records processed",
           stage_position=6L,
-          inline_note=if(stage_complete(6L)) fmt_pipeline_delta(p$species_update) else NULL
+          inline_note=if(reconciled_eligibility) NULL else if(stage_complete(6L)) fmt_pipeline_delta(p$species_update) else NULL
         ),
         kpi(
           "Geography",
