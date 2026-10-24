@@ -993,8 +993,15 @@ read_authoritative_w08_metrics <- function(
   if (!identical(pointer_run, run_id)) stop("Authoritative W08 pointer/run mismatch", call. = FALSE)
   if (is.na(n) || n < 1L) stop("Authoritative W08 canonical count is invalid", call. = FALSE)
 
+  excluded_n <- suppressWarnings(as.integer(x$excluded_records %||% NA_integer_))
+  source_n <- suppressWarnings(as.integer(x$source_canonical_population %||% NA_integer_))
+  if (is.na(excluded_n) || is.na(source_n) || excluded_n < 0L ||
+      source_n != n + excluded_n)
+    stop("Authoritative W08 final included/excluded population mismatch", call. = FALSE)
   list(
     canonical_records = n,
+    excluded_records = excluded_n,
+    source_canonical_population = source_n,
     source_run_id = run_id,
     doi = as.character(x$doi %||% "")
   )
@@ -1943,11 +1950,13 @@ server <- function(input, output, session) {
     final_include <- if (isTRUE(canonical_current)) {
       suppressWarnings(as.integer(canonical_value))
     } else NA_integer_
-    final_deduplicated <- suppressWarnings(as.integer(p$deduplicated_records %||% NA_integer_))
     final_retracted <- suppressWarnings(as.integer(p$retracted_records %||% NA_integer_))
-    final_exclude <- if (!is.na(final_include) && !is.na(final_deduplicated) &&
-                         !is.na(final_retracted) && final_deduplicated >= final_include + final_retracted) {
-      final_deduplicated - final_include - final_retracted
+    final_total_excluded <- suppressWarnings(as.integer(w08_authoritative$excluded_records %||% NA_integer_))
+    final_exclude <- if (!is.na(final_include) && !is.na(final_retracted) &&
+                         !is.na(final_total_excluded) && final_total_excluded >= final_retracted &&
+                         identical(as.integer(w08_authoritative$source_canonical_population),
+                                   as.integer(final_include + final_total_excluded))) {
+      final_total_excluded - final_retracted
     } else NA_integer_
     reconciled_eligibility <- isTRUE(canonical_current) && !is.na(final_exclude)
 
