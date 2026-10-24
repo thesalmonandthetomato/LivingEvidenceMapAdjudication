@@ -1937,6 +1937,19 @@ server <- function(input, output, session) {
     } else {
       p$canonical_existing
     }
+    # W08 finalisation retrospectively reconciles eligibility KPIs. The raw
+    # W04 and W05 processing counts stay in pipeline provenance; the current
+    # summary shows final disposition, not provisional upstream retention.
+    final_include <- if (isTRUE(canonical_current)) {
+      suppressWarnings(as.integer(canonical_value))
+    } else NA_integer_
+    final_deduplicated <- suppressWarnings(as.integer(p$deduplicated_records %||% NA_integer_))
+    final_retracted <- suppressWarnings(as.integer(p$retracted_records %||% NA_integer_))
+    final_exclude <- if (!is.na(final_include) && !is.na(final_deduplicated) &&
+                         !is.na(final_retracted) && final_deduplicated >= final_include + final_retracted) {
+      final_deduplicated - final_include - final_retracted
+    } else NA_integer_
+    reconciled_eligibility <- isTRUE(canonical_current) && !is.na(final_exclude)
 
     workflow_labels <- c("0. Search","1. Dedup","2. Repair","3. Retract","4. Screen","5. Code","6. Country","7. Topics","8. Review","9. Report","10. Dashboard")
     segs <- lapply(seq_along(workflow_labels),function(i){
@@ -2024,16 +2037,17 @@ server <- function(input, output, session) {
         },
         kpi(
           "Screened",
-          paste0(fmt_pipeline_n(p$screened_include)," / ",fmt_pipeline_n(p$screened_exclude)),
-          "include / exclude",
+          paste0(fmt_pipeline_n(if(reconciled_eligibility) final_include else p$screened_include),
+                 " / ",fmt_pipeline_n(if(reconciled_eligibility) final_exclude else p$screened_exclude)),
+          if(reconciled_eligibility) "final include / exclude after W08" else "include / exclude",
           stage_position=5L,
           inline_note=if(stage_complete(5L)) fmt_pipeline_pair_delta(p$screened_include_update,p$screened_exclude_update) else NULL,
           compact_value=TRUE
         ),
         kpi(
           "Deterministic",
-          fmt_pipeline_n(p$species_records),
-          "records processed",
+          fmt_pipeline_n(if(reconciled_eligibility) final_include else p$species_records),
+          if(reconciled_eligibility) "eligible records after W08" else "records processed",
           stage_position=6L,
           inline_note=if(stage_complete(6L)) fmt_pipeline_delta(p$species_update) else NULL
         ),
