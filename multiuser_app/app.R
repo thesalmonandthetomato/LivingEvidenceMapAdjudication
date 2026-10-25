@@ -9444,8 +9444,10 @@ server <- function(input, output, session) {
       tags$details(
         class = paste(
           "assignment-workflow workflow-section",
-          paste0("wf-w",z$workflow)
+          paste0("wf-w",z$workflow),
+          if(identical(z$workflow,"01")) "w01-administration-subsection" else ""
         ),
+        open = if(identical(z$workflow,"01")) "open" else NULL,
         `data-accordion-key` = paste0("workflow-", z$workflow, "-", z$task_type, "-", z$batch_id),
         tags$summary(
           div(
@@ -9714,6 +9716,17 @@ server <- function(input, output, session) {
         identical(as.character(g$meta$workflow),workflow),logical(1)))
       if(!length(indices))
         return(tags$p(class="saved-note","No assignment batches are currently registered for this workflow."))
+      if(identical(workflow,"01")) {
+        return(tags$details(
+          class="assignment-workflow workflow-section wf-w01",
+          `data-accordion-key`="workflow-01-deduplication-all",
+          tags$summary(div(class="d-inline-flex flex-wrap align-items-center gap-2",
+            tags$strong("W01 · Deduplication"),
+            tags$span(class="task-badge","Shared work pool"))),
+          tags$div(class="pt-2", tags$style(
+            ".w01-administration-subsection > summary { display:none; } .w01-administration-subsection {margin:0 0 1rem 0; border:0; box-shadow:none;}"),
+            tagList(workflow_sections[indices]))))
+      }
       tagList(workflow_sections[indices])
     }
     system_panel <- tagList(
