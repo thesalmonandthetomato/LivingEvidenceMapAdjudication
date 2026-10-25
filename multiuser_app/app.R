@@ -2598,9 +2598,8 @@ server <- function(input, output, session) {
       div(class="row g-3",
         div(class="col-md-6",lapply(seq_along(z$candidates),function(i)paper(z$candidates[[i]],paste("Citation candidate",i)))),
         div(class="col-md-6",lapply(seq_along(z$historical),function(i)paper(z$historical[[i]],paste("Historical record",z$historical[[i]]$w01_record_id))))),
-      selectInput("w08b_target","Historical W01 publication",choices=c("Select matching record"="",
-        stats::setNames(vapply(z$historical,function(a)as.character(a$w01_record_id),character(1)),
-         vapply(z$historical,function(a)substr(as.character(a$title %||% a$w01_record_id),1L,100L),character(1))))),
+      tags$p(class="text-secondary small",
+        "Historical master identity is determined automatically from matching identifiers and bibliographic fields, retaining the W01 canonical identity."),
       textAreaInput("w08b_rationale","Adjudication rationale",rows=2),
       tags$p(class="text-secondary small",w08b_review_status_rv()))
   })
