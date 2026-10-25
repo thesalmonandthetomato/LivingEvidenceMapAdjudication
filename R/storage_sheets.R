@@ -1819,7 +1819,7 @@ read_latest_pipeline_status <- function() {
     jsonlite::fromJSON(
       read_github_text_file(
         "docs/current_run/current_run_status.json",
-        ref = Sys.getenv("LEM_PIPELINE_STATUS_REF", unset = paste0("workflow01","-final-architecture"))
+        ref = Sys.getenv("LEM_PIPELINE_STATUS_REF", unset = "workflow01-final-architecture")
       ),
       simplifyVector = FALSE
     ),
