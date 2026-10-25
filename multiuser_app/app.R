@@ -2616,22 +2616,13 @@ server <- function(input, output, session) {
       journal=as.character(x$journal %||% ""),doi=as.character(x$doi %||% ""))
     left<-rec(a,as.character(a$provider %||% "Citation chasing"))
     right<-rec(b,"Historical W01")
-    fields<-list(source=field_pair(left$source,right$source),
-      source_record_id=field_pair(left$source_record_id,right$source_record_id),
-      title=field_pair(left$title,right$title),
-      abstract=field_pair(left$abstract,right$abstract),
-      authors=field_pair(left$authors,right$authors),
-      year=field_pair(left$year,right$year),
-      journal=field_pair(left$journal,right$journal),
-      doi=field_pair(left$doi,right$doi))
+    comparison_evidence <- lapply(z$match_methods %||% character(),
+      function(method)list(label="Match",value=method))
     tagList(
       tags$p(class="text-secondary",paste("Case",z$review_case_id,
         "· Pair",pair_idx,"of",length(pairs),
         "· Evidence:",paste(z$match_methods %||% character(),collapse=", "))),
-      div(class="row g-3",
-        div(class="col-md-6",record_card(left,"Citation-chasing record",fields,side="a")),
-        div(class="col-md-6",record_card(right,"Historical W01 record",fields,side="b"))),
-      if(isTRUE(w08b_case_saved()))tags$p(class="text-success small","This comparison has a saved decision and is read-only."),
+      dedup_pair_cards(left,right,comparison_evidence),
       tags$p(class="text-secondary small","Canonical identity is selected deterministically, not by reviewers."),
       textAreaInput("w08b_rationale","Adjudication rationale",rows=2),
       tags$p(class="text-secondary small",w08b_review_status_rv()))
@@ -2643,14 +2634,14 @@ server <- function(input, output, session) {
     pairs<-w08b_review_pairs()
     j<-min(max(1L,as.integer(w08b_pair_idx())),length(pairs))
     if(delta<0L){
-      if(j>1L)w08b_pair_idx(j-1L)
+      if(j>1L)dedup_navigate(-1L,j,w08b_pair_idx,length(pairs))
       else if(i>1L){
         previous<-cases[[i-1L]]
         w08b_review_idx(i-1L)
         w08b_pair_idx(max(1L,length(previous$candidates %||% list())*length(previous$historical %||% list())))
       }
     }else{
-      if(j<length(pairs))w08b_pair_idx(j+1L)
+      if(j<length(pairs))dedup_navigate(1L,j,w08b_pair_idx,length(pairs))
       else if(i<length(cases)){
         w08b_review_idx(i+1L)
         w08b_pair_idx(1L)
@@ -12150,6 +12141,42 @@ server <- function(input, output, session) {
             sprintf("%s%%",pct)))
   })
 
+  # Shared W01/W08b pairwise renderer. Source-specific state and decision
+  # persistence stay separate; comparison layout is defined only here.
+  dedup_pair_cards <- function(left,right,evidence=list(),allow_abstract_edit=FALSE,
+                               editing_a=FALSE,editing_b=FALSE) {
+    fields <- list(
+      source=field_pair(left$source,right$source),
+      title=field_pair(display_sentence_case_if_all_caps(left$title),
+                       display_sentence_case_if_all_caps(right$title)),
+      authors=field_pair(left$authors,right$authors),
+      year=field_pair(left$year,right$year),
+      journal=field_pair(left$journal,right$journal),
+      doi=field_pair(normalise_doi_value(left$doi),normalise_doi_value(right$doi),char_level=TRUE),
+      source_record_id=field_pair(normalise_source_id_value(left$source_record_id),
+                                  normalise_source_id_value(right$source_record_id),char_level=TRUE),
+      abstract=field_pair(display_sentence_case_if_all_caps(left$display_abstract %||% left$abstract),
+                          display_sentence_case_if_all_caps(right$display_abstract %||% right$abstract))
+    )
+    fields$source$a <- tags$span(class="source-badge",fields$source$a)
+    fields$source$b <- tags$span(class="source-badge",fields$source$b)
+    tagList(
+      layout_columns(col_widths=c(6,6),
+        record_card(left,"Record A",fields,"a",abstract_editing=allow_abstract_edit && editing_a),
+        record_card(right,"Record B",fields,"b",abstract_editing=allow_abstract_edit && editing_b)),
+      card(class="mt-3",card_header("Matching evidence"),
+        div(class="evidence-grid",lapply(evidence,function(z)
+          div(class="evidence-item",tags$div(class="text-secondary small",z$label),
+            tags$strong(z$value)))))
+    )
+  }
+  dedup_navigate <- function(direction,index,set_index,n,first=1L) {
+    if(n<1L)return(invisible(FALSE))
+    destination <- max(first,min(n,index+direction))
+    set_index(destination)
+    invisible(TRUE)
+  }
+
   output$case_view <- renderUI({
     req(authenticated())
     z <- current_case()
@@ -12187,29 +12214,6 @@ server <- function(input, output, session) {
     record_j_view$display_abstract <- abstract_j
     record_i_view$abstract_repair_saved <- !is.null(repair_i)
     record_j_view$abstract_repair_saved <- !is.null(repair_j)
-    fields <- list(
-      source = field_pair(z$record_i$source, z$record_j$source),
-      title = field_pair(
-        display_sentence_case_if_all_caps(z$record_i$title),
-        display_sentence_case_if_all_caps(z$record_j$title)
-      ),
-      authors = field_pair(z$record_i$authors, z$record_j$authors),
-      year = field_pair(z$record_i$year, z$record_j$year),
-      journal = field_pair(z$record_i$journal, z$record_j$journal),
-      doi = field_pair(normalise_doi_value(z$record_i$doi), normalise_doi_value(z$record_j$doi), char_level = TRUE),
-      source_record_id = field_pair(
-        normalise_source_id_value(z$record_i$source_record_id),
-        normalise_source_id_value(z$record_j$source_record_id),
-        char_level = TRUE
-      ),
-      abstract = field_pair(
-        display_sentence_case_if_all_caps(abstract_i),
-        display_sentence_case_if_all_caps(abstract_j)
-      )
-    )
-    fields$source$a <- tags$span(class = "source-badge", fields$source$a)
-    fields$source$b <- tags$span(class = "source-badge", fields$source$b)
-
     edit_state <- w01_abstract_edit_rv()
     editing_a <- !is.null(edit_state) &&
       identical(as.character(edit_state$review_case_id), as.character(z$review_case_id)) &&
@@ -12218,22 +12222,8 @@ server <- function(input, output, session) {
       identical(as.character(edit_state$review_case_id), as.character(z$review_case_id)) &&
       identical(as.character(edit_state$side), "b")
 
-    tagList(
-      layout_columns(
-        col_widths = c(6,6),
-        record_card(record_i_view, "Record A", fields, "a", abstract_editing = editing_a),
-        record_card(record_j_view, "Record B", fields, "b", abstract_editing = editing_b)
-      ),
-      card(
-        class="mt-3",
-        card_header("Matching evidence"),
-        div(class="evidence-grid",
-            lapply(evidence, function(x)
-              div(class="evidence-item",
-                  tags$div(class="text-secondary small", x$label),
-                  tags$strong(x$value))))
-      )
-    )
+    dedup_pair_cards(record_i_view,record_j_view,evidence,
+      allow_abstract_edit=TRUE,editing_a=editing_a,editing_b=editing_b)
   })
 
   w02_current_case <- reactive({
