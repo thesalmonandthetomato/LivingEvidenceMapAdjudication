@@ -8730,7 +8730,7 @@ server <- function(input, output, session) {
       }
     }
 
-    add_empty_group(
+    if (has_w01_batch || !has_w08b_batch) add_empty_group(
       "01","deduplication",
       if (has_w01_batch) batch_id_rv() else "no-active-queue",
       ASSIGNMENT_MODES[["shared_work_pool"]]
