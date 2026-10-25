@@ -2529,6 +2529,7 @@ server <- function(input, output, session) {
     tryCatch({
       refresh_w08b_review()
       w08b_review_visible_rv(TRUE)
+      showModal(modalDialog(uiOutput("w08b_review_panel"),size="l",easyClose=TRUE,footer=modalButton("Close")))
     },error=function(e)showNotification(conditionMessage(e),type="error"))
   })
   w08b_pending_cases <- reactive({
@@ -2537,11 +2538,24 @@ server <- function(input, output, session) {
     done<-vapply(w08b_review_decisions_rv(),function(z)as.character(z$review_case_id),character(1))
     Filter(function(z)!as.character(z$review_case_id)%in%done,q$cases)
   })
+  w08b_review_assigned <- reactive({
+    q <- w08b_review_queue_rv()
+    if(is.null(q))return(list())
+    uid <- as.character(current_user()$user_id %||% "")
+    assigned <- active_assignments_for_batch(assignment_registry_rv(),"01",q$batch_id,"citation_deduplication")
+    ids <- vapply(Filter(function(z)identical(normalise_assignment_row(z)$user_id,uid),assigned),
+      function(z)normalise_assignment_row(z)$case_id,character(1))
+    pending <- w08b_pending_cases()
+    if(!length(assigned) && session_can("manage_assignments"))return(pending)
+    Filter(function(z)as.character(z$review_case_id)%in%ids,pending)
+  })
   output$w08b_review_panel <- renderUI({
     if(!isTRUE(w08b_review_visible_rv()))return(NULL)
     q<-w08b_review_queue_rv()
     if(is.null(q))return(tags$p("No W08b review queue has been published."))
-    pending<-w08b_pending_cases()
+    pending<-w08b_review_assigned()
+    if(!length(pending) && length(w08b_pending_cases())>0L)
+      return(tags$p("No citation deduplication cases are assigned to you. An administrator can assign these in Deduplication → Manage assignments."))
     if(!length(pending))return(card(card_header("W08b citation deduplication"),
       tags$p("All ambiguity cases have saved decisions."),
       actionButton("w08b_open_review","Refresh decisions",class="btn-outline-secondary")))
@@ -2580,7 +2594,7 @@ server <- function(input, output, session) {
     req(authenticated())
     tryCatch({
       q<-w08b_review_queue_rv();stopifnot(!is.null(q))
-      pending<-w08b_pending_cases();stopifnot(length(pending)>0)
+      pending<-w08b_review_assigned();stopifnot(length(pending)>0)
       append_w08b_review_decision(q,pending[[1L]],
         as.character(input$w08b_decision %||% ""),
         as.character(input$w08b_target %||% ""),
@@ -8545,7 +8559,9 @@ server <- function(input, output, session) {
     )
 
     all_assignments <- assignment_registry_rv()
-    has_w01_batch <- nzchar(as.character(batch_id_rv())) && length(w01_all_cases_rv()) > 0L
+    has_w01_batch <- nzchar(as.character(batch_id_rv())) && length(w01_all_cases_rv()) > 0L && length(w01_active_assignment_events()) < length(w01_all_cases_rv())
+    w08b_queue <- w08b_review_queue_rv()
+    has_w08b_batch <- !is.null(w08b_queue) && length(w08b_pending_cases()) > 0L
     has_w02_batch <- nzchar(as.character(w02_batch_id_rv())) && length(w02_all_cases_rv()) > 0L
     has_w04_batch <- nzchar(as.character(w04_batch_id_rv())) && length(w04_all_cases_rv()) > 0L
     has_w04_resolution_batch <- nzchar(as.character(w04_resolution_batch_id_rv())) && length(w04_resolution_all_cases_rv()) > 0L
@@ -8553,6 +8569,7 @@ server <- function(input, output, session) {
     has_w08_batch <- nzchar(as.character(w08_batch_id_rv())) && length(w08_all_cases_rv()) > 0L
     task_labels <- c(
       deduplication = "Deduplication",
+      citation_deduplication = "Citation deduplication",
       enrichment = "Enrichment",
       manual_screening = "Manual screening",
       model_uncertainty = "Model uncertainty",
@@ -8581,6 +8598,9 @@ server <- function(input, output, session) {
     # should show only the currently active W01/W02/W04/W08 batch. Older batches
     # remain in Sheets/audit history rather than appearing as duplicate panels.
     active_batch_for <- function(workflow, task_type) {
+      if (identical(workflow, "01") && identical(task_type, "citation_deduplication")) {
+        return(if (has_w08b_batch) w08b_queue$batch_id else "")
+      }
       if (identical(workflow, "01") && identical(task_type, "deduplication")) {
         return(if (has_w01_batch) as.character(batch_id_rv()) else "")
       }
@@ -8715,6 +8735,10 @@ server <- function(input, output, session) {
       if (has_w01_batch) batch_id_rv() else "no-active-queue",
       ASSIGNMENT_MODES[["shared_work_pool"]]
     )
+    if (has_w08b_batch) add_empty_group(
+      "01","citation_deduplication",w08b_queue$batch_id,
+      ASSIGNMENT_MODES[["shared_work_pool"]]
+    )
     add_empty_group(
       "02","enrichment",
       if (has_w02_batch) w02_batch_id_rv() else "no-active-queue",
@@ -8760,6 +8784,7 @@ server <- function(input, output, session) {
       )
       task_rank <- c(
         deduplication=1L,
+        citation_deduplication=2L,
         enrichment=1L,
         manual_screening=1L,
         conflict_resolution=2L,
@@ -8799,6 +8824,14 @@ server <- function(input, output, session) {
       ) {
         list(prefix="w01", workflow="01", task_type="deduplication", batch_id=batch_id_rv(),
              events=w01_active_assignment_events(), label="W01")
+      } else if (
+        identical(z$workflow, "01") &&
+        identical(z$task_type, "citation_deduplication") &&
+        has_w08b_batch &&
+        identical(z$batch_id,w08b_queue$batch_id)
+      ) {
+        list(prefix="w08b",workflow="01",task_type="citation_deduplication",
+          batch_id=w08b_queue$batch_id,events=w08b_review_decisions_rv(),label="W08b citation")
       } else if (
         identical(z$workflow, "02") &&
         identical(z$task_type, "enrichment") &&
@@ -9850,6 +9883,33 @@ server <- function(input, output, session) {
       batch_id_rv(),
       "deduplication"
     )
+  })
+
+  w08b_assignment_cases <- reactive({
+    q <- w08b_review_queue_rv()
+    if(is.null(q))return(list())
+    q$cases
+  })
+  w08b_assignment_plan <- reactive({
+    req(authenticated())
+    q <- w08b_review_queue_rv()
+    if(is.null(q))return(list(error="W08b queue unavailable"))
+    workflow_assignment_plan("w08b",w08b_assignment_cases(),
+      w08b_review_decisions_rv(),"01",q$batch_id,"citation_deduplication")
+  })
+  output$w08b_assignment_preview <- renderUI({
+    q <- w08b_review_queue_rv();if(is.null(q))return(NULL)
+    workflow_assignment_preview(w08b_assignment_plan(),"w08b","01",
+      q$batch_id,"citation_deduplication",w08b_review_decisions_rv())
+  })
+  output$w08b_assignment_status <- renderText(assignment_manage_status())
+  observeEvent(input$w08b_apply_assignments,{
+    apply_workflow_assignments(w08b_assignment_plan())
+  })
+  observeEvent(input$w08b_remove_assignments,{
+    q <- w08b_review_queue_rv();req(!is.null(q))
+    remove_workflow_user_assignments(input$w08b_remove_assignment_user,
+      w08b_review_decisions_rv(),"01",q$batch_id,"citation_deduplication")
   })
 
   w02_assignment_plan <- reactive({
