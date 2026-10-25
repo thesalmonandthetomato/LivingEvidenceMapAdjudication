@@ -2520,6 +2520,8 @@ server <- function(input, output, session) {
   w08b_review_idx <- reactiveVal(1L)
   w08b_pair_idx <- reactiveVal(1L)
   w08b_review_status_rv <- reactiveVal("")
+  w08b_export_requested_rv <- reactiveVal(FALSE)
+  w08b_export_status_rv <- reactiveVal("")
   w08b_abstract_repairs_rv <- reactiveVal(list())
   w08b_abstract_edit_rv <- reactiveVal(NULL)
   refresh_w08b_review <- function() {
@@ -2794,6 +2796,34 @@ server <- function(input, output, session) {
       w08b_review_status_rv("Decision saved.")
     },error=function(e)showNotification(conditionMessage(e),type="error"))
   }
+  observeEvent(input$w08b_send_github,{
+    req(authenticated())
+    if(!session_can("control_workflows")) {
+      showNotification("Administrator access required.",type="error")
+      return()
+    }
+    q <- w08b_review_queue_rv()
+    if(is.null(q) || !length(q$cases) || length(w08b_pending_cases())>0L) {
+      showNotification("Citation-chasing review is not complete.",type="error")
+      return()
+    }
+    tryCatch({
+      token <- github_dispatch_token()
+      url <- "https://api.github.com/repos/thesalmonandthetomato/LivingEvidenceMap/actions/workflows/workflow08b_export_decisions.yml/dispatches"
+      request <- httr2::request(url) |>
+        httr2::req_method("POST") |>
+        httr2::req_headers(Authorization=paste("Bearer",token),
+          Accept="application/vnd.github+json",
+          `X-GitHub-Api-Version`="2022-11-28") |>
+        httr2::req_body_json(list(ref="workflow01-final-architecture",
+          inputs=list(batch_id=as.character(q$batch_id),queue_sha256=as.character(q$sha))))
+      response <- httr2::req_perform(request)
+      if(httr2::resp_status(response)!=204L)stop(paste("GitHub dispatch HTTP",httr2::resp_status(response)))
+      w08b_export_requested_rv(TRUE)
+      w08b_export_status_rv("GitHub export requested. Check the W08b export workflow result.")
+      showNotification("W08b export requested on GitHub.",type="message")
+    },error=function(e)showNotification(paste("W08b export failed:",conditionMessage(e)),type="error"))
+  })
   observeEvent(input$w08b_duplicate,w08b_save_page_decision("same_publication"))
   observeEvent(input$w08b_distinct,w08b_save_page_decision("different_publications"))
   observeEvent(input$w08b_uncertain,w08b_save_page_decision("unable_to_determine"))
@@ -9584,6 +9614,19 @@ server <- function(input, output, session) {
                 )
               }
             )
+          },
+          if (identical(z$workflow,"01") &&
+              identical(z$task_type,"citation_deduplication") &&
+              session_can("control_workflows") && !is.null(w08b_review_queue_rv()) &&
+              length(w08b_review_queue_rv()$cases)>0L &&
+              length(w08b_pending_cases())==0L) {
+            tags$div(class="d-flex flex-wrap align-items-center gap-2 mt-3 p-2 border rounded bg-light",
+              tags$div(tags$strong("Citation-chasing deduplication complete"),
+                tags$div(class="text-secondary small",
+                  "All citation-chasing cases are resolved. Send the decisions to GitHub for a verified restricted archive.")),
+              if(isTRUE(w08b_export_requested_rv()))
+                tags$span(class="saved-note",w08b_export_status_rv())
+              else actionButton("w08b_send_github","Send citation-chasing decisions to GitHub",class="btn-primary btn-sm"))
           },
           if (
             identical(z$workflow, "02") &&
