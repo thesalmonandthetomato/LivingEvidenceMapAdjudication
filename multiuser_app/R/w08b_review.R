@@ -26,13 +26,49 @@ read_w08b_review_decisions <- function(sha) {
   x<-x[x$queue_sha256==sha,,drop=FALSE]
   lapply(seq_len(nrow(x)),function(i)as.list(x[i,,drop=FALSE]))
 }
+
+# W01 canonical builder uses deterministic modal field selection: most frequent
+# normalised value, then longest original value, then stable source key.
+w08b_modal_field <- function(records,field) {
+  vals<-vapply(records,function(z)trimws(as.character(z[[field]] %||% ""))[1L],character(1))
+  valid<-which(nzchar(vals) & !is.na(vals))
+  if(!length(valid))return("")
+  normal<-tolower(gsub("[[:space:]]+"," ",vals[valid]))
+  counts<-table(normal)
+  winners<-valid[normal %in% names(counts)[counts==max(counts)]]
+  keys<-vapply(records[winners],function(z)as.character(z$w01_record_id %||% z$source_id %||% ""),character(1))
+  vals[winners[order(-nchar(vals[winners],type="chars"),keys)[1L]]]
+}
+# The historical W01 identity is authoritative. Resolve multiple historical
+# candidates by strong identifier agreement, then exact abstract/title,
+# with stable record ID tie-breaking, without asking the reviewer to select a master.
+w08b_historical_target <- function(case) {
+  hs<-case$historical %||% list()
+  cs<-case$candidates %||% list()
+  if(!length(hs)||!length(cs))stop("Missing matched historical/citation records",call.=FALSE)
+  scalar<-function(x)tolower(trimws(as.character(x %||% "")[1L]))
+  normal<-function(x)gsub("[^[:alnum:]]+","",scalar(x))
+  nd<-function(x)sub("^https?://(dx[.])?doi[.]org/","",scalar(x))
+  score<-vapply(hs,function(h) {
+    score<-0L
+    for(c in cs) {
+      if(nzchar(nd(h$doi))&&nzchar(nd(c$doi))&&identical(nd(h$doi),nd(c$doi)))score<-score+100L
+      if(nzchar(normal(h$abstract))&&nchar(normal(h$abstract))>=120L &&
+         identical(normal(h$abstract),normal(c$abstract)))score<-score+20L
+      if(nzchar(normal(h$title))&&identical(normal(h$title),normal(c$title)))score<-score+10L
+    }
+    score
+  },integer(1))
+  ids<-vapply(hs,function(h)as.character(h$w01_record_id),character(1))
+  ids[order(-score,ids)[1L]]
+}
+
 append_w08b_review_decision <- function(queue,case,decision,target,rationale,reviewer) {
   if(!decision%in%c("same_publication","different_publications","unable_to_determine"))
     stop("Unsupported W08b review decision",call.=FALSE)
   valid<-vapply(case$historical%||%list(),function(z)as.character(z$w01_record_id),character(1))
-  if(decision=="same_publication" && (!nzchar(target)||!target%in%valid))
-    stop("Select the specific historical W01 publication",call.=FALSE)
-  if(decision!="same_publication")target<-""
+  if(decision=="same_publication")target<-w08b_historical_target(case)
+  else target<-""
   prior<-read_w08b_review_decisions(queue$sha)
   if(any(vapply(prior,function(z)identical(as.character(z$review_case_id),as.character(case$review_case_id)),logical(1))))
     stop("This W08b case already has a saved decision; refresh the queue",call.=FALSE)
