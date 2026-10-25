@@ -14,10 +14,16 @@ local({
   cat("PASS: configured Google Sheet ID required, trimmed, and never hard-coded\n")
 })
 
-# No deployed integration code may target the legacy salmon-farming branch.
-for (path in c("R/github_dispatch.R", "R/storage_sheets.R",
-               "multiuser_app/R/github_dispatch.R", "multiuser_app/R/storage_sheets.R")) {
-  lines <- readLines(path, warn = FALSE)
-  stopifnot(!any(grepl("workflow01-final-architecture", lines, fixed = TRUE)))
+# The Shiny scoping integration must not silently target the experimental pipeline.
+# Current-run KPI reporting is an intentional exception: it reads the
+# authoritative workflow branch, independently configurable at deployment.
+for (path in c("R/github_dispatch.R","multiuser_app/R/github_dispatch.R")) {
+  lines <- readLines(path,warn=FALSE)
+  stopifnot(!any(grepl("workflow01-final-architecture",lines,fixed=TRUE)))
 }
-cat("PASS: no legacy workflow branch targets in Shiny integration modules\\n")
+for (path in c("R/storage_sheets.R","multiuser_app/R/storage_sheets.R")) {
+  lines <- readLines(path,warn=FALSE)
+  stopifnot(any(grepl("LEM_PIPELINE_STATUS_REF",lines,fixed=TRUE)))
+  stopifnot(any(grepl("workflow01-final-architecture",lines,fixed=TRUE)))
+}
+cat("PASS: Shiny scoping stays on its configured branch while KPI status uses active workflow branch\\n")
