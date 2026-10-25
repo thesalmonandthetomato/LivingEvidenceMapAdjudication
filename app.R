@@ -2436,16 +2436,35 @@ server <- function(input, output, session) {
     }
     tryCatch({
       token <- github_dispatch_token()
-      url <- "https://api.github.com/repos/thesalmonandthetomato/LivingEvidenceMap/actions/workflows/workflow08b_export_decisions.yml/dispatches"
-      request <- httr2::request(url) |>
-        httr2::req_method("POST") |>
-        httr2::req_headers(Authorization=paste("Bearer",token),
-          Accept="application/vnd.github+json",
+      # A workflow_dispatch workflow must exist on GitHub's default branch.
+      # W08b is deliberately restricted to workflow01-final-architecture, so
+      # use its existing push-trigger marker convention instead.
+      branch <- "workflow01-final-architecture"
+      url <- "https://api.github.com/repos/thesalmonandthetomato/LivingEvidenceMap/contents/docs/workflow08b/.run_export_decisions"
+      headers <- c(Authorization=paste("Bearer",token),Accept="application/vnd.github+json",
+                   `X-GitHub-Api-Version`="2022-11-28")
+      get <- httr2::request(paste0(url,"?ref=",branch)) |>
+        httr2::req_headers(Authorization=paste("Bearer",token),Accept="application/vnd.github+json",
           `X-GitHub-Api-Version`="2022-11-28") |>
-        httr2::req_body_json(list(ref="workflow01-final-architecture",
-          inputs=list(batch_id=as.character(q$batch_id),queue_sha256=as.character(q$sha))))
-      response <- httr2::req_perform(request)
-      if(httr2::resp_status(response)!=204L)stop(paste("GitHub dispatch HTTP",httr2::resp_status(response)))
+        httr2::req_error(is_error=function(resp) httr2::resp_status(resp)!=404L && httr2::resp_status(resp)>=400L) |>
+        httr2::req_perform()
+      existing_sha <- if(httr2::resp_status(get)==200L)
+        as.character(httr2::resp_body_json(get)$sha) else NULL
+      marker <- jsonlite::toJSON(list(batch_id=as.character(q$batch_id),
+        queue_sha256=as.character(q$sha),
+        requested_at=format(Sys.time(),"%Y-%m-%dT%H:%M:%SZ",tz="UTC"),
+        reviewer=session_reviewer_id()),auto_unbox=TRUE)
+      payload <- list(message=paste("Request W08b completed decision export",q$batch_id),
+        branch=branch,content=jsonlite::base64_enc(charToRaw(enc2utf8(marker))))
+      if(!is.null(existing_sha))payload$sha <- existing_sha
+      response <- httr2::request(url) |>
+        httr2::req_method("PUT") |>
+        httr2::req_headers(Authorization=paste("Bearer",token),Accept="application/vnd.github+json",
+          `X-GitHub-Api-Version`="2022-11-28") |>
+        httr2::req_body_json(payload) |>
+        httr2::req_perform()
+      if(!httr2::resp_status(response)%in%c(200L,201L))
+        stop(paste("GitHub marker write HTTP",httr2::resp_status(response)))
       w08b_export_requested_rv(TRUE)
       w08b_export_status_rv("GitHub export requested. Check the W08b export workflow result.")
       showNotification("W08b export requested on GitHub.",type="message")
