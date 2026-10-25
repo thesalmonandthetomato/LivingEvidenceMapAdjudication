@@ -2548,14 +2548,20 @@ server <- function(input, output, session) {
     q <- w08b_review_queue_rv()
     if(is.null(q))return(list())
     uid <- as.character(current_user()$user_id %||% "")
-    assigned <- active_assignments_for_batch(assignment_registry_rv(),"01",q$batch_id,"citation_deduplication")
-    ids <- vapply(Filter(function(z)identical(normalise_assignment_row(z)$user_id,uid),assigned),
+    assignments <- active_assignments_for_batch(
+      assignment_registry_rv(),"01",q$batch_id,"citation_deduplication")
+    ids <- vapply(Filter(function(z)
+      identical(normalise_assignment_row(z)$user_id,uid),assignments),
       function(z)normalise_assignment_row(z)$case_id,character(1))
-    pending <- w08b_pending_cases()
-    if(!length(assigned) && session_can("manage_assignments"))return(pending)
-    Filter(function(z)as.character(z$review_case_id)%in%ids,pending)
+    if(!length(assignments) && session_can("manage_assignments"))return(q$cases)
+    Filter(function(z)as.character(z$review_case_id) %in% ids,q$cases)
   })
-
+  w08b_case_saved <- reactive({
+    z <- w08b_current_case()
+    any(vapply(w08b_review_decisions_rv(),function(event)
+      identical(as.character(event$review_case_id),as.character(z$review_case_id)),
+      logical(1)))
+  })
   w08b_current_case <- reactive({
     p <- w08b_review_assigned()
     req(length(p)>0L)
@@ -2625,6 +2631,7 @@ server <- function(input, output, session) {
       div(class="row g-3",
         div(class="col-md-6",record_card(left,"Citation-chasing record",fields,side="a")),
         div(class="col-md-6",record_card(right,"Historical W01 record",fields,side="b"))),
+      if(isTRUE(w08b_case_saved()))tags$p(class="text-success small","This comparison has a saved decision and is read-only."),
       tags$p(class="text-secondary small","Canonical identity is selected deterministically, not by reviewers."),
       textAreaInput("w08b_rationale","Adjudication rationale",rows=2),
       tags$p(class="text-secondary small",w08b_review_status_rv()))
@@ -2657,12 +2664,13 @@ server <- function(input, output, session) {
     req(authenticated())
     tryCatch({
       q<-w08b_review_queue_rv();z<-w08b_current_case()
+      if(isTRUE(w08b_case_saved()))stop("Already adjudicated: use Previous/Next to inspect this case; decisions are read-only.")
       append_w08b_review_decision(q,z,value,
         as.character(input$w08b_target %||% ""),
         as.character(input$w08b_rationale %||% ""),
         as.character(current_user()$user_id %||% ""))
       refresh_w08b_review()
-      w08b_review_idx(min(w08b_review_idx(),max(1L,length(w08b_review_assigned()))))
+      w08b_review_idx(min(w08b_review_idx()+1L,max(1L,length(w08b_review_assigned()))))
       w08b_pair_idx(1L)
       w08b_review_status_rv("Decision saved.")
     },error=function(e)showNotification(conditionMessage(e),type="error"))
