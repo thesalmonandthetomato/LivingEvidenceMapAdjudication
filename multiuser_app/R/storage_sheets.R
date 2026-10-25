@@ -1720,7 +1720,15 @@ read_sheet_w04_queue <- function(tab = Sys.getenv("LEM_W04_QUEUE_TAB", unset = "
 }
 
 read_sheet_w04_resolution_queue <- function(tab = Sys.getenv("LEM_W04_RESOLUTION_QUEUE_TAB", unset = "queue_w04_resolution_active")) {
-  read_sheet_w04_queue_from_tab(tab)
+  batch <- read_sheet_w04_queue_from_tab(tab)
+  if (is.null(batch)) return(NULL)
+  # The prior missing-abstract batch was resolved in a later W04 run.
+  # Keep the original Sheet for audit, but exclude only that superseded task.
+  historical_missing_abstract_batch <- grepl(
+    "^w04-resolution-40019139120-", as.character(batch$batch_id)
+  ) && length(batch$cases) == 107L
+  if (historical_missing_abstract_batch) return(NULL)
+  batch
 }
 
 read_sheet_w04_conflict_queue <- function(tab = Sys.getenv("LEM_W04_CONFLICT_QUEUE_TAB", unset = "queue_w04_conflict_active")) {
