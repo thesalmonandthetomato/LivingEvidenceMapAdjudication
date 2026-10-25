@@ -2776,12 +2776,14 @@ server <- function(input, output, session) {
     tryCatch({
       q<-w08b_review_queue_rv();z<-w08b_current_case()
       if(isTRUE(w08b_case_saved()))stop("Already adjudicated: use Previous/Next to inspect this case; decisions are read-only.")
-      append_w08b_review_decision(q,z,value,
+      saved_event <- append_w08b_review_decision(q,z,value,
         as.character(input$w08b_target %||% ""),
         as.character(input$w08b_rationale %||% ""),
         as.character(current_user()$user_id %||% ""))
       old_index <- as.integer(w08b_review_idx())
-      refresh_w08b_review()
+      # The queue and repair registry are immutable during a decision save.
+      # Keep the accepted event locally rather than re-fetching three Sheets.
+      w08b_review_decisions_rv(c(w08b_review_decisions_rv(),list(saved_event)))
       assigned <- w08b_review_assigned()
       reviewed <- vapply(w08b_review_decisions_rv(),function(d)as.character(d$review_case_id),character(1))
       remaining <- which(!vapply(assigned,function(c)as.character(c$review_case_id) %in% reviewed,logical(1)))

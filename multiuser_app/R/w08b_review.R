@@ -79,7 +79,7 @@ append_w08b_review_decision <- function(queue,case,decision,target,rationale,rev
     rationale=as.character(rationale),reviewer=as.character(reviewer),decided_at_utc=now,queue_sha256=queue$sha,
     stringsAsFactors=FALSE)
   googlesheets4::sheet_append(sheet_id_from_env(),data=row,sheet="decisions_w08b_dedup")
-  invisible(TRUE)
+  invisible(as.list(row[1,,drop=FALSE]))
 }
 
 
