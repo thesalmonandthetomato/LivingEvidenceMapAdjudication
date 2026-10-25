@@ -1713,7 +1713,7 @@
       "checksum": "4a9d063a7c5a2cf0624586887df0bea5"
     },
     "app.R": {
-      "checksum": "c8d96f8a487a1a7e28734ed472c3346f"
+      "checksum": "2060b537fccbf26f309bbb28b5e1c251"
     },
     "appdevelopment/adjudication-performance-improvements.md": {
       "checksum": "96d53b03835024697d42c3b121303192"
@@ -1734,7 +1734,7 @@
       "checksum": "480a0d337e4fbf1a18baca82acdbcb23"
     },
     "multiuser_app/app.R": {
-      "checksum": "9e742d1c58eb55ddcc50a5a91b6285e7"
+      "checksum": "6e679cf0d51c784d4dd5a2327f25695a"
     },
     "multiuser_app/config/w05_almeria_crop_dictionary.csv": {
       "checksum": "2207b392448ed637414ab5c4c71e483c"
@@ -1896,7 +1896,7 @@
       "checksum": "2c01e2dbb3f388b8c1101248f8b1bdb9"
     },
     "multiuser_app/R/w08b_review.R": {
-      "checksum": "19c222c7fcd00b4f22546c0335ecf743"
+      "checksum": "11020198339795e128e168342fb83343"
     },
     "multiuser_app/scripts/w05_crop_worker.R": {
       "checksum": "f2a7b2c98ba3779837c9cb1527aa3d94"
@@ -2007,7 +2007,7 @@
       "checksum": "0793acf1d57562d687b254fcc633bfb2"
     },
     "R/w08b_review.R": {
-      "checksum": "19c222c7fcd00b4f22546c0335ecf743"
+      "checksum": "11020198339795e128e168342fb83343"
     },
     "README.md": {
       "checksum": "37d15c84ef94056519176ef809bc7459"
