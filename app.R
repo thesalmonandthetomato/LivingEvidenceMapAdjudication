@@ -2142,6 +2142,7 @@ server <- function(input, output, session) {
   w08b_review_queue_rv <- reactiveVal(NULL)
   w08b_review_decisions_rv <- reactiveVal(list())
   w08b_review_visible_rv <- reactiveVal(FALSE)
+  w08b_review_idx <- reactiveVal(1L)
   w08b_review_status_rv <- reactiveVal("")
   refresh_w08b_review <- function() {
     q <- read_w08b_review_queue()
@@ -2158,7 +2159,8 @@ server <- function(input, output, session) {
     tryCatch({
       refresh_w08b_review()
       w08b_review_visible_rv(TRUE)
-      showModal(modalDialog(uiOutput("w08b_review_panel"),size="l",easyClose=TRUE,footer=modalButton("Close")))
+      w08b_review_idx(1L)
+      app_view("w08b")
     },error=function(e)showNotification(conditionMessage(e),type="error"))
   })
   w08b_pending_cases <- reactive({
@@ -2178,6 +2180,81 @@ server <- function(input, output, session) {
     if(!length(assigned) && session_can("manage_assignments"))return(pending)
     Filter(function(z)as.character(z$review_case_id)%in%ids,pending)
   })
+
+  w08b_current_case <- reactive({
+    p <- w08b_review_assigned()
+    req(length(p)>0L)
+    i <- min(max(1L,as.integer(w08b_review_idx())),length(p))
+    p[[i]]
+  })
+  output$w08b_page_label <- renderText({
+    q <- w08b_review_queue_rv()
+    paste("Workflow 01 · duplicate review · citation chasing ·",q$batch_id %||% "")
+  })
+  output$w08b_page_progress <- renderText({
+    pending <- w08b_review_assigned()
+    sprintf("Case %d of %d · %d unreviewed",min(w08b_review_idx(),length(pending)),length(pending),length(w08b_pending_cases()))
+  })
+  output$w08b_page_progress_bar <- renderUI({
+    q <- w08b_review_queue_rv();req(!is.null(q))
+    total <- length(q$cases)
+    done <- total-length(w08b_pending_cases())
+    div(class="progress mb-3",div(class="progress-bar",role="progressbar",
+      style=sprintf("width:%.1f%%",if(total>0)100*done/total else 100),
+      sprintf("%d of %d resolved",done,total)))
+  })
+  output$w08b_page_case <- renderUI({
+    p <- w08b_review_assigned()
+    if(!length(p))return(card(tags$p("No assigned citation-deduplication cases remain.")))
+    z <- w08b_current_case()
+    paper <- function(rec,label) {
+      authors <- rec$authors %||% list()
+      author_text <- paste(vapply(authors,function(a) {
+        if(is.list(a))as.character(a$display_name %||% a$name %||% "")
+        else as.character(a)
+      },character(1)),collapse="; ")
+      fields <- list(source=list(a=label,b=label),title=list(a=as.character(rec$title %||% ""),b=as.character(rec$title %||% "")),
+        authors=list(a=author_text,b=author_text),year=list(a=as.character(rec$year %||% ""),b=as.character(rec$year %||% "")),
+        journal=list(a="",b=""),doi=list(a=as.character(rec$doi %||% ""),b=as.character(rec$doi %||% "")),
+        source_record_id=list(a=as.character(rec$source_id %||% rec$w01_record_id %||% ""),b=as.character(rec$source_id %||% rec$w01_record_id %||% "")))
+      record_card(list(doi=rec$doi %||% "",abstract=rec$abstract %||% ""),
+        label,fields,side="a")
+    }
+    tagList(
+      tags$p(class="text-secondary",paste("Case",z$review_case_id,"· Matched on",paste(z$match_methods %||% character(),collapse=", "))),
+      div(class="row g-3",
+        div(class="col-md-6",lapply(seq_along(z$candidates),function(i)paper(z$candidates[[i]],paste("Citation candidate",i)))),
+        div(class="col-md-6",lapply(seq_along(z$historical),function(i)paper(z$historical[[i]],paste("Historical record",z$historical[[i]]$w01_record_id))))),
+      selectInput("w08b_target","Historical W01 publication",choices=c("Select matching record"="",
+        stats::setNames(vapply(z$historical,function(a)as.character(a$w01_record_id),character(1)),
+         vapply(z$historical,function(a)substr(as.character(a$title %||% a$w01_record_id),1L,100L),character(1))))),
+      textAreaInput("w08b_rationale","Adjudication rationale",rows=2),
+      tags$p(class="text-secondary small",w08b_review_status_rv()))
+  })
+  observeEvent(input$w08b_previous,{
+    w08b_review_idx(max(1L,w08b_review_idx()-1L))
+  })
+  observeEvent(input$w08b_next,{
+    w08b_review_idx(min(length(w08b_review_assigned()),w08b_review_idx()+1L))
+  })
+  w08b_save_page_decision <- function(value){
+    req(authenticated())
+    tryCatch({
+      q<-w08b_review_queue_rv();z<-w08b_current_case()
+      append_w08b_review_decision(q,z,value,
+        as.character(input$w08b_target %||% ""),
+        as.character(input$w08b_rationale %||% ""),
+        as.character(current_user()$user_id %||% ""))
+      refresh_w08b_review()
+      w08b_review_idx(min(w08b_review_idx(),max(1L,length(w08b_review_assigned()))))
+      w08b_review_status_rv("Decision saved.")
+    },error=function(e)showNotification(conditionMessage(e),type="error"))
+  }
+  observeEvent(input$w08b_duplicate,w08b_save_page_decision("same_publication"))
+  observeEvent(input$w08b_distinct,w08b_save_page_decision("different_publications"))
+  observeEvent(input$w08b_uncertain,w08b_save_page_decision("unable_to_determine"))
+  observeEvent(input$back_to_tasks_w08b,app_view("tasks"))
+
   output$w08b_review_panel <- renderUI({
     if(!isTRUE(w08b_review_visible_rv()))return(NULL)
     q<-w08b_review_queue_rv()
@@ -2554,6 +2631,28 @@ server <- function(input, output, session) {
           )
         )
       ))
+    }
+
+    if (identical(app_view(),"w08b")) {
+      return(div(class="app-shell",
+        div(class="d-flex justify-content-between align-items-center mb-3",
+          div(tags$h2("LivingEvidenceMap adjudication",class="mb-0"),
+            tags$div(textOutput("w08b_page_label"),class="text-secondary")),
+          div(class="d-flex align-items-center gap-3",
+            uiOutput("session_identity"),
+            actionButton("back_to_tasks_w08b","Back to tasks",class="btn-outline-secondary btn-sm"),
+            textOutput("w08b_page_progress"))),
+        uiOutput("w08b_page_progress_bar"),
+        card(class="decision-panel",
+          div(class="d-flex flex-wrap justify-content-between align-items-center gap-2",
+            tags$div(class="saved-note",textOutput("w08b_review_status_rv_unused")),
+            div(class="d-flex flex-wrap gap-2",
+              actionButton("w08b_duplicate","Same record",class="btn-success"),
+              actionButton("w08b_distinct","Different records",class="btn-primary"),
+              actionButton("w08b_uncertain","Uncertain",class="btn-outline-secondary"),
+              actionButton("w08b_previous","← Previous"),
+              actionButton("w08b_next","Next →")))),
+        uiOutput("w08b_page_case")))
     }
 
     if (identical(app_view(), "w02")) {
