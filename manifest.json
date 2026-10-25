@@ -323,7 +323,7 @@
         "Package": "curl",
         "Type": "Package",
         "Title": "A Modern and Flexible Web Client for R",
-        "Version": "8.0.0",
+        "Version": "8.1.0",
         "Authors@R": "c(\n    person(\"Jeroen\", \"Ooms\", role = c(\"aut\", \"cre\"), email = \"jeroenooms@gmail.com\",\n      comment = c(ORCID = \"0000-0002-4035-0289\")),\n    person(\"Hadley\", \"Wickham\", role = \"ctb\"),\n    person(\"Posit Software, PBC\", role = \"cph\"))",
         "Description": "Bindings to 'libcurl' <https://curl.se/libcurl/> for performing fully\n    configurable HTTP/FTP requests where responses can be processed in memory, on\n    disk, or streaming via the callback or connection interfaces. Some knowledge\n    of 'libcurl' is recommended; for a more-user-friendly web client see the \n    'httr2' package which builds on this package with http specific tools and logic.",
         "License": "MIT + file LICENSE",
@@ -337,12 +337,12 @@
         "Language": "en-US",
         "Config/roxygen2/version": "8.0.0",
         "NeedsCompilation": "yes",
-        "Packaged": "2026-08-25 12:49:41 UTC; jeroen",
+        "Packaged": "2026-10-14 10:10:35 UTC; jeroen",
         "Author": "Jeroen Ooms [aut, cre] (ORCID: <https://orcid.org/0000-0002-4035-0289>),\n  Hadley Wickham [ctb],\n  Posit Software, PBC [cph]",
         "Maintainer": "Jeroen Ooms <jeroenooms@gmail.com>",
         "Repository": "RSPM",
-        "Date/Publication": "2026-08-25 16:40:02 UTC",
-        "Built": "R 4.6.0; x86_64-pc-linux-gnu; 2026-08-26 04:37:59 UTC; unix"
+        "Date/Publication": "2026-10-14 12:12:13 UTC",
+        "Built": "R 4.6.0; x86_64-pc-linux-gnu; 2026-10-15 04:19:08 UTC; unix"
       }
     },
     "digest": {
@@ -485,7 +485,7 @@
         "Maintainer": "Jennifer Bryan <jenny@posit.co>",
         "Repository": "RSPM",
         "Date/Publication": "2026-01-29 06:10:33 UTC",
-        "Built": "R 4.6.0; ; 2026-08-12 20:22:42 UTC; unix"
+        "Built": "R 4.6.0; ; 2026-10-18 19:50:19 UTC; unix"
       }
     },
     "glue": {
@@ -1694,11 +1694,29 @@
     }
   },
   "files": {
+    ".github/workflows/temporary-w04-subset-queue-integration.yml": {
+      "checksum": "e3c89c7d2c5c930a63abb5234a7a07be"
+    },
     ".github/workflows/validate.yml": {
       "checksum": "f10fa3a18d70bb9633e1319268f07c1e"
     },
+    ".github/workflows/w05_shiny_subset.yml": {
+      "checksum": "dc302235127ca10557c1ceb69793356a"
+    },
+    ".github/workflows/w05_shiny_validation.yml": {
+      "checksum": "fe34dbf581815323875913d004540acd"
+    },
+    ".github/workflows/w06_shiny_validation.yml": {
+      "checksum": "5665fcbb29e878a650161421fadd8778"
+    },
+    ".github/workflows/w07_shiny_validation.yml": {
+      "checksum": "4a9d063a7c5a2cf0624586887df0bea5"
+    },
     "app.R": {
-      "checksum": "5b4e3bacf00f142986734938024c7d10"
+      "checksum": "a98c9f548442f51ff083bbad9370b0a2"
+    },
+    "appdevelopment/adjudication-performance-improvements.md": {
+      "checksum": "96d53b03835024697d42c3b121303192"
     },
     "docs/production_multiuser_cutover_20261005.md": {
       "checksum": "0c8abb9a02a372eec4f35bb66812bce6"
@@ -1716,10 +1734,16 @@
       "checksum": "480a0d337e4fbf1a18baca82acdbcb23"
     },
     "multiuser_app/app.R": {
-      "checksum": "5b4e3bacf00f142986734938024c7d10"
+      "checksum": "06c284cd640f9afe474172d92af406c0"
+    },
+    "multiuser_app/config/w05_almeria_crop_dictionary.csv": {
+      "checksum": "2207b392448ed637414ab5c4c71e483c"
     },
     "multiuser_app/docs/production_multiuser_cutover_20261005.md": {
       "checksum": "0c8abb9a02a372eec4f35bb66812bce6"
+    },
+    "multiuser_app/docs/W04_WORKSPACE_DEVELOPMENT.md": {
+      "checksum": "5ba5bc8c828192234478a7d9f9e9aff3"
     },
     "multiuser_app/docs/workflow02_adjudication_contract.md": {
       "checksum": "70e8056f8d6149f52ed939221645e1f9"
@@ -1746,7 +1770,25 @@
       "checksum": "544d137b964d270470ecfe99197ddee1"
     },
     "multiuser_app/R/github_dispatch.R": {
-      "checksum": "4fcad8dd19c849a28ef021a2c42aa6f1"
+      "checksum": "ffcf5072ffbb132eed5e69dadff80911"
+    },
+    "multiuser_app/R/manual_ris.R": {
+      "checksum": "863b407dd2f496656b03f216d942194a"
+    },
+    "multiuser_app/R/manual_search_storage.R": {
+      "checksum": "2db205c4e96b542a3e124cc7e6d90cca"
+    },
+    "multiuser_app/R/search_boolean_validation.R": {
+      "checksum": "6e9c4039736be13c2c9aa9d3595a33a8"
+    },
+    "multiuser_app/R/search_draft_storage.R": {
+      "checksum": "84fe092bc12502a0b51a340b6738599b"
+    },
+    "multiuser_app/R/search_source_selection.R": {
+      "checksum": "b92140283ec2ed643247fe1c4c736c19"
+    },
+    "multiuser_app/R/search_strategy_versions.R": {
+      "checksum": "e0751648c3bbb7df6ad66a2c110b60af"
     },
     "multiuser_app/R/storage_backend.R": {
       "checksum": "e6e395bca1f55e20a9aedf7c647904e4"
@@ -1755,7 +1797,7 @@
       "checksum": "4eb8af71824e27f3e50e72b564066887"
     },
     "multiuser_app/R/storage_sheets.R": {
-      "checksum": "48ca202050c8ba11d8777f494cd33ebb"
+      "checksum": "ebc09a1a98e2aec00f795b3d760f2904"
     },
     "multiuser_app/R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
@@ -1764,16 +1806,163 @@
       "checksum": "08a1be968420750f0593f092c2b7caab"
     },
     "multiuser_app/R/w04_blind_resolution.R": {
-      "checksum": "ba6fd28afe370e10d7010181e3aff887"
+      "checksum": "42f5f58d8b6d46e1b414e254ed4a0a60"
+    },
+    "multiuser_app/R/w04_highlight_sheets.R": {
+      "checksum": "847ffdcf66f38e73c498bca3bd2893d1"
     },
     "multiuser_app/R/w04_human_kappa_registry.R": {
       "checksum": "108d9b0aedd6fe5ec693264b68dfe3d5"
     },
     "multiuser_app/R/w04_kappa_registry.R": {
-      "checksum": "d578ba9d982bb42da09da0face770fec"
+      "checksum": "ee8e60646b83feaed39ca867755946fd"
+    },
+    "multiuser_app/R/w04_model_batches.R": {
+      "checksum": "c3b175ca5d5a5ff2ef10ea7274c631fd"
+    },
+    "multiuser_app/R/w04_model_conflicts.R": {
+      "checksum": "41697136fdcd1003f58bb895f385b2f5"
+    },
+    "multiuser_app/R/w04_prompt_refinement.R": {
+      "checksum": "609672a7e93c6966406104cb44e4596f"
+    },
+    "multiuser_app/R/w04_prompt_versions.R": {
+      "checksum": "a53ae084962e49a7e0cbdceab092e2c3"
+    },
+    "multiuser_app/R/w04_prompt_zenodo.R": {
+      "checksum": "3fafe1e9dd86adff9db63916d7c6bd90"
+    },
+    "multiuser_app/R/w04_shiny_model_launch.R": {
+      "checksum": "bfc8b20cad986a0f867377c968a40a36"
+    },
+    "multiuser_app/R/w04_subset_eligible.R": {
+      "checksum": "f166d4ca5532c578a5f0b2b30063dd43"
+    },
+    "multiuser_app/R/w04_subset_queue_builder.R": {
+      "checksum": "bb3c6be5d8aba00939d97103661b604d"
+    },
+    "multiuser_app/R/w04_subset_queue_storage.R": {
+      "checksum": "9ffad1d6ddc4822994fdfb15f44f2e05"
+    },
+    "multiuser_app/R/w04_subset_registry.R": {
+      "checksum": "53657851709a57d16e832816a7127f50"
+    },
+    "multiuser_app/R/w04_subset_review_source.R": {
+      "checksum": "0caa5f4633ddc07027a3b8fb0ddda64c"
+    },
+    "multiuser_app/R/w04_subset_screening_adapter.R": {
+      "checksum": "39e85a026e4a560dc13f8417c6c3b1bf"
+    },
+    "multiuser_app/R/w04_subset_storage.R": {
+      "checksum": "720b431fd3de264f73b849c190224612"
     },
     "multiuser_app/R/w04_validation_lifecycle.R": {
       "checksum": "0793acf1d57562d687b254fcc633bfb2"
+    },
+    "multiuser_app/R/w04_work_overview_sheets.R": {
+      "checksum": "62f8b47275743ba92dbec2a6ba982df2"
+    },
+    "multiuser_app/R/w04_workspace_overview.R": {
+      "checksum": "42d18669e167352522b5a4319a565aeb"
+    },
+    "multiuser_app/R/w05_crop_archive.R": {
+      "checksum": "75a13c5fbf299c9de1819cabfbf1ca44"
+    },
+    "multiuser_app/R/w05_crop_coding.R": {
+      "checksum": "0cb62e9d5b777eabca1f340890bfcb06"
+    },
+    "multiuser_app/R/w05_shiny_subset_dispatch.R": {
+      "checksum": "8266c6d2a7f3e307055ce6115e1193a1"
+    },
+    "multiuser_app/R/w05_shiny_subset_results.R": {
+      "checksum": "73d763e1b704a0f09e5de4a41539fbda"
+    },
+    "multiuser_app/R/w06_shiny_prompt.R": {
+      "checksum": "872104529a5d3cde32f8be5fd02b9c29"
+    },
+    "multiuser_app/R/w06_shiny_subset_dispatch.R": {
+      "checksum": "ad3b610e7e9972b99971fa06d30b2edc"
+    },
+    "multiuser_app/R/w07_shiny_configuration.R": {
+      "checksum": "f709e92066767f88a8cbf926ee6b65b1"
+    },
+    "multiuser_app/R/w07_shiny_prepare_dispatch.R": {
+      "checksum": "95bc17177dd2aeedb87b36922bbd2886"
+    },
+    "multiuser_app/R/w07_shiny_results.R": {
+      "checksum": "e7c7a6da23b9f3804c574a617538c4c7"
+    },
+    "multiuser_app/R/w07_shiny_subset_dispatch.R": {
+      "checksum": "2c01e2dbb3f388b8c1101248f8b1bdb9"
+    },
+    "multiuser_app/R/w08b_review.R": {
+      "checksum": "5872853a2cdb3a3662eb0aab407dc342"
+    },
+    "multiuser_app/scripts/w05_crop_worker.R": {
+      "checksum": "f2a7b2c98ba3779837c9cb1527aa3d94"
+    },
+    "multiuser_app/scripts/w05_shiny_materialise_w04.R": {
+      "checksum": "6cc81f9593f3c6d2c6893171a9511911"
+    },
+    "multiuser_app/scripts/w05_shiny_restore_inputs.R": {
+      "checksum": "84f117e62641018e1ef1257ba6e21c55"
+    },
+    "multiuser_app/tests/integration_search_strategy_sheets.R": {
+      "checksum": "fbd6eda78bc7a58e2932fcdd883e5749"
+    },
+    "multiuser_app/tests/test_scoping_editable_input.R": {
+      "checksum": "77cfc0d6b0051221b9de02597f754016"
+    },
+    "multiuser_app/tests/test_scoping_report_layout.R": {
+      "checksum": "c32f7ffdd24805489e89494c6396e76d"
+    },
+    "multiuser_app/tests/test_search_boolean_validation.R": {
+      "checksum": "10df37ce83667ab733a2236256b2c2c4"
+    },
+    "multiuser_app/tests/test_search_draft_storage.R": {
+      "checksum": "a1a4520ecb7442eae271ab0ca3676949"
+    },
+    "multiuser_app/tests/test_search_live_validation.R": {
+      "checksum": "4305db5358d4b9b12478d6a08b5b9654"
+    },
+    "multiuser_app/tests/test_search_review_administrator.R": {
+      "checksum": "c3ebde1b16db875fd7d5bb4d52ab8455"
+    },
+    "multiuser_app/tests/test_search_source_selection.R": {
+      "checksum": "8170d6387026528ac15c8fbf0a08ae37"
+    },
+    "multiuser_app/tests/test_search_strategy_versions.R": {
+      "checksum": "64cb144cfb2648bbe6e6363f6c2355d4"
+    },
+    "multiuser_app/tests/test_w04_corpus_reconciliation.R": {
+      "checksum": "22dc1c0b432604f283f63c68f292f433"
+    },
+    "multiuser_app/tests/test_w04_finalise_archive_bundle.R": {
+      "checksum": "d5791fd135c1fdca8785ebd2fdb83fad"
+    },
+    "multiuser_app/tests/test_w04_model_coverage_reconstruction.R": {
+      "checksum": "818259dc8558b338ce767cefe31215ea"
+    },
+    "multiuser_app/tests/test_w04_reconciled_export.R": {
+      "checksum": "c414101ef1ce4081551b7e01a0f5d379"
+    },
+    "multiuser_app/tests/test_w04_reconstructed_launcher.R": {
+      "checksum": "20ca932fc619b9dc4a7afec48f8dc8b2"
+    },
+    "multiuser_app/tests/test_w04_reconstructed_selection.R": {
+      "checksum": "8b242d2d4a0bb050feda42e2a6be98f8"
+    },
+    "multiuser_app/tests/test_w04_saved_resolution_provenance.R": {
+      "checksum": "94d7bbc26b995c11366d0685d6a06b87"
+    },
+    "multiuser_app/tests/test_w05_crop_coding.R": {
+      "checksum": "66b43e29c0bce1789ee335e8dc6b033e"
+    },
+    "multiuser_app/tests/test_w06_shiny_prompt.R": {
+      "checksum": "1dc30cb7cc23a68db09919a607671ae3"
+    },
+    "multiuser_app/tests/test_w07_shiny_configuration.R": {
+      "checksum": "f94ca9dbd1ca1d007a822901d24cf43a"
     },
     "R/adjudication_schema.R": {
       "checksum": "cf25fe8ab4441952c5c228448c52520b"
@@ -1797,7 +1986,7 @@
       "checksum": "4eb8af71824e27f3e50e72b564066887"
     },
     "R/storage_sheets.R": {
-      "checksum": "48ca202050c8ba11d8777f494cd33ebb"
+      "checksum": "d26bc75c2322a4588e87c0acc389bc0d"
     },
     "R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
@@ -1816,6 +2005,9 @@
     },
     "R/w04_validation_lifecycle.R": {
       "checksum": "0793acf1d57562d687b254fcc633bfb2"
+    },
+    "R/w08b_review.R": {
+      "checksum": "5872853a2cdb3a3662eb0aab407dc342"
     },
     "README.md": {
       "checksum": "37d15c84ef94056519176ef809bc7459"
