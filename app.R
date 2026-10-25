@@ -2143,6 +2143,7 @@ server <- function(input, output, session) {
   w08b_review_decisions_rv <- reactiveVal(list())
   w08b_review_visible_rv <- reactiveVal(FALSE)
   w08b_review_idx <- reactiveVal(1L)
+  w08b_pair_idx <- reactiveVal(1L)
   w08b_review_status_rv <- reactiveVal("")
   refresh_w08b_review <- function() {
     q <- read_w08b_review_queue()
@@ -2160,6 +2161,7 @@ server <- function(input, output, session) {
       refresh_w08b_review()
       w08b_review_visible_rv(TRUE)
       w08b_review_idx(1L)
+      w08b_pair_idx(1L)
       app_view("w08b")
     },error=function(e)showNotification(conditionMessage(e),type="error"))
   })
@@ -2203,39 +2205,81 @@ server <- function(input, output, session) {
       style=sprintf("width:%.1f%%",if(total>0)100*done/total else 100),
       sprintf("%d of %d resolved",done,total)))
   })
-  output$w08b_page_case <- renderUI({
-    p <- w08b_review_assigned()
-    if(!length(p))return(card(tags$p("No assigned citation-deduplication cases remain.")))
+  w08b_review_pairs <- reactive({
     z <- w08b_current_case()
-    paper <- function(rec,label) {
-      authors <- rec$authors %||% list()
-      author_text <- paste(vapply(authors,function(a) {
-        if(is.list(a))as.character(a$display_name %||% a$name %||% "")
-        else as.character(a)
+    candidates <- z$candidates %||% list()
+    historical <- z$historical %||% list()
+    if(!length(candidates)||!length(historical))return(list())
+    pairs <- list()
+    for(i in seq_along(candidates))for(j in seq_along(historical))
+      pairs[[length(pairs)+1L]] <- list(candidate=candidates[[i]],historical=historical[[j]])
+    pairs
+  })
+  output$w08b_page_case <- renderUI({
+    if(!length(w08b_review_assigned()))return(card(tags$p("No assigned citation-deduplication cases remain.")))
+    z <- w08b_current_case()
+    pairs <- w08b_review_pairs()
+    req(length(pairs)>0L)
+    pair_idx <- min(max(1L,as.integer(w08b_pair_idx())),length(pairs))
+    a <- pairs[[pair_idx]]$candidate
+    b <- pairs[[pair_idx]]$historical
+    authors <- function(rec){
+      x <- rec$authors %||% list()
+      if(!length(x))return("")
+      paste(vapply(x,function(v){
+        if(is.list(v))as.character(v$display_name %||% v$name %||% "") else as.character(v)
       },character(1)),collapse="; ")
-      fields <- list(source=list(a=label,b=label),title=list(a=as.character(rec$title %||% ""),b=as.character(rec$title %||% "")),
-        authors=list(a=author_text,b=author_text),year=list(a=as.character(rec$year %||% ""),b=as.character(rec$year %||% "")),
-        journal=list(a="",b=""),doi=list(a=as.character(rec$doi %||% ""),b=as.character(rec$doi %||% "")),
-        source_record_id=list(a=as.character(rec$source_id %||% rec$w01_record_id %||% ""),b=as.character(rec$source_id %||% rec$w01_record_id %||% "")))
-      record_card(list(doi=rec$doi %||% "",abstract=rec$abstract %||% ""),
-        label,fields,side="a")
     }
+    rec <- function(x,src)list(source=src,
+      source_record_id=as.character(x$source_id %||% x$w01_record_id %||% ""),
+      title=as.character(x$title %||% ""),abstract=as.character(x$abstract %||% ""),
+      authors=authors(x),year=as.character(x$year %||% ""),
+      journal=as.character(x$journal %||% ""),doi=as.character(x$doi %||% ""))
+    left<-rec(a,as.character(a$provider %||% "Citation chasing"))
+    right<-rec(b,"Historical W01")
+    fields<-list(source=field_pair(left$source,right$source),
+      source_record_id=field_pair(left$source_record_id,right$source_record_id),
+      title=field_pair(left$title,right$title),
+      abstract=field_pair(left$abstract,right$abstract),
+      authors=field_pair(left$authors,right$authors),
+      year=field_pair(left$year,right$year),
+      journal=field_pair(left$journal,right$journal),
+      doi=field_pair(left$doi,right$doi))
     tagList(
-      tags$p(class="text-secondary",paste("Case",z$review_case_id,"· Matched on",paste(z$match_methods %||% character(),collapse=", "))),
+      tags$p(class="text-secondary",paste("Case",z$review_case_id,
+        "· Pair",pair_idx,"of",length(pairs),
+        "· Evidence:",paste(z$match_methods %||% character(),collapse=", "))),
       div(class="row g-3",
-        div(class="col-md-6",lapply(seq_along(z$candidates),function(i)paper(z$candidates[[i]],paste("Citation candidate",i)))),
-        div(class="col-md-6",lapply(seq_along(z$historical),function(i)paper(z$historical[[i]],paste("Historical record",z$historical[[i]]$w01_record_id))))),
-      tags$p(class="text-secondary small",
-        "Historical master identity is determined automatically from matching identifiers and bibliographic fields, retaining the W01 canonical identity."),
+        div(class="col-md-6",record_card(left,"Citation-chasing record",fields,side="a")),
+        div(class="col-md-6",record_card(right,"Historical W01 record",fields,side="b"))),
+      tags$p(class="text-secondary small","Canonical identity is selected deterministically, not by reviewers."),
       textAreaInput("w08b_rationale","Adjudication rationale",rows=2),
       tags$p(class="text-secondary small",w08b_review_status_rv()))
   })
-  observeEvent(input$w08b_previous,{
-    w08b_review_idx(max(1L,w08b_review_idx()-1L))
-  })
-  observeEvent(input$w08b_next,{
-    w08b_review_idx(min(length(w08b_review_assigned()),w08b_review_idx()+1L))
-  })
+  w08b_navigate <- function(delta){
+    cases<-w08b_review_assigned()
+    if(!length(cases))return(invisible(FALSE))
+    i<-min(max(1L,as.integer(w08b_review_idx())),length(cases))
+    pairs<-w08b_review_pairs()
+    j<-min(max(1L,as.integer(w08b_pair_idx())),length(pairs))
+    if(delta<0L){
+      if(j>1L)w08b_pair_idx(j-1L)
+      else if(i>1L){
+        previous<-cases[[i-1L]]
+        w08b_review_idx(i-1L)
+        w08b_pair_idx(max(1L,length(previous$candidates %||% list())*length(previous$historical %||% list())))
+      }
+    }else{
+      if(j<length(pairs))w08b_pair_idx(j+1L)
+      else if(i<length(cases)){
+        w08b_review_idx(i+1L)
+        w08b_pair_idx(1L)
+      }
+    }
+    invisible(TRUE)
+  }
+  observeEvent(input$w08b_previous,w08b_navigate(-1L))
+  observeEvent(input$w08b_next,w08b_navigate(1L))
   w08b_save_page_decision <- function(value){
     req(authenticated())
     tryCatch({
@@ -2246,6 +2290,7 @@ server <- function(input, output, session) {
         as.character(current_user()$user_id %||% ""))
       refresh_w08b_review()
       w08b_review_idx(min(w08b_review_idx(),max(1L,length(w08b_review_assigned()))))
+      w08b_pair_idx(1L)
       w08b_review_status_rv("Decision saved.")
     },error=function(e)showNotification(conditionMessage(e),type="error"))
   }
