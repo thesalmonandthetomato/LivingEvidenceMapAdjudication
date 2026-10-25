@@ -81,3 +81,43 @@ append_w08b_review_decision <- function(queue,case,decision,target,rationale,rev
   googlesheets4::sheet_append(sheet_id_from_env(),data=row,sheet="decisions_w08b_dedup")
   invisible(TRUE)
 }
+
+
+# W08b abstract repairs are an append-only audit, isolated from standard W01.
+# The queue is immutable: corrections are overlays keyed to the source record.
+read_w08b_abstract_repairs <- function(queue_sha) {
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- "repairs_w08b_dedup"
+  if (!tab %in% sheet_names_cached(ss, refresh=TRUE)) return(list())
+  data <- googlesheets4::read_sheet(ss, sheet=tab, col_types="c")
+  if (!nrow(data)) return(list())
+  required <- c("queue_sha256","review_case_id","source_kind","source_record_id",
+                "action","value","reviewer","saved_at_utc")
+  if (!all(required %in% names(data))) stop("Invalid W08b abstract repair registry")
+  rows <- data[data$queue_sha256 == queue_sha, , drop=FALSE]
+  lapply(seq_len(nrow(rows)), function(i) as.list(rows[i,,drop=FALSE]))
+}
+append_w08b_abstract_repair <- function(queue, case, source_kind, record, action, value, reviewer) {
+  if (!source_kind %in% c("candidate","historical") ||
+      !action %in% c("replace_abstract","strip_abstract"))
+    stop("Invalid W08b abstract repair type",call.=FALSE)
+  source_id <- if (identical(source_kind,"candidate"))
+    as.character(record$source_id %||% "") else as.character(record$w01_record_id %||% "")
+  if (!nzchar(source_id)) stop("Record has no stable identifier",call.=FALSE)
+  if (!source_kind %in% c("candidate","historical") ||
+      !any(vapply(case[[if(source_kind=="candidate")"candidates" else "historical"]] %||% list(),
+        function(z) identical(as.character(z[[if(source_kind=="candidate")"source_id" else "w01_record_id"]] %||% ""),source_id),
+        logical(1)))) stop("W08b repair source identity is not in current case",call.=FALSE)
+  gs4_auth_from_env()
+  ss <- sheet_id_from_env()
+  tab <- "repairs_w08b_dedup"
+  if (!tab %in% sheet_names_cached(ss,refresh=TRUE)) sheet_add_cached(ss, tab)
+  row <- data.frame(queue_sha256=queue$sha,review_case_id=as.character(case$review_case_id),
+    source_kind=source_kind,source_record_id=source_id,
+    action=action,value=if(action=="strip_abstract")"" else as.character(value),
+    reviewer=as.character(reviewer),saved_at_utc=format(Sys.time(),"%Y-%m-%dT%H:%M:%SZ",tz="UTC"),
+    stringsAsFactors=FALSE)
+  googlesheets4::sheet_append(ss,data=row,sheet=tab)
+  invisible(as.list(row[1,,drop=FALSE]))
+}

@@ -539,7 +539,7 @@ doi_link <- function(x, label = NULL) {
   )
 }
 
-record_card <- function(rec, label, fields, side = c("a","b"), abstract_editing = FALSE) {
+record_card <- function(rec, label, fields, side = c("a","b"), abstract_editing = FALSE, abstract_prefix = "w01") {
   side <- match.arg(side)
   card(
     class = "h-100 record-card",
@@ -562,7 +562,7 @@ record_card <- function(rec, label, fields, side = c("a","b"), abstract_editing 
       if (isTRUE(abstract_editing)) {
         tagList(
           textAreaInput(
-            paste0("w01_abstract_", side),
+            paste0(abstract_prefix, "_abstract_", side),
             NULL,
             value = as.character(rec$display_abstract %||% rec$abstract %||% ""),
             rows = 6,
@@ -571,12 +571,12 @@ record_card <- function(rec, label, fields, side = c("a","b"), abstract_editing 
           div(
             class = "d-flex align-items-center gap-2 flex-wrap",
             actionButton(
-              paste0("save_w01_abstract_", side),
+              paste0("save_", abstract_prefix, "_abstract_", side),
               "Save abstract",
               class = "btn-primary btn-sm"
             ),
             actionButton(
-              paste0("cancel_w01_abstract_", side),
+              paste0("cancel_", abstract_prefix, "_abstract_", side),
               "Cancel",
               class = "btn-outline-secondary btn-sm"
             )
@@ -588,12 +588,12 @@ record_card <- function(rec, label, fields, side = c("a","b"), abstract_editing 
           div(
             class = "d-flex align-items-center gap-2 flex-wrap mt-2",
             actionButton(
-              paste0("edit_w01_abstract_", side),
+              paste0("edit_", abstract_prefix, "_abstract_", side),
               "Edit abstract",
               class = "btn-outline-secondary btn-sm"
             ),
             actionButton(
-              paste0("delete_w01_abstract_", side),
+              paste0("delete_", abstract_prefix, "_abstract_", side),
               "Delete abstract",
               class = "btn-outline-danger btn-sm"
             ),
@@ -2518,10 +2518,13 @@ server <- function(input, output, session) {
   w08b_review_idx <- reactiveVal(1L)
   w08b_pair_idx <- reactiveVal(1L)
   w08b_review_status_rv <- reactiveVal("")
+  w08b_abstract_repairs_rv <- reactiveVal(list())
+  w08b_abstract_edit_rv <- reactiveVal(NULL)
   refresh_w08b_review <- function() {
     q <- read_w08b_review_queue()
     w08b_review_queue_rv(q)
     w08b_review_decisions_rv(if(is.null(q))list() else read_w08b_review_decisions(q$sha))
+    w08b_abstract_repairs_rv(if(is.null(q))list() else read_w08b_abstract_repairs(q$sha))
     invisible(q)
   }
   observeEvent(authenticated(), {
@@ -2601,6 +2604,74 @@ server <- function(input, output, session) {
       pairs[[length(pairs)+1L]] <- list(candidate=candidates[[i]],historical=historical[[j]])
     pairs
   })
+  w08b_pair_record <- function(side) {
+    pairs <- w08b_review_pairs()
+    req(length(pairs)>0L)
+    j <- max(1L,min(as.integer(w08b_pair_idx()),length(pairs)))
+    if(identical(side,"a")) list(kind="candidate",record=pairs[[j]]$candidate)
+    else list(kind="historical",record=pairs[[j]]$historical)
+  }
+  w08b_repair_for <- function(kind,record) {
+    id <- if(identical(kind,"candidate")) as.character(record$source_id %||% "")
+          else as.character(record$w01_record_id %||% "")
+    rows <- Filter(function(x) identical(as.character(x$source_kind),kind) &&
+      identical(as.character(x$source_record_id),id),w08b_abstract_repairs_rv())
+    if(length(rows)) tail(rows,1)[[1]] else NULL
+  }
+  w08b_save_abstract <- function(side, action=NULL) {
+    req(authenticated())
+    if(!session_can("adjudicate_assigned")) {
+      showNotification("You do not have permission to edit abstracts.",type="error")
+      return(invisible(FALSE))
+    }
+    z <- w08b_current_case()
+    pair <- w08b_pair_record(side)
+    input_id <- paste0("w08b_abstract_",side)
+    value <- if(is.null(action)) trimws(as.character(input[[input_id]] %||% ""))
+             else ""
+    operation <- if(!is.null(action)) action else if(nzchar(value))"replace_abstract" else "strip_abstract"
+    tryCatch({
+      append_w08b_abstract_repair(w08b_review_queue_rv(),z,pair$kind,pair$record,
+        operation,value,session_reviewer_id())
+      w08b_abstract_repairs_rv(read_w08b_abstract_repairs(w08b_review_queue_rv()$sha))
+      w08b_abstract_edit_rv(NULL)
+      w08b_review_status_rv(paste("Abstract",if(operation=="strip_abstract")"deleted" else "saved","with audit trail."))
+      invisible(TRUE)
+    },error=function(e) {
+      showNotification(paste("Abstract save failed:",conditionMessage(e)),type="error")
+      invisible(FALSE)
+    })
+  }
+  for(side in c("a","b")) local({
+    which_side <- side
+    observeEvent(input[[paste0("edit_w08b_abstract_",which_side)]],{
+      w08b_abstract_edit_rv(list(case=as.character(w08b_current_case()$review_case_id),
+        pair=as.integer(w08b_pair_idx()),side=which_side))
+    })
+    observeEvent(input[[paste0("cancel_w08b_abstract_",which_side)]],w08b_abstract_edit_rv(NULL))
+    observeEvent(input[[paste0("save_w08b_abstract_",which_side)]],w08b_save_abstract(which_side))
+    observeEvent(input[[paste0("delete_w08b_abstract_",which_side)]],{
+      identity <- list(case=as.character(w08b_current_case()$review_case_id),
+        pair=as.integer(w08b_pair_idx()),side=which_side)
+      showModal(modalDialog(title=paste("Delete abstract from Record",toupper(which_side),"?"),
+        "The original record remains unchanged. An audited removal will be saved.",
+        footer=tagList(modalButton("Cancel"),
+          actionButton("confirm_w08b_abstract_delete","Delete abstract",class="btn-danger")),
+        easyClose=TRUE))
+      w08b_abstract_delete_rv(identity)
+    })
+  })
+  w08b_abstract_delete_rv <- reactiveVal(NULL)
+  observeEvent(input$confirm_w08b_abstract_delete,{
+    pending <- w08b_abstract_delete_rv()
+    req(pending)
+    if(identical(pending$case,as.character(w08b_current_case()$review_case_id)) &&
+       identical(pending$pair,as.integer(w08b_pair_idx())))
+      w08b_save_abstract(pending$side,"strip_abstract")
+    else showNotification("Delete cancelled: comparison changed.",type="warning")
+    w08b_abstract_delete_rv(NULL)
+    removeModal()
+  })
   output$w08b_page_case <- renderUI({
     if(!length(w08b_review_assigned()))return(card(tags$p("No assigned citation-deduplication cases remain.")))
     z <- w08b_current_case()
@@ -2623,13 +2694,33 @@ server <- function(input, output, session) {
       journal=as.character(x$journal %||% ""),doi=as.character(x$doi %||% ""))
     left<-rec(a,as.character(a$provider %||% "Citation chasing"))
     right<-rec(b,"Historical W01")
+    for (kind in c("candidate","historical")) {
+      original <- if(kind=="candidate") a else b
+      correction <- w08b_repair_for(kind,original)
+      replacement <- if(is.null(correction)) as.character(original$abstract %||% "")
+        else if(identical(as.character(correction$action),"strip_abstract")) ""
+        else as.character(correction$value %||% "")
+      if(kind=="candidate") {
+        left$display_abstract <- replacement
+        left$abstract_repair_saved <- !is.null(correction)
+      } else {
+        right$display_abstract <- replacement
+        right$abstract_repair_saved <- !is.null(correction)
+      }
+    }
+    edit_state <- w08b_abstract_edit_rv()
+    editing <- function(side) !is.null(edit_state) &&
+      identical(as.character(edit_state$case),as.character(z$review_case_id)) &&
+      identical(as.integer(edit_state$pair),pair_idx) &&
+      identical(as.character(edit_state$side),side)
     comparison_evidence <- lapply(z$match_methods %||% character(),
       function(method)list(label="Match",value=method))
     tagList(
       tags$p(class="text-secondary",paste("Case",z$review_case_id,
         "· Pair",pair_idx,"of",length(pairs),
         "· Evidence:",paste(z$match_methods %||% character(),collapse=", "))),
-      dedup_pair_cards(left,right,comparison_evidence),
+      dedup_pair_cards(left,right,comparison_evidence,allow_abstract_edit=TRUE,
+        editing_a=editing("a"),editing_b=editing("b"),abstract_prefix="w08b"),
       tags$p(class="text-secondary small","Canonical identity is selected deterministically, not by reviewers."),
       textAreaInput("w08b_rationale","Adjudication rationale",rows=2),
       tags$p(class="text-secondary small",w08b_review_status_rv()))
@@ -12169,7 +12260,7 @@ server <- function(input, output, session) {
   # Shared W01/W08b pairwise renderer. Source-specific state and decision
   # persistence stay separate; comparison layout is defined only here.
   dedup_pair_cards <- function(left,right,evidence=list(),allow_abstract_edit=FALSE,
-                               editing_a=FALSE,editing_b=FALSE) {
+                               editing_a=FALSE,editing_b=FALSE,abstract_prefix="w01") {
     fields <- list(
       source=field_pair(left$source,right$source),
       title=field_pair(display_sentence_case_if_all_caps(left$title),
@@ -12187,8 +12278,8 @@ server <- function(input, output, session) {
     fields$source$b <- tags$span(class="source-badge",fields$source$b)
     tagList(
       layout_columns(col_widths=c(6,6),
-        record_card(left,"Record A",fields,"a",abstract_editing=allow_abstract_edit && editing_a),
-        record_card(right,"Record B",fields,"b",abstract_editing=allow_abstract_edit && editing_b)),
+        record_card(left,"Record A",fields,"a",abstract_editing=allow_abstract_edit && editing_a,abstract_prefix=abstract_prefix),
+        record_card(right,"Record B",fields,"b",abstract_editing=allow_abstract_edit && editing_b,abstract_prefix=abstract_prefix)),
       card(class="mt-3",card_header("Matching evidence"),
         div(class="evidence-grid",lapply(evidence,function(z)
           div(class="evidence-item",tags$div(class="text-secondary small",z$label),
