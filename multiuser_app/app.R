@@ -8804,7 +8804,7 @@ server <- function(input, output, session) {
     all_assignments <- assignment_registry_rv()
     has_w01_batch <- nzchar(as.character(batch_id_rv())) && length(w01_all_cases_rv()) > 0L && length(w01_active_assignment_events()) < length(w01_all_cases_rv())
     w08b_queue <- w08b_review_queue_rv()
-    has_w08b_batch <- !is.null(w08b_queue) && length(w08b_pending_cases()) > 0L
+    has_w08b_batch <- !is.null(w08b_queue) && length(w08b_queue$cases) > 0L
     has_w02_batch <- nzchar(as.character(w02_batch_id_rv())) && length(w02_all_cases_rv()) > 0L
     has_w04_batch <- nzchar(as.character(w04_batch_id_rv())) && length(w04_all_cases_rv()) > 0L
     has_w04_resolution_batch <- nzchar(as.character(w04_resolution_batch_id_rv())) && length(w04_resolution_all_cases_rv()) > 0L
@@ -9754,7 +9754,20 @@ server <- function(input, output, session) {
   output$w01_admin_controls <- renderUI({
     req(authenticated(),configure_review_requested(),
       identical(input$configure_workflow_tab,"W01"))
-    admin_assignment_panels()$w01
+    q <- w08b_review_queue_rv()
+    existing <- admin_assignment_panels()$w01
+    if(is.null(q) || !length(q$cases) || length(w08b_pending_cases())>0L ||
+       !session_can("control_workflows")) return(existing)
+    assignments <- active_assignments_for_batch(
+      assignment_registry_rv(),"01",q$batch_id,"citation_deduplication")
+    if(length(assignments)) return(existing)
+    tagList(existing,div(class="mt-3 p-3 border rounded",
+      tags$strong("Citation-chasing deduplication complete"),
+      tags$p(class="text-secondary small","All citation-chasing decisions are saved."),
+      if(isTRUE(w08b_export_requested_rv()))
+        tags$span(class="saved-note",w08b_export_status_rv())
+      else actionButton("w08b_send_github",
+        "Send citation-chasing decisions to GitHub",class="btn-primary btn-sm")))
   })
   output$w02_admin_controls <- renderUI({
     req(authenticated(),configure_review_requested(),

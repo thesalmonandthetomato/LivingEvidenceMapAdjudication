@@ -4184,7 +4184,7 @@ server <- function(input, output, session) {
     all_assignments <- assignment_registry_rv()
     has_w01_batch <- nzchar(as.character(batch_id_rv())) && length(w01_all_cases_rv()) > 0L && length(w01_active_assignment_events()) < length(w01_all_cases_rv())
     w08b_queue <- w08b_review_queue_rv()
-    has_w08b_batch <- !is.null(w08b_queue) && length(w08b_pending_cases()) > 0L
+    has_w08b_batch <- !is.null(w08b_queue) && length(w08b_queue$cases) > 0L
     has_w02_batch <- nzchar(as.character(w02_batch_id_rv())) && length(w02_all_cases_rv()) > 0L
     has_w04_batch <- nzchar(as.character(w04_batch_id_rv())) && length(w04_all_cases_rv()) > 0L
     has_w04_resolution_batch <- nzchar(as.character(w04_resolution_batch_id_rv())) && length(w04_resolution_all_cases_rv()) > 0L
