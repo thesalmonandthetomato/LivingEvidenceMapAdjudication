@@ -2948,8 +2948,6 @@ server <- function(input, output, session) {
               }
             )
           ),
-          if(!grepl("^w04-resolution-40019139120-",as.character(w04_resolution_batch_id_rv() %||% "")) &&
-             !as.character(w04_resolution_batch_status_rv() %||% "") %in% c("consumed","review_complete"))
           div(
             class = "col-12 col-lg-6",
             stage_card(
