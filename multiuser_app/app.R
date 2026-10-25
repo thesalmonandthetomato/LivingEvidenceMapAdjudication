@@ -15073,8 +15073,8 @@ server <- function(input, output, session) {
   observeEvent(input$uncertain, {
     if (save_choice("uncertain")) advance_after_save()
   })
-  observeEvent(input$previous, if (idx()>1L) idx(idx()-1L))
-  observeEvent(input[["next"]], if (idx()<length(cases_rv())) idx(idx()+1L))
+  observeEvent(input$previous, dedup_navigate(-1L,idx(),idx,length(cases_rv())))
+  observeEvent(input[["next"]], dedup_navigate(1L,idx(),idx,length(cases_rv())))
   observeEvent(input$review_last, {
     complete(FALSE)
     idx(length(cases_rv()))
