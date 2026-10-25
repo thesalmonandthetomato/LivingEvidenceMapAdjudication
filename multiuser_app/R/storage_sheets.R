@@ -2026,15 +2026,15 @@ read_latest_pipeline_status <- function() {
   if(identical(storage_backend(),"google_sheets")) return(NULL)
   val <- function(x) if (is.null(x) || !length(x)) "" else as.character(x[[1L]])
 
-  # Production KPI values must come from the canonical current-run status on
-  # main. Do not fall back to pipeline_run_status:
+  # KPI values must come from the active workflow branch, not the default main
+  # branch or the stale operational Sheets event log. Do not fall back to pipeline_run_status:
   # that Sheet is an operational event log and historical schema migrations
   # can leave older rows positionally incompatible with current KPI columns.
   current <- tryCatch(
     jsonlite::fromJSON(
       read_github_text_file(
         "docs/current_run/current_run_status.json",
-        ref = github_scoping_ref()
+        ref = Sys.getenv("LEM_PIPELINE_STATUS_REF", unset = "workflow01-final-architecture")
       ),
       simplifyVector = FALSE
     ),
