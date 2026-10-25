@@ -17,6 +17,7 @@ source("R/w04_kappa_registry.R", local = TRUE)
 source("R/w04_human_kappa_registry.R", local = TRUE)
 source("R/storage_local.R", local = TRUE)
 source("R/storage_sheets.R", local = TRUE)
+source("R/w08b_review.R", local = TRUE)
 source("R/storage_backend.R", local = TRUE)
 source("R/auth.R", local = TRUE)
 source("R/github_dispatch.R", local = TRUE)
@@ -2135,6 +2136,88 @@ server <- function(input, output, session) {
     paste(head(x,n),collapse=" ")
   }
 
+  # Dedicated W08b citation-chasing review. Independent of production W01.
+  w08b_review_queue_rv <- reactiveVal(NULL)
+  w08b_review_decisions_rv <- reactiveVal(list())
+  w08b_review_visible_rv <- reactiveVal(FALSE)
+  w08b_review_status_rv <- reactiveVal("")
+  refresh_w08b_review <- function() {
+    q <- read_w08b_review_queue()
+    w08b_review_queue_rv(q)
+    w08b_review_decisions_rv(if(is.null(q))list() else read_w08b_review_decisions(q$sha))
+    invisible(q)
+  }
+  observeEvent(authenticated(), {
+    if(isTRUE(authenticated()))tryCatch(refresh_w08b_review(),
+      error=function(e)w08b_review_status_rv(conditionMessage(e)))
+  },ignoreInit=FALSE)
+  observeEvent(input$w08b_open_review, {
+    req(authenticated())
+    tryCatch({
+      refresh_w08b_review()
+      w08b_review_visible_rv(TRUE)
+    },error=function(e)showNotification(conditionMessage(e),type="error"))
+  })
+  w08b_pending_cases <- reactive({
+    q<-w08b_review_queue_rv()
+    if(is.null(q))return(list())
+    done<-vapply(w08b_review_decisions_rv(),function(z)as.character(z$review_case_id),character(1))
+    Filter(function(z)!as.character(z$review_case_id)%in%done,q$cases)
+  })
+  output$w08b_review_panel <- renderUI({
+    if(!isTRUE(w08b_review_visible_rv()))return(NULL)
+    q<-w08b_review_queue_rv()
+    if(is.null(q))return(tags$p("No W08b review queue has been published."))
+    pending<-w08b_pending_cases()
+    if(!length(pending))return(card(card_header("W08b citation deduplication"),
+      tags$p("All ambiguity cases have saved decisions."),
+      actionButton("w08b_open_review","Refresh decisions",class="btn-outline-secondary")))
+    z<-pending[[1L]]
+    paper<-function(rec,heading){
+      card(class="mb-2",
+        card_header(tags$strong(heading)),
+        tags$div(class="p-2",
+          tags$p(tags$strong(rec$title %||% "(Title unavailable)")),
+          tags$p(paste("Year:",as.character(rec$year %||% "")," DOI:",as.character(rec$doi %||% ""))),
+          tags$p(style="white-space:pre-wrap;max-height:260px;overflow-y:auto;",
+            as.character(rec$abstract %||% "(Abstract unavailable)"))))
+    }
+    options<-setNames(
+      vapply(z$historical%||%list(),function(r)as.character(r$w01_record_id),character(1)),
+      vapply(z$historical%||%list(),function(r)paste0(r$w01_record_id,": ",substr(r$title%||%"",1L,95L)),character(1)))
+    card(
+      card_header(tags$strong("W08b citation deduplication"),tags$span(class="ms-2 text-secondary",
+        paste(length(q$cases)-length(pending),"of",length(q$cases),"completed"))),
+      tags$div(class="p-3",
+        tags$p("Case: ",as.character(z$review_case_id)),
+        tags$p("Matching evidence: ",paste(z$match_methods%||%character(),collapse=", ")),
+        lapply(seq_along(z$candidates),function(i)paper(z$candidates[[i]],paste("Citation candidate",i))),
+        lapply(seq_along(z$historical),function(i)paper(z$historical[[i]],paste("Existing W01 record:",z$historical[[i]]$w01_record_id))),
+        selectInput("w08b_decision","Resolution",choices=c(
+          "Same publication as an existing W01 record"="same_publication",
+          "Different publication; retain as new"="different_publications",
+          "Unable to determine; retain for review"="unable_to_determine")),
+        selectInput("w08b_target","Historical W01 record to match",
+          choices=c("Select a record"="",options)),
+        textAreaInput("w08b_rationale","Decision rationale",rows=2),
+        actionButton("w08b_save_decision","Save decision",class="btn-primary"),
+        tags$p(class="text-secondary small mt-2",w08b_review_status_rv())))
+  })
+  observeEvent(input$w08b_save_decision, {
+    req(authenticated())
+    tryCatch({
+      q<-w08b_review_queue_rv();stopifnot(!is.null(q))
+      pending<-w08b_pending_cases();stopifnot(length(pending)>0)
+      append_w08b_review_decision(q,pending[[1L]],
+        as.character(input$w08b_decision %||% ""),
+        as.character(input$w08b_target %||% ""),
+        as.character(input$w08b_rationale %||% ""),
+        as.character(current_user()$user_id %||% ""))
+      refresh_w08b_review()
+      w08b_review_status_rv("Decision saved.")
+    },error=function(e)showNotification(conditionMessage(e),type="error"))
+  })
+
   output$root_ui <- renderUI({
     if (!authenticated()) {
       return(div(
@@ -2314,6 +2397,7 @@ server <- function(input, output, session) {
           uiOutput("session_identity")
         ),
         pipeline_summary_ui(),
+        uiOutput("w08b_review_panel"),
         uiOutput("configure_review"),
         uiOutput("assignment_progress"),
         div(
@@ -2330,6 +2414,16 @@ server <- function(input, output, session) {
               batch_id_rv(),
               batch_status_rv()
             )
+          ),
+          div(class = "col-12 col-lg-6",
+            stage_card("Citation deduplication", "Workflow 08b",
+              "Ambiguous matches between citation-chasing publications and historical W01 records.",
+              if(is.null(w08b_review_queue_rv())) 0L else length(w08b_review_queue_rv()$cases),
+              if(is.null(w08b_review_queue_rv())) 0L else length(w08b_review_decisions_rv()),
+              length(w08b_pending_cases()),
+              "w08b_open_review","Review citation duplicates",
+              if(is.null(w08b_review_queue_rv())) "" else w08b_review_queue_rv()$batch_id,
+              "",can_open=TRUE)
           ),
           div(
             class = "col-12 col-lg-6",
@@ -2390,6 +2484,8 @@ server <- function(input, output, session) {
               }
             )
           ),
+          if(!grepl("^w04-resolution-40019139120-",as.character(w04_resolution_batch_id_rv() %||% "")) &&
+             !as.character(w04_resolution_batch_status_rv() %||% "") %in% c("consumed","review_complete"))
           div(
             class = "col-12 col-lg-6",
             stage_card(
