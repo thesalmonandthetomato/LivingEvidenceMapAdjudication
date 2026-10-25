@@ -1784,6 +1784,8 @@ server <- function(input, output, session) {
       )
     }
     add("01","deduplication",batch_id_rv(),w01_all_cases_rv(),decisions())
+    if(!is.null(w08b_review_queue_rv())) add("01","citation_deduplication",
+      w08b_review_queue_rv()$batch_id,w08b_review_queue_rv()$cases,w08b_review_decisions_rv())
     add("02","enrichment",w02_batch_id_rv(),w02_all_cases_rv(),w02_decisions())
     add("04","manual_screening",w04_batch_id_rv(),w04_all_cases_rv(),w04_decisions())
     add("04","conflict_resolution",w04_active_conflict_batch_id(),w04_all_conflict_cases(),w04_conflict_decisions())
@@ -4447,6 +4449,9 @@ server <- function(input, output, session) {
         identical(z$workflow,"01") && identical(z$task_type,"deduplication") &&
         identical(z$batch_id,batch_id_rv())
       ) w01_all_cases_rv() else if (
+        identical(z$workflow,"01") && identical(z$task_type,"citation_deduplication") &&
+        has_w08b_batch && identical(z$batch_id,w08b_queue$batch_id)
+      ) w08b_queue$cases else if (
         identical(z$workflow,"02") && identical(z$task_type,"enrichment") &&
         identical(z$batch_id,w02_batch_id_rv())
       ) w02_all_cases_rv() else if (
