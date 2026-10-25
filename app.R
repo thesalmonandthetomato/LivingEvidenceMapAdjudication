@@ -2160,10 +2160,7 @@ server <- function(input, output, session) {
     tryCatch({
       refresh_w08b_review()
       w08b_review_visible_rv(TRUE)
-      assigned <- w08b_review_assigned()
-      reviewed <- vapply(w08b_review_decisions_rv(),function(z)as.character(z$review_case_id),character(1))
-      remaining <- which(!vapply(assigned,function(z)as.character(z$review_case_id) %in% reviewed,logical(1)))
-      w08b_review_idx(if(length(remaining))remaining[[1L]] else 1L)
+      w08b_review_idx(1L)
       w08b_pair_idx(1L)
       app_view("w08b")
     },error=function(e)showNotification(conditionMessage(e),type="error"))
@@ -2203,12 +2200,8 @@ server <- function(input, output, session) {
     paste("Workflow 01 · duplicate review · citation chasing ·",q$batch_id %||% "")
   })
   output$w08b_page_progress <- renderText({
-    assigned <- w08b_review_assigned()
-    n <- length(assigned)
-    i <- if(n) max(1L,min(as.integer(w08b_review_idx()),n)) else 0L
-    remaining <- sum(!vapply(assigned,function(z)as.character(z$review_case_id) %in%
-      vapply(w08b_review_decisions_rv(),function(d)as.character(d$review_case_id),character(1)),logical(1)))
-    sprintf("Case %d of %d · %d assigned unreviewed",i,n,remaining)
+    pending <- w08b_review_assigned()
+    sprintf("Case %d of %d · %d unreviewed",min(w08b_review_idx(),length(pending)),length(pending),length(w08b_pending_cases()))
   })
   output$w08b_page_progress_bar <- renderUI({
     q <- w08b_review_queue_rv();req(!is.null(q))
@@ -2261,23 +2254,6 @@ server <- function(input, output, session) {
       textAreaInput("w08b_rationale","Adjudication rationale",rows=2),
       tags$p(class="text-secondary small",w08b_review_status_rv()))
   })
-  output$w08b_decision_controls <- renderUI({
-    z <- w08b_current_case()
-    events <- Filter(function(d)identical(as.character(d$review_case_id),as.character(z$review_case_id)),w08b_review_decisions_rv())
-    choice <- if(length(events))as.character(tail(events,1)[[1]]$decision) else ""
-    saved <- length(events)>0L
-    button <- function(id,label,value,style){
-      actionButton(id,label,class=paste(style,if(identical(choice,value))"decision-selected" else ""),
-        `aria-pressed`=if(identical(choice,value))"true" else "false",
-        disabled=if(saved)"disabled" else NULL)
-    }
-    div(class="decision-row d-flex flex-wrap gap-2",
-      button("w08b_duplicate","Same record","same_publication","btn-success"),
-      button("w08b_distinct","Different records","different_publications","btn-primary"),
-      button("w08b_uncertain","Uncertain","unable_to_determine","btn-outline-secondary"),
-      actionButton("w08b_previous","← Previous"),actionButton("w08b_next","Next →"),
-      if(saved)tags$span(class="saved-note align-self-center","Saved decision · read-only"))
-  })
   w08b_navigate <- function(delta){
     cases<-w08b_review_assigned()
     if(!length(cases))return(invisible(FALSE))
@@ -2311,14 +2287,8 @@ server <- function(input, output, session) {
         as.character(input$w08b_target %||% ""),
         as.character(input$w08b_rationale %||% ""),
         as.character(current_user()$user_id %||% ""))
-      old_index <- as.integer(w08b_review_idx())
       refresh_w08b_review()
-      assigned <- w08b_review_assigned()
-      reviewed <- vapply(w08b_review_decisions_rv(),function(d)as.character(d$review_case_id),character(1))
-      remaining <- which(!vapply(assigned,function(c)as.character(c$review_case_id) %in% reviewed,logical(1)))
-      following <- remaining[remaining > old_index]
-      destination <- if(length(following))following[[1L]] else if(length(remaining))remaining[[1L]] else old_index
-      w08b_review_idx(max(1L,min(destination,length(assigned))))
+      w08b_review_idx(min(w08b_review_idx()+1L,max(1L,length(w08b_review_assigned()))))
       w08b_pair_idx(1L)
       w08b_review_status_rv("Decision saved.")
     },error=function(e)showNotification(conditionMessage(e),type="error"))
@@ -2661,7 +2631,12 @@ server <- function(input, output, session) {
         card(class="decision-panel",
           div(class="d-flex flex-wrap justify-content-between align-items-center gap-2",
             tags$div(class="saved-note","Citation-chasing duplicate review"),
-            uiOutput("w08b_decision_controls"))),
+            div(class="d-flex flex-wrap gap-2",
+              actionButton("w08b_duplicate","Same record",class="btn-success"),
+              actionButton("w08b_distinct","Different records",class="btn-primary"),
+              actionButton("w08b_uncertain","Uncertain",class="btn-outline-secondary"),
+              actionButton("w08b_previous","← Previous"),
+              actionButton("w08b_next","Next →")))),
         uiOutput("w08b_page_case")))
     }
 
