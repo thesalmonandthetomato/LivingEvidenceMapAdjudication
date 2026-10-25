@@ -2671,6 +2671,11 @@ server <- function(input, output, session) {
       w01_total <- length(cases_rv() %||% list())
       w01_remaining <- if (w01_total) length(unresolved_indices()) else 0L
       w01_completed <- max(0L, w01_total - w01_remaining)
+      # Completed historical W01 cases remain archived but are not active tasks.
+      if (w01_remaining == 0L && length(w08b_pending_cases()) > 0L) {
+        w01_total <- 0L
+        w01_completed <- 0L
+      }
 
       w02_user_total <- length(w02_cases_rv() %||% list())
       w02_user_remaining <- if (w02_user_total) length(w02_unresolved_indices()) else 0L
@@ -2829,7 +2834,6 @@ server <- function(input, output, session) {
           uiOutput("session_identity")
         ),
         pipeline_summary_ui(),
-        uiOutput("w08b_review_panel"),
         if(session_can("manage_assignments"))
           card(class="assignment-summary",
             tags$details(class="assignment-disclosure",
