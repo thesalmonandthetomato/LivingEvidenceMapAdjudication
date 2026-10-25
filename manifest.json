@@ -1713,7 +1713,7 @@
       "checksum": "4a9d063a7c5a2cf0624586887df0bea5"
     },
     "app.R": {
-      "checksum": "a98c9f548442f51ff083bbad9370b0a2"
+      "checksum": "1abf547154f73208b8c49b6c6c146320"
     },
     "appdevelopment/adjudication-performance-improvements.md": {
       "checksum": "96d53b03835024697d42c3b121303192"
@@ -1734,7 +1734,7 @@
       "checksum": "480a0d337e4fbf1a18baca82acdbcb23"
     },
     "multiuser_app/app.R": {
-      "checksum": "06c284cd640f9afe474172d92af406c0"
+      "checksum": "6e318d3c48b64b8cbc574ba08f3e1dfb"
     },
     "multiuser_app/config/w05_almeria_crop_dictionary.csv": {
       "checksum": "2207b392448ed637414ab5c4c71e483c"
@@ -1761,7 +1761,7 @@
       "checksum": "cf25fe8ab4441952c5c228448c52520b"
     },
     "multiuser_app/R/assignments.R": {
-      "checksum": "cafa60c1da256014441639fcdd40bb2c"
+      "checksum": "282d4c74967cff8afa6f10a59ea2c1df"
     },
     "multiuser_app/R/auth.R": {
       "checksum": "cadec0238e5356811bd8495088892a66"
@@ -1797,7 +1797,7 @@
       "checksum": "4eb8af71824e27f3e50e72b564066887"
     },
     "multiuser_app/R/storage_sheets.R": {
-      "checksum": "ebc09a1a98e2aec00f795b3d760f2904"
+      "checksum": "8bdc2dde0010139feb78c67c4398a954"
     },
     "multiuser_app/R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
@@ -1896,7 +1896,7 @@
       "checksum": "2c01e2dbb3f388b8c1101248f8b1bdb9"
     },
     "multiuser_app/R/w08b_review.R": {
-      "checksum": "5872853a2cdb3a3662eb0aab407dc342"
+      "checksum": "8b809d38d87b3a764be88d313408aaec"
     },
     "multiuser_app/scripts/w05_crop_worker.R": {
       "checksum": "f2a7b2c98ba3779837c9cb1527aa3d94"
@@ -1968,7 +1968,7 @@
       "checksum": "cf25fe8ab4441952c5c228448c52520b"
     },
     "R/assignments.R": {
-      "checksum": "cafa60c1da256014441639fcdd40bb2c"
+      "checksum": "282d4c74967cff8afa6f10a59ea2c1df"
     },
     "R/auth.R": {
       "checksum": "cadec0238e5356811bd8495088892a66"
@@ -1986,7 +1986,7 @@
       "checksum": "4eb8af71824e27f3e50e72b564066887"
     },
     "R/storage_sheets.R": {
-      "checksum": "d26bc75c2322a4588e87c0acc389bc0d"
+      "checksum": "02f48a703296327bb1253f70fc654656"
     },
     "R/users.R": {
       "checksum": "d3f37db7cc40d7babaf4468d1394ad84"
@@ -2007,7 +2007,7 @@
       "checksum": "0793acf1d57562d687b254fcc633bfb2"
     },
     "R/w08b_review.R": {
-      "checksum": "5872853a2cdb3a3662eb0aab407dc342"
+      "checksum": "8b809d38d87b3a764be88d313408aaec"
     },
     "README.md": {
       "checksum": "37d15c84ef94056519176ef809bc7459"
@@ -2043,7 +2043,7 @@
       "checksum": "88348f6d89fea3d8cadf88ca11c4641b"
     },
     "tests/test_sheet_config.R": {
-      "checksum": "8621af04b50c811d8c10aa95e7c2ff13"
+      "checksum": "1f65bd71ebee7941e13feb0a60afaa18"
     },
     "tests/test_users.R": {
       "checksum": "3478785333151da4bc9976089d9d66b9"
