@@ -2772,6 +2772,9 @@ server <- function(input, output, session) {
               div(class = "task-kpi", tags$span(class = "text-secondary small", "Completed"), tags$strong(completed)),
               div(class = "task-kpi", tags$span(class = "text-secondary small", "Remaining"), tags$strong(remaining))
             ),
+            if (identical(title,"Deduplication") && length(w08b_pending_cases())>0L)
+              tags$div(class="text-secondary small mb-2",
+                paste(length(w08b_pending_cases()),"citation-chasing ambiguities awaiting review")),
             if (nzchar(batch)) tags$div(class = "text-secondary small mb-1", batch),
             if (identical(lifecycle_status,"review_complete")) {
               tags$div(class="small mb-2",tags$span(class="task-badge","Human review complete"))
@@ -2792,8 +2795,11 @@ server <- function(input, output, session) {
                 actionButton(button_id, button_label, class = "btn-primary mt-auto")
               }
             } else {
-              tags$div(class = "text-secondary small mt-auto", idle_text)
-            }
+              if (!(identical(title,"Deduplication") && length(w08b_pending_cases())>0L))
+                tags$div(class = "text-secondary small mt-auto", idle_text)
+            },
+            if (identical(title,"Deduplication") && length(w08b_pending_cases())>0L)
+              actionButton("w08b_open_review","Review citation duplicates",class="btn-primary mt-2")
           )
         )
       }
@@ -2827,23 +2833,15 @@ server <- function(input, output, session) {
             stage_card(
               "Deduplication",
               "Workflow 01",
-              "Potential duplicate bibliographic records.",
-              w01_total, w01_completed, w01_remaining,
+              "Potential duplicate bibliographic records, including citation-chasing ambiguities.",
+              w01_total + if(is.null(w08b_review_queue_rv())) 0L else length(w08b_review_queue_rv()$cases),
+              w01_completed + length(w08b_review_decisions_rv()),
+              w01_remaining + length(w08b_pending_cases()),
               if (w01_remaining > 0L) "open_w01" else NULL,
               "Continue deduplication",
               batch_id_rv(),
               batch_status_rv()
             )
-          ),
-          div(class = "col-12 col-lg-6",
-            stage_card("Citation deduplication", "Workflow 08b",
-              "Ambiguous matches between citation-chasing publications and historical W01 records.",
-              if(is.null(w08b_review_queue_rv())) 0L else length(w08b_review_queue_rv()$cases),
-              if(is.null(w08b_review_queue_rv())) 0L else length(w08b_review_decisions_rv()),
-              length(w08b_pending_cases()),
-              "w08b_open_review","Review citation duplicates",
-              if(is.null(w08b_review_queue_rv())) "" else w08b_review_queue_rv()$batch_id,
-              "",can_open=TRUE)
           ),
           div(
             class = "col-12 col-lg-6",
