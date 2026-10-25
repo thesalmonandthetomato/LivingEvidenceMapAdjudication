@@ -518,7 +518,9 @@ record_card <- function(rec, label, fields, side = c("a","b"), abstract_editing 
         )
       } else {
         tagList(
-          div(class = "abstract-text", fields$abstract[[side]]),
+          div(class = "abstract-text",
+            if (isTRUE(rec$abstract_deleted)) tags$span(class="text-muted fst-italic","Abstract deleted")
+            else fields$abstract[[side]]),
           div(
             class = "d-flex align-items-center gap-2 flex-wrap mt-2",
             actionButton(
@@ -531,7 +533,7 @@ record_card <- function(rec, label, fields, side = c("a","b"), abstract_editing 
               "Delete abstract",
               class = "btn-outline-danger btn-sm"
             ),
-            if (isTRUE(rec$abstract_repair_saved)) {
+            if (isTRUE(rec$abstract_repair_saved) && !isTRUE(rec$abstract_deleted)) {
               tags$span(class = "text-success small", "Corrected abstract saved.")
             }
           )
@@ -2258,11 +2260,12 @@ server <- function(input, output, session) {
              else ""
     operation <- if(!is.null(action)) action else if(nzchar(value))"replace_abstract" else "strip_abstract"
     tryCatch({
-      append_w08b_abstract_repair(w08b_review_queue_rv(),z,pair$kind,pair$record,
+      saved_repair <- append_w08b_abstract_repair(w08b_review_queue_rv(),z,pair$kind,pair$record,
         operation,value,session_reviewer_id())
-      w08b_abstract_repairs_rv(read_w08b_abstract_repairs(w08b_review_queue_rv()$sha))
+      w08b_abstract_repairs_rv(c(w08b_abstract_repairs_rv(),list(saved_repair)))
       w08b_abstract_edit_rv(NULL)
-      w08b_review_status_rv(paste("Abstract",if(operation=="strip_abstract")"deleted" else "saved","with audit trail."))
+      w08b_review_status_rv(paste("Record",toupper(side),": abstract",if(operation=="strip_abstract")"deleted" else "saved","with audit trail."))
+      showNotification(paste("Record",toupper(side),if(operation=="strip_abstract")"abstract deleted" else "abstract saved"),type="message",duration=5)
       invisible(TRUE)
     },error=function(e) {
       showNotification(paste("Abstract save failed:",conditionMessage(e)),type="error")
@@ -2328,9 +2331,11 @@ server <- function(input, output, session) {
         else if(identical(as.character(correction$action),"strip_abstract")) ""
         else as.character(correction$value %||% "")
       if(kind=="candidate") {
+        left$abstract_deleted <- !is.null(correction) && identical(as.character(correction$action),"strip_abstract")
         left$display_abstract <- replacement
         left$abstract_repair_saved <- !is.null(correction)
       } else {
+        right$abstract_deleted <- !is.null(correction) && identical(as.character(correction$action),"strip_abstract")
         right$display_abstract <- replacement
         right$abstract_repair_saved <- !is.null(correction)
       }
