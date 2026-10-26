@@ -336,7 +336,7 @@ dispatch_w02_resume <- function(source_run_id, publish = TRUE) {
       `User-Agent` = "LivingEvidenceMap-Adjudication"
     ) |>
     httr2::req_body_json(list(
-      ref = "main",
+      ref = "workflow01-final-architecture",
       inputs = list(
         source_run_id = source_run_id,
         publish = if (isTRUE(publish)) "true" else "false"
