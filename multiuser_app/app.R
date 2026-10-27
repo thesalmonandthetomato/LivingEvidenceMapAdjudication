@@ -3322,6 +3322,28 @@ server <- function(input, output, session) {
       ))
     }
 
+    if (identical(app_view(), "w07_review")) {
+      return(div(class="app-shell",
+        div(class="d-flex justify-content-between align-items-center mb-3",
+          tags$h2("LivingEvidenceMap W07 topic-coding adjudication"),
+          actionButton("w07_back_to_tasks","Back to tasks",class="btn-outline-secondary btn-sm")),
+        card(class="decision-panel",
+          tags$p("Workflow 07 · review-specific topic coding · W04 inclusion decisions remain authoritative."),
+          uiOutput("w07_review_case"),
+          textAreaInput("w07_review_codes","Accepted topic codes (comma-separated)",rows=2),
+          selectInput("w07_review_relevance","Relevance decision",
+            choices=c("In scope"="CODED_IN_SCOPE",
+              "In scope, ontology gap"="IN_SCOPE_ONTOLOGY_GAP",
+              "Insufficient information"="INSUFFICIENT_INFORMATION")),
+          textAreaInput("w07_review_reason","Review rationale",rows=2),
+          div(class="nav-row d-flex gap-2",
+            actionButton("w07_review_previous","Previous"),
+            actionButton("w07_review_save","Save review and next"),
+            actionButton("w07_review_next","Next")),
+          textOutput("w07_review_progress"),
+          downloadButton("w07_review_export","Export W07 review ledger"))))
+    }
+
     if (identical(app_view(), "w04_resolution")) {
       return(div(
         class="app-shell",
@@ -5940,6 +5962,15 @@ server <- function(input, output, session) {
     }
   )
 
+  observeEvent(input$w07_open_review,{
+    req(authenticated())
+    if(is.null(w07_results_rv())) {
+      showNotification("Load a successful W07 trial from its configuration page first.",type="warning")
+      return()
+    }
+    app_view("w07_review")
+  })
+  observeEvent(input$w07_back_to_tasks,app_view("tasks"))
   w07_review_loaded_run_rv <- reactiveVal("")
   w07_review_idx <- reactiveVal(1L)
   w07_review_events_rv <- reactiveVal(list())
@@ -6804,20 +6835,7 @@ server <- function(input, output, session) {
               downloadButton("w07_results_csv","Download readable W07 CSV"),
               tags$div(style="max-height:520px;overflow:auto;",
                 tableOutput("w07_results_table")),
-              tags$h6("W07 coding review (experimental)"),
-              tags$p(class="saved-note","Review proposed codes and relevance for each record. Decisions are saved in review-specific Google Sheets; return later using the same run ID."),
-              uiOutput("w07_review_case"),
-              textAreaInput("w07_review_codes","Accepted topic codes (comma-separated)",rows=2),
-              selectInput("w07_review_relevance","Relevance decision",
-                choices=c("In scope"="CODED_IN_SCOPE","In scope, ontology gap"="IN_SCOPE_ONTOLOGY_GAP",
-                  "Insufficient information"="INSUFFICIENT_INFORMATION")),
-              textAreaInput("w07_review_reason","Review rationale",rows=2),
-              actionButton("w07_review_save","Save review and next"),
-              actionButton("w07_review_previous","Previous"),
-              actionButton("w07_review_next","Next"),
-              textOutput("w07_review_progress"),
-              downloadButton("w07_review_export","Export W07 review ledger"),
-              tags$p(class="saved-note","Saved decisions persist in Google Sheets. These are not W08 final adjudications."))),
+              actionButton("w07_open_review","Open W07 coding adjudication",class="btn-outline-primary")),
             tabPanel("W08",uiOutput("w08_admin_controls")),
             tabPanel("System",uiOutput("system_admin_controls"))
           )
