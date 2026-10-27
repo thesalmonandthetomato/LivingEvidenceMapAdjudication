@@ -49,13 +49,13 @@ w07_review_events <- function(meta,run_id) {
   attr(out,"legacy_header") <- legacy
   out
 }
-# Safe additive migration: extend only the header; no decision row is rewritten.
+# Generate a single 1 x 15 row, not a transposed 15 x 1 column.\nw07_review_header_row <- function() {\n  as.data.frame(as.list(w07_review_fields),stringsAsFactors=FALSE)\n}\n# Safe additive migration: extend only the header; no decision row is rewritten.
 # The caller must pass its single batch read to avoid a second read on save.
 w07_review_ensure_schema <- function(meta,legacy_header=FALSE) {
   w07_review_sheet(meta,create=TRUE)
   if(isTRUE(legacy_header)) {
     googlesheets4::range_write(meta$sheet_id,
-      data=as.data.frame(t(w07_review_fields),stringsAsFactors=FALSE),
+      data=w07_review_header_row(),
       sheet=w07_review_tab(),range="A1:O1",col_names=FALSE)
   }
   invisible(TRUE)
