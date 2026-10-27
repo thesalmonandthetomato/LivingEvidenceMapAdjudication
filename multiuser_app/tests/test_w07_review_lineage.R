@@ -20,4 +20,9 @@ blocked <- try(w07_review_save(list(review_id="fixture",sheet_id="fixture"),
   "123","record1","reviewer","","OUT_OF_SCOPE","Model suspects mismatch"),silent=TRUE)
 stopifnot(inherits(blocked,"try-error"),
   grepl("Invalid W07 relevance decision",as.character(blocked),fixed=TRUE))
+# Legacy Sheets header expansion must preserve horizontal column order.
+header <- w07_review_header_row()
+stopifnot(nrow(header)==1L,ncol(header)==15L,
+  identical(as.character(unlist(header[1L,],use.names=FALSE)),w07_review_fields),
+  identical(w07_review_fields[seq_len(11L)],w07_review_legacy_fields))
 cat("PASS W07 review lineage validation\n")
