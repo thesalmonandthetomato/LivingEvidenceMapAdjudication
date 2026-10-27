@@ -5892,6 +5892,7 @@ server <- function(input, output, session) {
         return()
       }
       w07_results_rv(result)
+      w07_review_events_rv(w07_review_latest(events))
       w07_review_decisions(setNames(lapply(w07_review_latest(events),function(e)
         list(record_id=e$record_id,codes=e$codes,relevance=e$relevance,
              reason=e$reason,run_id=e$run_id)),
@@ -5917,6 +5918,7 @@ server <- function(input, output, session) {
   )
 
   w07_review_idx <- reactiveVal(1L)
+  w07_review_events_rv <- reactiveVal(list())
   w07_review_decisions <- reactiveVal(list())
   observeEvent(w07_results_rv(),{
     w07_review_idx(1L)
@@ -5957,22 +5959,49 @@ server <- function(input, output, session) {
       showNotification("Enter a review rationale before saving.",type="warning")
       return()
     }
+    if(!session_can("adjudicate_assigned")) {
+      showNotification("You do not have adjudication permission.",type="error")
+      return()
+    }
     ds <- w07_review_decisions()
     key <- as.character(x$record_id)
-    ds[[key]] <- list(record_id=key,codes=trimws(input$w07_review_codes %||% ""),
+    proposed <- list(record_id=key,codes=trimws(input$w07_review_codes %||% ""),
       relevance=input$w07_review_relevance,reason=reason,
       run_id=trimws(input$w07_results_run %||% ""))
-    saved <- tryCatch(w07_review_save(w04_prompt_review_metadata(),
-      trimws(input$w07_results_run %||% ""),key,session_reviewer_id(),
-      ds[[key]]$codes,ds[[key]]$relevance,ds[[key]]$reason,
-      ontology_sha=as.character(w07_results_rv()$manifest$ontology_sha256 %||% ""),
-      prompt_sha=as.character(w07_results_rv()$manifest$prompt_sha256 %||% "")),error=function(e)e)
+    saved <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      manifest <- w07_results_rv()$manifest
+      ont <- w07_shiny_config_select(meta,"ontology",
+        as.character(manifest$ontology_sha256))
+      ontology <- utils::read.csv(text=ont$content,stringsAsFactors=FALSE)
+      row_sha <- digest::digest(paste(key,as.character(x$title),
+        as.character(x$abstract),sep="\\n"),algo="sha256",serialize=FALSE)
+      queue_sha <- digest::digest(as.character(jsonlite::toJSON(
+        list(run_id=proposed$run_id,review_id=meta$review_id,
+          source_sha=manifest$source_input_sha256,
+          ontology_sha=manifest$ontology_sha256,
+          prompt_sha=manifest$prompt_sha256,
+          record_ids=w07_results_rv()$table$record_id),
+        auto_unbox=TRUE)),algo="sha256",serialize=FALSE)
+      events <- w07_review_events_rv()
+      prior <- Filter(function(e)identical(as.character(e$record_id),key) &&
+        identical(as.character(e$user_id),session_reviewer_id()),events)
+      w07_review_save(meta,proposed$run_id,key,session_reviewer_id(),
+        proposed$codes,proposed$relevance,proposed$reason,
+        ontology_sha=as.character(manifest$ontology_sha256),
+        prompt_sha=as.character(manifest$prompt_sha256),
+        case_sha256=row_sha,queue_sha256=queue_sha,
+        prior_decision=if(length(prior))prior[[length(prior)]] else NULL,
+        allowed_codes=as.character(ontology$path_id))
+    },error=function(e)e)
     if(inherits(saved,"error")) {
       showNotification(paste("Review was not saved:",conditionMessage(saved)),
                        type="error",duration=NULL)
       return()
     }
+    ds[[key]] <- proposed
     w07_review_decisions(ds)
+    w07_review_events_rv(c(w07_review_events_rv(),list(saved)))
     showNotification("W07 decision saved to Google Sheets.",type="message")
     if(w07_review_idx()<nrow(w07_results_rv()$table))w07_review_idx(w07_review_idx()+1L)
   })
