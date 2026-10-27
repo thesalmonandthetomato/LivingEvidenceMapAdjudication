@@ -45,6 +45,7 @@ w07_review_events <- function(meta,run_id) {
   out <- lapply(seq_len(nrow(rows)),function(i)as.list(rows[i,,drop=FALSE]))
   if(length(out))out <- out[order(vapply(out,function(e)
     as.character(e$timestamp),character(1)),seq_along(out))]
+  attr(out,"legacy_header") <- isTRUE(attr(rows,"legacy_header"))
   out
 }
 # Safe additive migration: extend only the header; no decision row is rewritten.
@@ -61,7 +62,8 @@ w07_review_ensure_schema <- function(meta,legacy_header=FALSE) {
 }
 w07_review_save <- function(meta,run_id,record_id,user_id,codes,relevance,reason,
                             ontology_sha="",prompt_sha="",case_sha256="",
-                            queue_sha256="",prior_decision=NULL,allowed_codes=NULL) {
+                            queue_sha256="",prior_decision=NULL,allowed_codes=NULL,
+                            legacy_header=FALSE) {
   id <- as.character(run_id)
   if(length(id)!=1L||!grepl("^[0-9]+$",id))
     stop("Invalid W07 run ID",call.=FALSE)
@@ -89,13 +91,18 @@ w07_review_save <- function(meta,run_id,record_id,user_id,codes,relevance,reason
   if(!is.null(prior_decision) && (!identical(as.character(prior_decision$record_id),record_id) ||
        !identical(as.character(prior_decision$run_id),id) ||
        !identical(as.character(prior_decision$user_id),user_id) ||
-       !identical(as.character(prior_decision$case_sha256),case_sha256) ||
-       !identical(as.character(prior_decision$queue_sha256),queue_sha256)))
+       (nzchar(as.character(prior_decision$case_sha256 %||% "")) &&
+        !identical(as.character(prior_decision$case_sha256),case_sha256)) ||
+       (nzchar(as.character(prior_decision$queue_sha256 %||% "")) &&
+        !identical(as.character(prior_decision$queue_sha256),queue_sha256))))
     stop("Prior W07 decision belongs to another record or queue",call.=FALSE)
-  version <- if(is.null(prior_decision))1L else as.integer(prior_decision$version)+1L
+  prior_version <- if(is.null(prior_decision))0L else
+    suppressWarnings(as.integer(prior_decision$version %||% NA_integer_))
+  if(is.na(prior_version) && isTRUE(legacy_header))prior_version <- 1L
+  version <- prior_version+1L
   if(is.na(version)||version<1L)stop("Invalid W07 decision revision",call.=FALSE)
   supersedes <- if(is.null(prior_decision))"" else as.character(prior_decision$event_id)
-  w07_review_sheet(meta,create=TRUE)
+  w07_review_ensure_schema(meta,legacy_header=legacy_header)
   stamp <- format(Sys.time(),"%Y-%m-%dT%H:%M:%OS6Z",tz="UTC")
   event_id <- digest::digest(paste(meta$review_id,id,record_id,user_id,stamp,
     stats::runif(1),sep="|"),algo="sha256")
