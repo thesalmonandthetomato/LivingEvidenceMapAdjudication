@@ -5907,10 +5907,12 @@ server <- function(input, output, session) {
       w07_review_legacy_rv(isTRUE(attr(events,"legacy_header")))
       w07_results_rv(result)
       w07_review_events_rv(w07_review_latest(events))
-      w07_review_decisions(setNames(lapply(w07_review_latest(events),function(e)
+      reviewer_events <- Filter(function(e)
+        identical(as.character(e$user_id),session_reviewer_id()),w07_review_latest(events))
+      w07_review_decisions(setNames(lapply(reviewer_events,function(e)
         list(record_id=e$record_id,codes=e$codes,relevance=e$relevance,
              reason=e$reason,run_id=e$run_id)),
-        vapply(w07_review_latest(events),function(e)as.character(e$record_id),character(1))))
+        vapply(reviewer_events,function(e)as.character(e$record_id),character(1))))
       w07_results_status_rv(paste("Loaded",nrow(result$table),
         "W07 records and restored",length(w07_review_latest(events)),
         "saved review decisions from Google Sheets."))
@@ -5977,6 +5979,20 @@ server <- function(input, output, session) {
     }
     if(!session_can("adjudicate_assigned")) {
       showNotification("You do not have adjudication permission.",type="error")
+      return()
+    }
+    batch <- trimws(input$w07_results_run %||% "")
+    assigned <- assignment_mode_active(assignment_registry_rv(),"07",batch,"topic_coding")
+    if(assigned && !session_can("manage_assignments") &&
+       !user_has_active_assignment(assignment_registry_rv(),"07",batch,
+                                   "topic_coding",as.character(x$record_id),
+                                   session_reviewer_id())) {
+      showNotification("This W07 coding case is not assigned to you.",type="error")
+      return()
+    }
+    if(!assigned && !session_can("manage_assignments")) {
+      showNotification("W07 review needs a reviewer assignment before you can save.",
+                       type="error")
       return()
     }
     ds <- w07_review_decisions()
