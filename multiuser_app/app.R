@@ -5669,8 +5669,7 @@ server <- function(input, output, session) {
           selected={
             preferred <- w07_preferred_versions_rv()[[type]]
             if(!is.null(preferred) && preferred %in% choices$sha256) preferred
-            else if(any(choices$approved))choices$sha256[which(choices$approved)[1L]]
-            else choices$sha256[1L]
+            else utils::tail(choices$sha256,1L)
           }))
     }))
   })
