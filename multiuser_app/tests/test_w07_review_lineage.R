@@ -25,4 +25,8 @@ header <- w07_review_header_row()
 stopifnot(nrow(header)==1L,ncol(header)==15L,
   identical(as.character(unlist(header[1L,],use.names=FALSE)),w07_review_fields),
   identical(w07_review_fields[seq_len(11L)],w07_review_legacy_fields))
+# Event order must not determine the winning revision.
+stopifnot(identical(w07_review_latest(rev(chain))[[1L]]$event_id,"b"))
+skipped <- list(make_event("a",1),make_event("b",3,"a"))
+stopifnot(inherits(try(w07_review_latest(skipped),silent=TRUE),"try-error"))
 cat("PASS W07 review lineage validation\n")
