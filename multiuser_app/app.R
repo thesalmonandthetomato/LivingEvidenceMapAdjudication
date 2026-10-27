@@ -3356,7 +3356,8 @@ server <- function(input, output, session) {
             actionButton("w07_review_save","Save review and next"),
             actionButton("w07_review_next","Next")),
           textOutput("w07_review_progress"),
-          downloadButton("w07_review_export","Export W07 review ledger"))))
+          downloadButton("w07_review_export","Export W07 review ledger"),
+          downloadButton("w07_review_complete","Download reviewed W07 trial (all decisions required)"))))
     }
 
     if (identical(app_view(), "w04_resolution")) {
@@ -6114,6 +6115,17 @@ server <- function(input, output, session) {
           accepted_codes=x$codes,relevance=x$relevance,
           rationale=x$reason,stringsAsFactors=FALSE)))
       utils::write.csv(out,file,row.names=FALSE)
+    })
+  output$w07_review_complete <- downloadHandler(
+    filename=function()paste0("w07-reviewed-",w07_review_loaded_run_rv(),".json"),
+    content=function(file) {
+      req(authenticated(),!is.null(w07_results_rv()))
+      current <- w07_review_events(w04_prompt_review_metadata(),
+                                  w07_review_loaded_run_rv())
+      consolidated <- w07_review_consolidate(
+        w07_results_rv(),current,w04_prompt_review_metadata()$review_id,
+        w07_review_loaded_run_rv(),session_reviewer_id())
+      jsonlite::write_json(consolidated,file,auto_unbox=TRUE,pretty=TRUE,null="null")
     })
   w07_prepare_status_rv <- reactiveVal("W07 preparation has not been requested.")
   observeEvent(input$w07_shiny_prepare,{
