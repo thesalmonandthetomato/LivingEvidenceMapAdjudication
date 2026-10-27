@@ -5891,6 +5891,20 @@ server <- function(input, output, session) {
         w07_results_status_rv(paste("W07 decisions could not be restored:",conditionMessage(events)))
         return()
       }
+      ontology <- tryCatch(w07_shiny_config_select(meta,"ontology",
+        as.character(result$manifest$ontology_sha256)),error=function(e)e)
+      if(inherits(ontology,"error")) {
+        w07_results_status_rv(paste("W07 ontology could not be loaded:",conditionMessage(ontology)))
+        return()
+      }
+      allowed <- tryCatch(utils::read.csv(text=ontology$content,
+        stringsAsFactors=FALSE)$path_id,error=function(e)e)
+      if(inherits(allowed,"error")) {
+        w07_results_status_rv(paste("W07 ontology could not be parsed:",conditionMessage(allowed)))
+        return()
+      }
+      w07_review_ontology_rv(as.character(allowed))
+      w07_review_legacy_rv(isTRUE(attr(events,"legacy_header")))
       w07_results_rv(result)
       w07_review_events_rv(w07_review_latest(events))
       w07_review_decisions(setNames(lapply(w07_review_latest(events),function(e)
@@ -5919,6 +5933,8 @@ server <- function(input, output, session) {
 
   w07_review_idx <- reactiveVal(1L)
   w07_review_events_rv <- reactiveVal(list())
+  w07_review_legacy_rv <- reactiveVal(FALSE)
+  w07_review_ontology_rv <- reactiveVal(character())
   w07_review_decisions <- reactiveVal(list())
   observeEvent(w07_results_rv(),{
     w07_review_idx(1L)
@@ -5971,9 +5987,6 @@ server <- function(input, output, session) {
     saved <- tryCatch({
       meta <- w04_prompt_review_metadata()
       manifest <- w07_results_rv()$manifest
-      ont <- w07_shiny_config_select(meta,"ontology",
-        as.character(manifest$ontology_sha256))
-      ontology <- utils::read.csv(text=ont$content,stringsAsFactors=FALSE)
       row_sha <- digest::digest(paste(key,as.character(x$title),
         as.character(x$abstract),sep="\\n"),algo="sha256",serialize=FALSE)
       queue_sha <- digest::digest(as.character(jsonlite::toJSON(
@@ -5992,7 +6005,8 @@ server <- function(input, output, session) {
         prompt_sha=as.character(manifest$prompt_sha256),
         case_sha256=row_sha,queue_sha256=queue_sha,
         prior_decision=if(length(prior))prior[[length(prior)]] else NULL,
-        allowed_codes=as.character(ontology$path_id))
+        allowed_codes=w07_review_ontology_rv(),
+        legacy_header=w07_review_legacy_rv())
     },error=function(e)e)
     if(inherits(saved,"error")) {
       showNotification(paste("Review was not saved:",conditionMessage(saved)),
@@ -6002,6 +6016,7 @@ server <- function(input, output, session) {
     ds[[key]] <- proposed
     w07_review_decisions(ds)
     w07_review_events_rv(c(w07_review_events_rv(),list(saved)))
+    w07_review_legacy_rv(FALSE)
     showNotification("W07 decision saved to Google Sheets.",type="message")
     if(w07_review_idx()<nrow(w07_results_rv()$table))w07_review_idx(w07_review_idx()+1L)
   })
