@@ -28,6 +28,7 @@ source("R/w07_shiny_configuration.R", local = TRUE)
 source("R/w07_shiny_subset_dispatch.R", local = TRUE)
 source("R/w07_shiny_results.R", local = TRUE)
 source("R/w07_shiny_review_store.R", local = TRUE)
+source("R/w07_shiny_handoff.R", local = TRUE)
 source("R/w05_shiny_subset_dispatch.R", local = TRUE)
 source("R/w05_shiny_subset_results.R", local = TRUE)
 source("R/w04_workspace_overview.R", local = TRUE)
@@ -3357,7 +3358,9 @@ server <- function(input, output, session) {
             actionButton("w07_review_next","Next")),
           textOutput("w07_review_progress"),
           downloadButton("w07_review_export","Export W07 review ledger"),
-          downloadButton("w07_review_complete","Download reviewed W07 trial (all decisions required)"))))
+          downloadButton("w07_review_complete","Download reviewed W07 trial (all decisions required)"),
+          actionButton("w07_finish_review","Complete and hand off reviewed W07 trial",class="btn-outline-primary"),
+          textOutput("w07_handoff_status"))))
     }
 
     if (identical(app_view(), "w04_resolution")) {
@@ -6116,6 +6119,26 @@ server <- function(input, output, session) {
           rationale=x$reason,stringsAsFactors=FALSE)))
       utils::write.csv(out,file,row.names=FALSE)
     })
+  w07_handoff_status_rv <- reactiveVal("Completion is available when every case has a saved decision.")
+  observeEvent(input$w07_finish_review,{
+    req(authenticated(),!is.null(w07_results_rv()))
+    if(!session_can("control_workflows")) {
+      w07_handoff_status_rv("Workflow control permission is required for handoff.")
+      return()
+    }
+    result <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      events <- w07_review_events(meta,w07_review_loaded_run_rv())
+      w07_shiny_handoff(meta,w07_results_rv(),events,w07_review_loaded_run_rv(),
+                        session_reviewer_id())
+    },error=function(e)e)
+    if(inherits(result,"error")) {
+      w07_handoff_status_rv(paste("W07 handoff not completed:",conditionMessage(result)))
+    } else {
+      w07_handoff_status_rv(paste("W07 experimental handoff",result$status,
+        "with archive SHA-256:",result$sha256))
+    }
+  })
   output$w07_review_complete <- downloadHandler(
     filename=function()paste0("w07-reviewed-",w07_review_loaded_run_rv(),".json"),
     content=function(file) {
