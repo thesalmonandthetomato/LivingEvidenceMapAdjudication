@@ -5916,9 +5916,8 @@ server <- function(input, output, session) {
   output$w07_trial_status <- renderText(w07_trial_status_rv())
   w07_results_rv <- reactiveVal(NULL)
   w07_results_status_rv <- reactiveVal("No W07 trial results loaded.")
-  observeEvent(input$w07_results_load,{
-    req(authenticated())
-    run_id <- trimws(as.character(input$w07_results_run %||% ""))
+  w07_load_run <- function(run_id) {
+    run_id <- trimws(as.character(run_id %||% ""))
     result <- tryCatch(w07_shiny_load_results(run_id),error=function(e)e)
     if(inherits(result,"error")) {
       w07_results_rv(NULL)
@@ -5965,6 +5964,10 @@ server <- function(input, output, session) {
         "W07 records and restored",length(w07_review_latest(events)),
         "saved review decisions from Google Sheets."))
     }
+  }
+  observeEvent(input$w07_results_load,{
+    req(authenticated())
+    w07_load_run(input$w07_results_run)
   })
   output$w07_results_status <- renderText(w07_results_status_rv())
   output$w07_results_table <- renderTable({
