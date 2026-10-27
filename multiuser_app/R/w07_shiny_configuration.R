@@ -81,7 +81,11 @@ w07_shiny_config_archive <- function(meta,path,type,original_filename=path) {
   filename <- paste0("w07-",type,"-",sha,".json")
   id <- w07_shiny_config_id(meta)
   if(!nzchar(id))id <- w07_shiny_config_create(meta)
-  dep <- w07_shiny_config_deposit(w04_prompt_review_metadata(force=TRUE))
+  # Once a draft ID exists, Zenodo is authoritative for file versions.
+  # Reuse metadata already read by the caller rather than bypassing the Sheets cache.
+  archive_meta <- meta
+  if(!nzchar(w07_shiny_config_id(meta))) archive_meta <- w04_prompt_review_metadata(force=TRUE)
+  dep <- w07_shiny_config_deposit(archive_meta)
   matches <- Filter(function(x)identical(as.character(x$filename),filename),
     dep$files %||% list())
   if(length(matches)>1L)stop("Duplicate W07 configuration file",call.=FALSE)
@@ -98,7 +102,7 @@ w07_shiny_config_archive <- function(meta,path,type,original_filename=path) {
     w04_prompt_zenodo_request(paste0(sub("/$","",bucket),"/",filename),
       "PUT",file=tmp,expected=c(200L,201L))
   }
-  fresh <- w07_shiny_config_deposit(w04_prompt_review_metadata(force=TRUE))
+  fresh <- w07_shiny_config_deposit(archive_meta)
   matching <- Filter(function(x)identical(as.character(x$filename),filename),
     fresh$files %||% list())
   if(length(matching)!=1L)stop("W07 configuration archive missing",call.=FALSE)
