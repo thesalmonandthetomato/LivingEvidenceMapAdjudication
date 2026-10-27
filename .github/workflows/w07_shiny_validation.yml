@@ -8,6 +8,9 @@ on:
       - 'multiuser_app/R/w07_shiny_prepare_dispatch.R'
       - 'multiuser_app/R/w07_shiny_subset_dispatch.R'
       - 'multiuser_app/R/w07_shiny_results.R'
+      - 'multiuser_app/R/w07_shiny_review_store.R'
+      - 'multiuser_app/app.R'
+      - 'multiuser_app/tests/test_w07_review_lineage.R'
       - 'multiuser_app/tests/test_w07_shiny_configuration.R'
       - '.github/workflows/w07_shiny_validation.yml'
 permissions:
@@ -29,7 +32,11 @@ jobs:
           parse(file="multiuser_app/R/w07_shiny_prepare_dispatch.R")
           parse(file="multiuser_app/R/w07_shiny_subset_dispatch.R")
           parse(file="multiuser_app/R/w07_shiny_results.R")
+          parse(file="multiuser_app/R/w07_shiny_review_store.R")
           parse(file="multiuser_app/app.R")
       - name: Test W07 offline configuration contract
         shell: Rscript {0}
         run: source("multiuser_app/tests/test_w07_shiny_configuration.R")
+      - name: Test W07 review event lineage
+        shell: Rscript {0}
+        run: source("multiuser_app/tests/test_w07_review_lineage.R")
