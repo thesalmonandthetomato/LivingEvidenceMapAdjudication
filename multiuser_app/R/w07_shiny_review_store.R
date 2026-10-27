@@ -201,8 +201,9 @@ w07_review_consolidate <- function(result,events,review_id,run_id,user_id) {
      anyDuplicated(as.character(result$table$record_id)))
     stop("W07 completion requires a nonempty, unique trial queue",call.=FALSE)
   active <- w07_review_latest(events)
+  # Completion combines assigned reviewers' active decisions for this review/run.
+  # Competing decisions for one record must be reconciled, never picked silently.
   mine <- Filter(function(e)
-    identical(as.character(e$user_id),as.character(user_id)) &&
     identical(as.character(e$run_id),as.character(run_id)) &&
     identical(as.character(e$review_id),as.character(review_id)),active)
   ids <- as.character(result$table$record_id)
@@ -229,7 +230,7 @@ w07_review_consolidate <- function(result,events,review_id,run_id,user_id) {
     as.character(e$queue_sha256),character(1))))!=1L)
     stop("W07 completion has inconsistent queue identities",call.=FALSE)
   payload <- list(schema="lem-w07-human-reviewed-subset-v1",
-    review_id=review_id,run_id=as.character(run_id),reviewer_id=user_id,
+    review_id=review_id,run_id=as.character(run_id),completed_by=user_id,
     manifest=manifest,model_results=result$table,decision_events=ordered,
     status="review_complete_not_published")
   payload$sha256 <- digest::digest(jsonlite::toJSON(payload,auto_unbox=TRUE,
