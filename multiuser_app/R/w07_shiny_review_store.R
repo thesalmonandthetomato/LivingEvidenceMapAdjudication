@@ -154,6 +154,19 @@ w07_review_validate_history <- function(events) {
       as.character(e$version %||% ""),character(1))))
     if(all(is.finite(versions)) && anyDuplicated(versions))
       stop("Conflicting W07 decision versions detected",call.=FALSE)
+    if(length(chain)>1L) {
+      # Every event beyond the root must link to the preceding revision.
+      # This also checks version continuity for migrated legacy roots.
+      if(length(parents)!=length(chain)-1L)
+        stop("W07 review history contains disconnected events",call.=FALSE)
+      if(all(is.finite(versions))) {
+        for(i in which(nzchar(children))) {
+          parent_index <- match(children[[i]],ids)
+          if(versions[[i]]!=versions[[parent_index]]+1L)
+            stop("W07 review history contains an invalid revision increment",call.=FALSE)
+        }
+      }
+    }
   }
   invisible(TRUE)
 }
@@ -161,5 +174,12 @@ w07_review_latest <- function(events) {
   if(!length(events))return(list())
   w07_review_validate_history(events)
   keys <- vapply(events,function(e)paste(e$record_id,e$user_id,sep="|"),character(1))
-  events[!duplicated(keys,fromLast=TRUE)]
+  lapply(unique(keys),function(key) {
+    chain <- events[keys==key]
+    parents <- vapply(chain,function(e)as.character(e$supersedes_event_id %||% ""),character(1))
+    ids <- vapply(chain,function(e)as.character(e$event_id),character(1))
+    leaves <- which(!ids %in% parents)
+    if(length(leaves)!=1L)stop("W07 review history has no unique latest decision",call.=FALSE)
+    chain[[leaves]]
+  })
 }
