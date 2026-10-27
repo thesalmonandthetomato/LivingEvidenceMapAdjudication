@@ -5630,10 +5630,21 @@ server <- function(input, output, session) {
   w07_config_status_rv <- reactiveVal("Loading saved W07 configuration when W07 is opened.")
   w07_approval_status_rv <- reactiveVal(list())
   w07_preferred_versions_rv <- reactiveVal(list())
+  w07_version_details_rv <- reactiveVal(list())
   w07_versions_rv <- reactiveVal(data.frame(type=character(),sha256=character(),
                                              approved=logical()))
   refresh_w07_versions <- function(meta=w04_prompt_review_metadata()) {
     versions <- w07_shiny_config_versions(meta)
+    details <- list()
+    if(nrow(versions)) {
+      for(i in seq_len(nrow(versions))) {
+        type <- versions$type[[i]]
+        sha <- versions$sha256[[i]]
+        receipt <- tryCatch(w07_shiny_config_select(meta,type,sha),error=function(e)e)
+        if(!inherits(receipt,"error"))details[[paste(type,sha,sep=":")]] <- receipt
+      }
+    }
+    w07_version_details_rv(details)
     w07_versions_rv(versions)
     versions
   }
@@ -5647,8 +5658,14 @@ server <- function(input, output, session) {
         tags$strong(paste("Saved",type,"versions")),
         selectInput(paste0("w07_saved_",type),NULL,
           choices=setNames(choices$sha256,
-            paste0(substr(choices$sha256,1L,12L),
-                   ifelse(choices$approved," (approved)"," (not approved)"))),
+            vapply(seq_len(nrow(choices)),function(i) {
+              sha <- choices$sha256[[i]]
+              receipt <- w07_version_details_rv()[[paste(type,sha,sep=":")]]
+              summary <- if(is.null(receipt)) "Archived version" else
+                if(identical(type,"ontology")) paste0(receipt$count," categories") else
+                  substr(gsub("[[:space:]]+"," ",receipt$content),1L,75L)
+              paste0(substr(sha,1L,12L)," | ",summary)
+            },character(1))),
           selected={
             preferred <- w07_preferred_versions_rv()[[type]]
             if(!is.null(preferred) && preferred %in% choices$sha256) preferred
@@ -5829,14 +5846,28 @@ server <- function(input, output, session) {
     if(is.null(r))return("No uploaded version for this selection.")
     paste0("SHA-256: ",r$sha256,"\n\n",r$content)
   })
+  output$w07_ontology_preview <- renderText({
+    sha <- input$w07_saved_ontology
+    r <- w07_version_details_rv()[[paste("ontology",sha,sep=":")]]
+    if(is.null(r))return("No saved ontology selected.")
+    paste0("Version: ",r$sha256,"\n\n",r$content)
+  })
+  output$w07_prompt_preview <- renderText({
+    sha <- input$w07_saved_prompt
+    r <- w07_version_details_rv()[[paste("prompt",sha,sep=":")]]
+    if(is.null(r))return("No saved prompt selected.")
+    paste0("Version: ",r$sha256,"\n\n",r$content)
+  })
   w07_trial_status_rv <- reactiveVal("No W07 model trial has been requested.")
   observeEvent(input$w07_trial_launch,{
     req(authenticated())
     if(!session_can("control_workflows"))return()
-    receipts <- w07_config_receipts_rv()
-    result <- tryCatch(w07_shiny_subset_dispatch(
-      w04_prompt_review_metadata(),receipts$ontology,receipts$prompt,
-      input$w07_trial_size),error=function(e)e)
+    result <- tryCatch({
+      meta <- w04_prompt_review_metadata()
+      ontology <- w07_shiny_config_select(meta,"ontology",input$w07_saved_ontology)
+      prompt <- w07_shiny_config_select(meta,"prompt",input$w07_saved_prompt)
+      w07_shiny_subset_dispatch(meta,ontology,prompt,input$w07_trial_size)
+    },error=function(e)e)
     w07_trial_status_rv(if(inherits(result,"error"))
       paste("W07 trial was not dispatched:",conditionMessage(result)) else
       "W07 experimental trial dispatched. Review results in the isolated W07 GitHub Actions workflow; no final classification has been published.")
@@ -6580,27 +6611,21 @@ server <- function(input, output, session) {
                            class="btn-outline-primary"),
               textOutput("w07_shiny_prepare_status"),
               tags$hr(),
-              tags$h6("W07 topic classification configuration"),
-              fileInput("w07_ontology_upload","Upload topic ontology (CSV)",
-                accept=".csv"),
-              fileInput("w07_prompt_upload","Upload topic model prompt (TXT, Markdown, DOCX or PDF)",
-                accept=c(".txt",".md",".docx",".pdf")),
-              tags$p(class="saved-note","Approval confirmation appears here after Zenodo verifies the saved marker. The button does not change appearance."),
-              textOutput("w07_config_status"),
-              tags$strong(textOutput("w07_approval_summary")),
-              tags$h6("Existing saved versions"),
-              tags$p(class="saved-note","Choose an archived version below. No upload or new Zenodo record is needed."),
+              tags$h6("W07 ontology and prompt"),
+              tags$p(class="saved-note","Choose archived versions below. The preview updates automatically. No separate approval is required."),
               uiOutput("w07_saved_versions"),
-              actionButton("w07_select_saved","Use selected saved version",
-                class="btn-outline-secondary"),
-              selectInput("w07_config_type","Review version",
-                choices=c("Ontology"="ontology","Prompt"="prompt")),
-              tags$pre(style="white-space:pre-wrap;max-height:260px;overflow:auto;",
-                textOutput("w07_config_preview")),
-              tags$p(class="saved-note","Approval uses the version selected under Existing saved versions for the chosen Review version type. You do not need to click Use selected saved version first."),
-              textOutput("w07_approval_target"),
-              actionButton("w07_config_approve","Approve chosen version",
-                class="btn-outline-primary"),
+              tags$h6("Selected ontology"),
+              tags$pre(style="white-space:pre-wrap;max-height:240px;overflow:auto;",
+                textOutput("w07_ontology_preview")),
+              tags$h6("Selected prompt"),
+              tags$pre(style="white-space:pre-wrap;max-height:240px;overflow:auto;",
+                textOutput("w07_prompt_preview")),
+              textOutput("w07_config_status"),
+              tags$details(
+                tags$summary("Add a new ontology or prompt version"),
+                fileInput("w07_ontology_upload","Upload ontology (CSV)",accept=".csv"),
+                fileInput("w07_prompt_upload","Upload prompt (TXT, Markdown, DOCX or PDF)",
+                  accept=c(".txt",".md",".docx",".pdf"))),
               tags$hr(),
               tags$h6("Experimental W07 topic subset"),
               tags$p(class="saved-note","Both the ontology and prompt must be archived and approved. Run only a small explicit model trial; no full-corpus finalisation occurs."),
