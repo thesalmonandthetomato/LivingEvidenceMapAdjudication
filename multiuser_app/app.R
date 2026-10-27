@@ -5898,7 +5898,7 @@ server <- function(input, output, session) {
         vapply(w07_review_latest(events),function(e)as.character(e$record_id),character(1))))
       w07_results_status_rv(paste("Loaded",nrow(result$table),
         "W07 records and restored",length(w07_review_latest(events)),
-        "saved review decisions from restricted Zenodo."))
+        "saved review decisions from Google Sheets."))
     }
   })
   output$w07_results_status <- renderText(w07_results_status_rv())
@@ -5964,14 +5964,16 @@ server <- function(input, output, session) {
       run_id=trimws(input$w07_results_run %||% ""))
     saved <- tryCatch(w07_review_save(w04_prompt_review_metadata(),
       trimws(input$w07_results_run %||% ""),key,session_reviewer_id(),
-      ds[[key]]$codes,ds[[key]]$relevance,ds[[key]]$reason),error=function(e)e)
+      ds[[key]]$codes,ds[[key]]$relevance,ds[[key]]$reason,
+      ontology_sha=as.character(w07_results_rv()$manifest$ontology_sha %||% ""),
+      prompt_sha=as.character(w07_results_rv()$manifest$prompt_sha %||% "")),error=function(e)e)
     if(inherits(saved,"error")) {
       showNotification(paste("Review was not saved:",conditionMessage(saved)),
                        type="error",duration=NULL)
       return()
     }
     w07_review_decisions(ds)
-    showNotification("W07 decision saved and verified in Zenodo.",type="message")
+    showNotification("W07 decision saved to Google Sheets.",type="message")
     if(w07_review_idx()<nrow(w07_results_rv()$table))w07_review_idx(w07_review_idx()+1L)
   })
   observeEvent(input$w07_review_previous,{
@@ -6735,7 +6737,7 @@ server <- function(input, output, session) {
               tags$div(style="max-height:520px;overflow:auto;",
                 tableOutput("w07_results_table")),
               tags$h6("W07 coding review (experimental)"),
-              tags$p(class="saved-note","Review proposed codes and relevance for each record. Each saved decision is archived and verified in review-specific Zenodo storage; return later using the same run ID."),
+              tags$p(class="saved-note","Review proposed codes and relevance for each record. Decisions are saved in review-specific Google Sheets; return later using the same run ID."),
               uiOutput("w07_review_case"),
               textAreaInput("w07_review_codes","Accepted topic codes (comma-separated)",rows=2),
               selectInput("w07_review_relevance","Relevance decision",
@@ -6747,7 +6749,7 @@ server <- function(input, output, session) {
               actionButton("w07_review_next","Next"),
               textOutput("w07_review_progress"),
               downloadButton("w07_review_export","Export W07 review ledger"),
-              tags$p(class="saved-note","Saved decisions persist in restricted Zenodo. These are not W08 final adjudications."))),
+              tags$p(class="saved-note","Saved decisions persist in Google Sheets. These are not W08 final adjudications."))),
             tabPanel("W08",uiOutput("w08_admin_controls")),
             tabPanel("System",uiOutput("system_admin_controls"))
           )
