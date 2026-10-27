@@ -5632,8 +5632,8 @@ server <- function(input, output, session) {
   w07_preferred_versions_rv <- reactiveVal(list())
   w07_versions_rv <- reactiveVal(data.frame(type=character(),sha256=character(),
                                              approved=logical()))
-  refresh_w07_versions <- function() {
-    versions <- w07_shiny_config_versions(w04_prompt_review_metadata(force=TRUE))
+  refresh_w07_versions <- function(meta=w04_prompt_review_metadata()) {
+    versions <- w07_shiny_config_versions(meta)
     w07_versions_rv(versions)
     versions
   }
@@ -5684,14 +5684,15 @@ server <- function(input, output, session) {
   observeEvent(input$configure_workflow_tab,{
     req(authenticated())
     if(!identical(input$configure_workflow_tab,"W07"))return()
-    result <- tryCatch(w07_shiny_config_restore(w04_prompt_review_metadata()),
-                       error=function(e)e)
+    meta <- tryCatch(w04_prompt_review_metadata(),error=function(e)e)
+    result <- if(inherits(meta,"error"))meta else
+      tryCatch(w07_shiny_config_restore(meta),error=function(e)e)
     if(inherits(result,"error")) {
       w07_config_status_rv(paste("Could not restore saved W07 configuration:",
                                  conditionMessage(result)))
       return()
     }
-    versions <- tryCatch(refresh_w07_versions(),error=function(e)e)
+    versions <- tryCatch(refresh_w07_versions(meta),error=function(e)e)
     if(inherits(versions,"error")) {
       w07_config_status_rv(paste("Could not list saved W07 versions:",conditionMessage(versions)))
       return()
