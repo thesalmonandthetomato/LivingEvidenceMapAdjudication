@@ -5903,12 +5903,19 @@ server <- function(input, output, session) {
         w07_results_status_rv(paste("W07 ontology could not be parsed:",conditionMessage(allowed)))
         return()
       }
+      latest <- tryCatch(w07_review_latest(events),error=function(e)e)
+      if(inherits(latest,"error")) {
+        w07_results_rv(NULL)
+        w07_results_status_rv(paste("W07 revision conflict:",conditionMessage(latest)))
+        return()
+      }
+      w07_review_loaded_run_rv(run_id)
       w07_review_ontology_rv(as.character(allowed))
       w07_review_legacy_rv(isTRUE(attr(events,"legacy_header")))
       w07_results_rv(result)
-      w07_review_events_rv(w07_review_latest(events))
+      w07_review_events_rv(latest)
       reviewer_events <- Filter(function(e)
-        identical(as.character(e$user_id),session_reviewer_id()),w07_review_latest(events))
+        identical(as.character(e$user_id),session_reviewer_id()),latest)
       w07_review_decisions(setNames(lapply(reviewer_events,function(e)
         list(record_id=e$record_id,codes=e$codes,relevance=e$relevance,
              reason=e$reason,run_id=e$run_id)),
@@ -5933,6 +5940,7 @@ server <- function(input, output, session) {
     }
   )
 
+  w07_review_loaded_run_rv <- reactiveVal("")
   w07_review_idx <- reactiveVal(1L)
   w07_review_events_rv <- reactiveVal(list())
   w07_review_legacy_rv <- reactiveVal(FALSE)
@@ -5981,7 +5989,7 @@ server <- function(input, output, session) {
       showNotification("You do not have adjudication permission.",type="error")
       return()
     }
-    batch <- trimws(input$w07_results_run %||% "")
+    batch <- w07_review_loaded_run_rv()
     assigned <- assignment_mode_active(assignment_registry_rv(),"07",batch,"topic_coding")
     if(assigned && !session_can("manage_assignments") &&
        !user_has_active_assignment(assignment_registry_rv(),"07",batch,
@@ -5999,7 +6007,7 @@ server <- function(input, output, session) {
     key <- as.character(x$record_id)
     proposed <- list(record_id=key,codes=trimws(input$w07_review_codes %||% ""),
       relevance=input$w07_review_relevance,reason=reason,
-      run_id=trimws(input$w07_results_run %||% ""))
+      run_id=w07_review_loaded_run_rv())
     saved <- tryCatch({
       meta <- w04_prompt_review_metadata()
       manifest <- w07_results_rv()$manifest
