@@ -5902,6 +5902,77 @@ server <- function(input, output, session) {
     }
   )
 
+  w07_review_idx <- reactiveVal(1L)
+  w07_review_decisions <- reactiveVal(list())
+  observeEvent(w07_results_rv(),{
+    w07_review_idx(1L)
+    w07_review_decisions(list())
+  })
+  w07_review_row <- reactive({
+    result <- w07_results_rv()
+    if(is.null(result)||!nrow(result$table))return(NULL)
+    i <- max(1L,min(w07_review_idx(),nrow(result$table)))
+    result$table[i,,drop=FALSE]
+  })
+  output$w07_review_case <- renderUI({
+    x <- w07_review_row()
+    if(is.null(x))return(tags$p("Load a W07 trial to review records."))
+    tags$div(tags$strong(paste("Record",w07_review_idx(),"of",nrow(w07_results_rv()$table))),
+      tags$p(tags$strong(as.character(x$title))),tags$p(as.character(x$abstract)),
+      tags$p(paste("Model codes:",x$topic_codes,"| Relevance:",x$relevance_status)),
+      tags$p(paste("Evidence:",x$evidence)),
+      tags$p(paste("Validation issues:",x$validation_issues)))
+  })
+  observeEvent(w07_review_row(),{
+    x <- w07_review_row()
+    if(is.null(x))return()
+    key <- as.character(x$record_id)
+    saved <- w07_review_decisions()[[key]]
+    updateTextAreaInput(session,"w07_review_codes",value=if(is.null(saved))as.character(x$topic_codes) else saved$codes)
+    updateSelectInput(session,"w07_review_relevance",selected=if(is.null(saved)) {
+      status <- as.character(x$relevance_status)
+      if(status %in% c("CODED_IN_SCOPE","IN_SCOPE_ONTOLOGY_GAP","OUT_OF_SCOPE","INSUFFICIENT_INFORMATION"))status else "CODED_IN_SCOPE"
+    } else saved$relevance)
+    updateTextAreaInput(session,"w07_review_reason",value=if(is.null(saved))"" else saved$reason)
+  })
+  observeEvent(input$w07_review_save,{
+    req(authenticated())
+    x <- w07_review_row()
+    req(!is.null(x))
+    reason <- trimws(input$w07_review_reason %||% "")
+    if(!nzchar(reason)) {
+      showNotification("Enter a review rationale before saving.",type="warning")
+      return()
+    }
+    ds <- w07_review_decisions()
+    key <- as.character(x$record_id)
+    ds[[key]] <- list(record_id=key,codes=trimws(input$w07_review_codes %||% ""),
+      relevance=input$w07_review_relevance,reason=reason,
+      run_id=trimws(input$w07_results_run %||% ""))
+    w07_review_decisions(ds)
+    if(w07_review_idx()<nrow(w07_results_rv()$table))w07_review_idx(w07_review_idx()+1L)
+  })
+  observeEvent(input$w07_review_previous,{
+    if(w07_review_idx()>1L)w07_review_idx(w07_review_idx()-1L)
+  })
+  observeEvent(input$w07_review_next,{
+    if(!is.null(w07_results_rv())&&w07_review_idx()<nrow(w07_results_rv()$table))
+      w07_review_idx(w07_review_idx()+1L)
+  })
+  output$w07_review_progress <- renderText({
+    paste(length(w07_review_decisions()),"records reviewed (session only)")
+  })
+  output$w07_review_export <- downloadHandler(
+    filename=function()paste0("w07-review-",input$w07_results_run %||% "trial",".csv"),
+    content=function(file) {
+      ds <- w07_review_decisions()
+      req(length(ds))
+      out <- do.call(rbind,lapply(ds,function(x)
+        data.frame(run_id=x$run_id,record_id=x$record_id,
+          accepted_codes=x$codes,relevance=x$relevance,
+          rationale=x$reason,stringsAsFactors=FALSE)))
+      utils::write.csv(out,file,row.names=FALSE)
+    })
   w07_prepare_status_rv <- reactiveVal("W07 preparation has not been requested.")
   observeEvent(input$w07_shiny_prepare,{
     req(authenticated())
@@ -6641,7 +6712,20 @@ server <- function(input, output, session) {
               downloadButton("w07_results_csv","Download readable W07 CSV"),
               tags$div(style="max-height:520px;overflow:auto;",
                 tableOutput("w07_results_table")),
-              tags$p(class="saved-note","Results are experimental GitHub artefacts; human-review and finalisation are not yet enabled."))),
+              tags$h6("W07 coding review (experimental)"),
+              tags$p(class="saved-note","Review proposed codes and relevance for each record. Decisions remain separate from W04 and W08. Export the review ledger before leaving the session."),
+              uiOutput("w07_review_case"),
+              textAreaInput("w07_review_codes","Accepted topic codes (comma-separated)",rows=2),
+              selectInput("w07_review_relevance","Relevance decision",
+                choices=c("In scope"="CODED_IN_SCOPE","In scope, ontology gap"="IN_SCOPE_ONTOLOGY_GAP",
+                  "Out of scope"="OUT_OF_SCOPE","Insufficient information"="INSUFFICIENT_INFORMATION")),
+              textAreaInput("w07_review_reason","Review rationale",rows=2),
+              actionButton("w07_review_save","Save review and next"),
+              actionButton("w07_review_previous","Previous"),
+              actionButton("w07_review_next","Next"),
+              textOutput("w07_review_progress"),
+              downloadButton("w07_review_export","Export W07 review ledger"),
+              tags$p(class="saved-note","Experimental decisions are held only in this session and are not W08 final adjudications."))),
             tabPanel("W08",uiOutput("w08_admin_controls")),
             tabPanel("System",uiOutput("system_admin_controls"))
           )
