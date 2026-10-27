@@ -3204,9 +3204,9 @@ server <- function(input, output, session) {
               "Workflow 07",
               "Review experimental topic assignments without changing W04 inclusion.",
               if(is.null(w07_results_rv())) "—" else nrow(w07_results_rv()$table),
-              if(is.null(w07_results_rv())) "—" else length(w07_review_decisions()),
+              if(is.null(w07_results_rv())) "—" else w07_review_total_saved(),
               if(is.null(w07_results_rv())) "—" else
-                max(0L,nrow(w07_results_rv()$table)-length(w07_review_decisions())),
+                max(0L,nrow(w07_results_rv()$table)-w07_review_total_saved()),
               if(!is.null(w07_results_rv())) "open_w07_review" else NULL,
               "Continue topic coding",w07_review_loaded_run_rv(),"experimental",
               can_open=!is.null(w07_results_rv()),
@@ -6000,6 +6000,12 @@ server <- function(input, output, session) {
   w07_review_legacy_rv <- reactiveVal(FALSE)
   w07_review_ontology_rv <- reactiveVal(character())
   w07_review_decisions <- reactiveVal(list())
+  w07_review_total_saved <- reactive({
+    events <- w07_review_events_rv()
+    if(!length(events))return(0L)
+    length(unique(vapply(events,function(e)
+      as.character(e$record_id),character(1))))
+  })
   observeEvent(w07_results_rv(),{
     w07_review_idx(1L)
   })
@@ -6106,7 +6112,9 @@ server <- function(input, output, session) {
       w07_review_idx(w07_review_idx()+1L)
   })
   output$w07_review_progress <- renderText({
-    paste(length(w07_review_decisions()),"records reviewed and saved")
+    total <- if(is.null(w07_results_rv()))0L else nrow(w07_results_rv()$table)
+    paste(w07_review_total_saved(),"of",total,"records reviewed across users;",
+          length(w07_review_decisions()),"decisions saved by you")
   })
   output$w07_review_export <- downloadHandler(
     filename=function()paste0("w07-review-",input$w07_results_run %||% "trial",".csv"),
