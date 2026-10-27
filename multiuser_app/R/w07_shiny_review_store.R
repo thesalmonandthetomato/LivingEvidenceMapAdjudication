@@ -40,12 +40,13 @@ w07_review_events <- function(meta,run_id) {
     stop("Invalid W07 run ID",call.=FALSE)
   rows <- w07_review_read_rows(meta)
   if(is.null(rows))return(list())
+  legacy <- isTRUE(attr(rows,"legacy_header"))
   rows <- rows[!is.na(rows$review_id)&rows$review_id==meta$review_id&
     !is.na(rows$run_id)&rows$run_id==id,,drop=FALSE]
   out <- lapply(seq_len(nrow(rows)),function(i)as.list(rows[i,,drop=FALSE]))
   if(length(out))out <- out[order(vapply(out,function(e)
     as.character(e$timestamp),character(1)),seq_along(out))]
-  attr(out,"legacy_header") <- isTRUE(attr(rows,"legacy_header"))
+  attr(out,"legacy_header") <- legacy
   out
 }
 # Safe additive migration: extend only the header; no decision row is rewritten.
@@ -54,9 +55,8 @@ w07_review_ensure_schema <- function(meta,legacy_header=FALSE) {
   w07_review_sheet(meta,create=TRUE)
   if(isTRUE(legacy_header)) {
     googlesheets4::range_write(meta$sheet_id,
-      data=as.data.frame(as.list(stats::setNames(w07_review_fields,w07_review_fields)),
-        stringsAsFactors=FALSE)[0,,drop=FALSE],
-      sheet=w07_review_tab(),range="A1:O1",col_names=TRUE)
+      data=as.data.frame(t(w07_review_fields),stringsAsFactors=FALSE),
+      sheet=w07_review_tab(),range="A1:O1",col_names=FALSE)
   }
   invisible(TRUE)
 }
