@@ -192,3 +192,47 @@ w07_review_latest <- function(events) {
     chain[[leaves]]
   })
 }
+
+
+# Consolidate one fully reviewed experimental run without changing model outputs.
+# This pure function is also used by the offline completion regression test.
+w07_review_consolidate <- function(result,events,review_id,run_id,user_id) {
+  if(is.null(result$table)||!nrow(result$table)||
+     anyDuplicated(as.character(result$table$record_id)))
+    stop("W07 completion requires a nonempty, unique trial queue",call.=FALSE)
+  active <- w07_review_latest(events)
+  mine <- Filter(function(e)
+    identical(as.character(e$user_id),as.character(user_id)) &&
+    identical(as.character(e$run_id),as.character(run_id)) &&
+    identical(as.character(e$review_id),as.character(review_id)),active)
+  ids <- as.character(result$table$record_id)
+  reviewed_ids <- vapply(mine,function(e)as.character(e$record_id),character(1))
+  if(anyDuplicated(reviewed_ids)||!setequal(ids,reviewed_ids))
+    stop("W07 completion blocked: required decisions remain unresolved",call.=FALSE)
+  order_idx <- match(ids,reviewed_ids)
+  ordered <- mine[order_idx]
+  if(any(vapply(ordered,function(e)
+    !as.character(e$relevance) %in% c("CODED_IN_SCOPE","IN_SCOPE_ONTOLOGY_GAP",
+                                       "INSUFFICIENT_INFORMATION"),logical(1))))
+    stop("W07 completion contains a prohibited screening decision",call.=FALSE)
+  manifest <- result$manifest
+  if(!identical(as.character(manifest$ontology_sha256),
+                as.character(ordered[[1L]]$ontology_sha)) ||
+     !identical(as.character(manifest$prompt_sha256),
+                as.character(ordered[[1L]]$prompt_sha)) ||
+     any(vapply(ordered,function(e)
+       !identical(as.character(e$ontology_sha),as.character(manifest$ontology_sha256)) ||
+       !identical(as.character(e$prompt_sha),as.character(manifest$prompt_sha256)) ||
+       !nzchar(as.character(e$queue_sha256 %||% "")),logical(1))))
+    stop("W07 completion provenance does not match archived trial",call.=FALSE)
+  if(length(unique(vapply(ordered,function(e)
+    as.character(e$queue_sha256),character(1))))!=1L)
+    stop("W07 completion has inconsistent queue identities",call.=FALSE)
+  payload <- list(schema="lem-w07-human-reviewed-subset-v1",
+    review_id=review_id,run_id=as.character(run_id),reviewer_id=user_id,
+    manifest=manifest,model_results=result$table,decision_events=ordered,
+    status="review_complete_not_published")
+  payload$sha256 <- digest::digest(jsonlite::toJSON(payload,auto_unbox=TRUE,
+    null="null",dataframe="rows"),algo="sha256",serialize=FALSE)
+  payload
+}
