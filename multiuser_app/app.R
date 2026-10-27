@@ -6172,7 +6172,11 @@ server <- function(input, output, session) {
     }
     ds[[key]] <- proposed
     w07_review_decisions(ds)
-    w07_review_events_rv(c(w07_review_events_rv(),list(saved)))
+    active <- Filter(function(e)
+      !(identical(as.character(e$record_id),as.character(saved$record_id)) &&
+        identical(as.character(e$user_id),as.character(saved$user_id))),
+      w07_review_events_rv())
+    w07_review_events_rv(c(active,list(saved)))
     w07_review_legacy_rv(FALSE)
     showNotification("W07 decision saved to Google Sheets.",type="message")
     w07_review_step(1L)
