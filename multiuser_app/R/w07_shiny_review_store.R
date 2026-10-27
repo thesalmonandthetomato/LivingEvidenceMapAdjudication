@@ -1,62 +1,66 @@
-# Durable, append-only W07 experimental review events in the review's restricted Zenodo draft.
-# Separate from W04 screening and W08 final annotations.
-w07_review_event_files <- function(meta) {
-  dep <- w07_shiny_config_deposit(meta)
-  if(is.null(dep))stop("W07 review storage has not been configured",call.=FALSE)
-  fs <- Filter(function(f)grepl("^w07-review-[0-9]+-[A-Za-z0-9_-]+-[0-9a-f]{32}\\.json$",
-    as.character(f$filename %||% "")),dep$files %||% list())
-  list(deposit=dep,files=fs)
+# W07 experimental review decisions: append-only Google Sheets event ledger.
+# One read on trial open; one append per save; no Sheets calls on navigation.
+# This store is isolated from W04 screening and W08 production annotation.
+w07_review_tab <- function() "w07_coding_decision_events"
+w07_review_fields <- c("event_id","review_id","run_id","record_id","user_id",
+  "codes","relevance","reason","timestamp","ontology_sha","prompt_sha")
+
+w07_review_sheet <- function(meta,create=FALSE) {
+  gs4_auth_from_env()
+  ss <- meta$sheet_id
+  tab <- w07_review_tab()
+  if(!tab %in% sheet_names_cached(ss)) {
+    if(!create)return(FALSE)
+    blank <- as.data.frame(setNames(replicate(length(w07_review_fields),
+      character(),simplify=FALSE),w07_review_fields),stringsAsFactors=FALSE)
+    googlesheets4::sheet_write(blank,ss=ss,sheet=tab)
+    invalidate_sheet_names_cache(ss)
+  }
+  TRUE
 }
 w07_review_events <- function(meta,run_id) {
   id <- as.character(run_id)
-  if(!grepl("^[0-9]+$",id))stop("Invalid W07 run ID",call.=FALSE)
-  fs <- w07_review_event_files(meta)$files
-  fs <- Filter(function(f)startsWith(as.character(f$filename),paste0("w07-review-",id,"-")),fs)
-  token <- Sys.getenv("ZENODO_ACCESS_TOKEN",unset="")
-  events <- lapply(fs,function(f) {
-    url <- as.character(f$links$download %||% "")
-    if(!startsWith(url,"https://zenodo.org/"))
-      stop("Untrusted W07 decision download URL",call.=FALSE)
-    req <- httr2::req_auth_bearer_token(httr2::request(url),token)
-    obj <- jsonlite::fromJSON(httr2::resp_body_string(httr2::req_perform(
-      httr2::req_timeout(req,90))),simplifyVector=FALSE)
-    if(!identical(obj$schema,"lem-w07-experimental-decision-v1")||
-       !identical(obj$review_id,meta$review_id)||
-       !identical(as.character(obj$run_id),id))
-      stop("W07 review event scope mismatch",call.=FALSE)
-    obj
-  })
-  events[order(vapply(events,function(e)as.character(e$timestamp),character(1)))]
+  if(length(id)!=1L||!grepl("^[0-9]+$",id))
+    stop("Invalid W07 run ID",call.=FALSE)
+  if(!w07_review_sheet(meta,create=FALSE))return(list())
+  rows <- as.data.frame(googlesheets4::read_sheet(meta$sheet_id,
+    sheet=w07_review_tab(),col_types="c"),stringsAsFactors=FALSE)
+  if(!all(w07_review_fields %in% names(rows)))
+    stop("W07 decision ledger schema mismatch",call.=FALSE)
+  rows <- rows[!is.na(rows$review_id)&rows$review_id==meta$review_id&
+    !is.na(rows$run_id)&rows$run_id==id,,drop=FALSE]
+  out <- lapply(seq_len(nrow(rows)),function(i)as.list(rows[i,,drop=FALSE]))
+  if(length(out))out <- out[order(vapply(out,function(e)
+    as.character(e$timestamp),character(1)))]
+  out
 }
-w07_review_save <- function(meta,run_id,record_id,user_id,codes,relevance,reason) {
+w07_review_save <- function(meta,run_id,record_id,user_id,codes,relevance,reason,
+                            ontology_sha="",prompt_sha="") {
   id <- as.character(run_id)
-  if(!grepl("^[0-9]+$",id))stop("Invalid W07 run ID",call.=FALSE)
+  if(length(id)!=1L||!grepl("^[0-9]+$",id))
+    stop("Invalid W07 run ID",call.=FALSE)
   if(!nzchar(record_id)||!nzchar(user_id)||!nzchar(trimws(reason)))
     stop("Record, reviewer and justification are required",call.=FALSE)
-  if(!relevance %in% c("CODED_IN_SCOPE","IN_SCOPE_ONTOLOGY_GAP","OUT_OF_SCOPE","INSUFFICIENT_INFORMATION"))
+  if(length(codes)!=1L||length(reason)!=1L||nchar(codes)>4000L||nchar(reason)>10000L)
+    stop("Invalid W07 review content",call.=FALSE)
+  if(!relevance %in% c("CODED_IN_SCOPE","IN_SCOPE_ONTOLOGY_GAP",
+                        "OUT_OF_SCOPE","INSUFFICIENT_INFORMATION"))
     stop("Invalid W07 relevance decision",call.=FALSE)
-  if(nchar(codes)>4000||nchar(reason)>10000)stop("W07 review content too long",call.=FALSE)
-  storage <- w07_review_event_files(meta)
-  dep <- storage$deposit
+  for(sha in c(ontology_sha,prompt_sha))
+    if(nzchar(sha)&&!grepl("^[a-f0-9]{64}$",sha))
+      stop("Invalid W07 configuration version",call.=FALSE)
+  w07_review_sheet(meta,create=TRUE)
   stamp <- format(Sys.time(),"%Y-%m-%dT%H:%M:%OS6Z",tz="UTC")
-  salt <- paste(meta$review_id,id,record_id,user_id,stamp,runif(1),sep="|")
-  suffix <- substr(digest::digest(salt,algo="sha256"),1,32)
-  filename <- paste0("w07-review-",id,"-",substr(digest::digest(record_id,algo="sha256"),1,16),"-",suffix,".json")
-  event <- list(schema="lem-w07-experimental-decision-v1",review_id=meta$review_id,
-    run_id=id,record_id=record_id,user_id=user_id,codes=codes,
-    relevance=relevance,reason=reason,timestamp=stamp,event_id=suffix)
-  file <- tempfile(fileext=".json")
-  on.exit(unlink(file),add=TRUE)
-  jsonlite::write_json(event,file,auto_unbox=TRUE,pretty=TRUE)
-  bucket <- as.character(dep$links$bucket %||% "")
-  if(!startsWith(bucket,"https://zenodo.org/api/files/"))
-    stop("Untrusted W07 decision storage",call.=FALSE)
-  w04_prompt_zenodo_request(paste0(sub("/$","",bucket),"/",filename),
-    "PUT",file=file,expected=c(200L,201L))
-  fresh <- w07_review_event_files(meta)$files
-  if(sum(vapply(fresh,function(f)identical(as.character(f$filename),filename),
-                 logical(1)))!=1L)stop("W07 decision could not be verified after save",call.=FALSE)
-  invisible(event)
+  event_id <- digest::digest(paste(meta$review_id,id,record_id,user_id,stamp,
+    stats::runif(1),sep="|"),algo="sha256")
+  row <- data.frame(event_id=event_id,review_id=meta$review_id,run_id=id,
+    record_id=record_id,user_id=user_id,codes=codes,relevance=relevance,
+    reason=reason,timestamp=stamp,ontology_sha=ontology_sha,
+    prompt_sha=prompt_sha,stringsAsFactors=FALSE)
+  # A successful append is acknowledged without an expensive verification read.
+  # On an ambiguous network failure, stop rather than automatically retry the write.
+  googlesheets4::sheet_append(meta$sheet_id,sheet=w07_review_tab(),data=row)
+  invisible(as.list(row[1L,,drop=FALSE]))
 }
 w07_review_latest <- function(events) {
   if(!length(events))return(list())
