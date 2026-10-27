@@ -72,7 +72,7 @@ w07_review_save <- function(meta,run_id,record_id,user_id,codes,relevance,reason
   if(length(codes)!=1L||length(reason)!=1L||nchar(codes)>4000L||nchar(reason)>10000L)
     stop("Invalid W07 review content",call.=FALSE)
   if(!relevance %in% c("CODED_IN_SCOPE","IN_SCOPE_ONTOLOGY_GAP",
-                        "OUT_OF_SCOPE","INSUFFICIENT_INFORMATION"))
+                        "INSUFFICIENT_INFORMATION"))
     stop("Invalid W07 relevance decision",call.=FALSE)
   for(sha in c(ontology_sha,prompt_sha))
     if(nzchar(sha)&&!grepl("^[a-f0-9]{64}$",sha))
