@@ -64,4 +64,17 @@ pending <- fixture
 pending$table <- rbind(pending$table,data.frame(record_id="record2",title="U"))
 stopifnot(inherits(try(w07_review_consolidate(pending,list(completed),
   "review-test","123","reviewer"),silent=TRUE),"try-error"))
+# Two different assigned reviewers may contribute non-overlapping decisions.
+other <- completed
+other$event_id <- "reviewed2"
+other$record_id <- "record2"
+other$user_id <- "second-reviewer"
+multi_result <- w07_review_consolidate(pending,list(completed,other),
+  "review-test","123","administrator")
+stopifnot(length(multi_result$decision_events)==2L,
+  identical(multi_result$completed_by,"administrator"))
+overlap <- other
+overlap$record_id <- "record1"
+stopifnot(inherits(try(w07_review_consolidate(fixture,list(completed,overlap),
+  "review-test","123","administrator"),silent=TRUE),"try-error"))
 cat("PASS W07 review lineage validation\n")
