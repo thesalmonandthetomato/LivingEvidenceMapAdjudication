@@ -27,7 +27,7 @@ w07_review_events <- function(meta,run_id) {
   rows <- as.data.frame(googlesheets4::read_sheet(meta$sheet_id,
     sheet=w07_review_tab(),col_types="c"),stringsAsFactors=FALSE)
   if(!all(w07_review_fields %in% names(rows)))
-    stop("W07 decision ledger schema mismatch",call.=FALSE)
+    stop("W07 decision ledger uses an older schema. Migration is required before saving new-format decisions; existing decisions are unchanged.",call.=FALSE)
   rows <- rows[!is.na(rows$review_id)&rows$review_id==meta$review_id&
     !is.na(rows$run_id)&rows$run_id==id,,drop=FALSE]
   out <- lapply(seq_len(nrow(rows)),function(i)as.list(rows[i,,drop=FALSE]))
