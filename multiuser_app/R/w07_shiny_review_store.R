@@ -24,6 +24,11 @@ w07_review_read_rows <- function(meta) {
   if(!w07_review_sheet(meta,create=FALSE))return(NULL)
   rows <- as.data.frame(googlesheets4::read_sheet(meta$sheet_id,
     sheet=w07_review_tab(),col_types="c"),stringsAsFactors=FALSE)
+  w07_review_normalise_rows(rows)
+}
+# Pure, non-mutating compatibility adapter: old Sheets retain their original
+# eleven decision cells until the header-only expansion occurs on first save.
+w07_review_normalise_rows <- function(rows) {
   names_now <- names(rows)
   if(identical(names_now,w07_review_legacy_fields)) {
     for(field in setdiff(w07_review_fields,names_now))
