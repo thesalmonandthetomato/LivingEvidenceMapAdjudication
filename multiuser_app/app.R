@@ -6866,7 +6866,7 @@ server <- function(input, output, session) {
               downloadButton("w07_results_csv","Download readable W07 CSV"),
               tags$div(style="max-height:520px;overflow:auto;",
                 tableOutput("w07_results_table")),
-              actionButton("w07_open_review","Open W07 coding adjudication",class="btn-outline-primary")),
+              actionButton("w07_open_review","Open W07 coding adjudication",class="btn-outline-primary"))),
             tabPanel("W08",uiOutput("w08_admin_controls")),
             tabPanel("System",uiOutput("system_admin_controls"))
           )
