@@ -47,4 +47,21 @@ stopifnot(identical(names(w07_review_normalise_rows(adapted)),w07_review_fields)
 bad_rows <- before
 names(bad_rows)[[2L]] <- "incorrect_review"
 stopifnot(inherits(try(w07_review_normalise_rows(bad_rows),silent=TRUE),"try-error"))
+# Controlled completion requires all records and consistent provenance.
+sha_a <- paste(rep("a",64),collapse="")
+sha_b <- paste(rep("b",64),collapse="")
+sha_c <- paste(rep("c",64),collapse="")
+completed <- list(event_id="reviewed1",record_id="record1",
+  run_id="123",review_id="review-test",user_id="reviewer",
+  ontology_sha=sha_a,prompt_sha=sha_b,queue_sha256=sha_c,
+  relevance="IN_SCOPE_ONTOLOGY_GAP",supersedes_event_id="",version="1")
+fixture <- list(table=data.frame(record_id="record1",title="T",stringsAsFactors=FALSE),
+  manifest=list(ontology_sha256=sha_a,prompt_sha256=sha_b))
+done <- w07_review_consolidate(fixture,list(completed),"review-test","123","reviewer")
+stopifnot(identical(done$status,"review_complete_not_published"),
+  grepl("^[a-f0-9]{64}$",done$sha256))
+pending <- fixture
+pending$table <- rbind(pending$table,data.frame(record_id="record2",title="U"))
+stopifnot(inherits(try(w07_review_consolidate(pending,list(completed),
+  "review-test","123","reviewer"),silent=TRUE),"try-error"))
 cat("PASS W07 review lineage validation\n")
