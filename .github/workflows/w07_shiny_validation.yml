@@ -9,6 +9,7 @@ on:
       - 'multiuser_app/R/w07_shiny_subset_dispatch.R'
       - 'multiuser_app/R/w07_shiny_results.R'
       - 'multiuser_app/R/w07_shiny_review_store.R'
+      - 'multiuser_app/R/w07_shiny_handoff.R'
       - 'multiuser_app/app.R'
       - 'multiuser_app/tests/test_w07_review_lineage.R'
       - 'multiuser_app/tests/test_w07_shiny_configuration.R'
@@ -36,6 +37,7 @@ jobs:
           parse(file="multiuser_app/R/w07_shiny_subset_dispatch.R")
           parse(file="multiuser_app/R/w07_shiny_results.R")
           parse(file="multiuser_app/R/w07_shiny_review_store.R")
+          parse(file="multiuser_app/R/w07_shiny_handoff.R")
           parse(file="multiuser_app/app.R")
       - name: Test W07 offline configuration contract
         shell: Rscript {0}
