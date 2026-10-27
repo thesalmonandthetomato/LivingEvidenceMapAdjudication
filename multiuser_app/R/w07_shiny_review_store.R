@@ -98,7 +98,8 @@ w07_review_save <- function(meta,run_id,record_id,user_id,codes,relevance,reason
     stop("Prior W07 decision belongs to another record or queue",call.=FALSE)
   prior_version <- if(is.null(prior_decision))0L else
     suppressWarnings(as.integer(prior_decision$version %||% NA_integer_))
-  if(is.na(prior_version) && isTRUE(legacy_header))prior_version <- 1L
+  if(is.na(prior_version) && !is.null(prior_decision) &&
+     !nzchar(as.character(prior_decision$version %||% "")))prior_version <- 1L
   version <- prior_version+1L
   if(is.na(version)||version<1L)stop("Invalid W07 decision revision",call.=FALSE)
   supersedes <- if(is.null(prior_decision))"" else as.character(prior_decision$event_id)
