@@ -3197,6 +3197,21 @@ server <- function(input, output, session) {
               }
             )
           ),
+          div(class="col-12 col-lg-6",
+            stage_card(
+              "Topic-coding adjudication",
+              "Workflow 07",
+              "Review experimental topic assignments without changing W04 inclusion.",
+              if(is.null(w07_results_rv())) "—" else nrow(w07_results_rv()$table),
+              if(is.null(w07_results_rv())) "—" else length(w07_review_decisions()),
+              if(is.null(w07_results_rv())) "—" else
+                max(0L,nrow(w07_results_rv()$table)-length(w07_review_decisions())),
+              if(!is.null(w07_results_rv())) "open_w07_review" else NULL,
+              "Continue topic coding",w07_review_loaded_run_rv(),"experimental",
+              can_open=!is.null(w07_results_rv()),
+              idle_text="Load a W07 trial under Administration → W07 first"
+            )
+          ),
           div(
             class = "col-12 col-lg-6",
             stage_card(
@@ -5962,6 +5977,10 @@ server <- function(input, output, session) {
     }
   )
 
+  observeEvent(input$open_w07_review,{
+    req(authenticated())
+    if(!is.null(w07_results_rv())) app_view("w07_review")
+  })
   observeEvent(input$w07_open_review,{
     req(authenticated())
     if(is.null(w07_results_rv())) {
