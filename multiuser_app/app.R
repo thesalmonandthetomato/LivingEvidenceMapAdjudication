@@ -6810,7 +6810,7 @@ server <- function(input, output, session) {
               textAreaInput("w07_review_codes","Accepted topic codes (comma-separated)",rows=2),
               selectInput("w07_review_relevance","Relevance decision",
                 choices=c("In scope"="CODED_IN_SCOPE","In scope, ontology gap"="IN_SCOPE_ONTOLOGY_GAP",
-                  "Out of scope"="OUT_OF_SCOPE","Insufficient information"="INSUFFICIENT_INFORMATION")),
+                  "Insufficient information"="INSUFFICIENT_INFORMATION")),
               textAreaInput("w07_review_reason","Review rationale",rows=2),
               actionButton("w07_review_save","Save review and next"),
               actionButton("w07_review_previous","Previous"),
