@@ -15,4 +15,9 @@ legacy <- list(make_event("a","",parent=""),make_event("b",2,"a"))
 stopifnot(length(w07_review_latest(legacy))==1L)
 competing_first <- list(make_event("a",1),make_event("b",1))
 stopifnot(inherits(try(w07_review_latest(competing_first),silent=TRUE),"try-error"))
+# An included W04 record must not be excluded by the W07 coding editor.
+blocked <- try(w07_review_save(list(review_id="fixture",sheet_id="fixture"),
+  "123","record1","reviewer","","OUT_OF_SCOPE","Model suspects mismatch"),silent=TRUE)
+stopifnot(inherits(blocked,"try-error"),
+  grepl("Invalid W07 relevance decision",as.character(blocked),fixed=TRUE))
 cat("PASS W07 review lineage validation\n")
