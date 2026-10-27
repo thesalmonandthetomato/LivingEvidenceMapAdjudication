@@ -6,6 +6,7 @@ w07_review_fields <- c("event_id","review_id","run_id","record_id","user_id",
   "codes","relevance","reason","timestamp","ontology_sha","prompt_sha",
   "case_sha256","queue_sha256","version","supersedes_event_id")
 
+w07_review_legacy_fields <- w07_review_fields[seq_len(11L)]
 w07_review_sheet <- function(meta,create=FALSE) {
   gs4_auth_from_env()
   ss <- meta$sheet_id
@@ -19,21 +20,44 @@ w07_review_sheet <- function(meta,create=FALSE) {
   }
   TRUE
 }
+w07_review_read_rows <- function(meta) {
+  if(!w07_review_sheet(meta,create=FALSE))return(NULL)
+  rows <- as.data.frame(googlesheets4::read_sheet(meta$sheet_id,
+    sheet=w07_review_tab(),col_types="c"),stringsAsFactors=FALSE)
+  names_now <- names(rows)
+  if(identical(names_now,w07_review_legacy_fields)) {
+    for(field in setdiff(w07_review_fields,names_now))
+      rows[[field]] <- rep("",nrow(rows))
+    attr(rows,"legacy_header") <- TRUE
+  } else if(!identical(names_now,w07_review_fields)) {
+    stop("Unrecognised W07 decision ledger schema; no data were modified",call.=FALSE)
+  }
+  rows
+}
 w07_review_events <- function(meta,run_id) {
   id <- as.character(run_id)
   if(length(id)!=1L||!grepl("^[0-9]+$",id))
     stop("Invalid W07 run ID",call.=FALSE)
-  if(!w07_review_sheet(meta,create=FALSE))return(list())
-  rows <- as.data.frame(googlesheets4::read_sheet(meta$sheet_id,
-    sheet=w07_review_tab(),col_types="c"),stringsAsFactors=FALSE)
-  if(!all(w07_review_fields %in% names(rows)))
-    stop("W07 decision ledger uses an older schema. Migration is required before saving new-format decisions; existing decisions are unchanged.",call.=FALSE)
+  rows <- w07_review_read_rows(meta)
+  if(is.null(rows))return(list())
   rows <- rows[!is.na(rows$review_id)&rows$review_id==meta$review_id&
     !is.na(rows$run_id)&rows$run_id==id,,drop=FALSE]
   out <- lapply(seq_len(nrow(rows)),function(i)as.list(rows[i,,drop=FALSE]))
   if(length(out))out <- out[order(vapply(out,function(e)
-    as.character(e$timestamp),character(1)))]
+    as.character(e$timestamp),character(1)),seq_along(out))]
   out
+}
+# Safe additive migration: extend only the header; no decision row is rewritten.
+# The caller must pass its single batch read to avoid a second read on save.
+w07_review_ensure_schema <- function(meta,legacy_header=FALSE) {
+  w07_review_sheet(meta,create=TRUE)
+  if(isTRUE(legacy_header)) {
+    googlesheets4::range_write(meta$sheet_id,
+      data=as.data.frame(as.list(stats::setNames(w07_review_fields,w07_review_fields)),
+        stringsAsFactors=FALSE)[0,,drop=FALSE],
+      sheet=w07_review_tab(),range="A1:O1",col_names=TRUE)
+  }
+  invisible(TRUE)
 }
 w07_review_save <- function(meta,run_id,record_id,user_id,codes,relevance,reason,
                             ontology_sha="",prompt_sha="",case_sha256="",
