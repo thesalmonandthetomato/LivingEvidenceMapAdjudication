@@ -2166,6 +2166,8 @@ server <- function(input, output, session) {
     add("04","manual_screening",w04_batch_id_rv(),w04_all_cases_rv(),w04_decisions())
     add("04","conflict_resolution",w04_active_conflict_batch_id(),w04_all_conflict_cases(),w04_conflict_decisions())
     add("04","model_uncertainty",w04_resolution_batch_id_rv(),w04_resolution_all_cases_rv(),w04_resolution_decisions())
+    add("07","topic_coding",w07_review_loaded_run_rv(),
+        w07_assignment_cases(),w07_assignment_events())
     add("08","annotation",w08_batch_id_rv(),w08_all_cases_rv(),w08_decisions())
     out
   }
@@ -9153,6 +9155,8 @@ server <- function(input, output, session) {
     has_w04_batch <- nzchar(as.character(w04_batch_id_rv())) && length(w04_all_cases_rv()) > 0L
     has_w04_resolution_batch <- nzchar(as.character(w04_resolution_batch_id_rv())) && length(w04_resolution_all_cases_rv()) > 0L
     has_w04_conflict_batch <- nzchar(as.character(w04_active_conflict_batch_id())) && length(w04_all_conflict_cases()) > 0L
+    has_w07_batch <- nzchar(as.character(w07_review_loaded_run_rv())) &&
+      length(w07_assignment_cases())>0L
     has_w08_batch <- nzchar(as.character(w08_batch_id_rv())) && length(w08_all_cases_rv()) > 0L
     task_labels <- c(
       deduplication = "Deduplication",
@@ -9161,12 +9165,14 @@ server <- function(input, output, session) {
       manual_screening = "Manual screening",
       model_uncertainty = "Model uncertainty",
       conflict_resolution = "Conflict resolution",
-      annotation = "Annotation"
+      annotation = "Annotation",
+      topic_coding = "Topic coding"
     )
     workflow_labels_admin <- c(
       "01" = "W01",
       "02" = "W02",
       "04" = "W04",
+      "07" = "W07",
       "08" = "W08"
     )
     mode_labels <- c(
@@ -9205,6 +9211,9 @@ server <- function(input, output, session) {
       if (identical(workflow, "04") && identical(task_type, "conflict_resolution")) {
         return(if (has_w04_conflict_batch) as.character(w04_active_conflict_batch_id()) else "")
       }
+      if (identical(workflow, "07") && identical(task_type, "topic_coding")) {
+        return(if(has_w07_batch)as.character(w07_review_loaded_run_rv()) else "")
+      }
       if (identical(workflow, "08") && identical(task_type, "annotation")) {
         return(if (has_w08_batch) as.character(w08_batch_id_rv()) else "")
       }
@@ -9223,7 +9232,7 @@ server <- function(input, output, session) {
     # workflow. W04 historical subsets can otherwise cause repeated Sheets
     # reads even when the user is administering W01, W02 or W08.
     active_scope <- switch(as.character(input$configure_workflow_tab %||% ""),
-      W01="01",W02="02",W04="04",W08="08",System="")
+      W01="01",W02="02",W04="04",W07="07",W08="08",System="")
     grouped <- Filter(function(a) {
       if(!length(a))return(FALSE)
       identical(normalise_assignment_row(a[[1L]])$workflow,active_scope)
@@ -9273,6 +9282,10 @@ server <- function(input, output, session) {
         identical(z$task_type, "conflict_resolution") &&
         identical(z$batch_id, w04_active_conflict_batch_id())
       ) return(w04_conflict_decisions())
+      if (identical(z$workflow,"07") &&
+          identical(z$task_type,"topic_coding") &&
+          identical(z$batch_id,w07_review_loaded_run_rv()))
+        return(w07_assignment_events())
       if (
         identical(z$workflow, "08") &&
         identical(z$task_type, "annotation") &&
@@ -9358,6 +9371,11 @@ server <- function(input, output, session) {
       ASSIGNMENT_MODES[["single_reviewer"]]
     )
     add_empty_group(
+      "07","topic_coding",
+      if(has_w07_batch)w07_review_loaded_run_rv() else "no-active-queue",
+      ASSIGNMENT_MODES[["single_reviewer"]]
+    )
+    add_empty_group(
       "08","annotation",
       if (has_w08_batch) w08_batch_id_rv() else "no-active-queue",
       ASSIGNMENT_MODES[["shared_work_pool"]]
@@ -9376,6 +9394,7 @@ server <- function(input, output, session) {
         manual_screening=1L,
         conflict_resolution=2L,
         model_uncertainty=3L,
+        topic_coding=1L,
         annotation=1L
       )
       task_order <- vapply(
@@ -9448,6 +9467,14 @@ server <- function(input, output, session) {
         list(prefix="w04conflict", workflow="04", task_type="conflict_resolution", batch_id=w04_active_conflict_batch_id(),
              events=w04_conflict_decisions(), label="W04 conflict")
       } else if (
+        identical(z$workflow,"07") &&
+        identical(z$task_type,"topic_coding") &&
+        identical(z$batch_id,w07_review_loaded_run_rv())
+      ) {
+        list(prefix="w07",workflow="07",task_type="topic_coding",
+          batch_id=w07_review_loaded_run_rv(),
+          events=w07_assignment_events(),label="W07 topic coding")
+      } else if (
         identical(z$workflow, "08") &&
         identical(z$task_type, "annotation") &&
         identical(z$batch_id, w08_batch_id_rv())
@@ -9507,6 +9534,11 @@ server <- function(input, output, session) {
             tags$div(class = "text-secondary small mb-2", "No active W04 conflict-resolution queue is loaded.")
           ))
         }
+        if (identical(z$workflow,"07") &&
+            identical(z$task_type,"topic_coding") &&
+            identical(z$batch_id,"no-active-queue"))
+          return(tags$p(class="saved-note",
+            "No W07 trial loaded. Load a successful run from W07 configuration to assign reviewers."))
         if (
           identical(z$workflow, "08") &&
           identical(z$task_type, "annotation") &&
@@ -11665,6 +11697,25 @@ server <- function(input, output, session) {
       w04_active_conflict_batch_id(),
       "conflict_resolution"
     )
+  })
+
+  w07_assignment_plan <- reactive({
+    req(authenticated())
+    workflow_assignment_plan("w07",w07_assignment_cases(),
+      w07_assignment_events(),"07",w07_review_loaded_run_rv(),"topic_coding")
+  })
+  output$w07_assignment_preview <- renderUI({
+    req(authenticated())
+    workflow_assignment_preview(w07_assignment_plan(),"w07","07",
+      w07_review_loaded_run_rv(),"topic_coding",w07_assignment_events())
+  })
+  output$w07_assignment_status <- renderText(assignment_manage_status())
+  observeEvent(input$w07_apply_assignments,{
+    apply_workflow_assignments(w07_assignment_plan())
+  })
+  observeEvent(input$w07_remove_assignments,{
+    remove_workflow_user_assignments(input$w07_remove_assignment_user,
+      w07_assignment_events(),"07",w07_review_loaded_run_rv(),"topic_coding")
   })
 
   w08_assignment_plan <- reactive({
