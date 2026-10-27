@@ -140,6 +140,11 @@ w07_review_validate_history <- function(events) {
       stop("W07 review history has duplicate event identifiers",call.=FALSE)
     children <- vapply(chain,function(e)as.character(e$supersedes_event_id %||% ""),character(1))
     parents <- children[nzchar(children)]
+    # Two simultaneous first saves have no common predecessor. Treat these
+    # as a conflict rather than silently choosing whichever row was appended last.
+    # Historical unversioned roots also require explicit reconciliation.
+    if(sum(!nzchar(children)) != 1L)
+      stop("Conflicting W07 root decisions detected; administrator reconciliation required",call.=FALSE)
     if(anyDuplicated(parents))
       stop("Conflicting W07 revisions detected; administrator reconciliation required",call.=FALSE)
     ids <- vapply(chain,function(e)as.character(e$event_id),character(1))
