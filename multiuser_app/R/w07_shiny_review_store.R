@@ -103,6 +103,18 @@ w07_review_save <- function(meta,run_id,record_id,user_id,codes,relevance,reason
   version <- prior_version+1L
   if(is.na(version)||version<1L)stop("Invalid W07 decision revision",call.=FALSE)
   supersedes <- if(is.null(prior_decision))"" else as.character(prior_decision$event_id)
+  # An optimistic concurrency check applies only when revising a decision.
+  # It costs one read for revisions; first decisions still require only an append.
+  if(!is.null(prior_decision)) {
+    current <- w07_review_events(meta,id)
+    mine <- Filter(function(e)
+      identical(as.character(e$record_id),record_id) &&
+      identical(as.character(e$user_id),user_id),current)
+    latest <- if(length(mine))mine[[length(mine)]] else NULL
+    if(is.null(latest) ||
+       !identical(as.character(latest$event_id),as.character(prior_decision$event_id)))
+      stop("Another session changed this decision. Reload the trial before saving.",call.=FALSE)
+  }
   w07_review_ensure_schema(meta,legacy_header=legacy_header)
   stamp <- format(Sys.time(),"%Y-%m-%dT%H:%M:%OS6Z",tz="UTC")
   event_id <- digest::digest(paste(meta$review_id,id,record_id,user_id,stamp,
@@ -117,8 +129,32 @@ w07_review_save <- function(meta,run_id,record_id,user_id,codes,relevance,reason
   googlesheets4::sheet_append(meta$sheet_id,sheet=w07_review_tab(),data=row)
   invisible(as.list(row[1L,,drop=FALSE]))
 }
+# Explicitly detect revision forks during recovery: Google Sheets cannot offer
+# an atomic compare-and-swap, so competing appends must never resolve silently.
+w07_review_validate_history <- function(events) {
+  if(!length(events))return(invisible(TRUE))
+  keys <- vapply(events,function(e)paste(e$record_id,e$user_id,sep="|"),character(1))
+  for(key in unique(keys)) {
+    chain <- events[keys==key]
+    if(anyDuplicated(vapply(chain,function(e)as.character(e$event_id),character(1))))
+      stop("W07 review history has duplicate event identifiers",call.=FALSE)
+    children <- vapply(chain,function(e)as.character(e$supersedes_event_id %||% ""),character(1))
+    parents <- children[nzchar(children)]
+    if(anyDuplicated(parents))
+      stop("Conflicting W07 revisions detected; administrator reconciliation required",call.=FALSE)
+    ids <- vapply(chain,function(e)as.character(e$event_id),character(1))
+    if(any(!parents %in% ids))
+      stop("W07 revision history has a missing predecessor",call.=FALSE)
+    versions <- suppressWarnings(as.integer(vapply(chain,function(e)
+      as.character(e$version %||% ""),character(1))))
+    if(all(is.finite(versions)) && anyDuplicated(versions))
+      stop("Conflicting W07 decision versions detected",call.=FALSE)
+  }
+  invisible(TRUE)
+}
 w07_review_latest <- function(events) {
   if(!length(events))return(list())
+  w07_review_validate_history(events)
   keys <- vapply(events,function(e)paste(e$record_id,e$user_id,sep="|"),character(1))
   events[!duplicated(keys,fromLast=TRUE)]
 }
