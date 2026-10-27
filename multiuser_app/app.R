@@ -27,6 +27,7 @@ source("R/w07_shiny_prepare_dispatch.R", local = TRUE)
 source("R/w07_shiny_configuration.R", local = TRUE)
 source("R/w07_shiny_subset_dispatch.R", local = TRUE)
 source("R/w07_shiny_results.R", local = TRUE)
+source("R/w07_shiny_review_store.R", local = TRUE)
 source("R/w05_shiny_subset_dispatch.R", local = TRUE)
 source("R/w05_shiny_subset_results.R", local = TRUE)
 source("R/w04_workspace_overview.R", local = TRUE)
@@ -5882,9 +5883,22 @@ server <- function(input, output, session) {
       w07_results_rv(NULL)
       w07_results_status_rv(paste("W07 results could not be loaded:",conditionMessage(result)))
     } else {
+      meta <- tryCatch(w04_prompt_review_metadata(),error=function(e)e)
+      events <- if(inherits(meta,"error"))meta else
+        tryCatch(w07_review_events(meta,run_id),error=function(e)e)
+      if(inherits(events,"error")) {
+        w07_results_rv(NULL)
+        w07_results_status_rv(paste("W07 decisions could not be restored:",conditionMessage(events)))
+        return()
+      }
       w07_results_rv(result)
+      w07_review_decisions(setNames(lapply(w07_review_latest(events),function(e)
+        list(record_id=e$record_id,codes=e$codes,relevance=e$relevance,
+             reason=e$reason,run_id=e$run_id)),
+        vapply(w07_review_latest(events),function(e)as.character(e$record_id),character(1))))
       w07_results_status_rv(paste("Loaded",nrow(result$table),
-        "W07 records. These are experimental results, not final classifications."))
+        "W07 records and restored",length(w07_review_latest(events)),
+        "saved review decisions from restricted Zenodo."))
     }
   })
   output$w07_results_status <- renderText(w07_results_status_rv())
@@ -5906,7 +5920,6 @@ server <- function(input, output, session) {
   w07_review_decisions <- reactiveVal(list())
   observeEvent(w07_results_rv(),{
     w07_review_idx(1L)
-    w07_review_decisions(list())
   })
   w07_review_row <- reactive({
     result <- w07_results_rv()
@@ -5949,7 +5962,16 @@ server <- function(input, output, session) {
     ds[[key]] <- list(record_id=key,codes=trimws(input$w07_review_codes %||% ""),
       relevance=input$w07_review_relevance,reason=reason,
       run_id=trimws(input$w07_results_run %||% ""))
+    saved <- tryCatch(w07_review_save(w04_prompt_review_metadata(),
+      trimws(input$w07_results_run %||% ""),key,session_reviewer_id(),
+      ds[[key]]$codes,ds[[key]]$relevance,ds[[key]]$reason),error=function(e)e)
+    if(inherits(saved,"error")) {
+      showNotification(paste("Review was not saved:",conditionMessage(saved)),
+                       type="error",duration=NULL)
+      return()
+    }
     w07_review_decisions(ds)
+    showNotification("W07 decision saved and verified in Zenodo.",type="message")
     if(w07_review_idx()<nrow(w07_results_rv()$table))w07_review_idx(w07_review_idx()+1L)
   })
   observeEvent(input$w07_review_previous,{
@@ -5960,7 +5982,7 @@ server <- function(input, output, session) {
       w07_review_idx(w07_review_idx()+1L)
   })
   output$w07_review_progress <- renderText({
-    paste(length(w07_review_decisions()),"records reviewed (session only)")
+    paste(length(w07_review_decisions()),"records reviewed and saved")
   })
   output$w07_review_export <- downloadHandler(
     filename=function()paste0("w07-review-",input$w07_results_run %||% "trial",".csv"),
@@ -6713,7 +6735,7 @@ server <- function(input, output, session) {
               tags$div(style="max-height:520px;overflow:auto;",
                 tableOutput("w07_results_table")),
               tags$h6("W07 coding review (experimental)"),
-              tags$p(class="saved-note","Review proposed codes and relevance for each record. Decisions remain separate from W04 and W08. Export the review ledger before leaving the session."),
+              tags$p(class="saved-note","Review proposed codes and relevance for each record. Each saved decision is archived and verified in review-specific Zenodo storage; return later using the same run ID."),
               uiOutput("w07_review_case"),
               textAreaInput("w07_review_codes","Accepted topic codes (comma-separated)",rows=2),
               selectInput("w07_review_relevance","Relevance decision",
@@ -6725,7 +6747,7 @@ server <- function(input, output, session) {
               actionButton("w07_review_next","Next"),
               textOutput("w07_review_progress"),
               downloadButton("w07_review_export","Export W07 review ledger"),
-              tags$p(class="saved-note","Experimental decisions are held only in this session and are not W08 final adjudications."))),
+              tags$p(class="saved-note","Saved decisions persist in restricted Zenodo. These are not W08 final adjudications."))),
             tabPanel("W08",uiOutput("w08_admin_controls")),
             tabPanel("System",uiOutput("system_admin_controls"))
           )
