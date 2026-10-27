@@ -3199,6 +3199,9 @@ server <- function(input, output, session) {
             )
           ),
           div(class="col-12 col-lg-6",
+            if(is.null(w07_results_rv()) && length(w07_assigned_runs())>1L)
+              selectInput("w07_assigned_run","Assigned W07 trial",
+                choices=stats::setNames(w07_assigned_runs(),w07_assigned_runs())),
             stage_card(
               "Topic-coding adjudication",
               "Workflow 07",
@@ -3207,10 +3210,10 @@ server <- function(input, output, session) {
               if(is.null(w07_results_rv())) "—" else w07_review_total_saved(),
               if(is.null(w07_results_rv())) "—" else
                 max(0L,nrow(w07_results_rv()$table)-w07_review_total_saved()),
-              if(!is.null(w07_results_rv())) "open_w07_review" else NULL,
+              if(!is.null(w07_results_rv())) "open_w07_review" else if(length(w07_assigned_runs())) "open_w07_assigned" else NULL,
               "Continue topic coding",w07_review_loaded_run_rv(),"experimental",
-              can_open=!is.null(w07_results_rv()),
-              idle_text="Load a W07 trial under Administration → W07 first"
+              can_open=!is.null(w07_results_rv()) || length(w07_assigned_runs())>0L,
+              idle_text="Load a W07 trial under Administration → W07 or open an assigned batch"
             )
           ),
           div(
@@ -5984,6 +5987,15 @@ server <- function(input, output, session) {
     }
   )
 
+  observeEvent(input$open_w07_assigned,{
+    req(authenticated())
+    batches <- w07_assigned_runs()
+    if(!length(batches))return()
+    selected <- as.character(input$w07_assigned_run %||% "")
+    if(!selected %in% batches)selected <- batches[[1L]]
+    w07_load_run(selected)
+    if(!is.null(w07_results_rv()))app_view("w07_review")
+  })
   observeEvent(input$open_w07_review,{
     req(authenticated())
     if(!is.null(w07_results_rv())) app_view("w07_review")
@@ -6003,6 +6015,35 @@ server <- function(input, output, session) {
   w07_review_legacy_rv <- reactiveVal(FALSE)
   w07_review_ontology_rv <- reactiveVal(character())
   w07_review_decisions <- reactiveVal(list())
+  w07_assigned_runs <- reactive({
+    uid <- as.character(session_reviewer_id() %||% "")
+    xs <- Filter(function(a) {
+      x <- normalise_assignment_row(a)
+      identical(x$workflow,"07") && identical(x$task_type,"topic_coding") &&
+        identical(x$user_id,uid) && !identical(x$status,"cancelled") &&
+        grepl("^[0-9]+$",x$batch_id)
+    },assignment_registry_rv() %||% list())
+    ids <- unique(vapply(xs,function(a)normalise_assignment_row(a)$batch_id,
+                         character(1)))
+    if(!length(ids))return(character())
+    ids[order(as.numeric(ids),decreasing=TRUE)]
+  })
+  w07_assignment_cases <- reactive({
+    x <- w07_results_rv()
+    if(is.null(x))return(list())
+    lapply(seq_len(nrow(x$table)),function(i) {
+      z <- as.list(x$table[i,,drop=FALSE])
+      z$case_id <- as.character(z$record_id)
+      z
+    })
+  })
+  w07_assignment_events <- reactive({
+    lapply(w07_review_events_rv(),function(x) {
+      x$decision <- "coded"
+      x
+    })
+  })
+
   w07_review_total_saved <- reactive({
     events <- w07_review_events_rv()
     if(!length(events))return(0L)
