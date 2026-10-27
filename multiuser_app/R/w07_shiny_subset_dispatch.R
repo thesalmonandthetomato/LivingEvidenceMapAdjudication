@@ -3,7 +3,7 @@ w07_shiny_subset_dispatch <- function(meta,ontology_receipt,prompt_receipt,n) {
   if(is.null(ontology_receipt)||is.null(prompt_receipt) ||
      !identical(ontology_receipt$type,"ontology") ||
      !identical(prompt_receipt$type,"prompt"))
-    stop("Both W07 ontology and prompt versions must be uploaded",call.=FALSE)
+    stop("Choose an archived W07 ontology and prompt",call.=FALSE)
   count <- suppressWarnings(as.integer(n))
   if(length(count)!=1L || is.na(count)||count<1L||count>30L)
     stop("W07 trial sizes must be between 1 and 30 records",call.=FALSE)
@@ -15,16 +15,10 @@ w07_shiny_subset_dispatch <- function(meta,ontology_receipt,prompt_receipt,n) {
     function(f)as.character(f$filename %||% ""),character(1))
   for(r in list(ontology_receipt,prompt_receipt)) {
     version <- paste0("w07-",r$type,"-",r$sha256,".json")
-    marker <- paste0("w07-approved-",r$type,"-",r$sha256,".json")
     if(!identical(r$filename,version) ||
        !grepl("^[a-f0-9]{64}$",r$sha256) ||
        sum(files==version)!=1L)
-      stop("W07 ",r$type," archived version is missing or invalid",call.=FALSE)
-    if(sum(files==marker)!=1L)
-      stop("W07 ",r$type," version ",substr(r$sha256,1L,12L),
-           " has not been approved in Zenodo. Select ",r$type,
-           " in 'Review uploaded version' and click 'Approve selected archived version'.",
-           call.=FALSE)
+      stop("W07 selected ",r$type," version is missing or invalid",call.=FALSE)
   }
   w05 <- w05_crop_draft_id(meta)
   if(!nzchar(w05))stop("W05 source is not registered",call.=FALSE)
