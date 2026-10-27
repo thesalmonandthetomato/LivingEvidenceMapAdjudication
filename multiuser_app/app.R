@@ -6052,19 +6052,46 @@ server <- function(input, output, session) {
     length(unique(vapply(events,function(e)
       as.character(e$record_id),character(1))))
   })
+  w07_review_visible_indices <- reactive({
+    result <- w07_results_rv()
+    if(is.null(result)||!nrow(result$table))return(integer())
+    if(session_can("manage_assignments"))return(seq_len(nrow(result$table)))
+    assigned <- assignments_for_user(assignment_registry_rv(),"07",
+      w07_review_loaded_run_rv(),session_reviewer_id(),"topic_coding")
+    if(!length(assigned))return(integer())
+    ids <- vapply(assigned,function(a)normalise_assignment_row(a)$case_id,
+                  character(1))
+    which(as.character(result$table$record_id) %in% ids)
+  })
+  w07_review_selected_idx <- reactive({
+    allowed <- w07_review_visible_indices()
+    if(!length(allowed))return(NA_integer_)
+    current <- w07_review_idx()
+    if(current %in% allowed)current else allowed[[1L]]
+  })
   observeEvent(w07_results_rv(),{
-    w07_review_idx(1L)
+    allowed <- w07_review_visible_indices()
+    w07_review_idx(if(length(allowed))allowed[[1L]] else 1L)
   })
   w07_review_row <- reactive({
     result <- w07_results_rv()
-    if(is.null(result)||!nrow(result$table))return(NULL)
-    i <- max(1L,min(w07_review_idx(),nrow(result$table)))
+    i <- w07_review_selected_idx()
+    if(is.null(result)||is.na(i))return(NULL)
     result$table[i,,drop=FALSE]
   })
+  w07_review_step <- function(direction) {
+    allowed <- w07_review_visible_indices()
+    if(!length(allowed))return(invisible(FALSE))
+    pos <- match(w07_review_selected_idx(),allowed)
+    if(is.na(pos))pos <- 1L
+    next_pos <- max(1L,min(length(allowed),pos+as.integer(direction)))
+    w07_review_idx(allowed[[next_pos]])
+    invisible(TRUE)
+  }
   output$w07_review_case <- renderUI({
     x <- w07_review_row()
-    if(is.null(x))return(tags$p("Load a W07 trial to review records."))
-    tags$div(tags$strong(paste("Record",w07_review_idx(),"of",nrow(w07_results_rv()$table))),
+    if(is.null(x))return(tags$p("No W07 cases are assigned to this reviewer."))
+    tags$div(tags$strong(paste("Assigned record",match(w07_review_selected_idx(),w07_review_visible_indices()),"of",length(w07_review_visible_indices()))),
       tags$p(tags$strong(as.character(x$title))),tags$p(as.character(x$abstract)),
       tags$p(paste("Model codes:",x$topic_codes,"| Relevance:",x$relevance_status)),
       tags$p(paste("Evidence:",x$evidence)),
@@ -6078,7 +6105,7 @@ server <- function(input, output, session) {
     updateTextAreaInput(session,"w07_review_codes",value=if(is.null(saved))as.character(x$topic_codes) else saved$codes)
     updateSelectInput(session,"w07_review_relevance",selected=if(is.null(saved)) {
       status <- as.character(x$relevance_status)
-      if(status %in% c("CODED_IN_SCOPE","IN_SCOPE_ONTOLOGY_GAP","OUT_OF_SCOPE","INSUFFICIENT_INFORMATION"))status else "CODED_IN_SCOPE"
+      if(status %in% c("CODED_IN_SCOPE","IN_SCOPE_ONTOLOGY_GAP","INSUFFICIENT_INFORMATION"))status else if(nzchar(as.character(x$topic_codes)))"CODED_IN_SCOPE" else "IN_SCOPE_ONTOLOGY_GAP"
     } else saved$relevance)
     updateTextAreaInput(session,"w07_review_reason",value=if(is.null(saved))"" else saved$reason)
   })
@@ -6148,15 +6175,10 @@ server <- function(input, output, session) {
     w07_review_events_rv(c(w07_review_events_rv(),list(saved)))
     w07_review_legacy_rv(FALSE)
     showNotification("W07 decision saved to Google Sheets.",type="message")
-    if(w07_review_idx()<nrow(w07_results_rv()$table))w07_review_idx(w07_review_idx()+1L)
+    w07_review_step(1L)
   })
-  observeEvent(input$w07_review_previous,{
-    if(w07_review_idx()>1L)w07_review_idx(w07_review_idx()-1L)
-  })
-  observeEvent(input$w07_review_next,{
-    if(!is.null(w07_results_rv())&&w07_review_idx()<nrow(w07_results_rv()$table))
-      w07_review_idx(w07_review_idx()+1L)
-  })
+  observeEvent(input$w07_review_previous,w07_review_step(-1L))
+  observeEvent(input$w07_review_next,w07_review_step(1L))
   output$w07_review_progress <- renderText({
     total <- if(is.null(w07_results_rv()))0L else nrow(w07_results_rv()$table)
     paste(w07_review_total_saved(),"of",total,"records reviewed across users;",
