@@ -5965,8 +5965,8 @@ server <- function(input, output, session) {
     saved <- tryCatch(w07_review_save(w04_prompt_review_metadata(),
       trimws(input$w07_results_run %||% ""),key,session_reviewer_id(),
       ds[[key]]$codes,ds[[key]]$relevance,ds[[key]]$reason,
-      ontology_sha=as.character(w07_results_rv()$manifest$ontology_sha %||% ""),
-      prompt_sha=as.character(w07_results_rv()$manifest$prompt_sha %||% "")),error=function(e)e)
+      ontology_sha=as.character(w07_results_rv()$manifest$ontology_sha256 %||% ""),
+      prompt_sha=as.character(w07_results_rv()$manifest$prompt_sha256 %||% "")),error=function(e)e)
     if(inherits(saved,"error")) {
       showNotification(paste("Review was not saved:",conditionMessage(saved)),
                        type="error",duration=NULL)
