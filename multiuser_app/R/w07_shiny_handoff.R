@@ -19,7 +19,7 @@ w07_handoff_records <- function(meta,create=FALSE) {
   x
 }
 w07_handoff_event <- function(meta,run_id,user_id,sha,filename,status) {
-  if(!status %in% c("requested","dispatched"))
+  if(!status %in% c("requested","dispatch_attempted","dispatched"))
     stop("Invalid W07 handoff status",call.=FALSE)
   now <- format(Sys.time(),"%Y-%m-%dT%H:%M:%OS6Z",tz="UTC")
   row <- data.frame(event_id=digest::digest(paste(meta$review_id,run_id,
@@ -76,11 +76,28 @@ w07_shiny_handoff <- function(meta,result,events,run_id,user_id) {
     current$user_id==as.character(user_id) & current$sha256==file_sha
   if(any(match & current$status=="dispatched",na.rm=TRUE))
     return(list(status="already_dispatched",sha256=file_sha,filename=filename))
+  if(any(match & current$status=="dispatch_attempted",na.rm=TRUE)) {
+    # Never repeat an ambiguous GitHub dispatch. Check its content-addressed
+    # run name before acknowledging it, or require later reconciliation.
+    lookup <- sprintf(
+      "https://api.github.com/repos/%s/actions/workflows/w07_shiny_review_handoff.yml/runs?event=workflow_dispatch&branch=main&per_page=100",
+      w05_shiny_repo())
+    listed <- w05_shiny_gh_request(lookup)$workflow_runs %||% list()
+    expected_title <- paste("W07 reviewed",meta$review_id,"run",run_id,"sha",file_sha)
+    found <- Filter(function(x)
+      identical(as.character(x$display_title %||% ""),expected_title),listed)
+    if(length(found)) {
+      w07_handoff_event(meta,run_id,user_id,file_sha,filename,"dispatched")
+      return(list(status="recovered_dispatch",sha256=file_sha,filename=filename))
+    }
+    stop("W07 dispatch attempt is unresolved; do not re-dispatch until GitHub run status is reconciled",call.=FALSE)
+  }
   deposit_id <- w07_handoff_archive(meta,filename,tmp,file_sha)
   if(!any(match & current$status=="requested",na.rm=TRUE))
     w07_handoff_event(meta,run_id,user_id,file_sha,filename,"requested")
   url <- sprintf("https://api.github.com/repos/%s/actions/workflows/w07_shiny_review_handoff.yml/dispatches",
                  w05_shiny_repo())
+  w07_handoff_event(meta,run_id,user_id,file_sha,filename,"dispatch_attempted")
   w05_shiny_gh_request(url,"POST",list(ref="main",inputs=list(
     review_id=meta$review_id,source_run_id=as.character(run_id),
     config_deposit_id=deposit_id,archive_filename=filename,archive_sha256=file_sha)))
