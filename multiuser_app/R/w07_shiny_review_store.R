@@ -3,7 +3,8 @@
 # This store is isolated from W04 screening and W08 production annotation.
 w07_review_tab <- function() "w07_coding_decision_events"
 w07_review_fields <- c("event_id","review_id","run_id","record_id","user_id",
-  "codes","relevance","reason","timestamp","ontology_sha","prompt_sha")
+  "codes","relevance","reason","timestamp","ontology_sha","prompt_sha",
+  "case_sha256","queue_sha256","version","supersedes_event_id")
 
 w07_review_sheet <- function(meta,create=FALSE) {
   gs4_auth_from_env()
@@ -35,7 +36,8 @@ w07_review_events <- function(meta,run_id) {
   out
 }
 w07_review_save <- function(meta,run_id,record_id,user_id,codes,relevance,reason,
-                            ontology_sha="",prompt_sha="") {
+                            ontology_sha="",prompt_sha="",case_sha256="",
+                            queue_sha256="",prior_decision=NULL,allowed_codes=NULL) {
   id <- as.character(run_id)
   if(length(id)!=1L||!grepl("^[0-9]+$",id))
     stop("Invalid W07 run ID",call.=FALSE)
@@ -49,6 +51,26 @@ w07_review_save <- function(meta,run_id,record_id,user_id,codes,relevance,reason
   for(sha in c(ontology_sha,prompt_sha))
     if(nzchar(sha)&&!grepl("^[a-f0-9]{64}$",sha))
       stop("Invalid W07 configuration version",call.=FALSE)
+  if(!grepl("^[a-f0-9]{64}$",case_sha256) ||
+     !grepl("^[a-f0-9]{64}$",queue_sha256))
+    stop("W07 review requires verified immutable case and queue checksums",call.=FALSE)
+  ids <- trimws(unlist(strsplit(codes,",",fixed=TRUE),use.names=FALSE))
+  ids <- unique(ids[nzchar(ids)])
+  if(is.null(allowed_codes)||any(!ids %in% allowed_codes))
+    stop("W07 review codes must belong to the selected ontology",call.=FALSE)
+  if(relevance=="OUT_OF_SCOPE" && length(ids))
+    stop("An out-of-scope record cannot retain topic codes",call.=FALSE)
+  if(relevance=="CODED_IN_SCOPE" && !length(ids))
+    stop("In-scope coded status requires at least one topic code",call.=FALSE)
+  if(!is.null(prior_decision) && (!identical(as.character(prior_decision$record_id),record_id) ||
+       !identical(as.character(prior_decision$run_id),id) ||
+       !identical(as.character(prior_decision$user_id),user_id) ||
+       !identical(as.character(prior_decision$case_sha256),case_sha256) ||
+       !identical(as.character(prior_decision$queue_sha256),queue_sha256)))
+    stop("Prior W07 decision belongs to another record or queue",call.=FALSE)
+  version <- if(is.null(prior_decision))1L else as.integer(prior_decision$version)+1L
+  if(is.na(version)||version<1L)stop("Invalid W07 decision revision",call.=FALSE)
+  supersedes <- if(is.null(prior_decision))"" else as.character(prior_decision$event_id)
   w07_review_sheet(meta,create=TRUE)
   stamp <- format(Sys.time(),"%Y-%m-%dT%H:%M:%OS6Z",tz="UTC")
   event_id <- digest::digest(paste(meta$review_id,id,record_id,user_id,stamp,
@@ -56,7 +78,8 @@ w07_review_save <- function(meta,run_id,record_id,user_id,codes,relevance,reason
   row <- data.frame(event_id=event_id,review_id=meta$review_id,run_id=id,
     record_id=record_id,user_id=user_id,codes=codes,relevance=relevance,
     reason=reason,timestamp=stamp,ontology_sha=ontology_sha,
-    prompt_sha=prompt_sha,stringsAsFactors=FALSE)
+    prompt_sha=prompt_sha,case_sha256=case_sha256,queue_sha256=queue_sha256,
+    version=as.character(version),supersedes_event_id=supersedes,stringsAsFactors=FALSE)
   # A successful append is acknowledged without an expensive verification read.
   # On an ambiguous network failure, stop rather than automatically retry the write.
   googlesheets4::sheet_append(meta$sheet_id,sheet=w07_review_tab(),data=row)
