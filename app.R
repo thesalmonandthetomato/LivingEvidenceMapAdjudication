@@ -881,18 +881,13 @@ ui <- page_fillable(
 
 
 read_authoritative_w08_metrics <- function(
-  registry_path = Sys.getenv(
-    "LEM_W08_REGISTRY_PATH",
-    unset = "docs/workflow08/zenodo_registry.csv"
-  ),
-  pointer_base = Sys.getenv(
-    "LEM_W08_POINTER_BASE_PATH",
-    unset = "docs/workflow08/zenodo"
-  ),
+  registry_path = "docs/workflow08/zenodo_registry.csv",
+  pointer_base = "docs/workflow08/zenodo",
   ref = "workflow01-final-architecture",
   expected_run_id = NULL
 ) {
   # Production KPI must never consult a local or development-branch registry.
+  if (!identical(github_dispatch_repo(), "thesalmonandthetomato/LivingEvidenceMap")) stop("KPI GitHub repository is not the production pipeline", call. = FALSE)
   use_local_fixture <- !identical(registry_path, "docs/workflow08/zenodo_registry.csv")
   if (use_local_fixture && file.exists(registry_path)) {
     reg <- utils::read.csv(
