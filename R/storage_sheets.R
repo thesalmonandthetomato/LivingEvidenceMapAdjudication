@@ -1158,14 +1158,10 @@ delete_w04_human_kappa_registry_row <- function(consistency_id) {
   invisible(verify)
 }
 
-read_github_w04_kappa_registry <- function() {
+read_github_w04_kappa_registry <- function(ref = "workflow01-final-architecture") {
   repo <- Sys.getenv(
     "LEM_W04_KAPPA_REGISTRY_REPO",
     unset = "thesalmonandthetomato/LivingEvidenceMap"
-  )
-  ref <- Sys.getenv(
-    "LEM_W04_KAPPA_REGISTRY_REF",
-    unset = "main"
   )
   path <- Sys.getenv(
     "LEM_W04_KAPPA_REGISTRY_PATH",
@@ -1241,8 +1237,8 @@ write_sheet_w04_kappa_registry <- function(x) {
   invisible(x)
 }
 
-sync_w04_kappa_registry_from_github <- function() {
-  github <- read_github_w04_kappa_registry()
+sync_w04_kappa_registry_from_github <- function(ref = "workflow01-final-architecture") {
+  github <- read_github_w04_kappa_registry(ref = ref)
   google <- read_sheet_w04_kappa_registry()
   relation <- w04_kappa_registry_relation(github,google)
   if (relation %in% c("google_empty","google_subset")) {
@@ -1827,7 +1823,7 @@ read_latest_pipeline_status <- function() {
     jsonlite::fromJSON(
       read_github_text_file(
         "docs/current_run/current_run_status.json",
-        ref = Sys.getenv("LEM_PIPELINE_STATUS_REF", unset = "workflow01-final-architecture")
+        ref = "workflow01-final-architecture"
       ),
       simplifyVector = FALSE
     ),
@@ -1852,6 +1848,7 @@ read_latest_pipeline_status <- function() {
     workflow_run_id = val(current$workflow_runs[[val(current$progress$current_stage)]]),
     last_search_date = val(current$search$search_date),
     canonical_existing = val(current$baseline$canonical_records),
+    workflow_w08_run_id = val(current$workflow_runs$W08),
     search_results_total = val(current$counts$search_results),
     search_results_update = val(current$search$search_results),
     deduplicated_records = val(current$counts$deduplicated_records),
