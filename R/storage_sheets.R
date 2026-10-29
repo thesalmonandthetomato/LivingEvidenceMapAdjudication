@@ -1159,10 +1159,7 @@ delete_w04_human_kappa_registry_row <- function(consistency_id) {
 }
 
 read_github_w04_kappa_registry <- function(ref = "workflow01-final-architecture") {
-  repo <- Sys.getenv(
-    "LEM_W04_KAPPA_REGISTRY_REPO",
-    unset = "thesalmonandthetomato/LivingEvidenceMap"
-  )
+  repo <- "thesalmonandthetomato/LivingEvidenceMap"
   path <- Sys.getenv(
     "LEM_W04_KAPPA_REGISTRY_PATH",
     unset = "docs/workflow04/kappa_registry.csv"
@@ -1813,6 +1810,7 @@ pipeline_status_tab <- function() {
 }
 
 read_latest_pipeline_status <- function() {
+  if (!identical(github_dispatch_repo(), "thesalmonandthetomato/LivingEvidenceMap")) stop("KPI GitHub repository is not the production pipeline", call. = FALSE)
   val <- function(x) if (is.null(x) || !length(x)) "" else as.character(x[[1L]])
 
   # KPI values must come from the active workflow branch, not the default main
