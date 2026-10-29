@@ -889,9 +889,12 @@ read_authoritative_w08_metrics <- function(
     "LEM_W08_POINTER_BASE_PATH",
     unset = "docs/workflow08/zenodo"
   ),
-  ref = github_scoping_ref()
+  ref = "workflow01-final-architecture",
+  expected_run_id = NULL
 ) {
-  if (file.exists(registry_path)) {
+  # Production KPI must never consult a local or development-branch registry.
+  use_local_fixture <- !identical(registry_path, "docs/workflow08/zenodo_registry.csv")
+  if (use_local_fixture && file.exists(registry_path)) {
     reg <- utils::read.csv(
       registry_path,
       stringsAsFactors = FALSE,
@@ -916,7 +919,7 @@ read_authoritative_w08_metrics <- function(
 
   pointer_name <- paste0("run-", run_id, ".json")
   pointer_path <- file.path(pointer_base, pointer_name)
-  if (file.exists(pointer_path)) {
+  if (use_local_fixture && file.exists(pointer_path)) {
     x <- jsonlite::fromJSON(pointer_path, simplifyVector = FALSE)
   } else {
     pointer_text <- read_github_text_file(pointer_path, ref = ref)
@@ -925,6 +928,7 @@ read_authoritative_w08_metrics <- function(
   pointer_run <- as.character(x$source_github_run_id %||% "")
   n <- suppressWarnings(as.integer(x$canonical_records %||% NA_integer_))
   if (!identical(pointer_run, run_id)) stop("Authoritative W08 pointer/run mismatch", call. = FALSE)
+  if (!is.null(expected_run_id) && !identical(run_id, as.character(expected_run_id))) stop("W08 KPI run does not match the current production pipeline", call. = FALSE)
   if (is.na(n) || n < 1L) stop("Authoritative W08 canonical count is invalid", call. = FALSE)
 
   list(
@@ -1068,7 +1072,7 @@ server <- function(input, output, session) {
       pipeline_status_rv(refreshed)
       if (w08_status_is_final(refreshed)) {
         authoritative_w08_rv(tryCatch(
-          read_authoritative_w08_metrics(),
+          read_authoritative_w08_metrics(expected_run_id = refreshed$workflow_w08_run_id),
           error = function(e) NULL
         ))
       } else {
@@ -1556,9 +1560,11 @@ server <- function(input, output, session) {
 
   read_manual_screening_metrics <- function() {
     registry <- if (identical(storage_backend(),"google_sheets")) {
-      sync_w04_kappa_registry_from_github()
+      if (!identical(sheet_id_from_env(), "1e9-V67-8lwPO6YBqeGJWn-SFanWSze5Gi2ToKR4bXvA"))
+        stop("KPI Google Sheet is not the production adjudication spreadsheet", call. = FALSE)
+      sync_w04_kappa_registry_from_github(ref = "workflow01-final-architecture")
     } else {
-      read_github_w04_kappa_registry()
+      read_github_w04_kappa_registry(ref = "workflow01-final-architecture")
     }
     w04_kappa_registry_rv(registry)
     w04_kappa_registry_summary(registry)
@@ -1588,7 +1594,7 @@ server <- function(input, output, session) {
     canonical_value <- if (isTRUE(canonical_current)) {
       w08_authoritative$canonical_records
     } else {
-      p$canonical_existing
+      if (w08_finalised) "—" else p$canonical_existing
     }
 
     workflow_labels <- c("0. Search","1. Dedup","2. Repair","3. Retract","4. Screen","5. Code","6. Country","7. Topics","8. Review","9. Report","10. Dashboard")
@@ -1710,7 +1716,7 @@ server <- function(input, output, session) {
         kpi(
           "Canonical database",
           fmt_pipeline_n(canonical_value),
-          if (isTRUE(canonical_current)) "current" else "pre-update",
+          if (isTRUE(canonical_current)) "current" else if (w08_finalised) "unavailable: W08 source mismatch" else "pre-update",
           stage_position=9L,
           class_extra=if (isTRUE(canonical_current)) NULL else "pre-update"
         )
@@ -9547,7 +9553,7 @@ server <- function(input, output, session) {
       pipeline_status_rv(refreshed)
       if (w08_status_is_final(refreshed)) {
         authoritative_w08_rv(tryCatch(
-          read_authoritative_w08_metrics(),
+          read_authoritative_w08_metrics(expected_run_id = refreshed$workflow_w08_run_id),
           error=function(e) NULL
         ))
       } else {
