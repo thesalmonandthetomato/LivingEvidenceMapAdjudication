@@ -2918,12 +2918,6 @@ server <- function(input, output, session) {
       w01_total <- length(cases_rv() %||% list())
       w01_remaining <- if (w01_total) length(unresolved_indices()) else 0L
       w01_completed <- max(0L, w01_total - w01_remaining)
-      # Completed historical W01 cases remain archived but are not active tasks.
-      if (w01_remaining == 0L && length(w08b_pending_cases()) > 0L) {
-        w01_total <- 0L
-        w01_completed <- 0L
-      }
-
       w02_user_total <- length(w02_cases_rv() %||% list())
       w02_user_remaining <- if (w02_user_total) length(w02_unresolved_indices()) else 0L
       if (session_can("manage_assignments")) {
@@ -3015,6 +3009,7 @@ server <- function(input, output, session) {
         wf_class <- switch(
           workflow,
           "Workflow 01"="wf-w01",
+          "W08b · Citation chasing"="wf-w01",
           "Workflow 02"="wf-w02",
           "Workflow 04"="wf-w04",
           "Workflow 08"="wf-w08",
@@ -3038,9 +3033,6 @@ server <- function(input, output, session) {
               div(class = "task-kpi", tags$span(class = "text-secondary small", "Completed"), tags$strong(completed)),
               div(class = "task-kpi", tags$span(class = "text-secondary small", "Remaining"), tags$strong(remaining))
             ),
-            if (identical(title,"Deduplication") && length(w08b_pending_cases())>0L)
-              tags$div(class="text-secondary small mb-2",
-                paste(length(w08b_pending_cases()),"citation-chasing ambiguities awaiting review")),
             if (nzchar(batch)) tags$div(class = "text-secondary small mb-1", batch),
             if (identical(lifecycle_status,"review_complete")) {
               tags$div(class="small mb-2",tags$span(class="task-badge","Human review complete"))
@@ -3061,11 +3053,8 @@ server <- function(input, output, session) {
                 actionButton(button_id, button_label, class = "btn-primary mt-auto")
               }
             } else {
-              if (!(identical(title,"Deduplication") && length(w08b_pending_cases())>0L))
-                tags$div(class = "text-secondary small mt-auto", idle_text)
-            },
-            if (identical(title,"Deduplication") && length(w08b_pending_cases())>0L)
-              actionButton("w08b_open_review","Review citation duplicates",class="btn-primary mt-2")
+              tags$div(class = "text-secondary small mt-auto", idle_text)
+            }
           )
         )
       }
@@ -3098,16 +3087,35 @@ server <- function(input, output, session) {
             stage_card(
               "Deduplication",
               "Workflow 01",
-              "Potential duplicate bibliographic records, including citation-chasing ambiguities.",
-              w01_total + if(is.null(w08b_review_queue_rv())) 0L else length(w08b_review_queue_rv()$cases),
-              w01_completed + length(w08b_review_decisions_rv()),
-              w01_remaining + length(w08b_pending_cases()),
+              "Monthly bibliographic duplicate adjudication. Export to the W01 checkpoint only.",
+              w01_total,
+              w01_completed,
+              w01_remaining,
               if (w01_remaining > 0L) "open_w01" else NULL,
               "Continue deduplication",
               batch_id_rv(),
               batch_status_rv()
             )
           ),
+          if (!is.null(w08b_review_queue_rv()) && length(w08b_review_queue_rv()$cases)>0L)
+            div(
+              class = "col-12 col-lg-6",
+              stage_card(
+                "Citation-chasing deduplication",
+                "W08b · Citation chasing",
+                "Historical supplemental citation-chasing review. Separate from the monthly W01 checkpoint and export.",
+                length(w08b_review_queue_rv()$cases),
+                length(w08b_review_decisions_rv()),
+                length(w08b_pending_cases()),
+                if (length(w08b_pending_cases())>0L) "w08b_open_review" else NULL,
+                "Review citation-chasing cases",
+                w08b_review_queue_rv()$batch_id,
+                if (length(w08b_pending_cases())==0L) "review_complete" else "",
+                idle_text = if(length(w08b_pending_cases())==0L)
+                  "Historical review complete; export is restricted to the W08b queue."
+                else "No cases assigned"
+              )
+            ),
           div(
             class = "col-12 col-lg-6",
             stage_card(
@@ -9743,7 +9751,10 @@ server <- function(input, output, session) {
       z <- g$meta
       p <- g$progress
       mode <- assignment_mode_for(z$workflow, z$task_type)
-      workflow_label <- workflow_labels_admin[[z$workflow]] %||% paste0("W", z$workflow)
+      workflow_label <- if(identical(z$workflow,"01") &&
+                           identical(z$task_type,"citation_deduplication")) {
+        "W08b · historical citation chasing"
+      } else workflow_labels_admin[[z$workflow]] %||% paste0("W", z$workflow)
       task_label <- task_labels[[z$task_type]] %||% z$task_type
       mode_label <- mode_labels[[mode]] %||% mode
       if (identical(z$workflow,"04") && identical(z$task_type,"manual_screening")) {
@@ -10169,20 +10180,9 @@ server <- function(input, output, session) {
   output$w01_admin_controls <- renderUI({
     req(authenticated(),configure_review_requested(),
       identical(input$configure_workflow_tab,"W01"))
-    q <- w08b_review_queue_rv()
-    existing <- admin_assignment_panels()$w01
-    if(is.null(q) || !length(q$cases) || length(w08b_pending_cases())>0L ||
-       !session_can("control_workflows")) return(existing)
-    assignments <- active_assignments_for_batch(
-      assignment_registry_rv(),"01",q$batch_id,"citation_deduplication")
-    if(length(assignments)) return(existing)
-    tagList(existing,div(class="mt-3 p-3 border rounded",
-      tags$strong("Citation-chasing deduplication complete"),
-      tags$p(class="text-secondary small","All citation-chasing decisions are saved."),
-      if(isTRUE(w08b_export_requested_rv()))
-        tags$span(class="saved-note",w08b_export_status_rv())
-      else actionButton("w08b_send_github",
-        "Send citation-chasing decisions to GitHub",class="btn-primary btn-sm")))
+    # Historical W08b actions are rendered in their own task/assignment section.
+    # Never append W08b exports to the W01 administration controls.
+    admin_assignment_panels()$w01
   })
   output$w02_admin_controls <- renderUI({
     req(authenticated(),configure_review_requested(),
