@@ -52,6 +52,7 @@ jobs:
           source("tests/test_decision_events.R")
           source("tests/test_local_assignments.R")
           source("tests/test_w01_decision_events.R")
+          source("tests/test_w01_w08b_separation.R")
           source("tests/test_users.R")
           source("tests/test_auth.R")
           source("tests/test_phase1c_permissions.R")
