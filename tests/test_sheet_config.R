@@ -38,9 +38,14 @@ local({
   err <- tryCatch(github_scoping_ref(),error=function(e)conditionMessage(e))
   stopifnot(grepl("requires LEM_GITHUB_SCOPING_REF=main",err,fixed=TRUE))
 })
-for (path in c("R/storage_sheets.R","multiuser_app/R/storage_sheets.R")) {
-  lines <- readLines(path,warn=FALSE)
-  stopifnot(any(grepl("LEM_PIPELINE_STATUS_REF",lines,fixed=TRUE)))
-  stopifnot(any(grepl("workflow01-final-architecture",lines,fixed=TRUE)))
-}
+# Production KPI status deliberately follows the authoritative workflow
+# branch; the legacy development copy permits an environment override.
+production_storage <- paste(readLines("R/storage_sheets.R",warn=FALSE),collapse="\\n")
+development_storage <- paste(readLines("multiuser_app/R/storage_sheets.R",warn=FALSE),collapse="\\n")
+stopifnot(
+  grepl('read_latest_pipeline_status <- function',production_storage,fixed=TRUE),
+  grepl('ref = "workflow01-final-architecture"',production_storage,fixed=TRUE),
+  grepl('LEM_PIPELINE_STATUS_REF',development_storage,fixed=TRUE),
+  grepl('workflow01-final-architecture',development_storage,fixed=TRUE)
+)
 cat("PASS: Shiny scoping stays on its configured branch while KPI status uses active workflow branch\\n")
