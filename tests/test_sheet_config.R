@@ -14,12 +14,20 @@ local({
   cat("PASS: configured Google Sheet ID required, trimmed, and never hard-coded\n")
 })
 
-# The Shiny scoping integration must not silently target the experimental pipeline.
-# Current-run KPI reporting is an intentional exception: it reads the
-# authoritative workflow branch, independently configurable at deployment.
+# Only scoping is required to use its configurable branch. W01/W02/W08
+# production resumes intentionally target workflow01-final-architecture.
+# Do not ban that branch string throughout the entire dispatch file.
 for (path in c("R/github_dispatch.R","multiuser_app/R/github_dispatch.R")) {
-  lines <- readLines(path,warn=FALSE)
-  stopifnot(!any(grepl("workflow01-final-architecture",lines,fixed=TRUE)))
+  local({
+    source(path,local=TRUE)
+    old_ref <- Sys.getenv("LEM_GITHUB_SCOPING_REF",unset=NA_character_)
+    on.exit(if(is.na(old_ref))Sys.unsetenv("LEM_GITHUB_SCOPING_REF") else
+      Sys.setenv(LEM_GITHUB_SCOPING_REF=old_ref),add=TRUE)
+    Sys.unsetenv("LEM_GITHUB_SCOPING_REF")
+    stopifnot(identical(github_scoping_ref(),"main"))
+    Sys.setenv(LEM_GITHUB_SCOPING_REF="branch-for-scoping-test")
+    stopifnot(identical(github_scoping_ref(),"branch-for-scoping-test"))
+  })
 }
 for (path in c("R/storage_sheets.R","multiuser_app/R/storage_sheets.R")) {
   lines <- readLines(path,warn=FALSE)
