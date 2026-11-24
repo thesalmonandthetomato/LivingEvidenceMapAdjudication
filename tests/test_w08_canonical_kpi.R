@@ -50,6 +50,6 @@ stopifnot(failed)
 
 app_src <- paste(readLines("app.R", warn = FALSE, encoding = "UTF-8"), collapse = "\n")
 stopifnot(grepl("fmt_pipeline_n(canonical_value)", app_src, fixed = TRUE))
-stopifnot(grepl('if (isTRUE(canonical_current)) "current" else "pre-update"', app_src, fixed = TRUE))
+stopifnot(grepl('if (isTRUE(canonical_current)) "current" else if (w08_finalised) "unavailable: W08 source mismatch" else "pre-update"', app_src, fixed = TRUE))
 
 cat("PASS: authoritative W08 canonical KPI contract\n")
