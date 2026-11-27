@@ -456,7 +456,7 @@ dispatch_w04_resolution_resume <- function(source_run_id, batch_id, queue_sha256
       `User-Agent` = "LivingEvidenceMap-Adjudication"
     ) |>
     httr2::req_body_json(list(
-      ref = "main",
+      ref = "workflow01-final-architecture",
       inputs = list(
         source_run_id = source_run_id,
         batch_id = batch_id,
