@@ -5,18 +5,36 @@ if (!exists("%||%", mode="function")) {
 }
 
 github_dispatch_token <- function() {
+  assert_production_github_target()
   token <- Sys.getenv("LEM_GITHUB_DISPATCH_TOKEN", unset = "")
   if (!nzchar(token)) stop("LEM_GITHUB_DISPATCH_TOKEN is not configured", call. = FALSE)
   token
 }
 
 github_dispatch_repo <- function() {
-  Sys.getenv("LEM_GITHUB_DISPATCH_REPO", unset = "thesalmonandthetomato/LivingEvidenceMap")
+  expected <- "thesalmonandthetomato/LivingEvidenceMap"
+  configured <- trimws(Sys.getenv("LEM_GITHUB_DISPATCH_REPO", unset = expected))
+  if (!identical(configured, expected))
+    stop("Production Shiny app requires LEM_GITHUB_DISPATCH_REPO=thesalmonandthetomato/LivingEvidenceMap", call.=FALSE)
+  expected
 }
 
+github_production_ref <- function() {
+  expected <- "workflow01-final-architecture"
+  configured <- trimws(Sys.getenv("LEM_GITHUB_SCOPING_REF", unset = expected))
+  if (!identical(configured, expected))
+    stop("Production Shiny app requires LEM_GITHUB_SCOPING_REF=workflow01-final-architecture", call.=FALSE)
+  expected
+}
 
-github_scoping_ref <- function() {
-  Sys.getenv("LEM_GITHUB_SCOPING_REF", unset = "main")
+github_scoping_ref <- function() github_production_ref()
+
+assert_production_github_target <- function(ref = github_production_ref()) {
+  github_dispatch_repo()
+  expected <- github_production_ref()
+  if (!identical(ref, expected))
+    stop("Refusing GitHub operation outside production pipeline branch", call.=FALSE)
+  invisible(TRUE)
 }
 
 github_api_get_json <- function(endpoint) {
@@ -34,6 +52,7 @@ github_api_get_json <- function(endpoint) {
 }
 
 read_github_text_file <- function(path, ref = github_scoping_ref()) {
+  assert_production_github_target(ref)
   endpoint <- sprintf(
     "https://api.github.com/repos/%s/contents/%s?ref=%s",
     github_dispatch_repo(),
@@ -111,7 +130,7 @@ dispatch_w00_scoping <- function(request_id, search_string = NULL, search_string
         request_id = request_id
       )
     ))
-  resp <- httr2::req_perform(req)
+  resp <- httr2::req_perform(httr2::req_error(req, is_error=function(resp) FALSE))
   status <- httr2::resp_status(resp)
   if (identical(status, 204L)) return(invisible(TRUE))
   if (!identical(status, 404L)) {
@@ -270,10 +289,10 @@ dispatch_w01_export <- function(batch_id, queue_sha256) {
       `User-Agent` = "LivingEvidenceMap-Adjudication"
     ) |>
     httr2::req_body_json(list(
-      ref = "main"
+      ref = github_production_ref()
     ))
 
-  resp <- httr2::req_perform(req)
+  resp <- httr2::req_perform(httr2::req_error(req, is_error=function(resp) FALSE))
   status <- httr2::resp_status(resp)
   if (identical(status, 204L)) return(invisible(TRUE))
   if (!identical(status, 404L)) {
@@ -307,7 +326,7 @@ dispatch_w01_export <- function(batch_id, queue_sha256) {
     httr2::req_body_json(list(
       message=sprintf("Request W01 export for %s",batch_id),
       content=jsonlite::base64_enc(charToRaw(payload)),
-      branch="main"
+      branch=github_production_ref()
     ))
 
   marker_resp <- httr2::req_perform(marker_req)
@@ -336,14 +355,14 @@ dispatch_w02_resume <- function(source_run_id, publish = TRUE) {
       `User-Agent` = "LivingEvidenceMap-Adjudication"
     ) |>
     httr2::req_body_json(list(
-      ref = "workflow01-final-architecture",
+      ref = github_production_ref(),
       inputs = list(
         source_run_id = source_run_id,
         publish = if (isTRUE(publish)) "true" else "false"
       )
     ))
 
-  resp <- httr2::req_perform(req)
+  resp <- httr2::req_perform(httr2::req_error(req, is_error=function(resp) FALSE))
   status <- httr2::resp_status(resp)
   if (identical(status, 204L)) return(invisible(TRUE))
 
@@ -358,7 +377,7 @@ w04_validation_dispatch_payload <- function(batch_id, queue_sha256) {
   if (!grepl("^[0-9a-f]{64}$", queue_sha256)) stop("Invalid W04 queue SHA-256", call. = FALSE)
 
   list(
-    ref = "main",
+    ref = github_production_ref(),
     inputs = list(
       batch_id = batch_id,
       queue_sha256 = queue_sha256
@@ -416,7 +435,7 @@ dispatch_w08_resume <- function(source_run_id, batch_id, queue_sha256) {
       `User-Agent` = "LivingEvidenceMap-Adjudication"
     ) |>
     httr2::req_body_json(list(
-      ref = "workflow01-final-architecture",
+      ref = github_production_ref(),
       inputs = list(
         source_run_id = source_run_id,
         batch_id = batch_id,
@@ -456,7 +475,7 @@ dispatch_w04_resolution_resume <- function(source_run_id, batch_id, queue_sha256
       `User-Agent` = "LivingEvidenceMap-Adjudication"
     ) |>
     httr2::req_body_json(list(
-      ref = "workflow01-final-architecture",
+      ref = github_production_ref(),
       inputs = list(
         source_run_id = source_run_id,
         batch_id = batch_id,
