@@ -2018,7 +2018,7 @@
       "checksum": "544d137b964d270470ecfe99197ddee1"
     },
     "R/github_dispatch.R": {
-      "checksum": "4e8268ad2bda50bf921be1be61652352"
+      "checksum": "20ecfe6c708aa290cc2e7757ea3b44d0"
     },
     "R/storage_backend.R": {
       "checksum": "e6e395bca1f55e20a9aedf7c647904e4"
@@ -2084,7 +2084,7 @@
       "checksum": "88348f6d89fea3d8cadf88ca11c4641b"
     },
     "tests/test_sheet_config.R": {
-      "checksum": "205b91c66a5b55132ad04a1239db05e3"
+      "checksum": "3c1b240ffa58f7e84ea5f6f01a25e5b8"
     },
     "tests/test_users.R": {
       "checksum": "3478785333151da4bc9976089d9d66b9"
@@ -2111,7 +2111,7 @@
       "checksum": "b1e518a19d487b5709e555a09875bb63"
     },
     "tests/test_w04_validation_dispatch.R": {
-      "checksum": "2b742579f236f04ffa7f379189245d95"
+      "checksum": "90b9f62c59b1cc12201f2306da805b16"
     },
     "tests/test_w04_validation_lifecycle.R": {
       "checksum": "8711ce8a4c4eefc92e61781498c81e7d"
