@@ -29,3 +29,13 @@ stopifnot(grepl(
 ))
 
 cat("PASS: W04 validation dispatch contract\n")
+
+# Production model-uncertainty resolution is distinct from manual validation.
+# Inspect the actual dispatch body without a live GitHub request.
+resolution_body <- paste(deparse(body(dispatch_w04_resolution_resume)), collapse=" ")
+stopifnot(
+  grepl("workflow_04_resume_after_shiny.yml/dispatches", resolution_body, fixed=TRUE),
+  grepl('ref = "workflow01-final-architecture"', resolution_body, fixed=TRUE),
+  !grepl('ref = "main"', resolution_body, fixed=TRUE)
+)
+cat("PASS: W04 production resolution dispatch targets production branch\n")
